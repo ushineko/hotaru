@@ -104,6 +104,98 @@ monitor reading the cooler for itself until its Go rewrite) or not yet built
 (the CLI's direct path exists only until the service does; the Go monitor is a
 direction, not a commitment).
 
+## Boot and readiness
+
+The service starts with the machine. Nothing below waits for a login, and
+nothing treats "the unit started" as "the hardware is there".
+
+```mermaid
+%%{init: {"theme":"base","themeVariables":{
+  "background":"#202326",
+  "primaryColor":"#292c30","primaryTextColor":"#fcfcfc","primaryBorderColor":"#3c4045",
+  "secondaryColor":"#1d1f22","tertiaryColor":"#141618",
+  "lineColor":"#a1a9b1","textColor":"#fcfcfc","titleColor":"#fcfcfc",
+  "clusterBkg":"#141618","clusterBorder":"#3c4045",
+  "edgeLabelBackground":"#202326","nodeTextColor":"#fcfcfc",
+  "fontFamily":"Noto Sans, Segoe UI, sans-serif","fontSize":"14px"
+}}}%%
+flowchart TB
+    BOOT(["boot · user manager, lingering"]) --> SERVE
+
+    SERVE["<b>Serving</b><br/>API up from this moment —<br/>no state below ever blocks it"]
+    SERVE -->|"no recorded state"| INERT["<b>Inert</b><br/>nothing to restore,<br/>nothing written"]
+    SERVE -->|"state recorded"| WAIT
+
+    WAIT["<b>Waiting for OpenRGB</b><br/>health: server unreachable"]
+    WAIT -->|"no server · retry with backoff"| WAIT
+    WAIT -->|"connected, device list short"| PART
+    WAIT -->|"connected, every recorded<br/>device present"| REST
+
+    PART["<b>Partial</b><br/>fewer devices than recorded —<br/>reported incomplete, never done"]
+    PART -->|"retry with backoff"| PART
+    PART -->|"the rest enumerate"| REST
+    PART -->|"user restarts the server"| REST
+
+    REST["<b>Restoring</b><br/>one frame per device,<br/>read back to confirm"] --> STEADY
+
+    STEADY["<b>Reconciling</b><br/>steady state"]
+    STEADY -->|"re-assert per device rule"| STEADY
+    STEADY -->|"server went away"| WAIT
+    INERT -->|"first scene applied by hand"| REST
+
+    classDef ok fill:#292c30,stroke:#3daee9,color:#fcfcfc
+    classDef wait fill:#1d1f22,stroke:#f67400,color:#fcfcfc
+    classDef idle fill:#1d1f22,stroke:#3c4045,color:#a1a9b1
+    classDef entry fill:#141618,stroke:#3c4045,color:#a1a9b1
+    class SERVE,REST,STEADY ok
+    class WAIT,PART wait
+    class INERT idle
+    class BOOT entry
+```
+
+**Why there is no "wait for OpenRGB" edge at the start.** hotaru declares no
+`After=` or `Requires=` on any OpenRGB unit. There is no single unit to name —
+the `openrgb` package ships a system one, this machine runs a user one, other
+people start it by hand — and ordering would not help regardless: a cold boot
+has been observed reaching `Started` with two devices of six enumerated, because
+OpenRGB detects once and USB enumeration had not finished. Readiness is judged
+by the device list, which is why **Partial** is a state of its own rather than a
+successful restore with fewer lights than expected.
+
+## Session attachment
+
+The desktop is not a precondition for anything. It is something that shows up,
+possibly more than once.
+
+```mermaid
+%%{init: {"theme":"base","themeVariables":{
+  "background":"#202326",
+  "primaryColor":"#292c30","primaryTextColor":"#fcfcfc","primaryBorderColor":"#3c4045",
+  "secondaryColor":"#1d1f22","tertiaryColor":"#141618",
+  "lineColor":"#a1a9b1","textColor":"#fcfcfc","titleColor":"#fcfcfc",
+  "clusterBkg":"#141618","clusterBorder":"#3c4045",
+  "edgeLabelBackground":"#202326","nodeTextColor":"#fcfcfc",
+  "fontFamily":"Noto Sans, Segoe UI, sans-serif","fontSize":"14px"
+}}}%%
+flowchart LR
+    NOSESS["<b>No session</b><br/>service running,<br/>no desktop"]
+    BOUND["<b>Bound</b><br/>KWin script installed,<br/>D-Bus door registered"]
+
+    NOSESS -->|"org.kde.KWin appears on the bus"| BOUND
+    BOUND -->|"KWin vanishes: logout, crash, restart"| NOSESS
+    BOUND -->|"reinstall on every reappearance"| BOUND
+
+    classDef a fill:#292c30,stroke:#3daee9,color:#fcfcfc
+    classDef b fill:#1d1f22,stroke:#3c4045,color:#a1a9b1
+    class BOUND a
+    class NOSESS b
+```
+
+Watching the bus name rather than installing once at start-up is what makes the
+bindings as durable as the desktop instead of as durable as one moment in it —
+the old implementation installed at program start, so a KWin restart silently
+took the shortcuts and left a program that believed it still had them.
+
 ## What the picture is asserting
 
 - **One actor, from the first commit.** Every write to every device leaves
