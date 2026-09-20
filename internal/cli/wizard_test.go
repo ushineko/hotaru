@@ -143,7 +143,7 @@ func TestTheWizardMapsAMachineFromWhatAPersonCanSee(t *testing.T) {
 
 	// And the questions were the ones a person can answer by looking.
 	asked := person.questions()
-	require.Contains(t, asked, "What is red?")
+	require.Contains(t, asked, "What is lit now?")
 	require.Contains(t, asked, "How many separate things are chained on radiator?")
 	require.NotContains(t, asked, "LED",
 		"a question asked somebody to count LEDs, which is the thing nobody does twice")
@@ -358,7 +358,7 @@ func TestACountThatMeantLEDsIsQueriedRatherThanDividedOn(t *testing.T) {
 	require.NoError(t, cli.Map(t.Context(), client, person))
 
 	said := strings.Join(person.said, "\n")
-	require.Contains(t, said, "about one LED each")
+	require.Contains(t, said, "about one light each")
 	require.Contains(t, said, "the answer here is 1")
 
 	rules, err := os.ReadFile(filepath.Join(home, "hotaru", "hotaru.yml"))
@@ -527,9 +527,10 @@ func TestTheQuestionAsksForANameRatherThanAColour(t *testing.T) {
 	require.NoError(t, cli.Map(t.Context(), client, person))
 
 	asked := person.questions()
-	require.Contains(t, asked, "what do you want to call it?")
-	require.NotContains(t, asked, "What is red?")
-	require.Contains(t, strings.Join(person.said, "\n"), "Now lighting its 2 parts",
+	require.Contains(t, asked, "What is lit now?")
+	require.NotContains(t, asked, "red one",
+		"it asked somebody to match a colour, which another device in the case can also be")
+	require.Contains(t, strings.Join(person.said, "\n"), "2 parts that light separately",
 		"the change from 'does it light' to 'which is which' was not announced")
 }
 
@@ -560,4 +561,177 @@ func TestAOneLightZoneIsNotAskedAboutDividing(t *testing.T) {
 	rules, err := os.ReadFile(filepath.Join(home, "hotaru", "hotaru.yml"))
 	require.NoError(t, err)
 	require.Contains(t, string(rules), `desk-strips: {zone: "LED_C"}`)
+}
+
+func TestNothingElseIsLitWhileAQuestionIsBeingAsked(t *testing.T) {
+	/*
+		Lighting every part of a device at once, each a different colour, and
+		asking which was which: somebody was asked to name "the red one" while
+		the only thing they could see was blue, because two of that device's
+		three parts had nothing attached. And "the green one" could have meant
+		a stick of RAM, because the rest of the case was lit too.
+
+		One thing lit, everything else dark, and the question is what came on.
+	*/
+	board := devices.Device{
+		Name:     "Z790 AORUS MASTER X",
+		LEDCount: 61,
+		Modes:    []devices.Mode{{Name: "Direct", PerLED: true}},
+		Zones: []devices.Zone{
+			{Name: "ARGB_V2_1", First: 0, Count: 30},
+			{Name: "ARGB_V2_2", First: 30, Count: 30},
+			{Name: "LED_C", First: 60, Count: 1},
+		},
+		ActiveMode: "Direct",
+	}
+	server := openrgb.NewFake(board, cooler())
+	client := api.NewClient(serving(t, nil, server))
+	home := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", home)
+
+	person := &scripted{answers: []string{
+		"y", // the board lights
+		"",  // first header: nothing attached
+		"",  // second header: nothing attached
+		"desk strips",
+		"y", "y",
+	}}
+	require.NoError(t, cli.Map(t.Context(), client, person, "AORUS"))
+
+	// The other device in the case was turned off before any question.
+	showing, ok := server.Showing("NZXT Kraken 2024 ELITE Series RGB")
+	require.True(t, ok)
+	require.Equal(t, colour.Black, showing.Colours[0],
+		"another device stayed lit while somebody was asked what they could see")
+
+	// And each question was about one part, in turn.
+	asked := person.questions()
+	require.Equal(t, 3, strings.Count(asked, "What is lit now?"),
+		"three parts, one question each")
+
+	rules, err := os.ReadFile(filepath.Join(home, "hotaru", "hotaru.yml"))
+	require.NoError(t, err)
+	require.Contains(t, string(rules), `desk-strips: {zone: "LED_C"}`)
+	require.NotContains(t, string(rules), "ARGB_V2_1", "an empty header was named")
+}
+
+func TestTheWizardSpeaksNoJargon(t *testing.T) {
+	/*
+		Nothing it says should require knowing how any of this works. A person
+		mapping their case knows about strips, fans and sticks; "zone", "LED"
+		and the name of a lighting mode are this program's vocabulary, and
+		using them asks somebody to learn it before they can answer.
+	*/
+	board := devices.Device{
+		Name:     "Z790 AORUS MASTER X",
+		LEDCount: 31,
+		Modes:    []devices.Mode{{Name: "Static", PerLED: true}, {Name: "Direct", PerLED: true}},
+		Zones: []devices.Zone{
+			{Name: "ARGB_V2_1", First: 0, Count: 30},
+			{Name: "LED_C", First: 30, Count: 1},
+		},
+		ActiveMode: "Rainbow Wave",
+	}
+	client := api.NewClient(serving(t, nil, openrgb.NewFake(board)))
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	person := &scripted{answers: []string{
+		"n", "y", // not lit the first way, lit the second
+		"", "desk strips", // nothing on the first part; the strips on the second
+		"y", "y",
+	}}
+	require.NoError(t, cli.Map(t.Context(), client, person))
+
+	// What it says, not what it shows: the file it prints for approval is a
+	// configuration file, and its keys are necessarily this program's words.
+	var spoken strings.Builder
+	spoken.WriteString(strings.ToLower(person.questions()))
+	for _, line := range person.said {
+		if strings.Contains(line, "devices:") {
+			continue
+		}
+		spoken.WriteString("\n" + strings.ToLower(line))
+	}
+	said := spoken.String()
+	for _, jargon := range []string{"zone", " led", "leds", "rgb mode", "argb", "controller", "protocol"} {
+		require.NotContains(t, said, jargon,
+			"the wizard used a word somebody has to learn before they can answer")
+	}
+}
+
+func TestTheProbeAsksAboutTheWayAWriteWillActuallyLightIt(t *testing.T) {
+	/*
+		A board that lights in Direct and not in Static, whose own list puts
+		Direct first. Asked in the device's order, somebody sees red on the
+		first try, says yes, and no correction is written -- and then setting a
+		colour picks Static, as hotaru's preference order always would, and
+		their strips go out. The probe has to ask about what a write will use.
+	*/
+	board := devices.Device{
+		Name:     "Z790 AORUS MASTER X",
+		LEDCount: 1,
+		Modes: []devices.Mode{
+			{Name: "Direct", PerLED: true}, // the device lists this one first
+			{Name: "Static", PerLED: true},
+		},
+		Zones:      []devices.Zone{{Name: "LED_C", First: 0, Count: 1}},
+		ActiveMode: "Rainbow Wave",
+	}
+	client := api.NewClient(serving(t, nil, openrgb.NewFake(board)))
+	home := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", home)
+
+	person := &scripted{answers: []string{
+		"n",           // Static, which hotaru would choose: nothing lights
+		"y",           // Direct: there it is
+		"desk strips", // and it is the strips
+		"y", "y",
+	}}
+	require.NoError(t, cli.Map(t.Context(), client, person))
+
+	rules, err := os.ReadFile(filepath.Join(home, "hotaru", "hotaru.yml"))
+	require.NoError(t, err)
+	require.Contains(t, string(rules), "solid_modes: [direct, static]",
+		"the correction was not written, so setting a colour will still pick the mode that lights nothing")
+}
+
+func TestWhatItWritesIsInUseBeforeItPutsTheLightsBack(t *testing.T) {
+	/*
+		The service reads its rules at startup, so a file the wizard writes
+		changes nothing until it is told. Leaving that as an instruction meant
+		the last act of a successful run was to put the lights back using the
+		rules from before it ran -- and on one machine that meant the
+		correction just established was ignored and the strips went out again.
+	*/
+	board := devices.Device{
+		Name:     "Z790 AORUS MASTER X",
+		LEDCount: 1,
+		Modes: []devices.Mode{
+			{Name: "Direct", PerLED: true},
+			{Name: "Static", PerLED: true},
+		},
+		Zones:      []devices.Zone{{Name: "LED_C", First: 0, Count: 1}},
+		ActiveMode: "Rainbow Wave",
+	}
+	// Static is accepted, reports Static, and lights nothing -- which no fake
+	// can express, because it is a fact about a case and not about a
+	// protocol. The person says so: "n" to Static, "y" to Direct.
+	home := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", home) // before the service starts, as on a real machine
+
+	server := openrgb.NewFake(board)
+	client := api.NewClient(serving(t, nil, server))
+
+	person := &scripted{answers: []string{"n", "y", "desk strips", "y", "y"}}
+	require.NoError(t, cli.Map(t.Context(), client, person))
+
+	require.Contains(t, strings.Join(person.said, "\n"), "in use now",
+		"somebody was told to run a command the program could run itself")
+
+	// The proof: a write now picks the corrected mode without anyone
+	// reloading anything.
+	out, err := client.Apply(t.Context(), api.ApplyRequest{Colour: "purple"})
+	require.NoError(t, err)
+	require.Equal(t, "Direct", out.Results[0].Mode,
+		"the correction the wizard had just established was not in use")
 }
