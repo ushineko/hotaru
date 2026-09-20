@@ -184,6 +184,9 @@ necessary is an artefact of where it used to live.
 - [specs/009-writes-that-mean-what-they-say.md](specs/009-writes-that-mean-what-they-say.md):
   why a write that lands in the buffer is not always a write, and what hotaru
   checks instead.
+- [specs/010-the-mode-packet-is-the-commit.md](specs/010-the-mode-packet-is-the-commit.md):
+  the packet that looks redundant and is not, and a metric that improved
+  because hotaru stopped talking to the hardware.
 - [docs/architecture.md](docs/architecture.md): the system diagram and what it
   asserts.
 - [examples/hotaru.yml](examples/hotaru.yml): a worked rules file from a real
@@ -205,6 +208,10 @@ MIT. See [LICENSE](LICENSE).
 ## Changelog
 
 ### Unreleased
+
+- The mode packet is sent on every write, including to a device already in
+  that mode. It looks redundant and is the commit: suppressing it stopped an
+  NZXT cooler changing colour at all (spec 010, #23).
 
 - `--preview` on `hotaru light set` and `hotaru light off`: write a colour to
   the hardware without making it the state the machine returns to. Setting
