@@ -30,6 +30,14 @@ PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=read-only
 ReadWritePaths=%h/.config/hotaru %h/.local/state/hotaru
+
+# The socket lives in the runtime directory, and ProtectSystem=strict makes
+# everything not named here read-only -- including $XDG_RUNTIME_DIR, so without
+# this the service cannot create the socket it exists to serve and exits with
+# "bind: read-only file system". RuntimeDirectory has systemd create it with
+# the right ownership and remove it on stop, which is also one less directory
+# hotaru has to make for itself.
+RuntimeDirectory=hotaru
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true
