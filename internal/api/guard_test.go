@@ -109,7 +109,9 @@ func TestAnUnknownRouteIsPlainlyNotFound(t *testing.T) {
 	server := httptest.NewServer(api.Handler(service.New(nil, openrgb.NewFake(board()), "")))
 	defer server.Close()
 
-	resp, err := http.Get(server.URL + "/v1/nonsense")
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, server.URL+"/v1/nonsense", nil)
+	require.NoError(t, err)
+	resp, err := server.Client().Do(req)
 	require.NoError(t, err)
 	defer func() { _ = resp.Body.Close() }()
 	require.Equal(t, http.StatusNotFound, resp.StatusCode)
