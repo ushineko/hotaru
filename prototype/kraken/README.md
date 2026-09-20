@@ -18,3 +18,5 @@ part is not the code but what it measured. See
     go run . liquid        return the screen to the firmware readout
     go run . stress [mode] push repeatedly at falling intervals
     go run . fb            the framebuffer path liquidctl reserves for 0x300E
+    go run . dash [s] [iv] a live dashboard, default 30s at 1 Hz
+    go run . count         a big incrementing number, to prove updates land

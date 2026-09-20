@@ -9,6 +9,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"time"
 )
 
@@ -55,6 +56,32 @@ func read(f *os.File) (status, error) {
 }
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "count" {
+		counterMain(10, 2*time.Second, len(os.Args) > 2 && os.Args[2] == "recycle")
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "probe" {
+		probeMain()
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "dash" {
+		secs := 30
+		if len(os.Args) > 2 {
+			if n, err := strconv.Atoi(os.Args[2]); err == nil {
+				secs = n
+			}
+		}
+		every := time.Second
+		if len(os.Args) > 3 {
+			if d, err := time.ParseDuration(os.Args[3]); err == nil {
+				every = d
+			}
+		}
+		recycle = len(os.Args) > 4 && os.Args[4] == "recycle"
+		fmt.Printf("dashboard for %ds, one update every %v, recycle=%v\n", secs, every, recycle)
+		dashMain(secs, every)
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "anim" {
 		data := animatedCard(12)
 		fmt.Printf("12-frame animated GIF: %d bytes\n", len(data))

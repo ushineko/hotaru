@@ -57,80 +57,62 @@ until `0x38 0x01 0x04 <index>` says so. This is the same shape as the lighting
 defect in spec 009 and deserves the same suspicion: success from the device is
 not evidence that anybody can see anything.
 
-### What repeated writes really do
+### Three bugs that looked like hardware findings
 
-peripheral-battery-monitor's specs 021 and 022 are built on "write as rarely as
-possible", to avoid the bucket-switch failures of liquidctl#774. Its spec 028
-then found that the screen needs *regular* writes or the image expires, and
-recorded the tension as unresolved.
+An earlier draft of this spec reported, as measured facts about the panel: that
+bucket refusals were not rate-related, that they were memory exhaustion with
+addresses climbing to a 24320-byte ceiling, that `reply[14]` values `0x04` and
+`0x05` meant two kinds of bad placement, and that a dashboard at 1 Hz landed
+one update in thirty.
 
-Measured here, by pushing at falling intervals from 2 s to flat out:
+**All of it was wrong, and every cause was in this prototype.**
 
-| interval | pushes | refusals |
-|---|---|---|
-| 2 s | 4 | 2 |
-| 1 s | 5 | 4 |
-| 500 ms | 8 | 2 |
-| 250 ms | 10 | 2 |
-| 100 ms | 15 | 3 |
-| flat out | 20 | **0** |
+**1. Replies were not matched to commands.** A command's reply carries the
+command's prefix with the first byte incremented -- `0x32 0x01` is answered by
+`0x33 0x01`. This cooler also streams status reports continuously, unasked. The
+prototype sent a command and read whatever report arrived next, so it regularly
+read a temperature reading and interpreted byte 14 of it as a result code.
+liquidctl matches the prefix; the prototype only did so for deletes. Every
+refusal measured before the fix was noise, including the entire rate ramp.
 
-**Rate is not the variable.** The refusals carry `reply[14] = 0x05` and the
-address in each one climbs: 2620, 2625, 2637, 2643, and later 23428 against a
-24320-byte ceiling. It is memory exhaustion. liquidctl allocates each image
-after the last one and never reclaims, so a program that pushes repeatedly
-walks to the end of the device's memory and stays there.
+With replies matched: **30 updates at 1 Hz, 30 landed, 0 refused.**
 
-Two things were tried against it:
+**2. Reclaiming the previous bucket stops the panel updating.** Releasing the
+bucket that was on screen once a new one is shown looked like obvious hygiene,
+and was invented here rather than taken from liquidctl. With it on, the screen
+holds its last image while every push reports success. With it off, every push
+appears. liquidctl allocates and does not reclaim, and this is presumably why.
 
-- **Reclaiming the previous bucket** after switching away from it: refusals
-  halved, 12 to 6. Not a fix, because placement still climbs to `maxOccupied`.
-- **Choosing the addresses ourselves**, two fixed slots alternating: every
-  setup refused, with a *different* code, `reply[14] = 0x04`. The allocator
-  belongs to the device. The bucket query is not a handshake to be skipped --
-  it is how the device says where a write may go. A build that skipped it
-  failed 100% of the time.
+**3. The last packet was short.** The transfer is declared to the device in
+whole 1024-byte packets and the payload rarely divides evenly. Sending only the
+payload leaves the tail of the final packet holding whatever was in that memory,
+which the panel draws as a band of noise along the bottom of the image. The
+payload is now padded to the declared length.
 
-Both readings were wrong, and the correction matters more than the original
-claim. Probing the device directly -- clear everything, then ask for one setup
-at a time -- produced this:
+### What is actually true
 
-	setup at address 0, varying size:
-	  bucket 0, 1 packets -> ok=true  reply[14]=0x01
-	  bucket 0, 2 packets -> ok=false reply[14]=0x04
-	  bucket 0, 3 packets -> ok=false reply[14]=0x04
-	  ...
-	setup of 5 packets, varying bucket:
-	  bucket 0 -> ok=false reply[14]=0x04
-	  bucket 1 -> ok=false reply[14]=0x05
+- A dashboard works. 1 Hz and 2 s intervals, every push landing, roughly 48 ms
+  each, with the rendered numbers changing on every tick.
+- A still image, an animated GIF, brightness, orientation and the return to the
+  firmware readout all work.
+- The panel's memory persists across host restarts, so a program that pushes
+  images needs to be able to clear it rather than inherit what was left behind.
+- A transfer the device fully accepts can still display nothing, because a
+  bucket is not shown until it is selected. That one survived the rewrite: it
+  is the reason bug 2 was invisible.
 
-The first setup after a clear succeeds and **every setup after it is refused,
-because the probe never completed the transfer in between**. This is a state
-machine, not an allocator: the device permits one outstanding transfer, and a
-setup issued while one is pending is refused -- `0x04` for the same bucket,
-`0x05` for a different one.
+### How this went wrong, since it will happen again
 
-So the address correlation recorded above may be coincidence. What is certain
-is that a sequence which does not complete each transfer before beginning the
-next is refused, and that hotaru's implementation must model that state rather
-than treat setup as an allocation request.
+peripheral-battery-monitor has driven a dashboard onto this exact panel for
+months. Every time the prototype contradicted that, the contradiction was
+evidence about the prototype, and it was read as a discovery about the
+hardware -- three times, each producing a confident paragraph in a spec.
 
-### A dashboard at one frame per second
-
-Built as a prototype and run against the panel: seven-segment coolant
-temperature, CPU and GPU, pump and fan, rendered to a GIF and pushed every
-second.
-
-**30 updates, 1 landed, 29 refused.** Clearing the panel's memory first changed
-nothing. Whatever the correct sequence is, this implementation does not have
-it, and the failure is not the memory pressure the earlier experiments
-suggested.
-
-That is the state of knowledge, and the spec records it rather than an
-implementation plan built on top of it. A dashboard needs the transfer state
-machine understood, and the fastest way to that is a capture of the vendor
-software driving the same panel -- the same answer as the streaming path below,
-and probably the same investigation.
+The rule earned in spec 010 was "no change to the write path is accepted on
+hotaru's own telemetry: somebody looks at the machine". This adds the other
+half: **when a working implementation disagrees with a new one, the new one is
+wrong until proven otherwise.** Reproducing the old behaviour comes before
+characterising the hardware.
 
 ### The path that would be right, and is not ours yet
 
@@ -192,18 +174,25 @@ does not.
 concerned, the bucket must also be selected, and the result says which bucket
 is being displayed rather than that a transfer completed.
 
-**R6. The transfer state machine is modelled, not guessed.** One transfer is
-outstanding at a time and each is completed or explicitly abandoned before the
-next begins. A refused setup is reported as a refusal with its code, never
-retried blindly, and never reported as a successful update. Until the sequence
-is understood well enough to refresh reliably, hotaru offers still images and
-animations -- which work -- and not a live dashboard.
+**R6. Replies are matched to their commands.** A reply carries the command's
+prefix with the first byte incremented, and the cooler streams unsolicited
+status reports besides, so reading the next report is reading noise. Every
+exchange matches, and a read that finds no matching reply is an error rather
+than a value.
 
-**R7. Degradation is per capability.** No cooler, no telemetry and no screen.
+**R7. A declared transfer is delivered in full.** The payload is padded to the
+packet count the device was given.
+
+**R8. Buckets are not reclaimed while the panel is showing one.** Releasing the
+previous bucket stops the screen updating while every write still reports
+success. Memory is cleared wholesale when it needs clearing, not incrementally
+underneath a live display.
+
+**R9. Degradation is per capability.** No cooler, no telemetry and no screen.
 No `nvidia-smi`, no GPU temperature and everything else unaffected. A cooler
 with no screen has no screen; the panel's size comes from the device.
 
-**R8. The screen can always be given back.** `0x38 0x01 0x02 0x00` returns it
+**R10. The screen can always be given back.** `0x38 0x01 0x02 0x00` returns it
 to the firmware readout, and that is the recovery whenever hotaru cannot put
 something sensible on it -- including on shutdown, so a machine that stops
 running hotaru does not keep a stale dashboard.
@@ -223,18 +212,19 @@ running hotaru does not keep a stale dashboard.
 - [ ] AC7. Brightness and orientation are settable.
 - [ ] AC8. The screen returns to the firmware readout on request and on
       service shutdown.
-- [ ] AC9. A refused setup is surfaced with its reply code and does not count
-      as an update.
-- [ ] AC10. Only one transfer is outstanding at a time, enforced by the type
-      rather than by convention, and a test drives a refused setup through the
-      fake.
-- [ ] AC11. CPU, board and PSU temperatures are read from hwmon by label
+- [ ] AC9. Every command's reply is matched by prefix, and a test feeds an
+      interleaved status report through the fake to prove a mismatched reply is
+      never read as a result.
+- [ ] AC10. The bytes delivered equal the packet count declared, with a test.
+- [ ] AC11. A dashboard pushed once a second lands every update, verified on
+      the machine with a value that changes on every tick.
+- [ ] AC12. CPU, board and PSU temperatures are read from hwmon by label
       rather than by hwmon index, which is not stable across boots.
-- [ ] AC12. Every capability degrades alone: unplugging the cooler leaves
+- [ ] AC13. Every capability degrades alone: unplugging the cooler leaves
       lighting, telemetry and the API working.
-- [ ] AC13. The fake cooler used in tests models a refused bucket setup, so
-      the retry path is exercised without hardware.
-- [ ] AC14. Verified on the development machine with somebody watching the
+- [ ] AC14. The fake cooler models the device's unsolicited status reports, so
+      reply matching is exercised without hardware.
+- [ ] AC15. Verified on the development machine with somebody watching the
       screen: status, a still image, an animation, brightness, orientation,
       and the return to the firmware readout.
 
