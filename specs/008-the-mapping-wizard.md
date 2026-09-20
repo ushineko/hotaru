@@ -90,6 +90,13 @@ no rules file, which is the case it exists for.
       lit" and "cannot tell".
 - [x] AC17 What the wizard lights is written as a preview and not remembered,
       so restoring puts back what the machine wanted rather than the questions.
+- [x] AC19 One thing is lit at a time, with every other device dark, so no
+      question can be answered about something else in the case.
+- [x] AC20 Nothing the wizard says uses a word from this program's vocabulary,
+      asserted by a test over everything it says.
+- [x] AC21 Ways of lighting a device are probed in the order a real write would
+      try them, so a confirmed one is the one that will be used.
+- [x] AC22 What is written is in use before the wizard restores the lights.
 - [x] AC18 Ctrl-C ends the wizard on the first press, restores the lights, and
       says one line.
 - [ ] AC14 A resizable zone with no length set is asked about before it is
@@ -202,6 +209,30 @@ somebody walked away. They are previews: written, and not remembered.
 a question and printed two lines about a URL nobody typed, because the cleanup
 used the context that had just been cancelled and the prompt was blocked on
 stdin. It now ends on the first press, puts the lights back, and says one line.
+
+**Light one thing at a time, with everything else dark.** Lighting a device's
+parts in four colours at once and asking which was which saved rounds and cost
+sense: two parts of a board had nothing attached, so somebody was asked to name
+"the red one" while the only thing they could see was blue -- and "the green
+one" could have been a stick of RAM, because the rest of the case was lit too.
+One thing lit, nothing else, and the question is what came on.
+
+**No jargon, at all.** "Zone", "LED", the name of a lighting mode: this
+program's vocabulary, which asking somebody to learn before they can answer is
+the opposite of what a wizard is for. A test fails if any of those words appear
+in anything it says.
+
+**Probe in the order a write will use.** Asking about a device's ways of
+lighting in the order the device lists them let somebody confirm one that an
+ordinary `light set` never chooses -- so the wizard blessed it, wrote no
+correction, and setting a colour turned their strips off afterwards anyway. The
+question has to be about what will actually be used.
+
+**Put what was written to work before finishing.** The service reads its rules
+when it starts, so a file the wizard writes changes nothing until it is told.
+Leaving that as an instruction meant the last act of a successful run was
+putting the lights back with the rules from before it ran, undoing the
+correction it had just established. It reloads, and says the rules are in use.
 
 ## Risks & Assumptions
 
