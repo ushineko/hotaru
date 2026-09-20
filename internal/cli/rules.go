@@ -56,7 +56,7 @@ func yamlFor(cfg *config.Config) string {
 			// took somebody standing in front of their machine to establish
 			// reads like an arbitrary preference, and the next person deletes
 			// it.
-			out.WriteString("    # the first of these is the mode this device was seen to light in.\n")
+			out.WriteString("    # how this device is lit, in order of preference.\n")
 			fmt.Fprintf(&out, "    solid_modes: [%s]\n", strings.Join(rule.SolidModes, ", "))
 		}
 		if rule.NeverBlank {
@@ -155,6 +155,14 @@ func merge(existing *config.Config, segmentsFound []namedSegment, learned map[st
 		}
 		if note.brightness != nil {
 			rule.Brightness = note.brightness
+		}
+		if note.plainAgain {
+			rule.SolidModes = nil
+		}
+		if note.undimmable {
+			// Including one this wizard wrote itself, before it knew that a
+			// brightness belongs to a mode rather than to a device.
+			rule.Brightness = nil
 		}
 		rule.Segments = map[string]config.Segment{}
 		for _, segment := range segments {

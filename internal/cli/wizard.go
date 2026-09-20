@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -159,13 +160,46 @@ func Map(ctx context.Context, client *api.Client, asker Asker, only ...string) e
 		}
 		found = append(found, segments...)
 
-		// Brightness is offered only where the device has one, which is rare
-		// enough that most runs are never asked.
-		level, err := dimmer(ctx, client, asker, device, working.mode)
+		/*
+			A device already set to stay dark until touched is asked about.
+
+			Otherwise the choice can never be revisited: it is only offered
+			when a device fails to go dark, and a device configured this way
+			no longer fails. Spec 008's reconfiguration pattern has to reach
+			this answer too.
+		*/
+		if was := configuredDark(existing, device, names(list)); was != "" {
+			keep, err := asker.Confirm(fmt.Sprintf(
+				"  The %s is set to stay dark until you touch it. Keep that?", knownName(device)))
+			if err != nil {
+				return err
+			}
+			switch {
+			case keep:
+				note.solidModes = withFallbacks(device, was, note.solidModes)
+			default:
+				alt, chosen, err := chooseDark(ctx, client, asker, device, working.mode, true)
+				switch {
+				case err != nil:
+					return err
+				case alt != "":
+					note.solidModes = withFallbacks(device, alt, note.solidModes)
+				case chosen:
+					note.plainAgain = true // lit all the time, as it was before
+				default:
+					note.solidModes = withFallbacks(device, was, note.solidModes)
+				}
+			}
+		}
+
+		// Brightness is offered only where the mode that will be used takes
+		// one, which is rare enough that most runs are never asked.
+		level, dimmable, err := dimmer(ctx, client, asker, device, working.mode)
 		if err != nil {
 			return err
 		}
 		note.brightness = level
+		note.undimmable = !dimmable
 		learned[device.Name] = note
 	}
 
@@ -1018,6 +1052,13 @@ type notes struct {
 	solidModes []string
 	neverBlank bool
 	brightness *int
+	// undimmable is set when the mode this device is driven in takes no
+	// brightness. A rule from an earlier run may carry one -- this wizard
+	// wrote one itself before it knew better -- and a setting that cannot
+	// apply is worse in a file than absent.
+	undimmable bool
+	// plainAgain undoes a stay-dark mode chosen on an earlier run.
+	plainAgain bool
 }
 
 // dimLevel is what "turned down" means when the wizard offers it. A number
@@ -1034,11 +1075,171 @@ means by a keyboard that is off. The Python found the same thing and named
 `solid splash` outright; matching on what the modes are called finds it on
 hardware nobody has written down.
 */
-func darkish(device api.Device) string {
+/*
+likelyDark are words that name a mode which lights up under use.
+
+A hint for ordering, never a filter. These are the words this desk's Keychron
+happens to use, and peripheral-battery-monitor settled on Solid Splash after
+living with it: it ripples outward from each keypress rather than lighting only
+the key struck, which reads as the board answering rather than blinking.
+
+A SteelSeries Apex Pro names its effects differently, and so does everything
+else. Matching on these words alone would offer nothing at all on hardware
+nobody here has seen -- which is the over-fitting this project is supposed to
+avoid.
+*/
+var likelyDark = []string{"splash", "reactive", "ripple", "typing", "press", "react", "key"}
+
+/*
+darkishModes is every way a device can be lit, likeliest-first.
+
+Not a filtered list. hotaru cannot know which of a keyboard's twenty effects
+leaves most of it dark: the names are the vendor's, the behaviour is in the
+firmware, and the only instrument that can tell is somebody looking at the
+board. So everything is offered, ordered so the good guesses come first, and
+the person decides by watching.
+*/
+func darkishModes(device api.Device) []string {
+	var out []string
+	add := func(mode string) {
+		if !slices.Contains(out, mode) && !strings.EqualFold(mode, "off") {
+			out = append(out, mode)
+		}
+	}
+	for _, want := range likelyDark {
+		for _, mode := range device.Modes {
+			if strings.Contains(strings.ToLower(mode), want) {
+				add(mode)
+			}
+		}
+	}
+	// Then the rest, in the order the device lists them, so a machine whose
+	// vocabulary nobody anticipated still has every option on the table.
 	for _, mode := range device.Modes {
-		lower := strings.ToLower(mode)
-		if strings.Contains(lower, "splash") || strings.Contains(lower, "reactive") {
-			return mode
+		add(mode)
+	}
+	return out
+}
+
+/*
+chooseDark shows the ways a device can be lit, and lets somebody browse them.
+
+A menu rather than a march. Offered one at a time with "Use this one?", five
+times over, somebody decides about each without having seen the rest, cannot go
+back to the one they liked, and is not even told which one they are looking at.
+A list they can pick from, repeatedly, is how a person chooses between things
+that look different on their desk.
+
+The names are the vendor's own. "Solid Reactive Multinexus" means nothing to
+anybody, but it is what OpenRGB calls it and it is the only handle that exists
+for "the one with the ripple" once the light has moved on.
+
+An empty mode with chosen set means the plain steady light: how somebody stops
+using one of these after an earlier run set one.
+*/
+func chooseDark(ctx context.Context, client *api.Client, asker Asker, device api.Device,
+	steady string, revisiting bool,
+) (string, bool, error) {
+	options := darkishModes(device)
+	if len(options) == 0 {
+		return "", false, nil
+	}
+	plain := len(options) + 1
+
+	if revisiting {
+		asker.Say("  Here is everything it can do, likeliest first.")
+	} else {
+		asker.Say("  It can be lit in these ways. The first few usually stay dark")
+		asker.Say("  until you touch it, but only looking at it will tell.")
+	}
+	for i, mode := range options {
+		asker.Say("    %d  %s", i+1, mode)
+	}
+	asker.Say("    %d  lit all the time, no reacting", plain)
+	asker.Say("  Type on it while one is showing to see what it does.")
+
+	for {
+		answer, err := asker.Ask(fmt.Sprintf("  Show which? [1-%d, or return to leave it as it is]", plain))
+		if err != nil {
+			return "", false, err
+		}
+		if strings.TrimSpace(answer) == "" {
+			asker.Say("  Leaving it as it was, then.")
+			return "", false, nil
+		}
+		pick, err := strconv.Atoi(strings.TrimSpace(answer))
+		if err != nil || pick < 1 || pick > plain {
+			asker.Say("  Pick a number from the list, or press return to leave it alone.")
+			continue
+		}
+
+		mode := steady
+		if pick <= len(options) {
+			mode = options[pick-1]
+		}
+		if err := light(ctx, client, asker, device.Name, mode, nil); err != nil {
+			return "", false, err
+		}
+		use, err := asker.Confirm("  Use this one?")
+		if err != nil {
+			return "", false, err
+		}
+		if !use {
+			continue // back to the list; changing your mind is the point
+		}
+		if pick == plain {
+			return "", true, nil
+		}
+		return mode, true, nil
+	}
+}
+
+/*
+withFallbacks puts a chosen mode first and keeps somewhere to go behind it.
+
+A single mode leaves nothing to fall back on if firmware changes under it, and
+this list is what hotaru tries in order -- the Python's is
+("solid splash", "direct", "solid color") for the same reason.
+*/
+func withFallbacks(device api.Device, chosen string, had []string) []string {
+	if chosen == "" {
+		return had
+	}
+	order := []string{chosen}
+	for _, fallback := range append(without(had, chosen), "direct", "static") {
+		known := slices.ContainsFunc(device.Modes, func(have string) bool {
+			return strings.EqualFold(have, fallback)
+		})
+		already := slices.ContainsFunc(order, func(have string) bool {
+			return strings.EqualFold(have, fallback)
+		})
+		if known && !already {
+			order = append(order, fallback)
+		}
+	}
+	return order
+}
+
+/*
+configuredDark is the stay-dark mode a rules file already names for a device.
+
+Matched against what the device advertises: a file naming a mode this hardware
+does not have belongs to somebody else's machine, and asking about it would be
+asking about nothing.
+*/
+func configuredDark(existing *config.Config, device api.Device, present []string) string {
+	if existing == nil {
+		return ""
+	}
+	match := matchFor(device.Name, present)
+	for _, rule := range existing.Devices {
+		if !strings.EqualFold(rule.Match, match) {
+			continue
+		}
+		for _, mode := range rule.SolidModes {
+			if slices.Contains(darkishModes(device), mode) {
+				return mode
+			}
 		}
 	}
 	return ""
@@ -1098,18 +1299,12 @@ func blanking(ctx context.Context, client *api.Client, asker Asker,
 		note.neverBlank = true
 		asker.Say("  Noted: it is left alone instead of being turned off.")
 
-		if alt := darkish(device); alt != "" {
-			if err := light(ctx, client, asker, device.Name, alt, nil); err != nil {
-				return err
-			}
-			asker.Say("  It can do this instead, which lights up as you use it.")
-			prefer, err := asker.Confirm("  Use that when the lights are off?")
-			if err != nil {
-				return err
-			}
-			if prefer {
-				note.solidModes = append([]string{alt}, without(note.solidModes, alt)...)
-			}
+		alt, chosen, err := chooseDark(ctx, client, asker, device, device.ActiveMode, false)
+		if err != nil {
+			return err
+		}
+		if chosen && alt != "" {
+			note.solidModes = withFallbacks(device, alt, note.solidModes)
 		}
 		learned[device.Name] = note
 	}
@@ -1118,30 +1313,30 @@ func blanking(ctx context.Context, client *api.Client, asker Asker,
 
 // dimmer offers to turn a device down, for devices that have a brightness at
 // all. Demonstrated, and never asked as a number.
-func dimmer(ctx context.Context, client *api.Client, asker Asker, device api.Device, mode string) (*int, error) {
+func dimmer(ctx context.Context, client *api.Client, asker Asker, device api.Device, mode string) (*int, bool, error) {
 	// Only where the mode hotaru will actually write in takes one. A device
 	// with a dimmable animation and an undimmable Direct cannot be dimmed by
 	// anything hotaru does, and offering it is a demonstration that
 	// demonstrates nothing.
 	if !slices.Contains(device.Dimmable, mode) {
-		return nil, nil
+		return nil, false, nil
 	}
 	level := dimLevel
 	if _, err := client.Apply(ctx, api.ApplyRequest{
 		Colour: probeColour, Devices: []string{device.Name}, Mode: mode,
 		Preview: true, Brightness: &level,
 	}); err != nil {
-		return nil, quiet(err)
+		return nil, true, quiet(err)
 	}
 	settle(ctx, asker)
 	quieter, err := asker.Confirm(fmt.Sprintf("  %s can be turned down. Keep it dimmer?", knownName(device)))
 	if err != nil {
-		return nil, err
+		return nil, true, err
 	}
 	if !quieter {
-		return nil, nil
+		return nil, true, nil
 	}
-	return &level, nil
+	return &level, true, nil
 }
 
 // knownName is the shortest thing a person would call this device.

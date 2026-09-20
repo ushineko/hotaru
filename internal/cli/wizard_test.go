@@ -811,9 +811,9 @@ func TestADeviceThatWillNotGoDarkIsRecorded(t *testing.T) {
 		"y",        // lit red?
 		"keyboard", // what is lit
 		"y",        // is that right?
-		"y",        // anything still lit?
+		"y",        // anything still glowing?
 		"y",        // the keyboard is
-		"n",        // do not use the reactive mode
+		"",         // leave the way it is lit alone
 		"y",        // write it
 	}}
 	require.NoError(t, cli.Map(t.Context(), client, person))
@@ -845,7 +845,13 @@ func TestTheAlternativeToBlankingIsOffered(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", home)
 
-	person := &scripted{answers: []string{"y", "keyboard", "y", "y", "y", "y", "y"}}
+	person := &scripted{answers: []string{
+		"y", "keyboard",
+		"y",      // is that right?
+		"y", "y", // something still glowing; it is the keyboard
+		"1", "y", // the first on the menu, and keep it
+		"y", // write it
+	}}
 	require.NoError(t, cli.Map(t.Context(), client, person))
 
 	rules, err := os.ReadFile(filepath.Join(home, "hotaru", "hotaru.yml"))
@@ -934,4 +940,190 @@ func TestDimmingIsOfferedOnlyForTheModeThatWillBeUsed(t *testing.T) {
 	require.NoError(t, cli.Map(t.Context(), client, person))
 	require.NotContains(t, person.questions(), "turned down",
 		"a device was offered a dimming that would do nothing")
+}
+
+func TestAChoiceOfDarkModesIsOffered(t *testing.T) {
+	/*
+		A keyboard has several ways to stay dark until touched, and which one
+		somebody wants is taste. The wizard used to pick the first it matched
+		-- "Solid Reactive Simple", because it happened to come first in the
+		device's list -- and wrote it down as though it had been chosen.
+	*/
+	device := keyboardThatWillNotBlank()
+	device.Modes = []devices.Mode{
+		{Name: "Direct", PerLED: true},
+		{Name: "Solid Reactive Simple"},
+		{Name: "Solid Splash"},
+	}
+	client := api.NewClient(serving(t, nil, openrgb.NewFake(device)))
+	home := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", home)
+
+	person := &scripted{answers: []string{
+		"y", "keyboard",
+		"y",      // is that right?
+		"y", "y", // something still glowing; it is the keyboard
+		"2", "y", // the second on the menu, and keep it
+		"y", // write it
+	}}
+	require.NoError(t, cli.Map(t.Context(), client, person))
+
+	rules, err := os.ReadFile(filepath.Join(home, "hotaru", "hotaru.yml"))
+	require.NoError(t, err)
+	require.Contains(t, string(rules), "Solid Reactive Simple",
+		"the second offer was accepted and the first was written instead")
+	require.Contains(t, string(rules), "direct",
+		"a single mode leaves nowhere to go if it stops working")
+}
+
+func TestABrightnessThatCannotApplyIsRemovedOnARerun(t *testing.T) {
+	/*
+		An earlier run of this very wizard wrote `brightness: 40` for a
+		keyboard whose Direct mode takes no brightness. A setting that cannot
+		apply is worse in a file than absent: somebody reads it and believes
+		it.
+	*/
+	device := keyboardThatWillNotBlank()
+	device.Modes = []devices.Mode{{Name: "Direct", PerLED: true}}
+
+	home := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", home)
+	require.NoError(t, os.MkdirAll(filepath.Join(home, "hotaru"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(home, "hotaru", "hotaru.yml"), []byte(
+		"devices:\n  - match: \"keychron\"\n    brightness: 40\n    segments:\n      keyboard: {zone: \"Keyboard\"}\n"), 0o600))
+
+	client := api.NewClient(serving(t, nil, openrgb.NewFake(device)))
+	person := &scripted{answers: []string{"y", "keyboard", "y", "n", "y"}}
+	require.NoError(t, cli.Map(t.Context(), client, person))
+
+	rules, err := os.ReadFile(filepath.Join(home, "hotaru", "hotaru.yml"))
+	require.NoError(t, err)
+	require.NotContains(t, string(rules), "brightness",
+		"a brightness this device cannot use survived a run that knew better")
+}
+
+func TestAPreviousDarkModeChoiceCanBeRevisited(t *testing.T) {
+	/*
+		The offer only appeared when a device failed to go dark -- and a device
+		already set to stay dark until touched no longer fails, so the choice
+		could be made once and never changed. Somebody re-running the wizard
+		to change it was told nothing and asked nothing.
+
+		Spec 008's reconfiguration pattern has to reach this answer too.
+	*/
+	device := keyboardThatWillNotBlank()
+	device.Modes = []devices.Mode{
+		{Name: "Direct", PerLED: true},
+		{Name: "Solid Reactive Simple"},
+		{Name: "Solid Splash"},
+	}
+	home := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", home)
+	require.NoError(t, os.MkdirAll(filepath.Join(home, "hotaru"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(home, "hotaru", "hotaru.yml"), []byte(
+		"devices:\n  - match: \"keychron\"\n    solid_modes: [Solid Reactive Simple]\n"+
+			"    never_blank: true\n    segments:\n      keyboard: {zone: \"Keyboard\"}\n"), 0o600))
+
+	client := api.NewClient(serving(t, nil, openrgb.NewFake(device)))
+	person := &scripted{answers: []string{
+		"y", "keyboard",
+		"n",      // no, do not keep the mode it is set to
+		"1", "y", // the first on the menu is Splash, which is preferred
+		"y", // is that right?
+		"n", // nothing still glowing
+		"y", // write it
+	}}
+	require.NoError(t, cli.Map(t.Context(), client, person))
+
+	require.Contains(t, person.questions(), "Keep that?",
+		"a run that was reconfiguring was never asked about the existing choice")
+
+	rules, err := os.ReadFile(filepath.Join(home, "hotaru", "hotaru.yml"))
+	require.NoError(t, err)
+	require.Contains(t, string(rules), "Solid Splash", "the new choice was not written")
+}
+
+func TestKeepingAPreviousDarkModeLeavesItAlone(t *testing.T) {
+	// The other half: answering yes must not quietly rewrite the choice.
+	device := keyboardThatWillNotBlank()
+	device.Modes = []devices.Mode{
+		{Name: "Direct", PerLED: true},
+		{Name: "Solid Splash"},
+	}
+	home := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", home)
+	require.NoError(t, os.MkdirAll(filepath.Join(home, "hotaru"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(home, "hotaru", "hotaru.yml"), []byte(
+		"devices:\n  - match: \"keychron\"\n    solid_modes: [Solid Splash]\n"+
+			"    segments:\n      keyboard: {zone: \"Keyboard\"}\n"), 0o600))
+
+	client := api.NewClient(serving(t, nil, openrgb.NewFake(device)))
+	person := &scripted{answers: []string{"y", "keyboard", "y", "y", "n", "y"}}
+	require.NoError(t, cli.Map(t.Context(), client, person))
+
+	rules, err := os.ReadFile(filepath.Join(home, "hotaru", "hotaru.yml"))
+	require.NoError(t, err)
+	require.Contains(t, string(rules), "Solid Splash")
+}
+
+func TestAKeyboardWithUnfamiliarModeNamesStillGetsAChoice(t *testing.T) {
+	/*
+		The candidate list was matched on "splash" and "reactive", which is
+		this desk's Keychron's vocabulary. A SteelSeries Apex Pro names its
+		effects differently, and would have been offered nothing at all --
+		on a keyboard that certainly has something.
+
+		hotaru cannot know which effect leaves a board mostly dark. It offers
+		everything, likeliest first, and somebody watching decides.
+	*/
+	device := devices.Device{
+		Name:     "SteelSeries Apex Pro",
+		LEDCount: 2,
+		Modes: []devices.Mode{
+			{Name: "Direct", PerLED: true},
+			{Name: "ColorShift"},
+			{Name: "Ripple"},
+			{Name: "Breathing"},
+		},
+		Zones:      []devices.Zone{{Name: "Keyboard", Shape: devices.ShapeGrid, First: 0, Count: 2}},
+		ActiveMode: "Direct",
+	}
+	client := api.NewClient(serving(t, nil, openrgb.NewFake(device)))
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	person := &scripted{answers: []string{
+		"y", "keyboard",
+		"y",      // is that right?
+		"y", "y", // something still glowing; it is the keyboard
+		"", // look at the list, then leave it alone
+		"n",
+	}}
+	require.NoError(t, cli.Map(t.Context(), client, person))
+
+	shown := strings.Join(person.said, "\n")
+	require.Contains(t, shown, "Ripple", "a likely mode was not offered")
+	require.Contains(t, shown, "ColorShift",
+		"a mode nobody anticipated was hidden, on hardware nobody here has seen")
+	require.Contains(t, shown, "Breathing")
+}
+
+func TestTheModeOfferIsNeverEmptyWhereTheDeviceHasModes(t *testing.T) {
+	// The failure this replaces: an empty candidate list told somebody their
+	// device could do nothing about it, which was never true.
+	device := devices.Device{
+		Name:     "Nameless Board",
+		LEDCount: 1,
+		Modes: []devices.Mode{
+			{Name: "Direct", PerLED: true},
+			{Name: "Mode 2"},
+		},
+		Zones:      []devices.Zone{{Name: "Keys", Shape: devices.ShapeSingle, First: 0, Count: 1}},
+		ActiveMode: "Direct",
+	}
+	client := api.NewClient(serving(t, nil, openrgb.NewFake(device)))
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	person := &scripted{answers: []string{"y", "light", "y", "y", "y", "", "n"}}
+	require.NoError(t, cli.Map(t.Context(), client, person))
+	require.Contains(t, strings.Join(person.said, "\n"), "Mode 2")
 }

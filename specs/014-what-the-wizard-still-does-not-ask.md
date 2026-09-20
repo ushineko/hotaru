@@ -94,6 +94,45 @@ That is a wizard breaking its own rule from spec 008 -- never ask what cannot
 be acted on -- and it did so because the capability was read at the wrong
 granularity.
 
+### Showing beats guessing, and beats naming
+
+Three attempts at the same question, each corrected by somebody running it.
+
+**It picked a mode and described it.** "It can do this instead, which lights up
+as you use it" -- one mode, chosen by hotaru, from a name match. It picked
+`Solid Reactive Simple` because that came first in the device's list, where
+peripheral-battery-monitor had deliberately chosen `Solid Splash`.
+
+**It offered them one at a time.** Five rounds of "Use this one?", which asks
+somebody to decide about each without having seen the rest, gives no way back
+to the one they liked, and does not even say which one is showing. *"Use
+**what** one? I'm not telepathic."*
+
+**It only matched this desk's vocabulary.** Candidates were modes whose names
+contained "splash" or "reactive" -- Keychron's words. A SteelSeries Apex Pro
+would have been offered nothing at all, on a keyboard that certainly has
+something. That is the over-fitting this project set out to avoid, in the one
+place where the machine is least likely to be the author's.
+
+So: a numbered menu of **every** mode the device has, ordered likeliest-first
+by those same words, with "lit all the time" as the last entry and a way to
+keep browsing until something is right. hotaru cannot know which effect leaves
+a board mostly dark -- the names are the vendor's, the behaviour is in the
+firmware, and the only instrument that can tell is a person watching. Ordering
+is a hint; filtering would be a guess presented as a fact.
+
+### A choice you cannot revisit is not a choice
+
+The offer appeared only when a device failed to go dark. A device already set
+to stay dark no longer fails, so the mode could be chosen once and never
+changed -- and somebody re-running the wizard to change it was asked nothing.
+Spec 008's reconfiguration pattern has to reach every answer, including the
+ones that make themselves invisible.
+
+The same applies in the other direction: every option kept the device dark
+until touched, so there was no way back to a plainly lit one. "Lit all the
+time" is on the menu for that reason.
+
 ## Requirements
 
 **R1. A pause between lighting something and asking about it.** Applied
@@ -106,12 +145,15 @@ device with lighting the wizard has named, it turns the device off, asks
 whether it went dark, and writes `never_blank: true` when it did not. Asked in
 the room's terms, with no mention of blanking, modes or frames.
 
-**R3. A device that will not go dark is offered the alternative.** Where such a
-device advertises a mode that renders mostly dark -- the reactive effects a
-keyboard has -- the wizard offers it, demonstrates it, and records it in
-`solid_modes` if it is preferred. Where no such mode exists, hotaru says the
-device cannot be turned off and moves on; that is a fact about the hardware and
-not a failure of the run.
+**R3. A device that will not go dark is shown every way it can be lit.** A
+numbered menu, ordered likeliest-first, with "lit all the time" last, browsable
+until something is right. Never a filtered list: hotaru cannot tell which
+effect leaves a board mostly dark, and a device whose vocabulary nobody
+anticipated must not be offered nothing.
+
+**R3a. Every choice can be revisited.** A device already configured this way is
+asked about explicitly, because it no longer fails the test that offered the
+choice in the first place.
 
 **R4. Brightness is offered only where the mode hotaru will use takes one,
 and by demonstration.** Not where the device has some dimmable mode: a device
