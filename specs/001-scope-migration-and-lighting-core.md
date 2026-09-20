@@ -403,6 +403,46 @@ what the board declares, not what is attached**, so an assignment to a header
 with nothing plugged into it succeeds and lights nothing, and no API can tell
 the difference.
 
+#### The colours are the question
+
+The wizard does not ask "which LEDs are the rear fan?" — nobody knows. It
+assigns a colour per zone and asks the inverse: **what colour is each thing you
+can see?** The user answers in their own words, naming their own hardware —
+"rear blue, front dual is green" — and the mapping falls out of it, because
+hotaru already knows which zone it made blue.
+
+That shape has three properties worth keeping:
+
+- **The user never learns hotaru's vocabulary.** They say "rear fan"; hotaru
+  hears "Addressable RGB Header 3". The names in the rules file are then the
+  user's own, which is why `maximus/rear` reads like something a person meant.
+- **One round answers many questions.** Four zones in four colours is one look
+  and one sentence, not four rounds of blink-and-confirm.
+- **Wrong answers are cheap.** Nothing has been written; the lights are a
+  preview. A user who mixes up two fans re-runs it, or fixes the name
+  afterwards, and nothing on the machine is worse for it.
+
+Use few colours and unmistakable ones. The rehearsal produced "bottom cyan(?)"
+— a question mark that is entirely fair, because cyan and teal and white-blue
+are the same colour to most people under a tinted case window. Red, green, blue
+and white first; anything else only when there are more zones than that.
+
+#### Finding a boundary nobody can count
+
+When one zone turns out to hold several fans, the split has to land exactly
+between them, and neither side knows where that is. Bisection finds it: light
+the first half one colour and the second half another, and ask **whether any
+single fan is showing two colours at once**.
+
+- No fan is split, and the colours land on whole fans: the boundary is right.
+- One fan shows both colours: the split falls inside it, and the next round
+  moves the line by half the remaining distance.
+
+That question — "is anything showing two colours?" — is the one a person can
+always answer by looking, and it converges in a handful of rounds on a chain of
+any length. Counting LEDs, which is the alternative, is something nobody does
+twice.
+
 It runs at two moments: on first use, and when a device appears that hotaru has
 no mapping for. The second needs hotaru to remember which devices it has seen,
 which is a line in its state file rather than a new mechanism.
