@@ -33,20 +33,15 @@ var candidates = []struct {
 func look(ctx context.Context) Facts {
 	facts := Facts{Lingering: lingering(ctx)}
 
+	var seen []unit
 	for _, candidate := range candidates {
 		state, found := unitState(ctx, candidate.name, candidate.user)
 		if !found {
 			continue
 		}
-		facts.Installed = true
-		facts.Unit = candidate.name
-		facts.User = candidate.user
-		facts.Active = state == "active"
-		if facts.Active {
-			return facts // a running one settles it
-		}
+		seen = append(seen, unit{candidate.name, candidate.user, state == "active"})
 	}
-	return facts
+	return choose(seen, facts.Lingering)
 }
 
 // unitState is a unit's ActiveState, and whether the unit exists at all.
