@@ -1385,6 +1385,9 @@ ownership of the hardware.
       per-device output, and its colours are never averaged or reduced to one.
 - [ ] `hotaru light probe` reports zones and LED counts, and can walk a zone one
       LED at a time so a user can see which light is which before naming it.
+- [ ] A partial assignment composes onto what hotaru last wrote, falling back to
+      what the device reports and then to black — never onto a device's claim
+      when a better answer is remembered.
 - [ ] With no config file at all, every device OpenRGB reports is in scope, and
       a test with an invented device list asserts it.
 - [ ] Solid resolves static-first by default; a rule can invert it to

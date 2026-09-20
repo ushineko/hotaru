@@ -137,6 +137,69 @@ type Health struct {
 	Version  string `json:"version"`
 }
 
+/*
+Finding is what probing learned about one device.
+
+Probing writes: it sets modes to see which ones a device honours, and puts
+everything back afterwards. It is a POST for that reason.
+*/
+type Finding struct {
+	Device    string        `json:"device"`
+	Modes     []ModeFinding `json:"modes,omitempty"`
+	Zones     []Zone        `json:"zones,omitempty"`
+	NoOffMode bool          `json:"no_off_mode,omitempty"`
+	Suggested string        `json:"suggested,omitempty"`
+	Error     string        `json:"error,omitempty"`
+}
+
+// ModeFinding is one mode, and what the device did with it. Tried without Took
+// is the interesting case: accepted, and not honoured.
+type ModeFinding struct {
+	Name   string `json:"name"`
+	PerLED bool   `json:"per_led"`
+	Tried  bool   `json:"tried"`
+	Took   bool   `json:"took"`
+}
+
+// ProbeRequest narrows probing to particular devices.
+type ProbeRequest struct {
+	Devices []string `json:"devices,omitempty"`
+}
+
+// ProbeResponse is the body of POST /v1/lighting/probe.
+type ProbeResponse struct {
+	Findings []Finding `json:"findings"`
+}
+
+/*
+Status is the body of GET /v1/status: what the service is, rather than what it
+can see. Health answers "why is nothing happening"; this answers "what is
+running, and what does it remember".
+*/
+type Status struct {
+	Version    string   `json:"version"`
+	Connected  bool     `json:"connected"`
+	Address    string   `json:"address"`
+	Protocol   uint32   `json:"protocol,omitempty"`
+	RulesFile  string   `json:"rules_file,omitempty"`
+	Remembered []string `json:"remembered,omitempty"`
+}
+
+// RestoreResponse is the body of POST /v1/reconcile.
+type RestoreResponse struct {
+	Results  []Result `json:"results,omitempty"`
+	Applied  int      `json:"applied"`
+	Missing  []string `json:"missing,omitempty"`
+	Complete bool     `json:"complete"`
+}
+
+// ReloadResponse is the body of POST /v1/reload: what was wrong with the rules
+// file, entry by entry.
+type ReloadResponse struct {
+	RulesFile string   `json:"rules_file,omitempty"`
+	Problems  []string `json:"problems,omitempty"`
+}
+
 // Error is the body of anything that went wrong, with the same shape whatever
 // the status code, so a client parses one thing.
 type Error struct {

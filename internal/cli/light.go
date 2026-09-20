@@ -22,14 +22,16 @@ import (
 )
 
 // Commands are the client-side commands, for a root command to add.
-func Commands() []*cobra.Command { return []*cobra.Command{lightCommand()} }
+func Commands() []*cobra.Command {
+	return []*cobra.Command{lightCommand(), statusCommand(), reconcileCommand(), reloadCommand()}
+}
 
 func lightCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "light",
 		Short: "Lighting",
 	}
-	cmd.AddCommand(listCommand(), setCommand(), offCommand(), healthCommand())
+	cmd.AddCommand(listCommand(), setCommand(), offCommand(), healthCommand(), probeCommand())
 	return cmd
 }
 

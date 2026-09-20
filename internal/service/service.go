@@ -34,6 +34,7 @@ type Service struct {
 	cfg      *config.Config
 	client   openrgb.Client
 	addr     string
+	rules    string
 	recorder Recorder
 }
 
@@ -55,6 +56,46 @@ func (s *Service) SetClient(client openrgb.Client) {
 	s.mu.Lock()
 	s.client = client
 	s.mu.Unlock()
+}
+
+// SetRulesPath is where the rules file lives, so the service can re-read it
+// when asked. Empty means there is no file to reload, which is the ordinary
+// case on a machine that has never been configured.
+func (s *Service) SetRulesPath(path string) {
+	s.mu.Lock()
+	s.rules = path
+	s.mu.Unlock()
+}
+
+/*
+Reload re-reads the rules file.
+
+Returns what was wrong with it, entry by entry, rather than refusing: a typo in
+the third rule should cost that rule and nothing else, and the caller decides
+how loudly to say so.
+*/
+func (s *Service) Reload() ([]config.Problem, error) {
+	s.mu.RLock()
+	path := s.rules
+	s.mu.RUnlock()
+	if path == "" {
+		return nil, nil
+	}
+
+	cfg, problems, err := config.Load(path)
+	if err != nil {
+		return nil, err
+	}
+	s.SetConfig(cfg)
+	return problems, nil
+}
+
+// RulesPath is the file Reload reads, for a status that says where settings
+// came from.
+func (s *Service) RulesPath() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.rules
 }
 
 // SetConfig swaps the configuration, for a file that was reloaded.
@@ -220,7 +261,7 @@ func (s *Service) applyOne(ctx context.Context, client openrgb.Client, cfg *conf
 	if off {
 		frame = devices.Solid(device, colour.Black)
 	} else {
-		composed, problems := devices.Compose(device, rule, device.Colours, assignments)
+		composed, problems := devices.Compose(device, rule, s.base(device), assignments)
 		if len(problems) > 0 {
 			// Every assignment for this device failed to resolve; there is
 			// nothing to write, and the reason is the useful part.
@@ -312,6 +353,31 @@ func (s *Service) writeFrame(ctx context.Context, client openrgb.Client,
 
 	result.Skipped = fmt.Sprintf("tried %s; none of them took", strings.Join(modesOf(result.Attempts), ", "))
 	return result
+}
+
+/*
+base is what a partial assignment composes onto: the LEDs nobody mentioned.
+
+What hotaru last wrote is preferred over what the device reports, because a
+device's reported colours are only its LED buffer while it is in a per-LED
+mode. Observed on real hardware: a board in Static reports its *mode* colour,
+and a cooler in Static reports black while visibly lit. Composing "the top fan
+red" onto either would blank everything else and call it a scene.
+
+Falling back to what the device says is still better than assuming black, and
+assuming black is what happens when hotaru has never written to this device and
+the device will not say -- which is honest: nothing here knows what those lights
+are showing.
+*/
+func (s *Service) base(device *devices.Device) []colour.Colour {
+	remembered := s.Desired().Devices[device.Name]
+	if len(remembered.Colours) == device.LEDCount && device.LEDCount > 0 {
+		return remembered.Colours
+	}
+	if len(device.Colours) == device.LEDCount {
+		return device.Colours
+	}
+	return nil
 }
 
 // remember records what a user asked for, so it can be put back.

@@ -14,10 +14,12 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/ushineko/hotaru/internal/api"
 	"github.com/ushineko/hotaru/internal/cli"
+	"github.com/ushineko/hotaru/internal/colour"
 	"github.com/ushineko/hotaru/internal/config"
 	"github.com/ushineko/hotaru/internal/devices"
 	"github.com/ushineko/hotaru/internal/openrgb"
 	"github.com/ushineko/hotaru/internal/service"
+	"github.com/ushineko/hotaru/internal/state"
 )
 
 /*
@@ -31,6 +33,11 @@ command without the test saying so.
 func TestTheClientCommandsCannotReachADevice(t *testing.T) {
 	pkg, err := build.ImportDir(".", 0)
 	require.NoError(t, err)
+
+	// The package's own imports, and those of any in-package test. This file
+	// is an external test package and does import the service, because setting
+	// up a fake one is what a test does -- but nothing a command can call at
+	// run time may reach a device.
 
 	forbidden := []string{
 		"internal/openrgb", // the hardware
@@ -81,13 +88,21 @@ func run(t *testing.T, socket string, args ...string) (string, error) {
 func serving(t *testing.T, cfg *config.Config, server openrgb.Client) string {
 	t.Helper()
 
-	socket := filepath.Join(t.TempDir(), "s")
+	dir := t.TempDir()
+	socket := filepath.Join(dir, "s")
 	listener, err := api.Listen(socket)
 	require.NoError(t, err)
 
+	// A recorder, as the daemon gives it: without one the service drives
+	// hardware and remembers nothing, so there is nothing to restore.
+	desired, err := state.Open(filepath.Join(dir, "state.yml"))
+	require.NoError(t, err)
+	svc := service.New(cfg, server, "127.0.0.1:6742")
+	svc.SetRecorder(desired)
+
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan error, 1)
-	go func() { done <- api.Serve(ctx, listener, service.New(cfg, server, "127.0.0.1:6742")) }()
+	go func() { done <- api.Serve(ctx, listener, svc) }()
 	t.Cleanup(func() {
 		cancel()
 		select {
@@ -202,4 +217,66 @@ func TestTwoColoursWithoutTargetsIsAUsageErrorNotAGuess(t *testing.T) {
 
 	_, err := run(t, socket, "light", "set", "red", "blue")
 	require.ErrorContains(t, err, "one colour for everything")
+}
+
+func TestStatusSaysWhatIsRunningAndWhatItRemembers(t *testing.T) {
+	server := openrgb.NewFake(board())
+	socket := serving(t, nil, server)
+
+	out, err := run(t, socket, "status")
+	require.NoError(t, err)
+	require.Contains(t, out, "OpenRGB")
+	require.Contains(t, out, "remembers nothing yet, so it restores nothing",
+		"the inert state said plainly rather than left as an absence")
+
+	_, err = run(t, socket, "light", "set", "red")
+	require.NoError(t, err)
+
+	out, err = run(t, socket, "status")
+	require.NoError(t, err)
+	require.Contains(t, out, "remembers ASUS ROG MAXIMUS Z790 HERO")
+}
+
+func TestReconcileFromTheCommandLinePutsThingsBack(t *testing.T) {
+	server := openrgb.NewFake(board())
+	socket := serving(t, nil, server)
+
+	out, err := run(t, socket, "reconcile")
+	require.NoError(t, err)
+	require.Contains(t, out, "nothing to put back")
+
+	_, err = run(t, socket, "light", "set", "teal")
+	require.NoError(t, err)
+	require.NoError(t, server.SetFrame(t.Context(), "ASUS ROG MAXIMUS Z790 HERO", devices.Frame{
+		Device: "ASUS ROG MAXIMUS Z790 HERO", Colours: make([]colour.Colour, 4),
+	}))
+
+	out, err = run(t, socket, "reconcile")
+	require.NoError(t, err)
+	require.Contains(t, out, "restored 1 devices")
+
+	showing, _ := server.Showing("ASUS ROG MAXIMUS Z790 HERO")
+	require.Equal(t, colour.MustParse("teal"), showing.Colours[0])
+}
+
+func TestProbeReportsWhatTookAndWhatDidNot(t *testing.T) {
+	server := openrgb.NewFake(board())
+	server.Lies["ASUS ROG MAXIMUS Z790 HERO"] = "Static"
+	socket := serving(t, nil, server)
+
+	out, err := run(t, socket, "light", "probe")
+	require.NoError(t, err)
+	require.Contains(t, out, "Static")
+	require.Contains(t, out, "accepted, and did not take")
+	require.Contains(t, out, "suggested rule:")
+	require.Contains(t, out, "solid_modes: [direct, static]")
+	require.Contains(t, out, "zone Addressable 1", "where segment naming starts")
+}
+
+func TestReloadReportsWhatIsWrongWithTheRulesFile(t *testing.T) {
+	socket := serving(t, nil, openrgb.NewFake(board()))
+
+	out, err := run(t, socket, "reload")
+	require.NoError(t, err)
+	require.Contains(t, out, "no rules file", "and that is a supported way to run")
 }

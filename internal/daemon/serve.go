@@ -71,6 +71,7 @@ func run(cmd *cobra.Command) error {
 
 	address, _ := cmd.Flags().GetString("openrgb")
 	svc := service.New(cfg, nil, address)
+	svc.SetRulesPath(rules)
 
 	// Desired state: what the lights were last asked to show. An absent file
 	// is the normal starting condition, and means there is nothing to restore.
