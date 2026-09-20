@@ -1,7 +1,9 @@
 package service_test
 
 import (
+	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -263,4 +265,80 @@ func TestABrightnessRuleIsAssertedOnEveryWrite(t *testing.T) {
 	_, err = svc.Apply(t.Context(), service.Request{Assignments: solid("ASUS", "red")})
 	require.NoError(t, err)
 	require.Nil(t, plain.Modes[0].Brightness)
+}
+
+func TestAnAssignmentThatNamedNothingIsReportedEvenWhenTheWriteWorked(t *testing.T) {
+	// "Everything blue, except the top fan" with the fan misspelled is a
+	// device that went blue all over and reported success. Found on a machine
+	// whose zone name contained a slash, where the typo was mine.
+	server := openrgb.NewFake(board())
+	svc := service.New(nil, server, "")
+
+	typo, err := devices.ParseTarget("ASUS/Addressable 1 but spelled wrong")
+	require.NoError(t, err)
+
+	blue := colour.MustParse("blue")
+	results, err := svc.Apply(t.Context(), service.Request{
+		Colour:      &blue,
+		Assignments: []devices.Assignment{{Target: typo, Colour: colour.MustParse("red")}},
+	})
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+
+	require.True(t, results[0].Applied, "the rest of the request still applied")
+	require.Len(t, results[0].Problems, 1)
+	require.Contains(t, results[0].Problems[0], "spelled wrong")
+	require.Contains(t, results[0].Problems[0], "Addressable 1", "and what does exist")
+}
+
+// ignores is a device that takes a mode and keeps showing what it liked.
+type ignores struct {
+	*openrgb.Fake
+	device string
+}
+
+func (i ignores) SetFrame(ctx context.Context, device string, frame devices.Frame) error {
+	if strings.EqualFold(device, i.device) {
+		return nil // accepted, and nothing changes
+	}
+	return i.Fake.SetFrame(ctx, device, frame)
+}
+
+func TestADeviceThatTakesTheModeAndIgnoresTheColoursIsNotASuccess(t *testing.T) {
+	/*
+		Found on a machine with four identical sticks of RAM, three of which
+		accept every write and change nothing -- inside OpenRGB, before any
+		hardware is involved. Comparing only the mode calls that a success,
+		which is how someone ends up with a scene reporting six devices lit
+		and showing three.
+	*/
+	server := openrgb.NewFake(board())
+	svc := service.New(nil, ignores{Fake: server, device: "ASUS ROG MAXIMUS Z790 HERO"}, "")
+
+	results, err := svc.Apply(t.Context(), service.Request{Assignments: solid("ASUS", "red")})
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+
+	// Applied, and said out loud that nobody can confirm it. Sticks of DDR5
+	// were seen reporting black while visibly red: the write had landed and
+	// the buffer was stale. Refusing to call that applied marks working
+	// hardware broken, and calling it silently applied hides a real failure --
+	// so it is reported, and a person who can see the machine decides.
+	require.True(t, results[0].Applied)
+	require.Contains(t, results[0].Unconfirmed, "does not report the colours")
+	require.Contains(t, results[0].Unconfirmed, "look at it")
+}
+
+func TestADeviceInAModeThatCannotReportColoursIsNotDoubted(t *testing.T) {
+	// A device in Static reports its mode's colour rather than its buffer, so
+	// holding the difference against it would fail every write to hardware
+	// that works perfectly well.
+	server := openrgb.NewFake(strip()) // Static, and not per-LED
+	svc := service.New(nil, ignores{Fake: server, device: "Generic Strip"}, "")
+
+	results, err := svc.Apply(t.Context(), service.Request{Assignments: solid("Generic", "red")})
+	require.NoError(t, err)
+	require.True(t, results[0].Applied, "a device that cannot answer was treated as failing")
+	require.Empty(t, results[0].Unconfirmed,
+		"a device in a mode that never reports colours was doubted anyway")
 }

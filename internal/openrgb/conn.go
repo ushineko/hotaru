@@ -98,42 +98,116 @@ func (c *Conn) Devices(ctx context.Context) ([]devices.Device, error) {
 }
 
 func (c *Conn) list(ctx context.Context) ([]devices.Device, error) {
+	found, err := c.catalogue(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]devices.Device, 0, len(found))
+	for _, entry := range found {
+		out = append(out, entry.device)
+	}
+	return out, nil
+}
+
+/*
+located is a device and the index it had in the listing it came from.
+
+Indices are meaningful only within one listing -- a rescanned server renumbers
+everything -- so they are produced and used in the same breath and never stored.
+*/
+type located struct {
+	index  uint32
+	device devices.Device
+}
+
+// catalogue is one listing: every controller, duplicates removed, names made
+// distinguishable, each with the index it was found at.
+func (c *Conn) catalogue(ctx context.Context) ([]located, error) {
 	count, err := c.client.RequestControllerCountCtx(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("ask %s how many devices it has: %w", c.address, err)
 	}
 
-	out := make([]devices.Device, 0, count.Count)
+	out := make([]located, 0, count.Count)
 	for i := uint32(0); i < count.Count; i++ {
 		data, err := c.client.RequestControllerDataCtx(ctx, i)
 		if err != nil {
 			return nil, fmt.Errorf("read device %d from %s: %w", i, c.address, err)
 		}
-		out = append(out, convert(data.Controller))
+		out = append(out, located{index: i, device: convert(data.Controller)})
 	}
 	return collapse(out), nil
 }
 
 /*
-collapse keeps the first device of each name.
+collapse removes entries that are the same controller listed twice, and makes
+the rest distinguishable.
 
-A server that has rescanned lists every device twice -- six devices arriving as
-twelve. Addressing the second copy means sending every command to the same
-hardware twice, which shows up as a device that takes two writes to change and
-as nothing else at all.
+A rescanned server lists everything twice, and addressing the second copy sends
+every command to the same hardware twice. The obvious rule -- keep the first of
+each name -- is wrong, and a second machine proved it: four sticks of Corsair
+DDR5 are four controllers with one name between them, at I2C addresses 0x18 to
+0x1B, and collapsing by name hid three of them. A motherboard turned up twice
+the same way, as two controllers with different hidraw nodes.
+
+So identity is the name *and* where it is attached. Two entries at one location
+are one device; two devices at different locations are two, whatever they are
+called.
+
+What is left can still share a name, and a name is how everything above this
+addresses a device, so duplicates are given something to tell them apart:
+a serial where there is one, otherwise the tail of the location -- "0x19" for a
+stick of RAM, "hidraw8" for a board. Both are what the hardware itself says,
+which is better than a number counted here that would move if a device were
+unplugged.
 */
-func collapse(in []devices.Device) []devices.Device {
-	out := make([]devices.Device, 0, len(in))
+func collapse(in []located) []located {
+	out := make([]located, 0, len(in))
 	seen := make(map[string]bool, len(in))
-	for _, device := range in {
-		key := strings.ToLower(device.Name)
-		if device.Name == "" || seen[key] {
+	names := make(map[string]int, len(in))
+
+	for _, entry := range in {
+		if entry.device.Name == "" {
 			continue
 		}
-		seen[key] = true
-		out = append(out, device)
+		identity := strings.ToLower(entry.device.Name + "\x00" + entry.device.Location + "\x00" + entry.device.Serial)
+		if seen[identity] {
+			continue
+		}
+		seen[identity] = true
+		names[strings.ToLower(entry.device.Name)]++
+		out = append(out, entry)
+	}
+
+	for i := range out {
+		if names[strings.ToLower(out[i].device.Name)] > 1 {
+			if tag := distinguish(out[i].device); tag != "" {
+				out[i].device.Name += " (" + tag + ")"
+			}
+		}
 	}
 	return out
+}
+
+/*
+distinguish is the shortest thing that tells two of the same model apart.
+
+The serial when the device has one, and the tail of its location when it does
+not: an I2C address or a hidraw node. Corsair's DDR5 reports no serial and four
+addresses; Gigabyte's board reports two serials and two hidraw nodes.
+*/
+func distinguish(device devices.Device) string {
+	if device.Serial != "" {
+		return device.Serial
+	}
+	location := device.Location
+	if at := strings.LastIndex(location, "address "); at >= 0 {
+		return strings.TrimSpace(location[at+len("address "):])
+	}
+	if slash := strings.LastIndex(location, "/"); slash >= 0 {
+		return strings.TrimSpace(location[slash+1:])
+	}
+	return strings.TrimSpace(location)
 }
 
 /*
@@ -146,29 +220,45 @@ func (c *Conn) Device(ctx context.Context, name string) (devices.Device, error) 
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	_, data, err := c.index(ctx, name)
+	entry, err := c.find(ctx, name)
 	if err != nil {
 		return devices.Device{}, err
 	}
-	return convert(data), nil
+	return entry.device, nil
 }
 
-// index finds a device by name within one listing, and never outside it.
-func (c *Conn) index(ctx context.Context, name string) (uint32, *sdk.ControllerData, error) {
-	count, err := c.client.RequestControllerCountCtx(ctx)
+/*
+find locates a device by the name hotaru knows it by, within one listing.
+
+Through the same catalogue a listing comes from, which matters where a name has
+been made distinguishable: "Corsair Dominator Platinum RGB DDR5 (0x19)" is not
+what the controller calls itself, and looking it up against the raw name finds
+nothing. Doing that was a real bug on a machine with four identical sticks --
+every write to one of them failed, reported as "none of the modes took", which
+sounded like the hardware refusing rather than hotaru looking for a name that
+only it uses.
+*/
+func (c *Conn) find(ctx context.Context, name string) (located, error) {
+	catalogue, err := c.catalogue(ctx)
 	if err != nil {
-		return 0, nil, fmt.Errorf("ask %s how many devices it has: %w", c.address, err)
+		return located{}, err
 	}
-	for i := uint32(0); i < count.Count; i++ {
-		data, err := c.client.RequestControllerDataCtx(ctx, i)
-		if err != nil {
-			return 0, nil, fmt.Errorf("read device %d from %s: %w", i, c.address, err)
-		}
-		if strings.EqualFold(clean(data.Controller.Name), name) {
-			return i, data.Controller, nil
+	for _, entry := range catalogue {
+		if strings.EqualFold(entry.device.Name, name) {
+			return entry, nil
 		}
 	}
-	return 0, nil, fmt.Errorf("no device called %q on %s", name, c.address)
+	return located{}, fmt.Errorf("no device called %q on %s", name, c.address)
+}
+
+// raw is the controller as the server describes it, for a write that needs the
+// mode structures the protocol round-trips.
+func (c *Conn) raw(ctx context.Context, index uint32) (*sdk.ControllerData, error) {
+	data, err := c.client.RequestControllerDataCtx(ctx, index)
+	if err != nil {
+		return nil, fmt.Errorf("read device %d from %s: %w", index, c.address, err)
+	}
+	return data.Controller, nil
 }
 
 /*
@@ -183,7 +273,11 @@ func (c *Conn) SetMode(ctx context.Context, device, mode string, brightness *int
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	idx, data, err := c.index(ctx, device)
+	entry, err := c.find(ctx, device)
+	if err != nil {
+		return err
+	}
+	data, err := c.raw(ctx, entry.index)
 	if err != nil {
 		return err
 	}
@@ -197,7 +291,7 @@ func (c *Conn) SetMode(ctx context.Context, device, mode string, brightness *int
 			wanted.ModeBrightness = scaleBrightness(*brightness, m.ModeBrightnessMin, m.ModeBrightnessMax)
 		}
 		req := &sdk.RGBControllerUpdateModeRequest{ModeIdx: int32(i), Mode: &wanted}
-		if err := c.client.RGBControllerUpdateMode(idx, req); err != nil {
+		if err := c.client.RGBControllerUpdateMode(entry.index, req); err != nil {
 			return fmt.Errorf("set %s to %s: %w", device, mode, err)
 		}
 		return nil
@@ -216,7 +310,11 @@ func (c *Conn) SetFrame(ctx context.Context, device string, frame devices.Frame)
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	idx, data, err := c.index(ctx, device)
+	entry, err := c.find(ctx, device)
+	if err != nil {
+		return err
+	}
+	data, err := c.raw(ctx, entry.index)
 	if err != nil {
 		return err
 	}
@@ -228,7 +326,7 @@ func (c *Conn) SetFrame(ctx context.Context, device string, frame devices.Frame)
 	for i, col := range frame.Colours {
 		payload[i] = sdk.Color{R: col.R, G: col.G, B: col.B}
 	}
-	if err := c.client.RGBControllerUpdateLeds(idx, &sdk.RGBControllerUpdateLedsRequest{LedColor: payload}); err != nil {
+	if err := c.client.RGBControllerUpdateLeds(entry.index, &sdk.RGBControllerUpdateLedsRequest{LedColor: payload}); err != nil {
 		return fmt.Errorf("write %d LEDs to %s: %w", len(payload), device, err)
 	}
 	return nil
@@ -260,6 +358,8 @@ func clean(s string) string {
 func convert(data *sdk.ControllerData) devices.Device {
 	device := devices.Device{
 		Name:     clean(data.Name),
+		Location: clean(data.Location),
+		Serial:   clean(data.Serial),
 		Type:     fmt.Sprintf("%d", data.Type),
 		LEDCount: len(data.Leds),
 	}
