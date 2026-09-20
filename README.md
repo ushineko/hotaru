@@ -212,6 +212,12 @@ MIT. See [LICENSE](LICENSE).
 
 ### Unreleased
 
+- `hotaru light health` names the OpenRGB unit this machine actually uses. A
+  later candidate overwrote an earlier one, so a machine with the user unit
+  installed but stopped was told to `sudo systemctl start openrgb.service` --
+  the wrong unit, the wrong scope, and the only advice hotaru offers when
+  lighting is not working (#30).
+
 - A frame is written one request per zone rather than one for the whole
   device. An NZXT cooler's two channels are independent controllers behind one
   USB endpoint, and a single array spanning both was never delivered together:
