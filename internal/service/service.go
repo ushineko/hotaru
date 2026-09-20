@@ -19,19 +19,22 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/ushineko/hotaru/internal/colour"
 	"github.com/ushineko/hotaru/internal/config"
 	"github.com/ushineko/hotaru/internal/devices"
 	"github.com/ushineko/hotaru/internal/openrgb"
+	"github.com/ushineko/hotaru/internal/state"
 )
 
 // Service performs hotaru's operations against one OpenRGB server.
 type Service struct {
-	mu     sync.RWMutex
-	cfg    *config.Config
-	client openrgb.Client
-	addr   string
+	mu       sync.RWMutex
+	cfg      *config.Config
+	client   openrgb.Client
+	addr     string
+	recorder Recorder
 }
 
 // New is a service over a client. A nil client is a server that is not there,
@@ -229,6 +232,30 @@ func (s *Service) applyOne(ctx context.Context, client openrgb.Client, cfg *conf
 		frame = composed
 	}
 
+	result = s.writeFrame(ctx, client, device, frame, off)
+	if result.Applied && !off {
+		s.remember(device.Name, result.Mode, frame)
+	}
+	if result.Applied && off {
+		// A device deliberately turned off has nothing to restore: putting
+		// black back at boot is not what anybody meant by "off".
+		s.forget(device.Name)
+	}
+	return result
+}
+
+/*
+writeFrame is the write-and-confirm half, shared by applying and reconciling.
+
+Reconciling must not be a second implementation of this: the fall-through, the
+read-back and the reasons a device is skipped are the same facts whoever asked.
+*/
+func (s *Service) writeFrame(ctx context.Context, client openrgb.Client,
+	device *devices.Device, frame devices.Frame, off bool,
+) Result {
+	result := Result{Device: device.Name}
+	rule := devices.RuleFor(s.config(), device.Name)
+
 	want := devices.Want{Off: off, PerLED: frame.PerLED()}
 	candidates := device.SolidCandidates(rule, want)
 	if off {
@@ -285,6 +312,36 @@ func (s *Service) applyOne(ctx context.Context, client openrgb.Client, cfg *conf
 
 	result.Skipped = fmt.Sprintf("tried %s; none of them took", strings.Join(modesOf(result.Attempts), ", "))
 	return result
+}
+
+// remember records what a user asked for, so it can be put back.
+func (s *Service) remember(name, mode string, frame devices.Frame) {
+	s.mu.RLock()
+	recorder := s.recorder
+	s.mu.RUnlock()
+	if recorder == nil {
+		return
+	}
+	_ = recorder.Record(name, state.Device{
+		Mode:    mode,
+		Colours: append([]colour.Colour(nil), frame.Colours...),
+		Applied: time.Now(),
+	})
+}
+
+func (s *Service) forget(name string) {
+	s.mu.RLock()
+	recorder := s.recorder
+	s.mu.RUnlock()
+	if recorder != nil {
+		_ = recorder.Forget(name)
+	}
+}
+
+func (s *Service) config() *config.Config {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.cfg
 }
 
 func offCandidates(d *devices.Device) []string {
