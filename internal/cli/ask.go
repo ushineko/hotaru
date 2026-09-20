@@ -2,6 +2,8 @@ package cli
 
 import (
 	"bufio"
+	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
@@ -30,15 +32,24 @@ type Asker interface {
 	Choose(question string, options []string) (string, error)
 }
 
-// terminal is an Asker over a real pair of streams.
+/*
+terminal is an Asker over a real pair of streams.
+
+It holds a context because a question is a place a program waits, and a person
+who has changed their mind presses Ctrl-C while it is waiting. Reading stdin on
+its own goroutine is what lets the answer and the interrupt race, so the first
+Ctrl-C ends it rather than the second.
+*/
 type terminal struct {
+	ctx context.Context
 	in  *bufio.Reader
 	out io.Writer
 }
 
-// NewTerminal is an Asker reading from in and writing to out.
-func NewTerminal(in io.Reader, out io.Writer) Asker {
-	return &terminal{in: bufio.NewReader(in), out: out}
+// NewTerminal is an Asker reading from in and writing to out, which gives up
+// when ctx is done.
+func NewTerminal(ctx context.Context, in io.Reader, out io.Writer) Asker {
+	return &terminal{ctx: ctx, in: bufio.NewReader(in), out: out}
 }
 
 func (t *terminal) Say(format string, args ...any) {
@@ -47,11 +58,27 @@ func (t *terminal) Say(format string, args ...any) {
 
 func (t *terminal) Ask(question string) (string, error) {
 	_, _ = fmt.Fprintf(t.out, "%s ", question)
-	line, err := t.in.ReadString('\n')
-	if err != nil && line == "" {
-		return "", fmt.Errorf("read the answer: %w", err)
+
+	type answer struct {
+		line string
+		err  error
 	}
-	return strings.TrimSpace(line), nil
+	heard := make(chan answer, 1)
+	go func() {
+		line, err := t.in.ReadString('\n')
+		heard <- answer{line: line, err: err}
+	}()
+
+	select {
+	case <-t.ctx.Done():
+		_, _ = fmt.Fprintln(t.out)
+		return "", t.ctx.Err() //nolint:wrapcheck // the caller tests for cancellation
+	case got := <-heard:
+		if got.err != nil && got.line == "" {
+			return "", fmt.Errorf("read the answer: %w", got.err)
+		}
+		return strings.TrimSpace(got.line), nil
+	}
 }
 
 func (t *terminal) Confirm(question string) (bool, error) {
@@ -86,18 +113,37 @@ func (t *terminal) Count(question string) (int, error) {
 	return n, nil
 }
 
+/*
+Choose asks for one of the offered answers, and asks again when it gets
+something else.
+
+Taking the first option on an unrecognised answer is how a person who typed
+"none" was told their hardware was exactly one light. An answer nobody offered
+means the question did not land, and guessing at it compounds that rather than
+recovering from it.
+*/
 func (t *terminal) Choose(question string, options []string) (string, error) {
-	answer, err := t.Ask(fmt.Sprintf("%s [%s]", question, strings.Join(options, "/")))
-	if err != nil {
-		return "", err
-	}
-	answer = strings.ToLower(strings.TrimSpace(answer))
-	for _, option := range options {
-		// A leading letter is enough: nobody wants to type "more than one".
-		if answer == strings.ToLower(option) ||
-			(answer != "" && strings.HasPrefix(strings.ToLower(option), answer)) {
-			return option, nil
+	for attempt := range 3 {
+		answer, err := t.Ask(fmt.Sprintf("%s [%s]", question, strings.Join(options, "/")))
+		if err != nil {
+			return "", err
+		}
+		answer = strings.ToLower(strings.TrimSpace(answer))
+		for _, option := range options {
+			// A leading letter is enough: nobody wants to type "more than one".
+			if answer == strings.ToLower(option) ||
+				(answer != "" && strings.HasPrefix(strings.ToLower(option), answer)) {
+				return option, nil
+			}
+		}
+		if attempt < 2 {
+			_, _ = fmt.Fprintf(t.out, "    Please answer with one of: %s.\n",
+				strings.Join(options, ", "))
 		}
 	}
-	return options[0], nil
+	return "", errNoAnswer
 }
+
+// errNoAnswer ends a conversation that is not getting anywhere, rather than
+// proceeding on an answer nobody gave.
+var errNoAnswer = errors.New("no answer to that question, so nothing was changed")

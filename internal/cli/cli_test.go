@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"go/build"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -89,6 +90,14 @@ func serving(t *testing.T, cfg *config.Config, server openrgb.Client) string {
 	t.Helper()
 
 	dir := t.TempDir()
+
+	// Never the developer's own configuration. A test that reads ~/.config
+	// passes or fails on whatever happens to be on the machine it runs on,
+	// which is the opposite of a test.
+	if os.Getenv("XDG_CONFIG_HOME") == "" {
+		t.Setenv("XDG_CONFIG_HOME", dir)
+	}
+
 	socket := filepath.Join(dir, "s")
 	listener, err := api.Listen(t.Context(), socket)
 	require.NoError(t, err)
@@ -99,6 +108,11 @@ func serving(t *testing.T, cfg *config.Config, server openrgb.Client) string {
 	require.NoError(t, err)
 	svc := service.New(cfg, server, "127.0.0.1:6742")
 	svc.SetRecorder(desired)
+	// Where its rules live, as the daemon tells it at startup. Without this a
+	// reload is a no-op, and the wizard's "in use now" would be a lie.
+	if rules, err := config.RulesPath(); err == nil {
+		svc.SetRulesPath(rules)
+	}
 
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan error, 1)
@@ -273,10 +287,13 @@ func TestProbeReportsWhatTookAndWhatDidNot(t *testing.T) {
 	require.Contains(t, out, "zone Addressable 1", "where segment naming starts")
 }
 
-func TestReloadReportsWhatIsWrongWithTheRulesFile(t *testing.T) {
+func TestReloadOnAMachineWithNoRulesFileIsFine(t *testing.T) {
+	// Running with no configuration at all is the supported case, not an
+	// error: every device present is driven and nothing is corrected.
 	socket := serving(t, nil, openrgb.NewFake(board()))
 
 	out, err := run(t, socket, "reload")
 	require.NoError(t, err)
-	require.Contains(t, out, "no rules file", "and that is a supported way to run")
+	require.Contains(t, out, "hotaru.yml", "it says which file it looked at")
+	require.NotContains(t, out, "does not decode")
 }

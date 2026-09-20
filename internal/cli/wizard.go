@@ -7,8 +7,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/ushineko/hotaru/internal/api"
@@ -53,8 +53,17 @@ Nothing is written without your say-so, and the lights go back afterwards.`,
 				return err
 			}
 			names, _ := cmd.Flags().GetStringSlice("devices")
-			asker := NewTerminal(cmd.InOrStdin(), cmd.OutOrStdout())
-			return Map(cmd.Context(), client, asker, names...)
+			asker := NewTerminal(cmd.Context(), cmd.InOrStdin(), cmd.OutOrStdout())
+			if err := Map(cmd.Context(), client, asker, names...); err != nil {
+				if errors.Is(err, context.Canceled) {
+					// Somebody changed their mind. That is not an error, and
+					// printing a URL at them about it is not an answer.
+					cmd.Println("Stopped. Nothing was written.")
+					return errStopped
+				}
+				return err
+			}
+			return nil
 		},
 	}
 	cmd.Flags().StringSlice("devices", nil, "only these devices, by name")
@@ -98,11 +107,16 @@ func Map(ctx context.Context, client *api.Client, asker Asker, only ...string) e
 		return quiet(err)
 	}
 
+	// What was answered last time, offered back as the defaults. Making
+	// somebody retype "rad-front" to keep it is how a program stops being
+	// re-run.
+	existing, path := existingRules(asker)
+
 	remembered := len(mustStatus(ctx, client).Remembered) > 0
 	defer restore(ctx, client, asker, remembered)
 
-	asker.Say("Lighting each zone a colour and asking what you see.")
-	asker.Say("Answer about your own hardware, in your own words. Press return to skip anything.\n")
+	asker.Say("Lighting things one at a time and asking what you can see.")
+	asker.Say("Answer in your own words -- these become the names you use. Press return to skip anything.\n")
 
 	var found []namedSegment
 	corrections := map[string][]string{}
@@ -123,20 +137,18 @@ func Map(ctx context.Context, client *api.Client, asker Asker, only ...string) e
 			// Say which modes were tried: on a device that will not light, the
 			// useful next step is knowing what was already ruled out.
 			if len(working.tried) > 0 {
-				asker.Say("  Nothing lit in %s. Skipping %s.",
-					strings.Join(working.tried, " or "), device.Name)
+				asker.Say("  Nothing lit, whichever way it was asked. Leaving %s out.", device.Name)
 			} else {
-				asker.Say("  %s would not take any plain mode, so there is nothing to see. Skipping it.",
-					device.Name)
+				asker.Say("  %s would not light at all, so there is nothing to see. Leaving it out.", device.Name)
 			}
 			continue
 		}
 		if working.corrected {
 			corrections[device.Name] = working.order
-			asker.Say("  %s only lights in %s, so that will go in the rules.", device.Name, working.mode)
+			asker.Say("  Noted: %s only lights one particular way, and that is written down.", device.Name)
 		}
 
-		segments, err := mapDevice(ctx, client, asker, device, working.mode)
+		segments, err := mapDevice(ctx, client, asker, device, working.mode, existing, names(list))
 		if err != nil {
 			return err
 		}
@@ -147,11 +159,7 @@ func Map(ctx context.Context, client *api.Client, asker Asker, only ...string) e
 		asker.Say("\nNothing was named, so there is nothing to write.")
 		return nil
 	}
-	present := make([]string, 0, len(list))
-	for _, device := range list {
-		present = append(present, device.Name)
-	}
-	return finish(ctx, client, asker, found, present, corrections)
+	return finish(ctx, client, asker, found, names(list), corrections, existing, path)
 }
 
 /*
@@ -192,7 +200,7 @@ times, because every other mode it tried fell through to Direct and was
 reported as Direct.
 */
 func lightsUp(ctx context.Context, client *api.Client, asker Asker, device api.Device) (working, error) {
-	asker.Say("── %s (%d LEDs, %d zones)", device.Name, device.LEDs, len(device.Zones))
+	asker.Say("── %s", device.Name)
 
 	var order, asked []string
 	tried := map[string]bool{}
@@ -208,6 +216,7 @@ func lightsUp(ctx context.Context, client *api.Client, asker Asker, device api.D
 			Devices: []string{device.Name},
 			Mode:    mode,
 			Exactly: true,
+			Preview: true,
 		})
 		if err != nil {
 			return working{}, quiet(err)
@@ -220,7 +229,7 @@ func lightsUp(ctx context.Context, client *api.Client, asker Asker, device api.D
 
 		used := out.Results[0].Mode
 		asked = append(asked, used)
-		lit, err := asker.Confirm(fmt.Sprintf("  Is it lit %s now? (%s)", probeColour, used))
+		lit, err := asker.Confirm(fmt.Sprintf("  Is anything on it lit %s now?", probeColour))
 		if err != nil {
 			return working{}, err
 		}
@@ -238,58 +247,125 @@ func lightsUp(ctx context.Context, client *api.Client, asker Asker, device api.D
 }
 
 /*
-plainModes are the modes worth trying, in order.
+plainModes are the ways of lighting a device worth trying, in the order a real
+write would try them.
+
+The order is the point. Trying them in the device's own order let somebody
+answer "yes, it is lit" about a way of lighting their board that an ordinary
+`light set` never chooses -- so the wizard blessed it, wrote no correction, and
+setting a colour still turned their strips off afterwards. The probe has to ask
+about what will actually be used, or its answer is about something else.
 
 Solid-looking ones only. Setting Rainbow Wave to find out whether a device
-lights would be a light show rather than a diagnostic, and a user watching an
-animation cannot answer "is it red" anyway.
+lights would be a light show rather than a diagnostic, and nobody watching an
+animation can answer "is it red" anyway.
 */
 func plainModes(device api.Device) []string {
+	// hotaru's own preference first, then anything else plain the device has.
+	wanted := []string{"static", "direct", "custom", "solid color", "solid"}
+
 	var out []string
-	for _, mode := range device.Modes {
-		switch strings.ToLower(mode) {
-		case "direct", "static", "custom", "solid color", "solid":
-			out = append(out, mode)
+	seen := map[string]bool{}
+	for _, want := range wanted {
+		for _, mode := range device.Modes {
+			if strings.EqualFold(mode, want) && !seen[strings.ToLower(mode)] {
+				seen[strings.ToLower(mode)] = true
+				out = append(out, mode)
+			}
 		}
 	}
 	return out
 }
 
-// mapDevice asks about one device's zones, then about what is on them.
-func mapDevice(ctx context.Context, client *api.Client, asker Asker, device api.Device, mode string) ([]namedSegment, error) {
+/*
+mapDevice lights one part of a device at a time and asks what lit up.
+
+The first version lit every part at once, each a different colour, and asked
+which was which. It saved rounds and cost sense: on a machine where two parts
+of a device have nothing attached, somebody was asked to name "the red one"
+while the only thing they could see was blue -- and "the green one" could have
+meant a stick of RAM, a graphics card, or a header, because other devices in
+the case were lit too.
+
+So: everything else goes dark, one part is lit, and the question is what just
+came on. No colour matching, nothing else competing for the answer, and
+"nothing" is the expected answer for a header with nothing plugged into it.
+*/
+func mapDevice(ctx context.Context, client *api.Client, asker Asker, device api.Device, mode string,
+	existing *config.Config, present []string,
+) ([]namedSegment, error) {
 	zones := device.Zones
 	if len(zones) == 0 {
 		zones = []api.Zone{{Name: "", First: 0, Count: device.LEDs}}
 	}
 
-	var named []namedSegment
-	for batch := 0; batch < len(zones); batch += len(palette) {
-		end := min(batch+len(palette), len(zones))
-		group := zones[batch:end]
+	// Everything else off, so the only lit thing in the case is the thing
+	// being asked about.
+	if err := darken(ctx, client, present, device.Name); err != nil {
+		return nil, err
+	}
+	if len(zones) > 1 {
+		asker.Say("  It has %d parts that light separately. Going through them one at a time.", len(zones))
+	}
 
-		if err := light(ctx, client, device.Name, mode, assignmentsFor(device.Name, group)); err != nil {
+	var named []namedSegment
+	for _, zone := range zones {
+		if err := light(ctx, client, device.Name, mode, []api.Assignment{{
+			Target: target(device.Name, zone.Name), Colour: probeColour,
+		}}); err != nil {
 			return nil, err
 		}
 
-		for i, zone := range group {
-			colour := palette[i]
-			what, err := askName(asker, fmt.Sprintf("  What is %s?", colour))
-			if err != nil {
-				return nil, err
-			}
-			if what == "" {
-				// An empty zone: the header reports LEDs and nothing is on it.
-				continue
-			}
-
-			parts, err := split(ctx, client, asker, device, zone, what, mode)
-			if err != nil {
-				return nil, err
-			}
-			named = append(named, parts...)
+		question := "  What is lit now?"
+		if was := knownAs(existing, device.Name, zone.Name, present); was != "" {
+			question = fmt.Sprintf("  What is lit now? [%s]", was)
 		}
+		asker.Say("    (press return if nothing is)")
+
+		what, err := askNameOr(asker, question, knownAs(existing, device.Name, zone.Name, present))
+		if err != nil {
+			return nil, err
+		}
+		if what == "" {
+			continue // nothing attached to this one
+		}
+
+		parts, err := split(ctx, client, asker, device, zone, what, mode)
+		if err != nil {
+			return nil, err
+		}
+		named = append(named, parts...)
 	}
 	return named, nil
+}
+
+// target names a zone, or the whole device where it has none.
+func target(device, zone string) string {
+	if zone == "" {
+		return device
+	}
+	return device + "/" + zone
+}
+
+/*
+darken turns off everything except the device being asked about.
+
+Other devices in the case are lit too, often in the same colours: a question
+about "the green one" can be answered with a stick of RAM. Nothing else being
+lit removes the ambiguity rather than wording around it.
+*/
+func darken(ctx context.Context, client *api.Client, present []string, except string) error {
+	for _, device := range present {
+		if strings.EqualFold(device, except) {
+			continue
+		}
+		if _, err := client.Apply(ctx, api.ApplyRequest{
+			Colour: "black", Devices: []string{device}, Preview: true,
+		}); err != nil {
+			return quiet(err)
+		}
+	}
+	return nil
 }
 
 /*
@@ -306,7 +382,33 @@ func split(ctx context.Context, client *api.Client, asker Asker,
 	whole := namedSegment{Device: device.Name, Zone: zone.Name, Name: what, Whole: true,
 		First: 0, Last: zone.Count - 1}
 
-	count, err := asker.Count(fmt.Sprintf("  How many separate lights are on %s? [1]", what))
+	/*
+		A zone with one light in it cannot be divided, whatever is plugged into
+		it, so there is nothing to ask.
+
+		The difference is electrical and hotaru already knows it: a 12V header
+		carries one control signal and reports one LED, so ten strips chained
+		onto it are one colour and one thing to name. An addressable header
+		reports a light per LED, and there the boundary between two chained
+		strips is a real place. Asking somebody to count things they cannot
+		address invites an answer that is true about their case and useless
+		here -- which is what happened.
+	*/
+	if zone.Count <= 1 {
+		return []namedSegment{whole}, nil
+	}
+
+	/*
+		Asked about things, not LEDs.
+
+		"How many separate lights are on it" was read as "how many LEDs", which
+		is a fair reading and the wrong answer: a stick of RAM with twelve LEDs
+		is one thing. The question is whether several objects share this
+		connector, which is what a daisy chain is and what a range exists to
+		divide.
+	*/
+	asker.Say("    (several fans on one cable is how many fans; a single strip or stick is 1)")
+	count, err := asker.Count(fmt.Sprintf("  How many separate things are chained on %s? [1]", what))
 	if err != nil {
 		return nil, err
 	}
@@ -324,13 +426,27 @@ func split(ctx context.Context, client *api.Client, asker Asker,
 			alternative is dividing one LED between two strips and reporting
 			that the boundary could not be settled, which sounds like a fault.
 		*/
-		asker.Say("  %s has %d light to set, so those %d are controlled together.",
-			what, zone.Count, count)
+		asker.Say("  %s has one light to set, so those %d change together.", what, count)
 		return []namedSegment{whole}, nil
 	}
 
+	// A count that leaves about one LED each is almost always the other
+	// reading of the question. Ask again rather than dividing on it.
+	if zone.Count/count < 2 {
+		asker.Say("    %d things sharing %d lights is about one light each, which is unusual.",
+			count, zone.Count)
+		asker.Say("    If you were counting the lights on it, that is %d, and the answer here is 1.", zone.Count)
+		count, err = asker.Count(fmt.Sprintf("  How many separate things are chained on %s? [1]", what))
+		if err != nil {
+			return nil, err
+		}
+		if count <= 1 || zone.Count/count < 2 {
+			return []namedSegment{whole}, nil
+		}
+	}
+
 	if zone.Count%count != 0 {
-		asker.Say("  %d LEDs does not divide by %d, so the boundaries need finding.", zone.Count, count)
+		asker.Say("  %d lights do not divide evenly by %d, so where they split needs finding.", zone.Count, count)
 		return bisect(ctx, client, asker, device, zone, what, count, mode)
 	}
 
@@ -351,6 +467,18 @@ func split(ctx context.Context, client *api.Client, asker Asker,
 		return nil, err
 	}
 	if !right {
+		// Before hunting for a boundary, check there is anything to see. A
+		// header with nothing plugged into it answers "no" to every question
+		// about what it is showing, and bisecting on that is a dead end with
+		// no way out of it -- which is exactly what it was.
+		lit, err := asker.Confirm("  Can you see it lit at all?")
+		if err != nil {
+			return nil, err
+		}
+		if !lit {
+			asker.Say("    Nothing on it, then -- leaving it out.")
+			return nil, nil
+		}
 		return bisect(ctx, client, asker, device, zone, what, count, mode)
 	}
 
@@ -388,10 +516,17 @@ func bisect(ctx context.Context, client *api.Client, asker Asker,
 			return nil, err
 		}
 
-		answer, err := asker.Choose("  Is red exactly one light, more than one, or part of one?",
-			[]string{"exactly", "more", "part"})
+		asker.Say("    The first %d lights are red and the rest are %s. Nothing else is lit.", k, palette[1])
+		answer, err := asker.Choose(
+			"  Does the red part cover exactly one thing, more than one, or part of one?",
+			[]string{"exactly", "more", "part", "cannot-tell"})
 		if err != nil {
 			return nil, err
+		}
+		if answer == "cannot-tell" {
+			asker.Say("    Leaving %s undivided, then.", what)
+			return []namedSegment{{Device: device.Name, Zone: zone.Name, Name: what, Whole: true,
+				First: 0, Last: zone.Count - 1}}, nil
 		}
 		switch answer {
 		case "exactly":
@@ -411,7 +546,7 @@ func bisect(ctx context.Context, client *api.Client, asker Asker,
 				return keepNamed([]namedSegment{head, rest}), nil
 			}
 			// More than two: the rest is asked about as its own chain.
-			asker.Say("  Leaving %d LEDs for the rest.", rest.Last-rest.First+1)
+			asker.Say("  Leaving %d lights for the rest.", rest.Last-rest.First+1)
 			return keepNamed([]namedSegment{head, rest}), nil
 		case "more":
 			high = k - 1
@@ -430,10 +565,18 @@ func bisect(ctx context.Context, client *api.Client, asker Asker,
 }
 
 // finish shows the map, confirms it, and offers to write it.
+func names(list []api.Device) []string {
+	out := make([]string, 0, len(list))
+	for _, device := range list {
+		out = append(out, device.Name)
+	}
+	return out
+}
+
 func finish(ctx context.Context, client *api.Client, asker Asker, found []namedSegment,
-	presentNames []string, corrections map[string][]string,
+	presentNames []string, corrections map[string][]string, existing *config.Config, path string,
 ) error {
-	asker.Say("\nHere is the whole map, lit at once:")
+	asker.Say("\nEverything you named, lit at once:")
 	byDevice := map[string][]namedSegment{}
 	for _, segment := range found {
 		byDevice[segment.Device] = append(byDevice[segment.Device], segment)
@@ -461,9 +604,10 @@ func finish(ctx context.Context, client *api.Client, asker Asker, found []namedS
 		return nil
 	}
 
-	rules := rulesFor(found, presentNames, corrections)
+	merged := merge(existing, found, corrections, presentNames)
+	rules := yamlFor(merged)
 	asker.Say("\n%s", rules)
-	return offerToWrite(asker, rules)
+	return offerToWrite(ctx, client, asker, rules, path)
 }
 
 func targetOf(segment namedSegment) string {
@@ -475,39 +619,6 @@ func targetOf(segment namedSegment) string {
 	default:
 		return fmt.Sprintf("%s/%s[%d:%d]", segment.Device, segment.Zone, segment.First, segment.Last)
 	}
-}
-
-// rulesFor is the YAML the answers add up to.
-func rulesFor(found []namedSegment, present []string, corrections map[string][]string) string {
-	byDevice := map[string][]namedSegment{}
-	for _, segment := range found {
-		byDevice[segment.Device] = append(byDevice[segment.Device], segment)
-	}
-	names := make([]string, 0, len(byDevice))
-	for device := range byDevice {
-		names = append(names, device)
-	}
-	sort.Strings(names)
-
-	var out strings.Builder
-	out.WriteString("devices:\n")
-	for _, device := range names {
-		fmt.Fprintf(&out, "  - match: %s\n", matchFor(device, present))
-		if order := corrections[device]; len(order) > 0 {
-			fmt.Fprintf(&out, "    # only lights in %s on this machine.\n", order[0])
-			fmt.Fprintf(&out, "    solid_modes: [%s]\n", strings.Join(order, ", "))
-		}
-		out.WriteString("    segments:\n")
-		for _, segment := range byDevice[device] {
-			if segment.Whole {
-				fmt.Fprintf(&out, "      %s: {zone: %q}\n", segment.Name, segment.Zone)
-				continue
-			}
-			fmt.Fprintf(&out, "      %s: {zone: %q, leds: [%d, %d]}\n",
-				segment.Name, segment.Zone, segment.First, segment.Last)
-		}
-	}
-	return out.String()
 }
 
 /*
@@ -554,18 +665,6 @@ func matchFor(device string, present []string) string {
 	return best
 }
 
-func assignmentsFor(device string, zones []api.Zone) []api.Assignment {
-	var out []api.Assignment
-	for i, zone := range zones {
-		target := device
-		if zone.Name != "" {
-			target = device + "/" + zone.Name
-		}
-		out = append(out, api.Assignment{Target: target, Colour: palette[i%len(palette)]})
-	}
-	return out
-}
-
 func partAssignments(device string, zone api.Zone, parts []namedSegment) []api.Assignment {
 	var out []api.Assignment
 	for i, part := range parts {
@@ -584,6 +683,7 @@ func light(ctx context.Context, client *api.Client, device, mode string, assignm
 		Assignments: assignments,
 		Devices:     []string{device},
 		Mode:        mode,
+		Preview:     true,
 	})
 	if err != nil {
 		return quiet(err)
@@ -626,28 +726,41 @@ refused for the same reason: "red" answers "what colour is it", which is not
 what was asked.
 */
 func askName(asker Asker, question string) (string, error) {
+	answer, err := asker.Ask(question)
+	if err != nil {
+		return "", err
+	}
+	return validName(asker, answer, question)
+}
+
+// validName checks an answer, asking again once when it is plainly not a name.
+func validName(asker Asker, answer, question string) (string, error) {
 	for range 2 {
-		answer, err := asker.Ask(question)
-		if err != nil {
-			return "", err
-		}
 		if isNothing(answer) {
 			return "", nil
 		}
 
 		trimmed := strings.ToLower(strings.TrimSpace(answer))
 		switch {
+		case slug(answer) == "":
+			// "??" is somebody saying they do not know, not a name.
+			asker.Say("    Nothing to name there, then -- leaving it out.")
+			return "", nil
 		case len(trimmed) < 2:
 			asker.Say("    %q is a bit short for a name -- what is it called?", answer)
-			continue
 		case trimmed == "yes" || trimmed == "no":
 			asker.Say("    That looks like an answer to a different question. What is it called?")
-			continue
 		case isPaletteColour(trimmed):
 			asker.Say("    %q is the colour it is lit; what is the thing called?", answer)
-			continue
+		default:
+			return slug(answer), nil
 		}
-		return slug(answer), nil
+
+		next, err := asker.Ask(question)
+		if err != nil {
+			return "", err
+		}
+		answer = next
 	}
 	return "", nil
 }
@@ -705,6 +818,15 @@ goes back; where it does not -- a fresh install, which is this wizard's whole
 audience -- there is nothing to return to and saying so beats inventing one.
 */
 func restore(ctx context.Context, client *api.Client, asker Asker, remembered bool) {
+	/*
+		Cleanup runs on the way out, including the way out through Ctrl-C --
+		when the context that got us here is already cancelled. Using it would
+		mean the lights stay on whatever the wizard last lit, and the failure
+		reported as the same interrupt that caused it.
+	*/
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+
 	if !remembered {
 		asker.Say("\nThe lights are showing the last thing the wizard lit. " +
 			"`hotaru light set <colour>` when you want something else.")
@@ -718,23 +840,23 @@ func restore(ctx context.Context, client *api.Client, asker Asker, remembered bo
 }
 
 /*
-offerToWrite puts the rules where hotaru will read them, if asked.
+offerToWrite saves the rules, over an existing file if there is one.
 
-Only where there is no file. The rules file is the user's, hotaru does not
-rewrite it, and a wizard is not an exception to that -- a program that edits a
-hand-maintained file loses its comments and the user's trust in the same
-stroke. Where one exists, this prints what to add.
+Editing a file somebody maintains is only rude when it happens behind their
+back. Said plainly, with what was there kept beside it, a re-run is how they
+change their mind -- which is the whole reason to run this a second time.
+
+Comments do not survive: the file is regenerated from what hotaru understands.
+That is said before anything is written, and the previous file is kept as
+.yml.bak, so the cost is one somebody accepted rather than one imposed on them.
 */
-func offerToWrite(asker Asker, rules string) error {
-	path, err := config.RulesPath()
-	if err != nil {
-		return err
-	}
-
-	if _, err := os.Stat(path); err == nil {
-		asker.Say("Add that to %s. It is yours, so hotaru will not edit it.", path)
-		return nil
-	} else if !errors.Is(err, fs.ErrNotExist) {
+func offerToWrite(ctx context.Context, client *api.Client, asker Asker, rules, path string) error {
+	_, err := os.Stat(path)
+	switch {
+	case err == nil:
+		asker.Say("%s already exists. Writing this replaces it, and any comments in it are lost;", path)
+		asker.Say("the previous version is kept as %s.bak.", path)
+	case !errors.Is(err, fs.ErrNotExist):
 		return fmt.Errorf("look at %s: %w", path, err)
 	}
 
@@ -750,12 +872,77 @@ func offerToWrite(asker Asker, rules string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return fmt.Errorf("make the configuration directory: %w", err)
 	}
-	header := "# Written by `hotaru light map`. Yours now: hotaru reads this file\n" +
-		"# and never writes it again, so comments and edits are safe here.\n"
-	if err := os.WriteFile(path, []byte(header+rules), 0o600); err != nil {
+	// G703: the path is hotaru's own configuration path, resolved from XDG and
+	// a constant filename, and the backup is that path plus a suffix. Nothing
+	// a user typed reaches either.
+	if previous, err := os.ReadFile(path); err == nil { //nolint:gosec
+		if err := os.WriteFile(path+".bak", previous, 0o600); err != nil { //nolint:gosec
+			return fmt.Errorf("keep a copy of %s: %w", path, err)
+		}
+	}
+	if err := os.WriteFile(path, []byte(rules), 0o600); err != nil {
 		return fmt.Errorf("write %s: %w", path, err)
 	}
 
-	asker.Say("Written to %s. `hotaru reload` to use it now.", path)
+	/*
+		And put it to work, rather than telling somebody to.
+
+		The service reads its rules when it starts, so a file written here
+		changes nothing until it is told. Leaving that as an instruction meant
+		the lights were put back at the end of the wizard using the rules from
+		before it ran -- which on one machine meant the correction it had just
+		established was ignored, and the strips it had been lighting went out
+		again as the last act of a successful run.
+	*/
+	if _, err := client.Reload(ctx); err != nil {
+		asker.Say("Written to %s. Run `hotaru reload` to use it.", path)
+		return nil //nolint:nilerr // written is the outcome; reloading is a convenience
+	}
+
+	asker.Say("Written to %s, and in use now.", path)
 	return nil
+}
+
+/*
+existingRules is the configuration as it stands, for defaults and for keeping
+rules about devices this run does not ask about.
+
+A file that will not parse is not a reason to refuse: the wizard is often what
+somebody reaches for when their configuration has gone wrong, and starting from
+empty is a worse answer than starting from nothing.
+*/
+func existingRules(asker Asker) (*config.Config, string) {
+	path, err := config.RulesPath()
+	if err != nil {
+		return &config.Config{}, ""
+	}
+
+	cfg, problems, err := config.Load(path)
+	if err != nil {
+		asker.Say("Could not read %s (%v), so this starts from nothing.", path, err)
+		return &config.Config{}, path
+	}
+	for _, problem := range problems {
+		asker.Say("  %s", problem.Error())
+	}
+	return cfg, path
+}
+
+/*
+askNameOr is askName with something to fall back on.
+
+An empty answer keeps what was there last time, which is what "press return" is
+for when a question already has an answer. Saying "none" is how somebody clears
+one deliberately, and the difference matters: one is agreement, the other is a
+decision.
+*/
+func askNameOr(asker Asker, question, fallback string) (string, error) {
+	answer, err := asker.Ask(question)
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(answer) == "" {
+		return fallback, nil // agreement, or nothing, depending on what was there
+	}
+	return validName(asker, answer, question)
 }
