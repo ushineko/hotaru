@@ -184,6 +184,16 @@ type Request struct {
 	Assignments []devices.Assignment
 	Off         bool
 	Devices     []string
+
+	// Mode is a mode to prefer over the usual order. The wizard uses it once
+	// it has found, by asking a person, which mode actually lights a device --
+	// a question about the physical world, since a board can accept Static,
+	// report Static, and leave its addressable headers dark.
+	//
+	// Preferred rather than forced: a mode that cannot carry the frame is
+	// still no use, and silently showing one colour where three were asked for
+	// would be a worse answer than choosing a mode that works.
+	Mode string
 }
 
 /*
@@ -269,13 +279,13 @@ func (s *Service) Apply(ctx context.Context, req Request) ([]Result, error) {
 		if len(assignments) == 0 && !req.Off {
 			continue
 		}
-		results = append(results, s.applyOne(ctx, client, cfg, &device, assignments, req.Off))
+		results = append(results, s.applyOne(ctx, client, cfg, &device, assignments, req.Off, req.Mode))
 	}
 	return results, nil
 }
 
 func (s *Service) applyOne(ctx context.Context, client openrgb.Client, cfg *config.Config,
-	device *devices.Device, assignments []devices.Assignment, off bool,
+	device *devices.Device, assignments []devices.Assignment, off bool, preferred string,
 ) Result {
 	result := Result{Device: device.Name}
 	rule := devices.RuleFor(cfg, device.Name)
@@ -297,7 +307,7 @@ func (s *Service) applyOne(ctx context.Context, client openrgb.Client, cfg *conf
 	}
 
 	result = s.through(ctx, device.Name, func(ctx context.Context) Result {
-		return s.writeFrame(ctx, client, device, frame, off)
+		return s.writeFrame(ctx, client, device, frame, off, preferred)
 	})
 	if result.Applied && !off {
 		s.remember(device.Name, result.Mode, frame)
@@ -340,13 +350,27 @@ Reconciling must not be a second implementation of this: the fall-through, the
 read-back and the reasons a device is skipped are the same facts whoever asked.
 */
 func (s *Service) writeFrame(ctx context.Context, client openrgb.Client,
-	device *devices.Device, frame devices.Frame, off bool,
+	device *devices.Device, frame devices.Frame, off bool, preferred string,
 ) Result {
 	result := Result{Device: device.Name}
 	rule := devices.RuleFor(s.config(), device.Name)
 
 	want := devices.Want{Off: off, PerLED: frame.PerLED()}
 	candidates := device.SolidCandidates(rule, want)
+	if preferred != "" {
+		mode, ok := device.Mode(preferred)
+		switch {
+		case !ok:
+			result.Skipped = fmt.Sprintf("no mode called %q; it advertises %s",
+				preferred, strings.Join(device.ModeNames(), ", "))
+			return result
+		case want.PerLED && !mode.PerLED:
+			// Asked for a mode that cannot show the frame. Resolution carries
+			// on rather than showing one colour and reporting success.
+		default:
+			candidates = append([]string{mode.Name}, without(candidates, mode.Name)...)
+		}
+	}
 	if off {
 		if _, err := device.Resolve(rule, want); err != nil {
 			result.Skipped = reason(err)
@@ -456,6 +480,17 @@ func (s *Service) config() *config.Config {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.cfg
+}
+
+// without is a list minus one entry, so a preferred mode is not offered twice.
+func without(list []string, drop string) []string {
+	out := make([]string, 0, len(list))
+	for _, item := range list {
+		if !strings.EqualFold(item, drop) {
+			out = append(out, item)
+		}
+	}
+	return out
 }
 
 func offCandidates(d *devices.Device) []string {

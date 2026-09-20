@@ -86,6 +86,15 @@ type ApplyRequest struct {
 	Assignments []Assignment `json:"assignments,omitempty"`
 	Off         bool         `json:"off,omitempty"`
 	Devices     []string     `json:"devices,omitempty"`
+
+	// Mode is a mode to prefer over hotaru's usual order. The mapping wizard
+	// uses it once a person has told it which mode actually lights a device --
+	// a question no read-back can settle, since the mode it would otherwise
+	// choose is accepted and reported back while nothing lights.
+	//
+	// Preferred, not forced: a mode that cannot carry the frame is skipped
+	// rather than used to show one colour where several were asked for.
+	Mode string `json:"mode,omitempty"`
 }
 
 /*
