@@ -314,6 +314,21 @@ func split(ctx context.Context, client *api.Client, asker Asker,
 		return []namedSegment{whole}, nil
 	}
 
+	if zone.Count < count {
+		/*
+			More things than there are lights to address them with.
+
+			A 12V header is one control for everything plugged into it: two
+			strips on a splitter are two strips and one LED, and no amount of
+			asking will separate them. Saying so is the whole answer -- the
+			alternative is dividing one LED between two strips and reporting
+			that the boundary could not be settled, which sounds like a fault.
+		*/
+		asker.Say("  %s has %d light to set, so those %d are controlled together.",
+			what, zone.Count, count)
+		return []namedSegment{whole}, nil
+	}
+
 	if zone.Count%count != 0 {
 		asker.Say("  %d LEDs does not divide by %d, so the boundaries need finding.", zone.Count, count)
 		return bisect(ctx, client, asker, device, zone, what, count, mode)
