@@ -184,6 +184,9 @@ necessary is an artefact of where it used to live.
   machine — device corrections and named segments, none of it a default.
 - [docs/api.md](docs/api.md): the service's HTTP interface, with recorded
   transcripts of every route.
+- [docs/migration.md](docs/migration.md): what moves out of
+  `peripheral-battery-monitor`, the cutover order, and the KDE hotkey rules
+  four investigations paid for.
 - [docs/hardware.md](docs/hardware.md): hardware that has been tested, the
   upstream device lists for everything else, and how to check your own machine.
 - [docs/packaging.md](docs/packaging.md): the AUR packages, the dependency
@@ -197,6 +200,13 @@ MIT. See [LICENSE](LICENSE).
 
 ### Unreleased
 
+- Desired state, and the reconciler that puts the lights back: at boot, when a
+  device wakes up having forgotten, and when a server hands devices back with no
+  colour. A fresh install remembers nothing and so writes to nothing.
+- `hotaru light probe`, `status`, `reconcile` and `reload`; per-device write
+  queues where a newer request replaces a waiting one rather than queueing
+  behind it; and the systemd user unit, which depends on no OpenRGB unit and on
+  no desktop session.
 - `hotaru serve` and the CLI: the service on its Unix socket, `/v1` for health,
   devices and lighting, and `hotaru light list|set|off|health` as its first
   client. The client commands import no device package, which a test asserts.

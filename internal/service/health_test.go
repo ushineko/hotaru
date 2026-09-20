@@ -1,6 +1,7 @@
 package service_test
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -59,4 +60,31 @@ func TestAServerThatStopsAnsweringIsUnreachableNotEmpty(t *testing.T) {
 	got := service.New(nil, server, "").Health(t.Context())
 	require.Equal(t, service.StateUnreachable, got.State)
 	require.Contains(t, got.Detail, "stopped answering")
+}
+
+// A machine that offers a way out says so, and says it as a command.
+type machine struct{ says []string }
+
+func (m machine) Remedies(context.Context) []string { return m.says }
+
+func TestHealthCarriesWhatAPersonCouldDoAboutIt(t *testing.T) {
+	svc := service.New(nil, nil, "127.0.0.1:6742")
+	svc.SetEnvironment(machine{says: []string{
+		"The OpenRGB server is installed and not running. Start it with `systemctl --user start openrgb-server.service`.",
+	}})
+
+	got := svc.Health(t.Context())
+	require.Equal(t, service.StateUnreachable, got.State)
+	require.Len(t, got.Remedies, 1)
+	require.Contains(t, got.Remedies[0], "systemctl --user start",
+		"a remedy nobody can act on is an observation")
+}
+
+func TestAHealthyMachineIsOfferedNothing(t *testing.T) {
+	// Advice when everything works is noise, and noise is what people learn
+	// to skip past.
+	svc := service.New(nil, openrgb.NewFake(board()), "")
+	svc.SetEnvironment(machine{says: []string{"do something"}})
+
+	require.Empty(t, svc.Health(t.Context()).Remedies)
 }

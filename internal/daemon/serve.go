@@ -19,6 +19,7 @@ import (
 	"github.com/ushineko/hotaru/internal/queue"
 	"github.com/ushineko/hotaru/internal/service"
 	"github.com/ushineko/hotaru/internal/state"
+	"github.com/ushineko/hotaru/internal/systemd"
 	"github.com/ushineko/hotaru/internal/version"
 )
 
@@ -94,6 +95,7 @@ func run(cmd *cobra.Command) error {
 	writes := queue.New(ctx)
 	defer writes.Close()
 	svc.SetQueue(writes)
+	svc.SetEnvironment(environment{})
 
 	listener, err := api.Listen(ctx, socket)
 	if err != nil {
@@ -113,6 +115,18 @@ func run(cmd *cobra.Command) error {
 	}()
 
 	return api.Serve(ctx, listener, svc)
+}
+
+/*
+environment answers "what could I do about it" from systemd.
+
+Here rather than in the service because it shells out, and because a machine
+without systemd should lose the suggestions and nothing else.
+*/
+type environment struct{}
+
+func (environment) Remedies(ctx context.Context) []string {
+	return systemd.Look(ctx).Remedies()
 }
 
 // connectBackoff is how long to wait between attempts to reach OpenRGB, and

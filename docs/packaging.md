@@ -118,7 +118,8 @@ much as a testing one.
 
 - `/usr/bin/hotaru`, `/usr/bin/hotaru-gui`
 - `/usr/lib/systemd/user/hotaru.service` — **not enabled**, per Arch policy. The
-  README says `systemctl --user enable --now hotaru`
+  README says `systemctl --user enable --now hotaru`. The unit itself is in
+  [`packaging/`](../packaging/), already written
 - `/usr/share/applications/<app-id>.desktop` and the icon, named to match the
   Fyne app ID with `StartupWMClass` set, because KDE on Wayland matches the
   window to the entry that way and a mismatch silently gives a generic icon

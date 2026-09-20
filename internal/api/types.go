@@ -132,13 +132,16 @@ State is one of "unreachable", "no-devices", "none-in-scope", "healthy", and
 Detail says what to do about it in a sentence meant for a person.
 */
 type Health struct {
-	State    string `json:"state"`
-	Detail   string `json:"detail"`
-	Address  string `json:"address"`
-	Protocol uint32 `json:"protocol,omitempty"`
-	Devices  int    `json:"devices"`
-	InScope  int    `json:"in_scope"`
-	Version  string `json:"version"`
+	State  string `json:"state"`
+	Detail string `json:"detail"`
+	// Remedies are things a person could do about it, each a sentence with a
+	// command in it.
+	Remedies []string `json:"remedies,omitempty"`
+	Address  string   `json:"address"`
+	Protocol uint32   `json:"protocol,omitempty"`
+	Devices  int      `json:"devices"`
+	InScope  int      `json:"in_scope"`
+	Version  string   `json:"version"`
 }
 
 /*
