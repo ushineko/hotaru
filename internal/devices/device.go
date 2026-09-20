@@ -21,7 +21,12 @@ import (
 
 // Device is one controller as it describes itself, plus what it is showing.
 type Device struct {
-	Name       string
+	Name string
+	// Location is where the controller is attached: an I2C address, a hidraw
+	// node. With Serial it is what makes two controllers of the same model
+	// distinguishable, which four identical sticks of RAM require.
+	Location   string
+	Serial     string
 	Type       string
 	Modes      []Mode
 	ActiveMode string
