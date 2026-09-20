@@ -403,13 +403,16 @@ spec adds capability behind an API that already exists.
 
 ### Packaging is decided now and built later
 
-The dependency question has an answer that falls straight out of "Someone else's
-machine", so it is settled in [docs/packaging.md](../docs/packaging.md) before
-there is anything to package: **OpenRGB, liquidctl and OpenLinkHub are
-`optdepends`, never `depends`**, and the package splits into `hotaru` (CLI and
-service, no graphics stack) and `hotaru-gui`. A package's dependency list is a
-claim about what a program needs; hotaru's claim is "almost nothing", and a
-PKGBUILD that said otherwise would contradict the program's own behaviour.
+Settled in [docs/packaging.md](../docs/packaging.md) before there is anything to
+package: the Arch packages **depend on all three backends**, and split into
+`hotaru` (CLI and service, no graphics stack) and `hotaru-gui`.
+
+That is not a contradiction of the rules above, and the distinction is worth
+holding onto. `depends` describes the supported install — what has to be there
+for `pacman -S hotaru` to hand someone a program that works. Runtime optionality
+describes a machine's state — a daemon that is stopped, a device that vanished,
+a `go install` with no package manager involved. The program degrades in all of
+those regardless of how it was installed.
 
 The build itself is spec 007, after there is something worth installing.
 
@@ -1061,11 +1064,12 @@ ownership of the hardware.
 6. A fresh install is inert: with no recorded desired state, the service starts
    and discovers but writes to no device until asked, and reconciliation
    reasserts only what hotaru itself was told to set.
-7. Every backend and capability is independently optional. An absent one is
-   reported as absent and removed from the interface; it never fails an
-   unrelated operation, and it never prevents the service from starting — and
-   packaging makes the same claim, expressing them as `optdepends` rather than
-   `depends`.
+7. Every backend and capability is independently optional **at runtime**. An
+   absent one is reported as absent and removed from the interface; it never
+   fails an unrelated operation, and it never prevents the service from
+   starting. Packaging is a separate claim: the Arch packages depend on all
+   three backends, so a fresh install works without reading anything, while the
+   program still degrades because daemons stop and other install routes exist.
 8. Applying reports per device what happened: applied with which mode, skipped
    with a reason, or failed. An operation that changed nothing does not report
    success.

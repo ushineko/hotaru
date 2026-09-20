@@ -11,15 +11,24 @@ machine".
 
 ## The rule that decides everything else
 
-**hotaru has no hard dependency on any backend.** OpenRGB, liquidctl and
-OpenLinkHub are each optional at runtime, and a machine with none of them still
-installs, starts and serves. So in packaging terms they are `optdepends`, never
-`depends`, and each one says what is lost without it.
+**The backends are hard dependencies. Runtime optionality is a separate claim.**
 
-Making them `depends` would be the easy mistake: it would pull a Python
-toolchain and a lighting daemon onto a machine that wanted the CLI, and it would
-quietly contradict the program's own behaviour. A package's dependency list is a
-claim about what the program needs, and hotaru's claim is "almost nothing".
+These are two different questions and it is worth keeping them apart:
+
+- *What must be installed for `pacman -S hotaru` to give someone a working
+  program?* All three backends. A user cannot be expected to know which pieces
+  of hotaru come from which daemon — that is internal detail — so the package
+  decides for them rather than making the choice a prerequisite for the program
+  working.
+- *What must be present for hotaru to keep running?* Nothing. A daemon can be
+  stopped, a device can vanish, and a user who installed with `go install` has
+  no package manager in the picture at all. The program degrades in every one of
+  those cases, and that requirement is untouched by this.
+
+So `depends` expresses the supported install, not a runtime precondition, and
+`optdepends` is not used for the backends at all. The graceful-degradation rules
+in spec 001 stand exactly as written; they are about a machine's state, not
+about a package's manifest.
 
 ## Split: `hotaru` and `hotaru-gui`
 
@@ -49,10 +58,7 @@ Verified against this machine's repositories:
 
 ```
 # hotaru
-depends=('glibc')
-optdepends=('openrgb: RGB lighting control'
-            'liquidctl: cooler telemetry and LCD control'
-            'openlinkhub: CPU package temperature in the cooler snapshot')
+depends=('glibc' 'openrgb' 'liquidctl' 'openlinkhub')
 
 # hotaru-gui
 depends=('hotaru' 'libglvnd' 'libx11' 'libxcursor' 'libxrandr'
@@ -61,9 +67,31 @@ depends=('hotaru' 'libglvnd' 'libx11' 'libxcursor' 'libxrandr'
 makedepends=('go')
 ```
 
-`kwin` is deliberately *not* listed, even as an optdepend: the hotkey
-integration is a Plasma convenience, and on every other desktop the CLI is the
-binding mechanism. A package that suggested KWin would imply hotaru wants it.
+Two consequences to accept knowingly:
+
+- **`openlinkhub` is in the AUR, not the official repositories.** An AUR package
+  may depend on another, and helpers resolve it, but it means every hotaru
+  install builds and runs a Corsair-device daemon for one field of the snapshot.
+- **`liquidctl` brings Python** — `python`, `python-pillow`, `python-pyusb`,
+  `i2c-tools` — onto a machine that may have no liquid cooler, and `openrgb`
+  brings `qt6-base`, which on a Plasma desktop is already installed.
+
+The alternative was `optdepends`, and it was rejected for a better reason than
+install size: **`optdepends` asks the user a question they have no way to
+answer.** Choosing correctly from that list means already knowing that lighting
+comes from OpenRGB, that the cooler's screen is liquidctl's, and that one field
+of the telemetry comes from a third daemon — that is, knowing how hotaru is put
+together internally. Nobody installing a program to make their fans blue should
+have to read an architecture document first, and a user who guesses wrong gets a
+program that looks broken and has no way to tell that it is not.
+
+Hard dependencies move that knowledge into the package, where it belongs. The
+cost is paid once, in disk space, by the packager's decision rather than by a
+stranger's debugging.
+
+`kwin` is deliberately *not* listed, in either form: the hotkey integration is a
+Plasma convenience, and on every other desktop the CLI is the binding mechanism.
+A package that named KWin would imply hotaru wants it.
 
 ## Build
 
