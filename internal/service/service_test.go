@@ -342,3 +342,146 @@ func TestADeviceInAModeThatCannotReportColoursIsNotDoubted(t *testing.T) {
 	require.Empty(t, results[0].Unconfirmed,
 		"a device in a mode that never reports colours was doubted anyway")
 }
+
+/*
+cooler is a device whose Static mode carries its own colour.
+
+Modelled on the NZXT Kraken that turned three radiator fans red when asked for
+purple: Static holds a colour of its own, the per-LED buffer it also accepts is
+not what it displays, and the colour already in the mode is the vendor's. See
+spec 009.
+*/
+func cooler() devices.Device {
+	return devices.Device{
+		Name:     "NZXT Kraken",
+		LEDCount: 2,
+		Modes: []devices.Mode{
+			{Name: "Static", ModeColour: true, Colour: colour.MustParse("red")},
+			{Name: "Direct", PerLED: true},
+		},
+		Zones:      []devices.Zone{{Name: "Ring", Shape: devices.ShapeLine, First: 0, Count: 2}},
+		ActiveMode: "Static",
+	}
+}
+
+func TestAModeThatCarriesItsOwnColourIsGivenOne(t *testing.T) {
+	/*
+		The fans-went-red bug. hotaru set the mode and wrote the buffer, and
+		the device showed the colour its vendor had left in Static. Asked for
+		purple, it must end up purple -- by whichever half of the mode the
+		hardware actually reads.
+	*/
+	server := openrgb.NewFake(cooler())
+	svc := service.New(nil, server, "")
+
+	results, err := svc.Apply(t.Context(), service.Request{
+		Assignments: solid("Kraken/Ring", "purple"),
+		Mode:        "Static",
+		Exactly:     true,
+	})
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	require.True(t, results[0].Applied)
+	require.Empty(t, results[0].Unconfirmed, "the colour was set and read back; nothing to doubt")
+
+	after, err := server.Device(t.Context(), "NZXT Kraken")
+	require.NoError(t, err)
+	mode, ok := after.Mode("Static")
+	require.True(t, ok)
+	require.Equal(t, colour.MustParse("purple"), mode.Colour,
+		"the mode kept the vendor's colour, which is what the device displays")
+	for _, c := range after.Colours {
+		require.Equal(t, colour.MustParse("purple"), c,
+			"the device is showing a colour nobody asked for")
+	}
+}
+
+func TestAPerLEDModeIsPreferredOverOneThatHoldsItsOwnColour(t *testing.T) {
+	// Both can show a solid colour. Only one can be checked afterwards, and
+	// the default order picks that one -- spec 009 R3.
+	server := openrgb.NewFake(cooler())
+	svc := service.New(nil, server, "")
+
+	results, err := svc.Apply(t.Context(), service.Request{Assignments: solid("Kraken", "green")})
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	require.True(t, results[0].Applied)
+	require.Equal(t, "Direct", results[0].Mode)
+
+	// And the buffer is what it shows, with the other mode's stored colour
+	// left exactly as the vendor had it: hotaru changes what it was asked to
+	// change and no more.
+	after, err := server.Device(t.Context(), "NZXT Kraken")
+	require.NoError(t, err)
+	require.Equal(t, colour.MustParse("green"), after.Colours[0])
+	static, ok := after.Mode("Static")
+	require.True(t, ok)
+	require.Equal(t, colour.MustParse("red"), static.Colour,
+		"a mode nobody selected had its colour rewritten")
+}
+
+func TestARuleNamingItsModesStillWins(t *testing.T) {
+	// A person who has looked at their machine outranks the default. The
+	// development machine needed exactly this for its board.
+	cfg := &config.Config{Devices: []config.DeviceRule{
+		{Match: "kraken", SolidModes: []string{"static", "direct"}},
+	}}
+	server := openrgb.NewFake(cooler())
+	svc := service.New(cfg, server, "")
+
+	results, err := svc.Apply(t.Context(), service.Request{Assignments: solid("Kraken", "green")})
+	require.NoError(t, err)
+	require.Equal(t, "Static", results[0].Mode)
+}
+
+func TestAModeColourThatReadsBackWrongIsReported(t *testing.T) {
+	// The device took the mode and kept a different colour. Applied, because
+	// the mode landed; unconfirmed, because what it displays is not what was
+	// asked for.
+	device := cooler()
+	server := openrgb.NewFake(device)
+	svc := service.New(nil, stuckColour{Fake: server, device: "NZXT Kraken"}, "")
+
+	results, err := svc.Apply(t.Context(), service.Request{
+		Assignments: solid("Kraken", "purple"),
+		Mode:        "Static",
+		Exactly:     true,
+	})
+	require.NoError(t, err)
+	require.True(t, results[0].Applied)
+	require.Contains(t, results[0].Unconfirmed, "look at it")
+}
+
+func TestANonUniformFrameNeverLandsInAModeThatCannotShowIt(t *testing.T) {
+	// Two colours cannot be shown by a mode that holds one. Spec 009 R2: the
+	// fix for the red fans must not make this worse.
+	server := openrgb.NewFake(cooler())
+	svc := service.New(nil, server, "")
+
+	results, err := svc.Apply(t.Context(), service.Request{Assignments: []devices.Assignment{
+		{Target: mustTarget(t, "Kraken/Ring[0:0]"), Colour: colour.MustParse("red")},
+		{Target: mustTarget(t, "Kraken/Ring[1:1]"), Colour: colour.MustParse("blue")},
+	}})
+	require.NoError(t, err)
+	require.True(t, results[0].Applied)
+	require.Equal(t, "Direct", results[0].Mode, "a two-colour frame went to a one-colour mode")
+}
+
+/*
+stuckColour is a device that takes a mode and keeps the colour it already had.
+
+The read-back half of the fans-went-red bug: the mode landed, and what the
+device displays is still the vendor's. Nothing but reading the mode's colour
+back can tell.
+*/
+type stuckColour struct {
+	*openrgb.Fake
+	device string
+}
+
+func (s stuckColour) SetMode(ctx context.Context, device, mode string, brightness *int, c *colour.Colour) error {
+	if strings.EqualFold(device, s.device) {
+		return s.Fake.SetMode(ctx, device, mode, brightness, nil)
+	}
+	return s.Fake.SetMode(ctx, device, mode, brightness, c)
+}
