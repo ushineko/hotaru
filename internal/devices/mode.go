@@ -41,20 +41,57 @@ func (d *Device) SolidCandidates(rule Rule, want Want) []string {
 		out = append(out, mode.Name) // the device's own spelling, for comparison later
 	}
 
-	for _, name := range rule.solidOrder() {
+	/*
+		The named order first -- but where it is hotaru's default rather than
+		the user's, a mode whose colour hotaru sets per LED comes before one
+		that keeps its colour in the mode.
+
+		Both can show a solid colour. Only the first can be read back and
+		checked, and the second failed silently for a whole evening on an NZXT
+		cooler: Static took, reported success, and displayed the red its vendor
+		had left in it. A rule naming solid_modes is a person who has looked at
+		their machine, and still wins. See spec 009.
+	*/
+	order := rule.solidOrder()
+	if !rule.namesSolidModes() {
+		order = d.perLEDFirst(order)
+	}
+	for _, name := range order {
 		add(name)
 	}
 	// Anything else the device advertises that can carry the frame. A device
 	// whose vendor named its modes unusually is still driveable: the list is
 	// preference, not permission.
-	for _, mode := range d.Modes {
-		if want.PerLED && !mode.PerLED {
-			continue
+	for _, pass := range []bool{true, false} {
+		for _, mode := range d.Modes {
+			if mode.PerLED != pass {
+				continue
+			}
+			if want.PerLED && !mode.PerLED {
+				continue
+			}
+			if isEffect(mode.Name) {
+				continue
+			}
+			add(mode.Name)
 		}
-		if isEffect(mode.Name) {
-			continue
+	}
+	return out
+}
+
+// perLEDFirst reorders names so that the modes hotaru can drive colour by
+// colour, and therefore verify, are tried before the ones it cannot.
+func (d *Device) perLEDFirst(names []string) []string {
+	out := make([]string, 0, len(names))
+	for _, pass := range []bool{true, false} {
+		for _, name := range names {
+			mode, ok := d.Mode(name)
+			if ok && mode.PerLED == pass {
+				out = append(out, name)
+			} else if !ok && !pass {
+				out = append(out, name) // unknown here; add() drops it
+			}
 		}
-		add(mode.Name)
 	}
 	return out
 }

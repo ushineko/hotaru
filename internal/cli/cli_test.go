@@ -297,3 +297,43 @@ func TestReloadOnAMachineWithNoRulesFileIsFine(t *testing.T) {
 	require.Contains(t, out, "hotaru.yml", "it says which file it looked at")
 	require.NotContains(t, out, "does not decode")
 }
+
+func TestAPreviewedColourIsWrittenButNotRemembered(t *testing.T) {
+	/*
+		Diagnosing lighting means setting a colour, looking at the case, and
+		setting another. Without this flag each of those became the state the
+		machine restores, and the reconciler put the previous one back while
+		somebody was still looking -- which reads as the hardware misbehaving,
+		and did, for most of an evening. See #18.
+	*/
+	server := openrgb.NewFake(board())
+	socket := serving(t, nil, server)
+
+	_, err := run(t, socket, "light", "set", "red", "--preview")
+	require.NoError(t, err)
+
+	showing, ok := server.Showing("ASUS ROG MAXIMUS Z790 HERO")
+	require.True(t, ok)
+	require.Equal(t, colour.MustParse("red"), showing.Colours[0],
+		"a previewed colour still has to reach the hardware")
+
+	// And nothing to put back: a preview is not what the machine should
+	// return to.
+	out, err := run(t, socket, "reconcile")
+	require.NoError(t, err)
+	require.Contains(t, out, "nothing to put back",
+		"a previewed colour was remembered as the state to restore")
+}
+
+func TestAColourSetWithoutPreviewIsRemembered(t *testing.T) {
+	// The other half: the flag has to be the difference, not the test setup.
+	server := openrgb.NewFake(board())
+	socket := serving(t, nil, server)
+
+	_, err := run(t, socket, "light", "set", "red")
+	require.NoError(t, err)
+
+	out, err := run(t, socket, "reconcile")
+	require.NoError(t, err)
+	require.Contains(t, out, "restored 1")
+}
