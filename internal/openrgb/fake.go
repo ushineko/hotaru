@@ -61,6 +61,7 @@ type ModeWrite struct {
 	Device     string
 	Mode       string
 	Brightness *int
+	Colour     *colour.Colour
 }
 
 // NewFake is a server holding these devices.
@@ -108,7 +109,7 @@ func (f *Fake) Device(_ context.Context, name string) (devices.Device, error) {
 }
 
 // SetMode records the write, and applies it unless this device lies about it.
-func (f *Fake) SetMode(_ context.Context, device, mode string, brightness *int) error {
+func (f *Fake) SetMode(_ context.Context, device, mode string, brightness *int, want *colour.Colour) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.Unreachable != nil {
@@ -122,11 +123,12 @@ func (f *Fake) SetMode(_ context.Context, device, mode string, brightness *int) 
 		if _, ok := f.devices[i].Mode(mode); !ok {
 			return fmt.Errorf("%s has no mode called %q", device, mode)
 		}
-		f.Modes = append(f.Modes, ModeWrite{Device: device, Mode: mode, Brightness: brightness})
+		f.Modes = append(f.Modes, ModeWrite{Device: device, Mode: mode, Brightness: brightness, Colour: want})
 		if lie, ok := f.Lies[f.devices[i].Name]; ok && strings.EqualFold(lie, mode) {
 			return nil // accepted, not honoured: only a read-back can tell
 		}
 		f.devices[i].ActiveMode = mode
+		f.applyModeColour(&f.devices[i], mode, want)
 		return nil
 	}
 	return fmt.Errorf("no device called %q", device)
@@ -155,7 +157,9 @@ func (f *Fake) SetFrame(_ context.Context, device string, frame devices.Frame) e
 			return fmt.Errorf("%s has %d LEDs and the frame has %d", device, want, got)
 		}
 		f.Writes = append(f.Writes, Write{Device: device, Frame: frame})
-		f.devices[i].Colours = append([]colour.Colour(nil), frame.Colours...)
+		if f.showsBuffer(f.devices[i]) {
+			f.devices[i].Colours = append([]colour.Colour(nil), frame.Colours...)
+		}
 		return nil
 	}
 	return fmt.Errorf("no device called %q", device)
@@ -208,3 +212,39 @@ func (f *Fake) Add(d devices.Device) {
 
 var _ Client = (*Fake)(nil)
 var _ Client = (*Conn)(nil)
+
+/*
+applyModeColour models a mode that carries its own colour.
+
+Real hardware does this and it is the failure spec 009 exists for: a device put
+into such a mode displays the colour stored in the mode, and a frame written
+afterwards goes to a buffer the mode does not read. A fake that always showed
+the last frame could never have caught it.
+*/
+func (f *Fake) applyModeColour(d *devices.Device, name string, want *colour.Colour) {
+	for i := range d.Modes {
+		if !strings.EqualFold(d.Modes[i].Name, name) || !d.Modes[i].ModeColour {
+			continue
+		}
+		if want != nil {
+			d.Modes[i].Colour = *want
+		}
+		if d.Modes[i].PerLED {
+			return // the buffer is what it shows; the mode's colour is spare
+		}
+		for j := range d.Colours {
+			d.Colours[j] = d.Modes[i].Colour
+		}
+		return
+	}
+}
+
+// showsBuffer reports whether a device in its current mode displays the frame
+// it is sent, rather than the colour its mode holds.
+func (f *Fake) showsBuffer(d devices.Device) bool {
+	mode, ok := d.Mode(d.ActiveMode)
+	if !ok {
+		return true
+	}
+	return mode.PerLED || !mode.ModeColour
+}

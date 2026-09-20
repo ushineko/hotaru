@@ -59,6 +59,18 @@ type Mode struct {
 	Name       string
 	PerLED     bool
 	Brightness bool
+
+	// ModeColour is a mode that takes its colour from the mode itself rather
+	// than from the device's buffer. Setting such a mode without setting its
+	// colour shows whatever the vendor last stored there: an NZXT cooler put
+	// into Static displayed red while the buffer held purple, and every check
+	// hotaru had reported success. See spec 009.
+	ModeColour bool
+
+	// Colour is the colour the mode currently holds, where it holds one. Read
+	// back after a write to a ModeColour mode, the way the buffer is read back
+	// after a write to a PerLED one.
+	Colour colour.Colour
 }
 
 /*

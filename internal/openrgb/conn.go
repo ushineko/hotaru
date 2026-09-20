@@ -269,7 +269,7 @@ the device's own definition of it — speed, direction and colour count included
 because a mode is a structure the server round-trips rather than a string it
 looks up. Brightness is asserted only where the mode says it has any.
 */
-func (c *Conn) SetMode(ctx context.Context, device, mode string, brightness *int) error {
+func (c *Conn) SetMode(ctx context.Context, device, mode string, brightness *int, want *colour.Colour) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -289,6 +289,19 @@ func (c *Conn) SetMode(ctx context.Context, device, mode string, brightness *int
 		wanted := *m
 		if brightness != nil && wanted.ModeFlags&flagHasBrightness != 0 {
 			wanted.ModeBrightness = scaleBrightness(*brightness, m.ModeBrightnessMin, m.ModeBrightnessMax)
+		}
+		/*
+			A mode that takes its own colour needs it set here. The frame
+			written afterwards goes to a buffer such a mode does not read, so
+			without this the device shows the colour its vendor left behind --
+			a Kraken put into Static displayed NZXT's red while the buffer, and
+			every read-back of it, held purple.
+
+			Only the slots the mode actually has are filled: ModeColorsMin is
+			how many it insists on, and a mode advertising none is left alone.
+		*/
+		if want != nil && wanted.ModeFlags&flagHasModeSpecificColor != 0 {
+			wanted.ModeColors = modeColours(m, *want)
 		}
 		req := &sdk.RGBControllerUpdateModeRequest{ModeIdx: int32(i), Mode: &wanted}
 		if err := c.client.RGBControllerUpdateMode(entry.index, req); err != nil {
@@ -326,10 +339,59 @@ func (c *Conn) SetFrame(ctx context.Context, device string, frame devices.Frame)
 	for i, col := range frame.Colours {
 		payload[i] = sdk.Color{R: col.R, G: col.G, B: col.B}
 	}
-	if err := c.client.RGBControllerUpdateLeds(entry.index, &sdk.RGBControllerUpdateLedsRequest{LedColor: payload}); err != nil {
-		return fmt.Errorf("write %d LEDs to %s: %w", len(payload), device, err)
+	/*
+		One request per zone, not one for the device.
+
+		A device's zones are what the hardware treats as separate: an NZXT
+		cooler's two Hue 2 channels are independent controllers behind one
+		USB endpoint, and handing OpenRGB a single array spanning both meant
+		they were never delivered together. That cooler showed a stale colour
+		on one channel while the other moved, rendered a frame torn partway
+		along a chain of fans, and stopped responding for minutes at a time
+		under a run of writes.
+
+		Written per zone, it tracks. See spec 011.
+	*/
+	for i, leds := range byZone(data.Zones, payload) {
+		if len(leds) == 0 {
+			continue
+		}
+		if err := c.client.RGBControllerUpdateZoneLeds(entry.index,
+			&sdk.RGBControllerUpdateZoneLedsRequest{ZoneIdx: uint32(i), LedColor: leds}); err != nil {
+			return fmt.Errorf("write %s zone %d: %w", device, i, err)
+		}
 	}
 	return nil
+}
+
+/*
+byZone cuts a device's frame into one run of colours per zone.
+
+Zones are contiguous in device LED order and the protocol gives their sizes,
+which is the same assumption the catalogue makes when it counts their offsets.
+A device that reports no zones, or fewer LEDs in its zones than it has in
+total, keeps the remainder in the last run rather than losing it: a frame is
+the whole device or it is a bug.
+*/
+func byZone(zones []*sdk.Zone, payload []sdk.Color) [][]sdk.Color {
+	if len(zones) == 0 {
+		return [][]sdk.Color{payload}
+	}
+	out := make([][]sdk.Color, 0, len(zones))
+	at := 0
+	for i, zone := range zones {
+		n := int(zone.ZoneLedsCount)
+		if last := i == len(zones)-1; last || at+n > len(payload) {
+			n = len(payload) - at
+		}
+		if n <= 0 {
+			out = append(out, nil)
+			continue
+		}
+		out = append(out, payload[at:at+n])
+		at += n
+	}
+	return out
 }
 
 /*
@@ -365,11 +427,16 @@ func convert(data *sdk.ControllerData) devices.Device {
 	}
 
 	for i, mode := range data.Modes {
-		device.Modes = append(device.Modes, devices.Mode{
+		m := devices.Mode{
 			Name:       clean(mode.ModeName),
 			PerLED:     mode.ModeFlags&flagHasPerLEDColor != 0,
 			Brightness: mode.ModeFlags&flagHasBrightness != 0,
-		})
+			ModeColour: mode.ModeFlags&flagHasModeSpecificColor != 0,
+		}
+		if m.ModeColour && len(mode.ModeColors) > 0 {
+			m.Colour = colour.Colour{R: mode.ModeColors[0].R, G: mode.ModeColors[0].G, B: mode.ModeColors[0].B}
+		}
+		device.Modes = append(device.Modes, m)
 		if int32(i) == data.ActiveMode {
 			device.ActiveMode = clean(mode.ModeName)
 		}
@@ -430,4 +497,29 @@ func scaleBrightness(percent int, lowest, highest uint32) uint32 {
 	}
 	span := float64(highest) - float64(lowest)
 	return lowest + uint32(span*float64(percent)/100.0+0.5)
+}
+
+/*
+modeColours fills a mode's colour slots with one colour.
+
+A mode declares how many it takes. Most take one; a few take several, and a
+device asked for a solid colour wants all of them the same rather than one set
+and the rest whatever they were.
+*/
+func modeColours(m *sdk.Mode, c colour.Colour) []sdk.Color {
+	n := len(m.ModeColors)
+	if n < int(m.ModeColorsMin) {
+		n = int(m.ModeColorsMin)
+	}
+	if n == 0 {
+		n = 1
+	}
+	if most := int(m.ModeColorsMax); most > 0 && n > most {
+		n = most
+	}
+	out := make([]sdk.Color, n)
+	for i := range out {
+		out[i] = sdk.Color{R: c.R, G: c.G, B: c.B}
+	}
+	return out
 }
