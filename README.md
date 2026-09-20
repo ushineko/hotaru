@@ -217,6 +217,11 @@ MIT. See [LICENSE](LICENSE).
 
 ### Unreleased
 
+- The wizard ends by offering to light the machine with what it just learned.
+  A device named for the first time has no remembered state, so a first run
+  used to finish with a written file, a dark keyboard, and an instruction to go
+  and type another command (#34).
+
 - `hotaru light map --devices`, with nothing after it, offers the list to pick
   from. Device names are the hardware's own and long enough to mistype, and a
   mistyped one maps nothing while looking like it worked.
