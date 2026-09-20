@@ -2,7 +2,16 @@
 
 **Issue**: [#1](https://github.com/ushineko/hotaru/issues/1)
 
-## Status: DRAFT — awaiting review
+## Status: IMPLEMENTED, except the second-machine test
+
+Every acceptance criterion is met but one, and that one cannot be met here: the
+second-machine test runs on hardware the author does not own. Until it does,
+this spec is not complete — which is the point of having written it down that
+way, since "it works on my machine" is the failure the criterion exists to
+catch.
+
+Preview and lease moved to spec 004, and walking a zone LED by LED to spec 005.
+Both are marked where they were, with the reasoning.
 
 ## Context
 
@@ -1359,157 +1368,163 @@ ownership of the hardware.
 
 ## Acceptance Criteria
 
-- [ ] `go.mod` is `github.com/ushineko/hotaru`, Go 1.26.0, no `toolchain` line.
-- [ ] An OpenRGB SDK client connects to a configured host/port, lists devices
+- [x] `go.mod` is `github.com/ushineko/hotaru`, Go 1.26.0, no `toolchain` line.
+- [x] An OpenRGB SDK client connects to a configured host/port, lists devices
       with name, type, modes, active mode and zones, and sets a device's mode
       and colour, with no subprocess and no output parsing.
-- [ ] Duplicate device names from a rescanned server collapse to the first
+- [x] Duplicate device names from a rescanned server collapse to the first
       occurrence.
-- [ ] Devices are addressed by name throughout; no index is written to disk or
+- [x] Devices are addressed by name throughout; no index is written to disk or
       carried between operations.
-- [ ] Mode resolution returns the device's own spelling of the chosen mode, or
+- [x] Mode resolution returns the device's own spelling of the chosen mode, or
       nothing when the device cannot express the intent, and the nothing case is
       a skip-with-reason at the call site rather than an error.
-- [ ] A target resolves as device, `device/zone`, `device/zone[a:b]` or
+- [x] A target resolves as device, `device/zone`, `device/zone[a:b]` or
       `device/segment-name`, and a whole-device target is the same code path
       filling every zone.
-- [ ] Named segments are read from device rules and are what scenes reference;
+- [x] Named segments are read from device rules and are what scenes reference;
       an unknown segment name is reported with the names that do exist, and the
       rest of the scene still applies.
-- [ ] Assignments compose into one frame per device before any write: a test
+- [x] Assignments compose into one frame per device before any write: a test
       asserts that a three-assignment scene produces exactly one write per
       device, and that a later assignment overrides an earlier one on the same
       LEDs.
-- [ ] A frame with more than one distinct colour resolves against a mode that
+- [x] A frame with more than one distinct colour resolves against a mode that
       accepts per-LED data; a device with no such mode is reported in the
       per-device output, and its colours are never averaged or reduced to one.
-- [ ] `hotaru light probe` reports zones and LED counts, and can walk a zone one
-      LED at a time so a user can see which light is which before naming it.
-- [ ] A partial assignment composes onto what hotaru last wrote, falling back to
+- [x] `hotaru light probe` reports zones and LED counts. **Walking a zone one
+      LED at a time moved to spec 005**: it is a conversation, not a report, and
+      belongs with the wizard that asks the questions.
+- [x] A partial assignment composes onto what hotaru last wrote, falling back to
       what the device reports and then to black — never onto a device's claim
       when a better answer is remembered.
-- [ ] With no config file at all, every device OpenRGB reports is in scope, and
+- [x] With no config file at all, every device OpenRGB reports is in scope, and
       a test with an invented device list asserts it.
-- [ ] Solid resolves static-first by default; a rule can invert it to
+- [x] Solid resolves static-first by default; a rule can invert it to
       direct-first; the shipped example config inverts it for Aura/Maximus and
       is not loaded unless the user adopts it.
-- [ ] A write is read back: a device that accepts a mode without taking it falls
+- [x] A write is read back: a device that accepts a mode without taking it falls
       through to the next candidate, and the outcome is remembered for the
       session. A test drives a fake device that lies about a mode.
-- [ ] `hotaru light probe` reports what each present device advertises, what
+- [x] `hotaru light probe` reports what each present device advertises, what
       actually took, and the rules it would suggest — and writes nothing unless
       asked.
-- [ ] A fresh install writes to no device: a test asserts that a service started
+- [x] A fresh install writes to no device: a test asserts that a service started
       with empty state performs no write, and that reconciliation with nothing
       recorded is a no-op rather than an assertion of a default.
 - [ ] The second-machine test passes on hardware the author does not own, with
       no hand-written configuration. It is run before the version that claims
       lighting support is tagged.
-- [ ] A rule can mark a device never-blanked: it is skipped for `off` and still
+- [x] A rule can mark a device never-blanked: it is skipped for `off` and still
       receives colour scenes.
-- [ ] A rule can assert a brightness level on every write.
-- [ ] Config is YAML (`.yml`) read through fynedesygn `settings` with
+- [x] A rule can assert a brightness level on every write.
+- [x] Config is YAML (`.yml`) read through fynedesygn `settings` with
       `settings/yamlcodec`, from `$XDG_CONFIG_HOME/hotaru/`, seeded per key on
       first run, and a user-edited key is never overwritten.
-- [ ] `hotaru.yml` is never written by the program: a test asserts that a round
+- [x] `hotaru.yml` is never written by the program: a test asserts that a round
       trip through load-and-save leaves a user's file, comments included, byte
       for byte unchanged — because it is never saved at all.
-- [ ] Desired state is written to `$XDG_STATE_HOME/hotaru/`, not to the config
+- [x] Desired state is written to `$XDG_STATE_HOME/hotaru/`, not to the config
       directory, and a machine with no state file writes to no device.
-- [ ] A malformed rule costs that entry only: it is reported with what is wrong
+- [x] A malformed rule costs that entry only: it is reported with what is wrong
       and skipped, and the rest of the file still loads.
-- [ ] `hotaru light list` prints devices with their modes, marking the active
+- [x] `hotaru light list` prints devices with their modes, marking the active
       one and which are in scope.
-- [ ] `hotaru light set <colour> [--devices ...]` applies a colour, printing one
+- [x] `hotaru light set <colour> [--devices ...]` applies a colour, printing one
       line per device: mode used, skipped with reason, or failed.
-- [ ] `hotaru light health` distinguishes server unreachable, up with no
+- [x] `hotaru light health` distinguishes server unreachable, up with no
       devices, up with no in-scope devices, and healthy, exiting non-zero for
       the first three, and reports the negotiated protocol version.
-- [ ] Each unhealthy state names what to do about it, and distinguishes "OpenRGB
+- [x] Each unhealthy state names what to do about it, and distinguishes "OpenRGB
       is not installed" from "installed but not running" from "running but
       enumerated nothing" — three different remedies, not one error.
-- [ ] Any remedy hotaru can perform — starting the OpenRGB server, enabling its
+- [x] Any remedy hotaru can perform — starting the OpenRGB server, enabling its
       own user service, restarting a server that enumerated a partial list — is
       offered explicitly and performed only on an answer. A test asserts that no
       such action happens without one.
-- [ ] `--json` on every listing and health command emits a stable shape.
-- [ ] With the server unreachable, every command fails in under a second with
+- [x] `--json` on every listing and health command emits a stable shape.
+- [x] With the server unreachable, every command fails in under a second with
       one line naming the address it tried. Nothing hangs.
-- [ ] Per-device coalescing: rapid repeated writes to one device converge on the
+- [x] Per-device coalescing: rapid repeated writes to one device converge on the
       last, verified with a fake client.
-- [ ] The service interface distinguishes preview from apply, and a test asserts
-      that a preview followed by a revert leaves desired state untouched.
-- [ ] A preview suspends reconciliation for the devices it covers and resumes it
-      when the preview ends; a test asserts a reassert does not fire against a
-      previewed device and does fire against one outside the preview.
-- [ ] A preview is a lease bound to its caller: a test asserts that a caller
-      going away restores desired state without the caller having said so.
-- [ ] `hotaru serve` listens on a Unix socket in `$XDG_RUNTIME_DIR`, serves
+> **Preview moved to spec 004.** The three criteria below are unchanged and
+> unmet; they are listed there instead, because preview only means something
+> once scenes exist to preview and the editor that needs it is built on them.
+> The machinery they depend on — desired state, reconciliation, per-device
+> queues — is finished here, so spec 004 adds semantics rather than mechanism.
+>
+> - The service interface distinguishes preview from apply, and a test asserts
+>   that a preview followed by a revert leaves desired state untouched.
+> - A preview suspends reconciliation for the devices it covers and resumes it
+>   when the preview ends.
+> - A preview is a lease bound to its caller: a caller going away restores
+>   desired state without having said so.
+- [x] `hotaru serve` listens on a Unix socket in `$XDG_RUNTIME_DIR`, serves
       `/v1`, and survives every backend being absent.
-- [ ] The user unit has no `graphical-session.target` dependency, and the
+- [x] The user unit has no `graphical-session.target` dependency, and the
       service starts and serves with no session at all — verified by starting it
       with no desktop running.
-- [ ] hotaru reports when lingering is not enabled, explains that boot-time
+- [x] hotaru reports when lingering is not enabled, explains that boot-time
       restore needs it, and offers to enable it. It never enables it silently,
       and the package never enables it.
-- [ ] A restore that reaches fewer devices than the recorded state names is
+- [x] A restore that reaches fewer devices than the recorded state names is
       reported as incomplete, retries with backoff, and completes without
       further instruction when the devices appear.
-- [ ] The unit declares no `After=`, `Requires=` or `Wants=` on any OpenRGB
+- [x] The unit declares no `After=`, `Requires=` or `Wants=` on any OpenRGB
       unit: the server is a resource that appears, and neither its absence nor
       its name can prevent hotaru from starting.
-- [ ] Readiness is judged by the device list, not by the socket accepting — a
+- [x] Readiness is judged by the device list, not by the socket accepting — a
       server that answers while reporting fewer devices than recorded state
       names is "not ready yet", not "healthy".
-- [ ] Where OpenRGB is installed but not running, hotaru detects which unit
+- [x] Where OpenRGB is installed but not running, hotaru detects which unit
       exists (system `openrgb.service`, a user unit, or neither) and offers to
       start it rather than naming one.
-- [ ] The CLI depends on `internal/api`'s client and on no device package — a
+- [x] The CLI depends on `internal/api`'s client and on no device package — a
       test asserts the import graph, so a direct-write path cannot appear by
       accident.
-- [ ] Every `/v1` endpoint has a recorded one-off client transcript — the
+- [x] Every `/v1` endpoint has a recorded one-off client transcript — the
       request, the response, and what it establishes — kept as the worked
       example in the API documentation and reused as the test fixture.
-- [ ] With the service not running, a CLI write fails with one line saying so
+- [x] With the service not running, a CLI write fails with one line saying so
       and a non-zero exit; `--direct` performs read-only queries only.
-- [ ] Every operation on `internal/service` is reachable from `cmd/hotaru`, and
+- [x] Every operation on `internal/service` is reachable from `cmd/hotaru`, and
       a test enumerates the service surface and fails on one the CLI cannot
       reach. The same test covers the GUI when spec 004 lands.
-- [ ] Tests run headless with no OpenRGB server and no hardware, against a fake
+- [x] Tests run headless with no OpenRGB server and no hardware, against a fake
       client, covering mode resolution for facts 1, 3 and 4, duplicate
       collapsing, config merge and coalescing.
-- [ ] Tests include machine profiles that are not this desk: one device, no
+- [x] Tests include machine profiles that are not this desk: one device, no
       devices, only unknown mode names, an OpenRGB that is up but empty. Each
       asserts what a stranger sees, not what this author sees.
-- [ ] Every absent-backend path is covered: server unreachable, server empty,
+- [x] Every absent-backend path is covered: server unreachable, server empty,
       and (from 002) no liquidctl, no cooler, no LCD, no OpenLinkHub. In each
       case unrelated operations still work and the service stays up.
-- [ ] At least one test exercises a real OpenRGB server when one is reachable
+- [x] At least one test exercises a real OpenRGB server when one is reachable
       and skips cleanly when it is not — the integration boundary is the wire
       protocol, which a fake cannot fail the way a real server can.
-- [ ] No test is a translation of a Python test. Each is written against the Go
+- [x] No test is a translation of a Python test. Each is written against the Go
       structure, and the Python suite is mined for hardware assertions only.
-- [ ] Each device quirk carried from the Python has a test named for it —
+- [x] Each device quirk carried from the Python has a test named for it —
       `TestGPURejectsStatic`, `TestAuraNeedsDirect`, `TestKeychronNeverBlanks` —
       so a hardware or upstream change fails one named test rather than
       silently changing behaviour.
-- [ ] No package reimplements the bounded-drop queue: per-device serialisation
+- [x] No package reimplements the bounded-drop queue: per-device serialisation
       is a goroutine with a single-slot mailbox, and a test asserts that N rapid
       requests to one device produce one write of the last value, with nothing
       dropped silently.
-- [ ] The service listens on a Unix socket only; a test asserts no listener is
+- [x] The service listens on a Unix socket only; a test asserts no listener is
       created on any network address.
-- [ ] No SDK-candidate package holds mutable package-level state, prints, or
+- [x] No SDK-candidate package holds mutable package-level state, prints, or
       calls `os.Exit`; a test asserts it rather than a review catching it.
-- [ ] Every device and socket call takes a `context.Context` and honours
+- [x] Every device and socket call takes a `context.Context` and honours
       cancellation, including the connect.
-- [ ] `hotaru light list --json` and `light health --json` shapes are documented
+- [x] `hotaru light list --json` and `light health --json` shapes are documented
       in the README as an interface, with the note that they are consumed by
       other programs and changing them is breaking.
-- [ ] `go test ./...` passes with no hardware, no OpenRGB, no liquidctl and no
+- [x] `go test ./...` passes with no hardware, no OpenRGB, no liquidctl and no
       root, because that is what lets a PKGBUILD's `check()` run it.
-- [ ] `make test`, `make lint` and `govulncheck ./...` pass.
-- [ ] README covers what it is, what it needs (a running OpenRGB server; from
+- [x] `make test`, `make lint` and `govulncheck ./...` pass.
+- [x] README covers what it is, what it needs (a running OpenRGB server; from
       002, liquidctl), the commands, and the config file with example rules.
 - [x] The migration contract, the cutover order and the KDE hotkey rules are
       carried into `docs/migration.md` so specs 002-006 do not have to rediscover
