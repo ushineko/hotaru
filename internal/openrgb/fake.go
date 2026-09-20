@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/ushineko/hotaru/internal/colour"
 	"github.com/ushineko/hotaru/internal/devices"
@@ -36,6 +37,10 @@ type Fake struct {
 
 	// Unreachable makes every call fail, as a stopped server does.
 	Unreachable error
+
+	// Delay is how long each write takes, for hardware that is not instant
+	// and for tests that need a write to still be in flight.
+	Delay time.Duration
 
 	// Writes is every frame written, in order, for a test to assert against.
 	Writes []Write
@@ -129,6 +134,13 @@ func (f *Fake) SetMode(_ context.Context, device, mode string, brightness *int) 
 
 // SetFrame records the frame and shows it.
 func (f *Fake) SetFrame(_ context.Context, device string, frame devices.Frame) error {
+	f.mu.Lock()
+	delay := f.Delay
+	f.mu.Unlock()
+	if delay > 0 {
+		time.Sleep(delay)
+	}
+
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.Unreachable != nil {

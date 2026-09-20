@@ -102,7 +102,9 @@ func (s *Service) Reconcile(ctx context.Context, only []string) (Restore, error)
 		}
 
 		want := desired.Devices[name]
-		result := s.writeFrame(ctx, client, device, want.Frame(name), false)
+		result := s.through(ctx, device.Name, func(ctx context.Context) Result {
+			return s.writeFrame(ctx, client, device, want.Frame(name), false)
+		})
 		if result.Applied {
 			restore.Applied++
 		}

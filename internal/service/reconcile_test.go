@@ -2,6 +2,7 @@ package service_test
 
 import (
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/ushineko/hotaru/internal/config"
 	"github.com/ushineko/hotaru/internal/devices"
 	"github.com/ushineko/hotaru/internal/openrgb"
+	"github.com/ushineko/hotaru/internal/queue"
 	"github.com/ushineko/hotaru/internal/service"
 	"github.com/ushineko/hotaru/internal/state"
 )
@@ -209,4 +211,86 @@ func TestAPartialSceneBuildsOnWhatHotaruWroteNotOnWhatTheDeviceClaims(t *testing
 	require.Equal(t, colour.MustParse("red"), showing.Colours[0], "the exception")
 	require.Equal(t, colour.MustParse("teal"), showing.Colours[1],
 		"the rest of the scene was blanked by trusting the device's report")
+}
+
+func TestRapidWritesToOneDeviceConvergeOnTheLast(t *testing.T) {
+	// Spec 026's failure, in the shape it should have had: three scenes in a
+	// second produced twelve jobs against a bounded queue that dropped the
+	// oldest. Here the newest replaces the pending one, nobody is dropped
+	// silently, and the device ends up showing what was last asked for.
+	server := openrgb.NewFake(board())
+	server.Delay = 20 * time.Millisecond
+
+	q := queue.New(t.Context())
+	defer q.Close()
+	svc := service.New(nil, server, "")
+	svc.SetRecorder(recorder(t))
+	svc.SetQueue(q)
+
+	colours := []string{"red", "green", "blue", "purple", "teal"}
+	var wg sync.WaitGroup
+	results := make([]service.Result, len(colours))
+	for i, name := range colours {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			out, err := svc.Apply(t.Context(), service.Request{Assignments: solid("ASUS", name)})
+			require.NoError(t, err)
+			if len(out) > 0 {
+				results[i] = out[0]
+			}
+		}()
+		time.Sleep(2 * time.Millisecond) // pressed in quick succession, not simultaneously
+	}
+	wg.Wait()
+
+	var applied, superseded int
+	for _, result := range results {
+		switch {
+		case result.Applied:
+			applied++
+		case result.Superseded:
+			superseded++
+		}
+	}
+	require.Positive(t, superseded, "every write waited its turn rather than being replaced")
+	require.Positive(t, applied)
+
+	// Whatever was reported, the device is showing a colour someone asked for,
+	// and the queue never wrote two frames at once.
+	showing, _ := server.Showing("ASUS ROG MAXIMUS Z790 HERO")
+	require.Contains(t, []string{"#ff0000", "#00ff00", "#0000ff", "#8000ff", "#00ff80"},
+		showing.Colours[0].String())
+}
+
+func TestASupersededWriteIsNotAFailure(t *testing.T) {
+	server := openrgb.NewFake(board())
+	server.Delay = 30 * time.Millisecond
+
+	q := queue.New(t.Context())
+	defer q.Close()
+	svc := service.New(nil, server, "")
+	svc.SetQueue(q)
+
+	// One write in flight, one waiting, one replacing the waiter.
+	go func() { _, _ = svc.Apply(t.Context(), service.Request{Assignments: solid("ASUS", "red")}) }()
+	time.Sleep(10 * time.Millisecond)
+
+	first := make(chan service.Result, 1)
+	go func() {
+		out, err := svc.Apply(t.Context(), service.Request{Assignments: solid("ASUS", "green")})
+		require.NoError(t, err)
+		first <- out[0]
+	}()
+	time.Sleep(5 * time.Millisecond)
+
+	out, err := svc.Apply(t.Context(), service.Request{Assignments: solid("ASUS", "blue")})
+	require.NoError(t, err)
+	require.True(t, out[0].Applied)
+
+	replaced := <-first
+	require.True(t, replaced.Superseded)
+	require.False(t, replaced.Applied)
+	require.Empty(t, replaced.Skipped, "superseded is not a device declining to do something")
+	require.NoError(t, replaced.Err, "nor an error")
 }

@@ -164,6 +164,8 @@ func apply(cmd *cobra.Command, req api.ApplyRequest) error {
 					cmd.Printf("  tried %s first; the device stayed in %s\n", attempt.Mode, attempt.Active)
 				}
 			}
+		case result.Superseded:
+			cmd.Printf("%s: superseded by a later request\n", result.Device)
 		case result.Error != "":
 			cmd.PrintErrf("%s: %s\n", result.Device, result.Error)
 		default:

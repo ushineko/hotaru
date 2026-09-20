@@ -224,10 +224,11 @@ func describe(view service.View) Device {
 
 func result(got service.Result) Result {
 	out := Result{
-		Device:  got.Device,
-		Applied: got.Applied,
-		Mode:    got.Mode,
-		Skipped: got.Skipped,
+		Device:     got.Device,
+		Applied:    got.Applied,
+		Mode:       got.Mode,
+		Skipped:    got.Skipped,
+		Superseded: got.Superseded,
 	}
 	if got.Err != nil {
 		out.Error = got.Err.Error()
