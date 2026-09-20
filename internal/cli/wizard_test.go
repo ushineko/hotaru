@@ -297,8 +297,9 @@ func TestTheWizardFindsAModeThatActuallyLightsTheDevice(t *testing.T) {
 		"and why it is there")
 
 	asked := person.questions()
-	require.Contains(t, asked, "Is anything on it lit white now? (Static)")
-	require.Contains(t, asked, "Is anything on it lit white now? (Direct)")
+	require.Contains(t, asked, "Is it lit red now? (Static)")
+	require.Contains(t, asked, "Is it lit red now? (Direct)",
+		"each mode is asked about on its own; the first run elsewhere asked about Direct four times")
 }
 
 func TestADeviceThatLightsInNoModeIsSkippedRatherThanMapped(t *testing.T) {
@@ -315,7 +316,8 @@ func TestADeviceThatLightsInNoModeIsSkippedRatherThanMapped(t *testing.T) {
 	require.NoError(t, cli.Map(t.Context(), client, person))
 
 	said := strings.Join(person.said, "\n")
-	require.Contains(t, said, "lights up in any mode it offers")
+	require.Contains(t, said, "Nothing lit in Static or Direct",
+		"a device that would not light should say what was already ruled out")
 	require.Contains(t, said, "nothing to write")
 	require.NotContains(t, person.questions(), "What is red?",
 		"a device nobody can see was asked about anyway")
@@ -368,4 +370,39 @@ func TestOneDeviceAtATime(t *testing.T) {
 
 	require.NotContains(t, strings.Join(person.said, "\n"), "MM700",
 		"a device nobody asked about was mapped anyway")
+}
+
+func TestThingsOnOneControlAreNotSplit(t *testing.T) {
+	// A 12V header is one control for everything plugged into it. Two strips
+	// on a splitter are two strips and one LED, and dividing that LED between
+	// them would report a boundary that could not be settled -- which sounds
+	// like a fault rather than the plain fact it is.
+	board := devices.Device{
+		Name:       "Z790 AORUS MASTER X",
+		LEDCount:   1,
+		Modes:      []devices.Mode{{Name: "Direct", PerLED: true}},
+		Zones:      []devices.Zone{{Name: "LED_C", First: 0, Count: 1}},
+		ActiveMode: "Direct",
+	}
+	client := api.NewClient(serving(t, nil, openrgb.NewFake(board)))
+	home := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", home)
+
+	person := &scripted{answers: []string{
+		"y",           // it lights
+		"desk strips", // what is red
+		"2",           // there are two of them
+		"y",           // the map is right
+		"y",           // write it
+	}}
+	require.NoError(t, cli.Map(t.Context(), client, person))
+
+	require.Contains(t, strings.Join(person.said, "\n"), "controlled together")
+	require.NotContains(t, person.questions(), "exactly one light",
+		"it tried to find a boundary between two things sharing one control")
+
+	rules, err := os.ReadFile(filepath.Join(home, "hotaru", "hotaru.yml"))
+	require.NoError(t, err)
+	require.Contains(t, string(rules), `desk-strips: {zone: "LED_C"}`,
+		"the pair is named once, as the one thing it can be set as")
 }

@@ -2,7 +2,7 @@
 
 **Issue**: [#10](https://github.com/ushineko/hotaru/issues/10)
 
-## Status: COMPLETE
+## Status: COMPLETE, except zone sizing (AC14)
 
 ## Context
 
@@ -82,6 +82,11 @@ no rules file, which is the case it exists for.
 - [x] AC4 A zone the user names as holding several things is divided evenly
       where the LED count allows, and the division is shown and confirmed
       before anything is named.
+- [x] AC13 Several things sharing one control are named once, and said to be
+      controlled together, rather than divided between LEDs that do not exist.
+- [ ] AC14 A resizable zone with no length set is asked about before it is
+      mapped, and sized through the service, so an attached strip is found
+      rather than recorded as an empty header.
 - [x] AC5 A division that does not fit evenly, or a confirmation that fails, is
       bisected: halves are lit, the user is asked whether anything shows two
       colours, and the boundary moves by half the remaining distance.
@@ -123,6 +128,35 @@ which yields `maximus` and `kraken`.
 produced a segment called `y`. Single characters, yes and no, and the palette's
 own colour names are declined with an explanation and asked again, because a
 slip that reaches the rules file becomes a puzzle weeks later.
+
+## What the second machine added
+
+Run on hardware the author does not own, the conversation needed three things
+it did not have.
+
+**A mode is probed exactly.** The first run there asked about Direct four times,
+because every other mode it tried fell through to Direct and was reported as
+Direct. Asking what one mode does cannot be answered by quietly trying another.
+
+**Things sharing one control are not split.** A 12V header is a single control
+for everything plugged into it: two strips daisy-chained onto one are two
+strips and one LED. Dividing that LED between them reported a boundary that
+could not be settled, which sounds like a fault rather than the plain fact it
+is.
+
+**A header with no length set cannot be tested at all.** An addressable header
+reports `count=0, max=256` until someone says how long the strip on it is, so
+hotaru lights nothing there, the user answers "nothing", and an empty header is
+recorded -- which is right by accident and wrong when a strip is attached. The
+wizard must ask the length before it can ask what is there, and a provisional
+length is enough to find out whether anything is attached at all. **Not yet
+built**; it needs a resize call hotaru does not make.
+
+The same session settled what was on that machine in a few minutes, including
+the negatives: two addressable headers with nothing attached, and a pair of
+strips on the analogue one that their owner had forgotten were there. That is
+the argument for the whole feature -- "I do not remember what is plugged in" is
+the normal condition, and it is answerable by lighting things and asking.
 
 ## Risks & Assumptions
 

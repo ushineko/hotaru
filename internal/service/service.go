@@ -194,6 +194,12 @@ type Request struct {
 	// still no use, and silently showing one colour where three were asked for
 	// would be a worse answer than choosing a mode that works.
 	Mode string
+
+	// Exactly stops the fall-through. A caller asking what one particular mode
+	// does needs an answer about that mode: trying the next candidate and
+	// reporting it as a success answers a question nobody asked, and looks to
+	// the caller like the mode they named having worked.
+	Exactly bool
 }
 
 /*
@@ -220,6 +226,17 @@ type Result struct {
 	Superseded bool
 	Err        error
 	Attempts   []Attempt
+
+	// Unconfirmed is a device that accepted everything and will not say what
+	// it is showing. Neither a success nor a failure: some hardware reports a
+	// stale buffer while displaying exactly what it was sent.
+	Unconfirmed string
+
+	// Problems are assignments that named something this device does not have.
+	// Reported even when the write succeeded, because "everything blue, except
+	// the top fan" with the fan misspelled is a device that went blue all over
+	// and said it worked.
+	Problems []string
 }
 
 // Attempt is one mode hotaru tried, and what the device did with it.
@@ -227,6 +244,8 @@ type Attempt struct {
 	Mode     string
 	Accepted bool   // the server took the write
 	Active   string // what the device said it was in afterwards
+	Showing  bool   // and whether it was showing the colours it was sent
+	Settled  bool   // and whether that took a second write after the mode change
 	Why      string // why this attempt was abandoned, if it was
 }
 
@@ -279,13 +298,13 @@ func (s *Service) Apply(ctx context.Context, req Request) ([]Result, error) {
 		if len(assignments) == 0 && !req.Off {
 			continue
 		}
-		results = append(results, s.applyOne(ctx, client, cfg, &device, assignments, req.Off, req.Mode))
+		results = append(results, s.applyOne(ctx, client, cfg, &device, assignments, req.Off, req.Mode, req.Exactly))
 	}
 	return results, nil
 }
 
 func (s *Service) applyOne(ctx context.Context, client openrgb.Client, cfg *config.Config,
-	device *devices.Device, assignments []devices.Assignment, off bool, preferred string,
+	device *devices.Device, assignments []devices.Assignment, off bool, preferred string, exactly bool,
 ) Result {
 	result := Result{Device: device.Name}
 	rule := devices.RuleFor(cfg, device.Name)
@@ -295,20 +314,23 @@ func (s *Service) applyOne(ctx context.Context, client openrgb.Client, cfg *conf
 		frame = devices.Solid(device, colour.Black)
 	} else {
 		composed, problems := devices.Compose(device, rule, s.base(device), assignments)
-		if len(problems) > 0 {
+		for _, problem := range problems {
+			result.Problems = append(result.Problems, problem.Error())
+		}
+		if len(problems) == len(assignments) {
 			// Every assignment for this device failed to resolve; there is
 			// nothing to write, and the reason is the useful part.
-			if len(problems) == len(assignments) {
-				result.Skipped = problems[0].Error()
-				return result
-			}
+			result.Skipped = problems[0].Error()
+			return result
 		}
 		frame = composed
 	}
 
+	problems := result.Problems
 	result = s.through(ctx, device.Name, func(ctx context.Context) Result {
-		return s.writeFrame(ctx, client, device, frame, off, preferred)
+		return s.writeFrame(ctx, client, device, frame, off, preferred, exactly)
 	})
+	result.Problems = problems
 	if result.Applied && !off {
 		s.remember(device.Name, result.Mode, frame)
 	}
@@ -350,7 +372,7 @@ Reconciling must not be a second implementation of this: the fall-through, the
 read-back and the reasons a device is skipped are the same facts whoever asked.
 */
 func (s *Service) writeFrame(ctx context.Context, client openrgb.Client,
-	device *devices.Device, frame devices.Frame, off bool, preferred string,
+	device *devices.Device, frame devices.Frame, off bool, preferred string, exactly bool,
 ) Result {
 	result := Result{Device: device.Name}
 	rule := devices.RuleFor(s.config(), device.Name)
@@ -364,9 +386,11 @@ func (s *Service) writeFrame(ctx context.Context, client openrgb.Client,
 			result.Skipped = fmt.Sprintf("no mode called %q; it advertises %s",
 				preferred, strings.Join(device.ModeNames(), ", "))
 			return result
-		case want.PerLED && !mode.PerLED:
+		case want.PerLED && !mode.PerLED && !exactly:
 			// Asked for a mode that cannot show the frame. Resolution carries
 			// on rather than showing one colour and reporting success.
+		case exactly:
+			candidates = []string{mode.Name}
 		default:
 			candidates = append([]string{mode.Name}, without(candidates, mode.Name)...)
 		}
@@ -411,11 +435,50 @@ func (s *Service) writeFrame(ctx context.Context, client openrgb.Client,
 			return result
 		}
 		attempt.Active = after.ActiveMode
+		attempt.Showing = showing(after, frame)
+
+		if !attempt.Showing && strings.EqualFold(after.ActiveMode, mode) {
+			/*
+				The mode took and the colours did not. Before concluding the
+				device ignores them, write them once more.
+
+				A mode change is not instant on every bus. Over SMBus to a
+				stick of DDR5 it is slow enough that a frame written
+				immediately afterwards lands while the controller is still
+				changing mode, and is discarded -- which is why OpenRGB's own
+				CLI, which sends the two as separate commands with a round
+				trip between them, lights hardware that hotaru could not.
+			*/
+			if again := s.settle(ctx, client, device.Name, frame); again != nil {
+				attempt.Showing = showing(*again, frame)
+				attempt.Settled = attempt.Showing
+			}
+		}
 		result.Attempts = append(result.Attempts, attempt)
 
 		if !strings.EqualFold(after.ActiveMode, mode) {
 			// Accepted and not honoured. Nothing said so; only this read did.
 			continue
+		}
+		if !attempt.Showing {
+			/*
+				The mode took, and the device does not report the colours it
+				was sent.
+
+				Not a failure. Sticks of DDR5 were observed reporting #000000
+				while visibly red and white -- the writes had landed and the
+				server's buffer was stale -- so refusing to call that applied
+				would mark working hardware broken. The other reading, that the
+				write went nowhere, is equally consistent with what can be seen
+				from here, and nothing in the protocol distinguishes them.
+
+				So it is recorded and reported, and the user decides. A person
+				looking at the machine can tell in a second what no amount of
+				reading back will settle.
+			*/
+			result.Unconfirmed = fmt.Sprintf(
+				"%s took the mode and does not report the colours it was sent; "+
+					"look at it to see whether the write arrived", device.Name)
 		}
 
 		result.Applied = true
@@ -491,6 +554,55 @@ func without(list []string, drop string) []string {
 		}
 	}
 	return out
+}
+
+/*
+settleDelay is how long a slow controller is given to finish changing mode
+before its colours are written again.
+
+Long enough for an SMBus device, short enough that a person setting a colour
+does not notice. Only ever paid by a device that did not show the first frame.
+*/
+const settleDelay = 120 * time.Millisecond
+
+// settle writes the frame once more, after a pause, and reads the device back.
+func (s *Service) settle(ctx context.Context, client openrgb.Client,
+	device string, frame devices.Frame,
+) *devices.Device {
+	select {
+	case <-ctx.Done():
+		return nil
+	case <-time.After(settleDelay):
+	}
+
+	if err := client.SetFrame(ctx, device, frame); err != nil {
+		return nil
+	}
+	after, err := client.Device(ctx, device)
+	if err != nil {
+		return nil
+	}
+	return &after
+}
+
+/*
+showing reports whether a device is displaying the frame it was sent.
+
+Checked only where the answer means anything: the device has to report one
+colour per LED, and be in a mode that carries colours per LED. A device in
+Static reports its mode's colour rather than its buffer, and a device that
+reports nothing at all is simply not saying -- neither is evidence of a failed
+write, and treating them as one would fail every write to hardware that works.
+*/
+func showing(after devices.Device, frame devices.Frame) bool {
+	mode, known := after.Mode(after.ActiveMode)
+	if !known || !mode.PerLED {
+		return true // not a question this device can answer
+	}
+	if len(after.Colours) != len(frame.Colours) || len(frame.Colours) == 0 {
+		return true
+	}
+	return after.Showing().Equal(frame)
 }
 
 func offCandidates(d *devices.Device) []string {
