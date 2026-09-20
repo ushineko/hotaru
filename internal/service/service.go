@@ -420,10 +420,19 @@ func (s *Service) writeFrame(ctx context.Context, client openrgb.Client,
 		return result
 	}
 
+	// A mode that carries its own colour is given one, where the frame has a
+	// single colour to give. Without it the device shows whatever the vendor
+	// left in the mode, and writing the buffer afterwards changes nothing it
+	// displays -- see spec 009.
+	var modeColour *colour.Colour
+	if uniform, ok := frame.Uniform(); ok && !off {
+		modeColour = &uniform
+	}
+
 	for _, mode := range candidates {
 		attempt := Attempt{Mode: mode}
 
-		if err := client.SetMode(ctx, device.Name, mode, rule.Brightness); err != nil {
+		if err := client.SetMode(ctx, device.Name, mode, rule.Brightness, modeColour); err != nil {
 			attempt.Why = err.Error()
 			result.Attempts = append(result.Attempts, attempt)
 			continue
@@ -608,13 +617,31 @@ write, and treating them as one would fail every write to hardware that works.
 */
 func showing(after devices.Device, frame devices.Frame) bool {
 	mode, known := after.Mode(after.ActiveMode)
-	if !known || !mode.PerLED {
+	if !known {
 		return true // not a question this device can answer
 	}
-	if len(after.Colours) != len(frame.Colours) || len(frame.Colours) == 0 {
-		return true
+	if mode.PerLED {
+		if len(after.Colours) != len(frame.Colours) || len(frame.Colours) == 0 {
+			return true
+		}
+		return after.Showing().Equal(frame)
 	}
-	return after.Showing().Equal(frame)
+	/*
+		A mode that carries its own colour is checked against that colour.
+
+		This is the case the comment above used to wave through. It is true
+		that such a device's buffer proves nothing; it does not follow that
+		nothing can be checked, and the thing that can be checked is the thing
+		the device is actually displaying.
+	*/
+	if mode.ModeColour {
+		want, uniform := frame.Uniform()
+		if !uniform {
+			return true // a frame this mode was never going to show
+		}
+		return mode.Colour == want
+	}
+	return true
 }
 
 func offCandidates(d *devices.Device) []string {

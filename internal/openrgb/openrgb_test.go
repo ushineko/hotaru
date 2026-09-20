@@ -55,7 +55,7 @@ func TestADeviceCanAcceptAModeAndNotHonourIt(t *testing.T) {
 	server := openrgb.NewFake(strip())
 	server.Lies["Generic Strip"] = "Static"
 
-	require.NoError(t, server.SetMode(t.Context(), "Generic Strip", "Static", nil))
+	require.NoError(t, server.SetMode(t.Context(), "Generic Strip", "Static", nil, nil))
 
 	list, err := server.Devices(t.Context())
 	require.NoError(t, err)
@@ -63,7 +63,7 @@ func TestADeviceCanAcceptAModeAndNotHonourIt(t *testing.T) {
 	require.Len(t, server.Modes, 1, "though the server said yes")
 
 	// A mode it does not lie about takes normally.
-	require.NoError(t, server.SetMode(t.Context(), "Generic Strip", "Breathing", nil))
+	require.NoError(t, server.SetMode(t.Context(), "Generic Strip", "Breathing", nil, nil))
 	list, err = server.Devices(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, "Breathing", list[0].ActiveMode)
@@ -75,7 +75,7 @@ func TestAStoppedServerFailsEveryCallRatherThanSomeOfThem(t *testing.T) {
 
 	_, err := server.Devices(t.Context())
 	require.Error(t, err)
-	require.Error(t, server.SetMode(t.Context(), "Generic Strip", "Static", nil))
+	require.Error(t, server.SetMode(t.Context(), "Generic Strip", "Static", nil, nil))
 	require.Error(t, server.SetFrame(t.Context(), "Generic Strip", devices.Frame{}))
 }
 
@@ -93,7 +93,7 @@ func TestADeviceThatArrivesLateIsSeenOnTheNextListing(t *testing.T) {
 func TestWhatIsNotThereIsNamedRatherThanIgnored(t *testing.T) {
 	server := openrgb.NewFake(strip())
 	require.ErrorContains(t, server.SetFrame(t.Context(), "Nothing", devices.Frame{}), `no device called "Nothing"`)
-	require.ErrorContains(t, server.SetMode(t.Context(), "Generic Strip", "Rainbow", nil), `no mode called "Rainbow"`)
+	require.ErrorContains(t, server.SetMode(t.Context(), "Generic Strip", "Rainbow", nil, nil), `no mode called "Rainbow"`)
 }
 
 func TestDialingNothingSaysWhereItTried(t *testing.T) {

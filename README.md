@@ -179,6 +179,11 @@ necessary is an artefact of where it used to live.
 
 - [specs/001-scope-migration-and-lighting-core.md](specs/001-scope-migration-and-lighting-core.md):
   scope, the migration contract, the KDE hotkey rules, acceptance criteria.
+- [specs/008-the-mapping-wizard.md](specs/008-the-mapping-wizard.md): the
+  wizard's questions, and what using it on two machines taught.
+- [specs/009-writes-that-mean-what-they-say.md](specs/009-writes-that-mean-what-they-say.md):
+  why a write that lands in the buffer is not always a write, and what hotaru
+  checks instead.
 - [docs/architecture.md](docs/architecture.md): the system diagram and what it
   asserts.
 - [examples/hotaru.yml](examples/hotaru.yml): a worked rules file from a real
@@ -200,6 +205,17 @@ MIT. See [LICENSE](LICENSE).
 ## Changelog
 
 ### Unreleased
+
+- A solid colour is now set on the mode as well as on the device's buffer,
+  where the mode is one that carries its own. Without it, a device put into
+  such a mode showed the colour its vendor last stored there: asked for purple,
+  an NZXT cooler lit three radiator fans red and every check reported success.
+  hotaru now also prefers a mode whose colour it sets per LED, because that is
+  the one it can read back and check (spec 009, #16).
+
+- The wizard asks how many things are chained on a part only where that part is
+  a line of lights. A keyboard's keys are addressable and are not a chain, and
+  the question had no answer (spec 008, #15).
 
 - The mapping wizard: `hotaru light map` lights one thing at a time and asks
   what you can see, and the names you give become the ones you use. Tested end
