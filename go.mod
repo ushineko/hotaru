@@ -7,4 +7,7 @@ require (
 	github.com/ushineko/fynedesygn v0.1.29
 )
 
-require go.yaml.in/yaml/v3 v3.0.5 // indirect
+require (
+	github.com/csutorasa/go-openrgb-sdk v1.0.1 // indirect
+	go.yaml.in/yaml/v3 v3.0.5 // indirect
+)
