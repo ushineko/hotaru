@@ -95,7 +95,7 @@ func run(cmd *cobra.Command) error {
 	defer writes.Close()
 	svc.SetQueue(writes)
 
-	listener, err := api.Listen(socket)
+	listener, err := api.Listen(ctx, socket)
 	if err != nil {
 		return err
 	}

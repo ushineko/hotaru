@@ -161,14 +161,14 @@ either way. For that, look at the machine.`,
 					if mode.PerLED {
 						per = "per-LED"
 					}
-					fmt.Fprintf(w, "  %s\t%s\t%s\n", mode.Name, note, per)
+					_, _ = fmt.Fprintf(w, "  %s\t%s\t%s\n", mode.Name, note, per)
 				}
 				for _, zone := range found.Zones {
-					fmt.Fprintf(w, "  zone %s\t%d LEDs\t(%d-%d)\n",
+					_, _ = fmt.Fprintf(w, "  zone %s\t%d LEDs\t(%d-%d)\n",
 						zone.Name, zone.Count, zone.First, zone.First+zone.Count-1)
 				}
 				if err := w.Flush(); err != nil {
-					return err
+					return fmt.Errorf("write the findings: %w", err)
 				}
 
 				if found.Suggested != "" {

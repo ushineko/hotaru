@@ -77,7 +77,10 @@ func (c *Conn) ProtocolVersion() uint32 { return c.version }
 func (c *Conn) Close() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.client.Close()
+	if err := c.client.Close(); err != nil {
+		return fmt.Errorf("hang up on %s: %w", c.address, err)
+	}
+	return nil
 }
 
 /*
@@ -282,13 +285,13 @@ Devices disagree: some take 0-100, some 0-255, some 0-3. A rule says "100" and
 means "as bright as this goes", which is the only portable reading of a number
 a person typed.
 */
-func scaleBrightness(percent int, min, max uint32) uint32 {
+func scaleBrightness(percent int, lowest, highest uint32) uint32 {
 	switch {
 	case percent <= 0:
-		return min
+		return lowest
 	case percent >= 100:
-		return max
+		return highest
 	}
-	span := float64(max) - float64(min)
-	return min + uint32(span*float64(percent)/100.0+0.5)
+	span := float64(highest) - float64(lowest)
+	return lowest + uint32(span*float64(percent)/100.0+0.5)
 }

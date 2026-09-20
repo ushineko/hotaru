@@ -48,7 +48,7 @@ func running(t *testing.T, cfg *config.Config, server openrgb.Client) *api.Clien
 	// A short path: a Unix socket's address has a low length limit, and
 	// t.TempDir() under a long test name can exceed it.
 	socket := filepath.Join(t.TempDir(), "s")
-	listener, err := api.Listen(socket)
+	listener, err := api.Listen(t.Context(), socket)
 	require.NoError(t, err)
 
 	svc := service.New(cfg, server, "127.0.0.1:6742")
@@ -192,7 +192,7 @@ func TestTheSocketIsThisUsersAlone(t *testing.T) {
 	// The socket's permissions are the whole authentication story: there is no
 	// port and no token, and this is what stands in for both.
 	socket := filepath.Join(t.TempDir(), "s")
-	listener, err := api.Listen(socket)
+	listener, err := api.Listen(t.Context(), socket)
 	require.NoError(t, err)
 	defer func() { _ = listener.Close() }()
 
@@ -206,11 +206,11 @@ func TestTheSocketIsThisUsersAlone(t *testing.T) {
 func TestAStaleSocketIsClearedButALiveOneIsNot(t *testing.T) {
 	socket := filepath.Join(t.TempDir(), "s")
 
-	first, err := api.Listen(socket)
+	first, err := api.Listen(t.Context(), socket)
 	require.NoError(t, err)
 
 	// Something is listening: taking the socket would silently break it.
-	_, err = api.Listen(socket)
+	_, err = api.Listen(t.Context(), socket)
 	require.ErrorContains(t, err, "already running")
 
 	// Nothing is listening, but the file is still there — a killed process.
@@ -218,7 +218,7 @@ func TestAStaleSocketIsClearedButALiveOneIsNot(t *testing.T) {
 	// never heard of.
 	require.NoError(t, first.Close())
 	require.NoError(t, os.WriteFile(socket, nil, 0o600))
-	second, err := api.Listen(socket)
+	second, err := api.Listen(t.Context(), socket)
 	require.NoError(t, err)
 	require.NoError(t, second.Close())
 }
@@ -260,7 +260,7 @@ func TestASocketPathTooLongForTheKernelSaysThat(t *testing.T) {
 	// The kernel answers "invalid argument", which sends someone to inspect
 	// their permissions and their directory before their path length.
 	long := filepath.Join(t.TempDir(), strings.Repeat("a", 120), "s")
-	_, err := api.Listen(long)
+	_, err := api.Listen(t.Context(), long)
 	require.ErrorContains(t, err, "the socket path is")
 	require.ErrorContains(t, err, "limit is")
 }

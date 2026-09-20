@@ -17,16 +17,16 @@ identical from "no lights changed".
 type State string
 
 const (
-	// StateUnreachable: nothing is listening. Start the server.
+	// StateUnreachable is nothing listening. The remedy is to start the server.
 	StateUnreachable State = "unreachable"
-	// StateNoDevices: the server answered and knows of no hardware at all.
-	// Usually permissions, or a server that started before the devices did --
-	// OpenRGB enumerates once, at startup.
+	// StateNoDevices is a server that answered and knows of no hardware at
+	// all. Usually permissions, or a server that started before the devices
+	// did -- OpenRGB enumerates once, at startup.
 	StateNoDevices State = "no-devices"
-	// StateNoneInScope: hardware is there, and the rules file excludes all of
-	// it. A configuration problem, and the only one of the four that is.
+	// StateNoneInScope is hardware present with the rules file excluding all
+	// of it: a configuration problem, and the only one of the four that is.
 	StateNoneInScope State = "none-in-scope"
-	// StateHealthy: hotaru can see devices it is allowed to drive.
+	// StateHealthy is hotaru seeing devices it is allowed to drive.
 	StateHealthy State = "healthy"
 )
 

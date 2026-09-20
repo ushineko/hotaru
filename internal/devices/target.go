@@ -94,7 +94,7 @@ type Span struct {
 func (s Span) Last() int { return s.First + s.Count - 1 }
 
 /*
-Resolve turns a target into the LEDs it means on this device.
+ResolveTarget turns a target into the LEDs it means on this device.
 
 Segments are looked up before zones, because a segment is a name the user chose
 and a zone is a name the vendor chose, and the user's should win on their own

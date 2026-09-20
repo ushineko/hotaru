@@ -131,7 +131,7 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any) err
 
 	req, err := http.NewRequestWithContext(ctx, method, "http://hotaru"+path, reader)
 	if err != nil {
-		return err
+		return fmt.Errorf("build a %s request for %s: %w", method, path, err)
 	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
@@ -143,7 +143,7 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any) err
 		if errors.As(err, &opErr) || errors.Is(err, context.DeadlineExceeded) {
 			return &NotRunning{Socket: c.socket, Err: err}
 		}
-		return err
+		return fmt.Errorf("ask hotaru for %s: %w", path, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -161,5 +161,8 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any) err
 	if out == nil {
 		return nil
 	}
-	return json.NewDecoder(resp.Body).Decode(out)
+	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+		return fmt.Errorf("read hotaru's answer to %s: %w", path, err)
+	}
+	return nil
 }

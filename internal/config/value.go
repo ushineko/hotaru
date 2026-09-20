@@ -35,7 +35,11 @@ func (d *Duration) UnmarshalJSON(b []byte) error {
 
 // MarshalJSON writes the form a person would have typed.
 func (d Duration) MarshalJSON() ([]byte, error) {
-	return json.Marshal(time.Duration(d).String())
+	out, err := json.Marshal(time.Duration(d).String())
+	if err != nil {
+		return nil, fmt.Errorf("encode duration: %w", err)
+	}
+	return out, nil
 }
 
 // Duration is the value as a time.Duration.
@@ -67,7 +71,13 @@ func (r *LEDs) UnmarshalJSON(b []byte) error {
 }
 
 // MarshalJSON writes [first, last].
-func (r LEDs) MarshalJSON() ([]byte, error) { return json.Marshal([2]int{r.First, r.Last}) }
+func (r LEDs) MarshalJSON() ([]byte, error) {
+	out, err := json.Marshal([2]int{r.First, r.Last})
+	if err != nil {
+		return nil, fmt.Errorf("encode LED range: %w", err)
+	}
+	return out, nil
+}
 
 // Count is how many LEDs the range covers.
 func (r LEDs) Count() int { return r.Last - r.First + 1 }
