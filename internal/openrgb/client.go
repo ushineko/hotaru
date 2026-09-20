@@ -18,6 +18,8 @@ package openrgb
 import (
 	"context"
 
+	"github.com/ushineko/hotaru/internal/colour"
+
 	"github.com/ushineko/hotaru/internal/devices"
 )
 
@@ -41,8 +43,11 @@ type Client interface {
 	Device(ctx context.Context, name string) (devices.Device, error)
 
 	// SetMode puts a device into a mode, optionally asserting a brightness on
-	// a mode that supports one.
-	SetMode(ctx context.Context, device, mode string, brightness *int) error
+	// a mode that supports one, and setting the mode's own colour where the
+	// mode takes one. A mode-specific mode set without its colour shows
+	// whatever the vendor last stored in it, which is a write that looks like
+	// a success from every angle the protocol offers -- see spec 009.
+	SetMode(ctx context.Context, device, mode string, brightness *int, c *colour.Colour) error
 
 	// SetFrame writes one colour per LED. The whole device, always: a frame is
 	// the unit precisely so a write cannot land half-applied.
@@ -64,6 +69,7 @@ Python had to infer it from a mode being called "direct", which is a guess that
 holds only for the vendors whose naming it was derived from.
 */
 const (
-	flagHasBrightness  uint32 = 1 << 4
-	flagHasPerLEDColor uint32 = 1 << 5
+	flagHasBrightness        uint32 = 1 << 4
+	flagHasPerLEDColor       uint32 = 1 << 5
+	flagHasModeSpecificColor uint32 = 1 << 6
 )

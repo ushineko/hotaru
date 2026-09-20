@@ -78,6 +78,10 @@ func RuleFor(cfg *config.Config, device string) Rule {
 	return MergeRules(cfg.RulesFor(device))
 }
 
+// namesSolidModes reports whether the rule states its own order, as opposed to
+// falling back on hotaru's default.
+func (r Rule) namesSolidModes() bool { return len(r.SolidModes) > 0 }
+
 // solidOrder is the preference order this rule asks for, or the default.
 func (r Rule) solidOrder() []string {
 	if len(r.SolidModes) > 0 {

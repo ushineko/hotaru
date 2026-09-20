@@ -67,6 +67,26 @@ func TestALiveServerReportsHardwareThatMakesSense(t *testing.T) {
 				require.Contains(t, device.ModeNames(), device.ActiveMode,
 					"the active mode is one of the modes it listed")
 			}
+			/*
+				Which modes carry their own colour, and what colour each
+				holds.
+
+				Read-only, and worth reporting: a mode hotaru sets without
+				also setting its colour displays whatever the vendor left
+				there, which is how a request for purple lit three radiator
+				fans red. Seeing the flag and the stored colour on real
+				hardware is what says the fix has something true to act on.
+				See spec 009.
+			*/
+			for _, mode := range device.Modes {
+				if !mode.ModeColour {
+					continue
+				}
+				t.Logf("  mode %q carries its own colour, holding %s", mode.Name, mode.Colour)
+				require.False(t, mode.PerLED && mode.Name == "",
+					"a mode with no name cannot be chosen")
+			}
+
 			t.Logf("%d LEDs, %d zones, modes: %v (active %q)",
 				device.LEDCount, len(device.Zones), device.ModeNames(), device.ActiveMode)
 		})
