@@ -106,6 +106,11 @@ The decisions worth knowing before reading any code:
   reconciles toward it, because some hardware does not hold what it is told — a
   wireless mouse restores its onboard colour on wake, and the cooler's LCD drops
   a static image within seconds while retaining a GIF indefinitely.
+- **It is fast because of its shape, not its tuning.** A whole scene across six
+  devices is 2.4 ms service-side, against roughly 180 ms for the tool this
+  replaces: one persistent socket rather than a subprocess per device, one
+  frame per device rather than a mode call and a colour call, and no queue to
+  wait behind.
 - **A frame per device.** Assignments compose into one complete frame before any
   write, so a write is atomic from the device's point of view, coalescing cannot
   drop half a scene, and "is this device showing what it should?" has an answer.

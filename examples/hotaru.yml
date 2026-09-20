@@ -5,9 +5,10 @@
 # about itself -- which is what makes the program work on a machine its author
 # has never seen. Rules narrow and correct; they never enable.
 #
-# What follows is one real desk, kept because a worked example is easier to
-# adapt than a description. Every line was established by looking: setting a
-# colour, seeing what changed, and writing down the answer.
+# What follows is one real desk. Every line was established by looking: light
+# something, see what changed, write down the answer. Nothing here could have
+# been derived from the protocol, and that is the point -- see "Mapping is a
+# wizard" in specs/001.
 
 # Uncomment to narrow hotaru to particular devices. Absent, it drives
 # everything present, which is usually what you want.
@@ -17,23 +18,32 @@
 #   - maximus
 
 devices:
+  - match: kraken
+    segments:
+      # Three top radiator fans, daisy-chained into one channel, eight LEDs
+      # each, ordered rear to front of the case. Confirmed by lighting the
+      # whole channel white: all three lit evenly, so the chain is fully
+      # populated and the boundaries fall between fans.
+      rad-rear:  {zone: "Hue 2 Channel 2", leds: [0, 7]}
+      rad-mid:   {zone: "Hue 2 Channel 2", leds: [8, 15]}
+      rad-front: {zone: "Hue 2 Channel 2", leds: [16, 23]}
+      # "Hue 2 Channel 1" has nothing plugged into it and still reports 24
+      # LEDs. It is not named here, because naming a segment that addresses
+      # nothing is how a scene silently does less than it says.
+
   - match: maximus
-    # Static drives only this board's onboard LED and leaves the four
-    # addressable headers dark -- it reports success either way, so the
-    # failure is silent. Direct-first is the correction.
+    # Static drives only this board's onboard LED and leaves the addressable
+    # headers dark. It reports success either way, so the failure is silent
+    # and the read-back cannot catch it: the mode change does take. This
+    # correction is what a rules file is for.
     solid_modes: [direct, static]
     segments:
-      # Header 2 carries a two-fan front frame, daisy-chained into one zone:
-      # the first eight LEDs are the top fan, the second eight the bottom.
-      # Splitting a zone like this is why segments have ranges.
+      # Two front intake fans on one header, eight LEDs each.
       front-top: {zone: "Addressable RGB Header 2", leds: [0, 7]}
       front-bot: {zone: "Addressable RGB Header 2", leds: [8, 15]}
-      # Header 3 is the rear fan, alone, so the segment is the whole zone.
+      # The rear exhaust fan, alone on its header, so the whole zone.
       rear: {zone: "Addressable RGB Header 3"}
-      # Headers 1 and 4 have nothing plugged into them here. They still
-      # report sixteen LEDs each: a zone's size is what the board declares,
-      # not what is attached, so an assignment to an empty header succeeds
-      # and lights nothing.
+      # Headers 1 and 4 are empty and report sixteen LEDs each.
 
   - match: keychron
     # This keyboard advertises no Off mode, so "off" would resolve to Direct
@@ -48,3 +58,8 @@ devices:
     # re-sent on an interval. Sixty seconds sits under the sleep timeout with
     # margin; the real wake behaviour has never been characterised.
     reassert: 60s
+
+# Three of this machine's nine zones -- Kraken channel 1, board headers 1 and 4
+# -- have nothing attached, and every one of them accepts a write and reports
+# success. A third of what the hardware advertises addresses nothing, and no
+# API can say which third.

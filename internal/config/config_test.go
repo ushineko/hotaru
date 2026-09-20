@@ -206,6 +206,18 @@ func TestTheShippedExampleParsesAndMeansWhatItSays(t *testing.T) {
 	require.Equal(t, 8, board[0].Segments["front-bot"].LEDs.Count())
 	require.Nil(t, board[0].Segments["rear"].LEDs, "a whole zone needs no range")
 
+	// The three radiator fans, daisy-chained into one channel of the cooler.
+	cooler := cfg.RulesFor("NZXT Kraken 2024 ELITE Series RGB")
+	require.Len(t, cooler, 1)
+	for name, first := range map[string]int{"rad-rear": 0, "rad-mid": 8, "rad-front": 16} {
+		segment := cooler[0].Segments[name]
+		require.Equal(t, "Hue 2 Channel 2", segment.Zone, name)
+		require.Equal(t, first, segment.LEDs.First, name)
+		require.Equal(t, 8, segment.LEDs.Count(), name)
+	}
+	require.NotContains(t, cooler[0].Segments, "channel-1",
+		"a segment that addresses nothing is a scene silently doing less than it says")
+
 	require.True(t, cfg.RulesFor("Keychron K4 HE")[0].NeverBlank)
 	require.Equal(t, time.Minute, cfg.RulesFor("G502 X PLUS")[0].Reassert.Duration())
 
