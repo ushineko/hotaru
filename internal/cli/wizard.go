@@ -173,8 +173,7 @@ func Map(ctx context.Context, client *api.Client, asker Asker, only ...string) e
 	// re-run.
 	existing, path := existingRules(asker)
 
-	remembered := len(mustStatus(ctx, client).Remembered) > 0
-	defer restore(ctx, client, asker, remembered)
+	defer restore(ctx, client, asker)
 
 	asker.Say("Lighting things one at a time and asking what you can see.")
 	asker.Say("Answer in your own words -- these become the names you use. Press return to skip anything.\n")
@@ -733,7 +732,10 @@ func finish(ctx context.Context, client *api.Client, asker Asker, found []namedS
 	merged := merge(existing, found, learned, presentNames)
 	rules := yamlFor(merged)
 	asker.Say("\n%s", rules)
-	return offerToWrite(ctx, client, asker, rules, path)
+	if err := offerToWrite(ctx, client, asker, rules, path); err != nil {
+		return err
+	}
+	return useIt(ctx, client, asker)
 }
 
 func targetOf(segment namedSegment) string {
@@ -971,7 +973,7 @@ well as on success. Where hotaru remembers what was asked for, that is what
 goes back; where it does not -- a fresh install, which is this wizard's whole
 audience -- there is nothing to return to and saying so beats inventing one.
 */
-func restore(ctx context.Context, client *api.Client, asker Asker, remembered bool) {
+func restore(ctx context.Context, client *api.Client, asker Asker) {
 	/*
 		Cleanup runs on the way out, including the way out through Ctrl-C --
 		when the context that got us here is already cancelled. Using it would
@@ -981,6 +983,16 @@ func restore(ctx context.Context, client *api.Client, asker Asker, remembered bo
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
 
+	/*
+		Asked here rather than at the start of the run.
+
+		A machine with nothing remembered can acquire something during the
+		wizard -- somebody answering the colour question at the end sets
+		desired state, and a decision taken before that would tell them the
+		lights are showing "the last thing the wizard lit" when they are
+		showing what they just chose.
+	*/
+	remembered := len(mustStatus(ctx, client).Remembered) > 0
 	if !remembered {
 		asker.Say("\nThe lights are showing the last thing the wizard lit. " +
 			"`hotaru light set <colour>` when you want something else.")
@@ -1055,6 +1067,43 @@ func offerToWrite(ctx context.Context, client *api.Client, asker Asker, rules, p
 
 	asker.Say("Written to %s, and in use now.", path)
 	return nil
+}
+
+/*
+useIt offers to light the machine with what was just named.
+
+The wizard turns everything off to ask its questions, and a device named for
+the first time has no remembered state to be put back to -- so a first run used
+to end with a written file, a dark keyboard, and an instruction to go and type
+another command.
+
+Restoring what was there is the wrong repair. The colours it would replay are
+previews the wizard itself wrote, so putting them back means carefully
+reaching a state nobody asked for. This is the one moment when the names are
+fresh in somebody's head and their hardware is in front of them: the useful
+question is what they want it to look like.
+
+Answered, it is set as desired state -- remembered, and restored at boot.
+*/
+func useIt(ctx context.Context, client *api.Client, asker Asker) error {
+	for {
+		answer, err := asker.Ask("\nWhat colour would you like everything? [or return to leave it]")
+		if err != nil {
+			return err
+		}
+		answer = strings.TrimSpace(answer)
+		if answer == "" {
+			return nil
+		}
+		if _, err := client.Apply(ctx, api.ApplyRequest{Colour: answer}); err != nil {
+			// A colour hotaru does not know is a typo, not a failure: ask
+			// again rather than ending a successful run on an error.
+			asker.Say("  I do not know that colour. A name like \"purple\", or #rrggbb.")
+			continue
+		}
+		asker.Say("  Set, and hotaru will put it back at boot.")
+		return nil
+	}
 }
 
 /*
