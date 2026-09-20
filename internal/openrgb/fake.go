@@ -85,6 +85,23 @@ func (f *Fake) Devices(context.Context) ([]devices.Device, error) {
 	return out, nil
 }
 
+// Device is one device by name.
+func (f *Fake) Device(_ context.Context, name string) (devices.Device, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.Unreachable != nil {
+		return devices.Device{}, f.Unreachable
+	}
+	for _, d := range f.devices {
+		if strings.EqualFold(d.Name, name) {
+			out := d
+			out.Colours = append([]colour.Colour(nil), d.Colours...)
+			return out, nil
+		}
+	}
+	return devices.Device{}, fmt.Errorf("no device called %q", name)
+}
+
 // SetMode records the write, and applies it unless this device lies about it.
 func (f *Fake) SetMode(_ context.Context, device, mode string, brightness *int) error {
 	f.mu.Lock()

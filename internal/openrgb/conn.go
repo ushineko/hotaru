@@ -117,6 +117,23 @@ func (c *Conn) list(ctx context.Context) ([]devices.Device, error) {
 	return out, nil
 }
 
+/*
+Device reads one controller by name.
+
+Used to confirm a write landed: a device can accept a mode and not honour it, so
+the active mode is read back and compared. A zero exit code establishes nothing.
+*/
+func (c *Conn) Device(ctx context.Context, name string) (devices.Device, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	_, data, err := c.index(ctx, name)
+	if err != nil {
+		return devices.Device{}, err
+	}
+	return convert(data), nil
+}
+
 // index finds a device by name within one listing, and never outside it.
 func (c *Conn) index(ctx context.Context, name string) (uint32, *sdk.ControllerData, error) {
 	count, err := c.client.RequestControllerCountCtx(ctx)

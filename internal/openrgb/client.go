@@ -36,6 +36,10 @@ type Client interface {
 	// zones and the colours it is showing.
 	Devices(ctx context.Context) ([]devices.Device, error)
 
+	// Device is one controller by name, for reading back what a write did.
+	// Cheaper than a full listing, and a read-back happens after every write.
+	Device(ctx context.Context, name string) (devices.Device, error)
+
 	// SetMode puts a device into a mode, optionally asserting a brightness on
 	// a mode that supports one.
 	SetMode(ctx context.Context, device, mode string, brightness *int) error
