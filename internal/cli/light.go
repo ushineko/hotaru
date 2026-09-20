@@ -103,10 +103,12 @@ file: kraken, kraken/ring, kraken/ring[0:11], kraken/fan-top.`,
 			}
 			names, _ := cmd.Flags().GetStringSlice("devices")
 			req.Devices = names
+			req.Preview, _ = cmd.Flags().GetBool("preview")
 			return apply(cmd, req)
 		},
 	}
 	cmd.Flags().StringSlice("devices", nil, "only these devices, by name")
+	withPreview(cmd)
 	withJSON(cmd)
 	return cmd
 }
@@ -118,12 +120,28 @@ func offCommand() *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			names, _ := cmd.Flags().GetStringSlice("devices")
-			return apply(cmd, api.ApplyRequest{Off: true, Devices: names})
+			preview, _ := cmd.Flags().GetBool("preview")
+			return apply(cmd, api.ApplyRequest{Off: true, Devices: names, Preview: preview})
 		},
 	}
 	cmd.Flags().StringSlice("devices", nil, "only these devices, by name")
+	withPreview(cmd)
 	withJSON(cmd)
 	return cmd
+}
+
+/*
+withPreview adds the flag for a write the machine should not remember.
+
+Setting a colour to see what lights up is not the same as saying the machine
+should look like this. Without the distinction, trying three colours in a row
+to find out which fan is which leaves the last one as what the machine restores
+at boot -- and the reconciler puts the previous one back while somebody is
+still looking at the case, which reads as hardware misbehaving. The wizard has
+always written this way; the command line could not.
+*/
+func withPreview(cmd *cobra.Command) {
+	cmd.Flags().Bool("preview", false, "write the colour without remembering it")
 }
 
 /*
