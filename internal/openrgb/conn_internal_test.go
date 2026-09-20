@@ -3,6 +3,8 @@ package openrgb
 import (
 	"testing"
 
+	sdk "github.com/csutorasa/go-openrgb-sdk"
+	"github.com/stretchr/testify/require"
 	"github.com/ushineko/hotaru/internal/devices"
 )
 
@@ -121,4 +123,59 @@ func keys(in map[string]bool) []string {
 		out = append(out, name)
 	}
 	return out
+}
+
+func colours(n int, c byte) []sdk.Color {
+	out := make([]sdk.Color, n)
+	for i := range out {
+		out[i] = sdk.Color{R: c}
+	}
+	return out
+}
+
+func TestAFrameIsCutIntoOneRunPerZone(t *testing.T) {
+	// The cooler: two Hue 2 channels of 24, written as one array of 48 and
+	// therefore never delivered together. See spec 011.
+	zones := []*sdk.Zone{{ZoneLedsCount: 24}, {ZoneLedsCount: 24}}
+	runs := byZone(zones, colours(48, 1))
+
+	require.Len(t, runs, 2)
+	require.Len(t, runs[0], 24)
+	require.Len(t, runs[1], 24)
+}
+
+func TestADeviceWithNoZonesIsWrittenWhole(t *testing.T) {
+	// Nothing to cut it by, and a frame is still the whole device.
+	runs := byZone(nil, colours(8, 1))
+	require.Len(t, runs, 1)
+	require.Len(t, runs[0], 8)
+}
+
+func TestLEDsBeyondTheLastZoneAreNotLost(t *testing.T) {
+	/*
+		A device whose zones do not add up to its LED count still gets every
+		colour it was sent. Losing the remainder would light part of a device
+		and report success, which is the failure this whole area keeps
+		producing.
+	*/
+	zones := []*sdk.Zone{{ZoneLedsCount: 3}, {ZoneLedsCount: 3}}
+	runs := byZone(zones, colours(10, 1))
+
+	total := 0
+	for _, run := range runs {
+		total += len(run)
+	}
+	require.Equal(t, 10, total, "colours were dropped between zones")
+}
+
+func TestAZoneClaimingMoreLEDsThanTheFrameHasDoesNotPanic(t *testing.T) {
+	// Hardware lies about its own sizes; the catalogue has seen it.
+	zones := []*sdk.Zone{{ZoneLedsCount: 40}, {ZoneLedsCount: 40}}
+	runs := byZone(zones, colours(8, 1))
+
+	total := 0
+	for _, run := range runs {
+		total += len(run)
+	}
+	require.Equal(t, 8, total)
 }
