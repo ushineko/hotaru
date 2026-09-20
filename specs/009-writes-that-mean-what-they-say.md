@@ -2,7 +2,7 @@
 
 **Issue**: [#16](https://github.com/ushineko/hotaru/issues/16)
 
-## Status: INCOMPLETE
+## Status: COMPLETE
 
 ## Context
 
@@ -115,15 +115,42 @@ hotaru stops as before it started.
       hardware carry their own colour and what colour each holds. It still
       writes nothing: a test that changed somebody's lighting is the
       discourtesy that test already refuses.
-- [ ] AC11a. Verified by hand on the development machine, with somebody
+- [x] AC11a. Verified by hand on the development machine, with somebody
       looking at it: `hotaru light set <colour>` with the Kraken's
       `solid_modes` override removed lights the radiator fans and the ring in
       the colour asked for, not NZXT's red.
-- [ ] AC12. The development machine's rules file no longer needs the
+- [x] AC12. The development machine's rules file no longer needs the
       `solid_modes: [direct]` workaround added for the Kraken, confirmed by
       removing it and looking at the machine. (`examples/hotaru.yml` never
       carried it; its own `solid_modes` is the ASUS board's separate quirk,
       which this spec does not touch.)
+
+## Verified on hardware
+
+Development machine, the morning after the defect was found.
+
+The G502 turned out to be the same defect as the cooler, not the separate
+"wakes up having forgotten" problem it had been filed as. Its Static mode held
+`#ff0000`; it had been showing the mouse's vendor red for as long as anyone had
+looked, and the sleep story fitted well enough that nobody checked. The live
+test's read-only mode report is what made it obvious:
+
+	G502 X PLUS: mode "Static" carries its own colour, holding #ff0000
+
+With the fix, both the mouse and the cooler take Direct, and both show the
+colour asked for. The Kraken's `solid_modes: [direct]` correction was removed
+from the development machine's rules file and the fans and ring stayed right,
+which is AC12.
+
+**A caution for whoever reads this next.** The same session produced four
+devices where "the buffer says one colour and the hardware shows another" meant
+a real defect, and then a fifth where it meant nothing at all: the mousepad's
+logo has no blue channel, so a request for `#8000ff` shows as dim red. It was
+diagnosed as drift, then as a dropped frame, then correctly -- and confirmed
+only by asking OpenRGB's own command line for the same colour and getting the
+same dark logo. A read-back that disagrees with the hardware is not evidence of
+a bug in hotaru. Sometimes the light simply cannot make that colour, and hotaru
+has no way to know which zones those are.
 
 ## Risks & Assumptions
 
