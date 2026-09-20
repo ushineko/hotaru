@@ -126,12 +126,12 @@ somebody mapping one stick of RAM should not lose the rules for their cooler.
 A device it did map has its segments replaced rather than added to, because the
 answers just given are the current truth about that hardware.
 */
-func merge(existing *config.Config, learned []namedSegment, corrections map[string][]string, present []string) *config.Config {
+func merge(existing *config.Config, segmentsFound []namedSegment, learned map[string]notes, present []string) *config.Config {
 	out := &config.Config{Scope: existing.Scope}
 	out.Devices = append(out.Devices, existing.Devices...)
 
 	byDevice := map[string][]namedSegment{}
-	for _, segment := range learned {
+	for _, segment := range segmentsFound {
 		byDevice[segment.Device] = append(byDevice[segment.Device], segment)
 	}
 
@@ -143,8 +143,18 @@ func merge(existing *config.Config, learned []namedSegment, corrections map[stri
 			rule = &out.Devices[len(out.Devices)-1]
 		}
 
-		if order := corrections[device]; len(order) > 0 {
-			rule.SolidModes = order
+		note := learned[device]
+		if len(note.solidModes) > 0 {
+			rule.SolidModes = note.solidModes
+		}
+		// Written only when the wizard found it to be true. A file that says a
+		// device was checked when somebody pressed return is worse than one
+		// that says nothing about it.
+		if note.neverBlank {
+			rule.NeverBlank = true
+		}
+		if note.brightness != nil {
+			rule.Brightness = note.brightness
 		}
 		rule.Segments = map[string]config.Segment{}
 		for _, segment := range segments {

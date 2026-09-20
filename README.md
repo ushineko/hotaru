@@ -212,6 +212,13 @@ MIT. See [LICENSE](LICENSE).
 
 ### Unreleased
 
+- The wizard waits for the hardware before asking what you can see, and asks
+  what it never asked before: whether the lights actually go off, what to do
+  when they do not, and whether a device that can be dimmed should be. A
+  keyboard that takes the lighting back when told to go dark is now found and
+  written down instead of leaving `hotaru light off` quietly not working
+  (spec 014, #20, #25).
+
 - A frame is written one request per zone rather than one for the whole
   device. An NZXT cooler's two channels are independent controllers behind one
   USB endpoint, and a single array spanning both was never delivered together:

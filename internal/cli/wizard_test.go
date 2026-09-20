@@ -124,7 +124,7 @@ func TestTheWizardMapsAMachineFromWhatAPersonCanSee(t *testing.T) {
 		"rad mid",   // green
 		"rad front", // blue
 		"y",         // is the whole map right
-		"y",         // write it
+		"n", "y",    // write it
 	}}
 
 	require.NoError(t, cli.Map(t.Context(), client, person))
@@ -233,8 +233,8 @@ devices:
 		"nothing", // channel 1
 		"",        // channel 2: press return to keep what it was called
 		"1",
-		"y", // the map is right
-		"y", // write it
+		"y",      // the map is right
+		"n", "y", // write it
 	}}
 	require.NoError(t, cli.Map(t.Context(), client, person))
 
@@ -294,7 +294,7 @@ func TestAnAnswerToADifferentQuestionIsNotTakenAsAName(t *testing.T) {
 		"nothing",  // asked again
 		"red",      // what is green? -- the colour, not the thing
 		"radiator", // asked again
-		"1", "y", "y",
+		"1", "y", "n", "y",
 	}}
 	require.NoError(t, cli.Map(t.Context(), client, person))
 
@@ -353,7 +353,7 @@ func TestACountThatMeantLEDsIsQueriedRatherThanDividedOn(t *testing.T) {
 		"first stick", // what is red
 		"10",          // how many things -- meaning LEDs
 		"1",           // asked again, with the arithmetic shown
-		"y", "y",      // right, and write it
+		"y", "n", "y", // right, and write it
 	}}
 	require.NoError(t, cli.Map(t.Context(), client, person))
 
@@ -396,7 +396,7 @@ func TestWhatTheWizardWritesLoads(t *testing.T) {
 	person := &scripted{answers: []string{
 		"y", "stick0", "1", // the first stick
 		"y", "stick1", "1", // the second
-		"y", "y",
+		"y", "n", "y",
 	}}
 	require.NoError(t, cli.Map(t.Context(), client, person))
 
@@ -552,7 +552,7 @@ func TestAOneLightZoneIsNotAskedAboutDividing(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", home)
 
-	person := &scripted{answers: []string{"y", "desk strips", "y", "y"}}
+	person := &scripted{answers: []string{"y", "desk strips", "y", "n", "y"}}
 	require.NoError(t, cli.Map(t.Context(), client, person))
 
 	require.NotContains(t, person.questions(), "chained",
@@ -594,7 +594,7 @@ func TestNothingElseIsLitWhileAQuestionIsBeingAsked(t *testing.T) {
 		"",  // first header: nothing attached
 		"",  // second header: nothing attached
 		"desk strips",
-		"y", "y",
+		"y", "n", "y",
 	}}
 	require.NoError(t, cli.Map(t.Context(), client, person, "AORUS"))
 
@@ -685,7 +685,7 @@ func TestTheProbeAsksAboutTheWayAWriteWillActuallyLightIt(t *testing.T) {
 		"n",           // Static, which hotaru would choose: nothing lights
 		"y",           // Direct: there it is
 		"desk strips", // and it is the strips
-		"y", "y",
+		"y", "n", "y",
 	}}
 	require.NoError(t, cli.Map(t.Context(), client, person))
 
@@ -722,7 +722,7 @@ func TestWhatItWritesIsInUseBeforeItPutsTheLightsBack(t *testing.T) {
 	server := openrgb.NewFake(board)
 	client := api.NewClient(serving(t, nil, server))
 
-	person := &scripted{answers: []string{"n", "y", "desk strips", "y", "y"}}
+	person := &scripted{answers: []string{"n", "y", "desk strips", "y", "n", "y"}}
 	require.NoError(t, cli.Map(t.Context(), client, person))
 
 	require.Contains(t, strings.Join(person.said, "\n"), "in use now",
@@ -770,7 +770,7 @@ func TestOnlyALineOfLightsIsAskedAboutChaining(t *testing.T) {
 	person := &scripted{answers: []string{
 		"y", "keyboard", // no chaining question follows a grid
 		"y", "radiator", "1", // a line gets one
-		"n",
+		"n", "n",
 	}}
 	require.NoError(t, cli.Map(t.Context(), client, person))
 
@@ -779,4 +779,117 @@ func TestOnlyALineOfLightsIsAskedAboutChaining(t *testing.T) {
 		"somebody was asked how many things were chained on a keyboard")
 	require.Contains(t, asked, "chained on radiator",
 		"a line of lights is exactly where the question belongs")
+}
+
+// keyboardThatWillNotBlank is the Keychron: it advertises a reactive mode, and
+// on the real board a dark frame is taken as "the host has stopped talking"
+// and replaced by the firmware's own white.
+func keyboardThatWillNotBlank() devices.Device {
+	return devices.Device{
+		Name:     "Keychron K4 HE",
+		LEDCount: 2,
+		Modes: []devices.Mode{
+			{Name: "Direct", PerLED: true},
+			{Name: "Solid Splash"},
+		},
+		Zones:      []devices.Zone{{Name: "Keyboard", Shape: devices.ShapeGrid, First: 0, Count: 2}},
+		ActiveMode: "Direct",
+	}
+}
+
+func TestADeviceThatWillNotGoDarkIsRecorded(t *testing.T) {
+	/*
+		`hotaru light off` left this board glowing white, and the wizard wrote
+		a file with no trace of it. hotaru has always had never_blank; nothing
+		ever asked the one question that sets it. Spec 014.
+	*/
+	client := api.NewClient(serving(t, nil, openrgb.NewFake(keyboardThatWillNotBlank())))
+	home := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", home)
+
+	person := &scripted{answers: []string{
+		"y",        // lit red?
+		"keyboard", // what is lit
+		"y",        // is that right?
+		"y",        // anything still lit?
+		"y",        // the keyboard is
+		"n",        // do not use the reactive mode
+		"y",        // write it
+	}}
+	require.NoError(t, cli.Map(t.Context(), client, person))
+
+	rules, err := os.ReadFile(filepath.Join(home, "hotaru", "hotaru.yml"))
+	require.NoError(t, err)
+	require.Contains(t, string(rules), "never_blank: true")
+}
+
+func TestADeviceThatGoesDarkIsNotWrittenAbout(t *testing.T) {
+	// The other half: a file that claims a device was corrected when it was
+	// not is worse than one that says nothing.
+	client := api.NewClient(serving(t, nil, openrgb.NewFake(keyboardThatWillNotBlank())))
+	home := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", home)
+
+	person := &scripted{answers: []string{"y", "keyboard", "y", "n", "y"}}
+	require.NoError(t, cli.Map(t.Context(), client, person))
+
+	rules, err := os.ReadFile(filepath.Join(home, "hotaru", "hotaru.yml"))
+	require.NoError(t, err)
+	require.NotContains(t, string(rules), "never_blank")
+}
+
+func TestTheAlternativeToBlankingIsOffered(t *testing.T) {
+	// "Off" on a keyboard is a mode, not a colour: a reactive effect leaves
+	// unpressed keys dark, which is what somebody means by off.
+	client := api.NewClient(serving(t, nil, openrgb.NewFake(keyboardThatWillNotBlank())))
+	home := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", home)
+
+	person := &scripted{answers: []string{"y", "keyboard", "y", "y", "y", "y", "y"}}
+	require.NoError(t, cli.Map(t.Context(), client, person))
+
+	rules, err := os.ReadFile(filepath.Join(home, "hotaru", "hotaru.yml"))
+	require.NoError(t, err)
+	require.Contains(t, string(rules), "solid_modes: [Solid Splash")
+}
+
+func TestAMachineThatBlanksIsAskedOnlyOnce(t *testing.T) {
+	/*
+		Question count is the cost. Most hardware turns off properly, and on
+		that hardware the whole subject is one question for the machine rather
+		than one per device.
+	*/
+	one := func(name string) devices.Device {
+		return devices.Device{
+			Name: name, LEDCount: 1,
+			Modes:      []devices.Mode{{Name: "Direct", PerLED: true}},
+			Zones:      []devices.Zone{{Name: "LED", Shape: devices.ShapeSingle, First: 0, Count: 1}},
+			ActiveMode: "Direct",
+		}
+	}
+	client := api.NewClient(serving(t, nil, openrgb.NewFake(one("Alpha Board"), one("Beta Board"))))
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	person := &scripted{answers: []string{
+		"y", "front light", // Alpha
+		"y", "rear light", // Beta
+		"y", // is that right?
+		"n", // nothing still lit
+		"n", // do not write
+	}}
+	require.NoError(t, cli.Map(t.Context(), client, person))
+
+	asked := strings.Count(person.questions(), "still lit")
+	require.Equal(t, 1, asked, "a machine that blanks was interrogated device by device")
+}
+
+func TestADeviceWithNoBrightnessIsNotOfferedOne(t *testing.T) {
+	// A question nobody can act on is not a question. Spec 008's rule, and
+	// the reason this one is gated on what the device reports.
+	client := api.NewClient(serving(t, nil, openrgb.NewFake(cooler())))
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	person := &scripted{answers: []string{"y", "desk strip", "y", "n", "n"}}
+	require.NoError(t, cli.Map(t.Context(), client, person))
+	require.NotContains(t, person.questions(), "turned down")
 }

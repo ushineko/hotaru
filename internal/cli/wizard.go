@@ -119,7 +119,7 @@ func Map(ctx context.Context, client *api.Client, asker Asker, only ...string) e
 	asker.Say("Answer in your own words -- these become the names you use. Press return to skip anything.\n")
 
 	var found []namedSegment
-	corrections := map[string][]string{}
+	learned := map[string]notes{}
 	for _, device := range list {
 		if !device.InScope || device.LEDs == 0 || !wanted(only, device.Name) {
 			continue
@@ -143,8 +143,9 @@ func Map(ctx context.Context, client *api.Client, asker Asker, only ...string) e
 			}
 			continue
 		}
+		note := notes{}
 		if working.corrected {
-			corrections[device.Name] = working.order
+			note.solidModes = working.order
 			asker.Say("  Noted: %s only lights one particular way, and that is written down.", device.Name)
 		}
 
@@ -152,14 +153,26 @@ func Map(ctx context.Context, client *api.Client, asker Asker, only ...string) e
 		if err != nil {
 			return err
 		}
+		if len(segments) == 0 {
+			continue // nothing named on it, so nothing to treat specially
+		}
 		found = append(found, segments...)
+
+		// Brightness is offered only where the device has one, which is rare
+		// enough that most runs are never asked.
+		level, err := dimmer(ctx, client, asker, device, working.mode)
+		if err != nil {
+			return err
+		}
+		note.brightness = level
+		learned[device.Name] = note
 	}
 
 	if len(found) == 0 {
 		asker.Say("\nNothing was named, so there is nothing to write.")
 		return nil
 	}
-	return finish(ctx, client, asker, found, names(list), corrections, existing, path)
+	return finish(ctx, client, asker, found, list, learned, existing, path)
 }
 
 /*
@@ -229,6 +242,7 @@ func lightsUp(ctx context.Context, client *api.Client, asker Asker, device api.D
 
 		used := out.Results[0].Mode
 		asked = append(asked, used)
+		settle(ctx, asker) // a slow device has not shown the colour yet; spec 014
 		lit, err := asker.Confirm(fmt.Sprintf("  Is anything on it lit %s now?", probeColour))
 		if err != nil {
 			return working{}, err
@@ -310,7 +324,7 @@ func mapDevice(ctx context.Context, client *api.Client, asker Asker, device api.
 
 	var named []namedSegment
 	for _, zone := range zones {
-		if err := light(ctx, client, device.Name, mode, []api.Assignment{{
+		if err := light(ctx, client, asker, device.Name, mode, []api.Assignment{{
 			Target: target(device.Name, zone.Name), Colour: probeColour,
 		}}); err != nil {
 			return nil, err
@@ -472,7 +486,7 @@ func split(ctx context.Context, client *api.Client, asker Asker,
 		})
 	}
 
-	if err := light(ctx, client, device.Name, mode, partAssignments(device.Name, zone, parts)); err != nil {
+	if err := light(ctx, client, asker, device.Name, mode, partAssignments(device.Name, zone, parts)); err != nil {
 		return nil, err
 	}
 	right, err := asker.Confirm(fmt.Sprintf("  Each of the %d shows one colour?", count))
@@ -525,7 +539,7 @@ func bisect(ctx context.Context, client *api.Client, asker Asker,
 			break
 		}
 		first := []namedSegment{{First: 0, Last: k - 1}, {First: k, Last: zone.Count - 1}}
-		if err := light(ctx, client, device.Name, mode, partAssignments(device.Name, zone, first)); err != nil {
+		if err := light(ctx, client, asker, device.Name, mode, partAssignments(device.Name, zone, first)); err != nil {
 			return nil, err
 		}
 
@@ -587,8 +601,9 @@ func names(list []api.Device) []string {
 }
 
 func finish(ctx context.Context, client *api.Client, asker Asker, found []namedSegment,
-	presentNames []string, corrections map[string][]string, existing *config.Config, path string,
+	present []api.Device, learned map[string]notes, existing *config.Config, path string,
 ) error {
+	presentNames := names(present)
 	asker.Say("\nEverything you named, lit at once:")
 	byDevice := map[string][]namedSegment{}
 	for _, segment := range found {
@@ -603,7 +618,7 @@ func finish(ctx context.Context, client *api.Client, asker Asker, found []namedS
 			})
 			asker.Say("  %s → %s", palette[i%len(palette)], segment.Name)
 		}
-		if err := light(ctx, client, device, "", assignments); err != nil {
+		if err := light(ctx, client, asker, device, "", assignments); err != nil {
 			return err
 		}
 	}
@@ -617,7 +632,11 @@ func finish(ctx context.Context, client *api.Client, asker Asker, found []namedS
 		return nil
 	}
 
-	merged := merge(existing, found, corrections, presentNames)
+	if err := blanking(ctx, client, asker, present, learned); err != nil {
+		return err
+	}
+
+	merged := merge(existing, found, learned, presentNames)
 	rules := yamlFor(merged)
 	asker.Say("\n%s", rules)
 	return offerToWrite(ctx, client, asker, rules, path)
@@ -690,7 +709,7 @@ func partAssignments(device string, zone api.Zone, parts []namedSegment) []api.A
 }
 
 // light turns everything on this device off and shows only what is asked.
-func light(ctx context.Context, client *api.Client, device, mode string, assignments []api.Assignment) error {
+func light(ctx context.Context, client *api.Client, asker Asker, device, mode string, assignments []api.Assignment) error {
 	_, err := client.Apply(ctx, api.ApplyRequest{
 		Colour:      "black",
 		Assignments: assignments,
@@ -701,7 +720,35 @@ func light(ctx context.Context, client *api.Client, device, mode string, assignm
 	if err != nil {
 		return quiet(err)
 	}
+	settle(ctx, asker)
 	return nil
+}
+
+/*
+lookDelay is how long a device is given to show a colour before somebody is
+asked what they can see.
+
+Nothing announces that a device is slow. The development machine's cooler ring
+takes about half a second; its fans are immediate, and so is everything else on
+that desk. Asked in the same breath as the write, the honest answer to "what is
+lit now?" is whatever was there before -- which is what happened, and the ring
+went unnamed because of it.
+
+Long enough for the slowest thing measured here, short enough that nobody
+notices waiting. See spec 014.
+*/
+const lookDelay = 500 * time.Millisecond
+
+// settle waits for the hardware to catch up, or returns early if the run is
+// being abandoned. It waits only where somebody is looking; see Watcher.
+func settle(ctx context.Context, asker Asker) {
+	if w, ok := asker.(Watcher); !ok || !w.Watching() {
+		return
+	}
+	select {
+	case <-ctx.Done():
+	case <-time.After(lookDelay):
+	}
 }
 
 func keepNamed(parts []namedSegment) []namedSegment {
@@ -958,4 +1005,142 @@ func askNameOr(asker Asker, question, fallback string) (string, error) {
 		return fallback, nil // agreement, or nothing, depending on what was there
 	}
 	return validName(asker, answer, question)
+}
+
+/*
+notes are the corrections a device needs that no protocol reports.
+
+Three facts, each learned the same way the rest of the wizard learns: do the
+thing, and ask what happened in the room. See spec 014.
+*/
+type notes struct {
+	solidModes []string
+	neverBlank bool
+	brightness *int
+}
+
+// dimLevel is what "turned down" means when the wizard offers it. A number
+// rather than a question: somebody asked to pick a percentage is being asked
+// about hotaru rather than about their desk.
+const dimLevel = 40
+
+/*
+darkish is a mode that renders mostly dark, if the device has one.
+
+A keyboard that cannot be blanked can still be quiet: its reactive modes leave
+unpressed keys unlit and ripple the colour under typing, which is what somebody
+means by a keyboard that is off. The Python found the same thing and named
+`solid splash` outright; matching on what the modes are called finds it on
+hardware nobody has written down.
+*/
+func darkish(device api.Device) string {
+	for _, mode := range device.Modes {
+		lower := strings.ToLower(mode)
+		if strings.Contains(lower, "splash") || strings.Contains(lower, "reactive") {
+			return mode
+		}
+	}
+	return ""
+}
+
+/*
+habits asks the questions that decide how a device is treated, not what its
+parts are called.
+
+Every one is demonstrated. "Should this device be excluded from turning off?"
+is a question about hotaru's configuration; "I have turned it off, is it dark?"
+is a question about the room, and somebody answers it by looking up.
+*/
+func blanking(ctx context.Context, client *api.Client, asker Asker,
+	list []api.Device, learned map[string]notes,
+) error {
+	if _, err := client.Apply(ctx, api.ApplyRequest{Off: true, Preview: true}); err != nil {
+		return quiet(err)
+	}
+	settle(ctx, asker)
+
+	// One question for the whole machine. On hardware that blanks properly --
+	// which is most of it -- this is the only one asked, and the per-device
+	// round below never runs.
+	stillLit, err := asker.Confirm("\nEverything is off now. Is anything still lit?")
+	if err != nil {
+		return err
+	}
+	if !stillLit {
+		return nil
+	}
+
+	for _, device := range list {
+		note, mapped := learned[device.Name]
+		if !mapped {
+			continue
+		}
+		lit, err := asker.Confirm(fmt.Sprintf("  Is the %s still lit?", knownName(device)))
+		if err != nil {
+			return err
+		}
+		if !lit {
+			continue
+		}
+		note.neverBlank = true
+		asker.Say("  Noted: it is left alone instead of being turned off.")
+
+		if alt := darkish(device); alt != "" {
+			if err := light(ctx, client, asker, device.Name, alt, nil); err != nil {
+				return err
+			}
+			asker.Say("  It can do this instead, which lights up as you use it.")
+			prefer, err := asker.Confirm("  Use that when the lights are off?")
+			if err != nil {
+				return err
+			}
+			if prefer {
+				note.solidModes = append([]string{alt}, without(note.solidModes, alt)...)
+			}
+		}
+		learned[device.Name] = note
+	}
+	return nil
+}
+
+// dimmer offers to turn a device down, for devices that have a brightness at
+// all. Demonstrated, and never asked as a number.
+func dimmer(ctx context.Context, client *api.Client, asker Asker, device api.Device, mode string) (*int, error) {
+	if !device.Brightness {
+		return nil, nil
+	}
+	level := dimLevel
+	if _, err := client.Apply(ctx, api.ApplyRequest{
+		Colour: probeColour, Devices: []string{device.Name}, Mode: mode,
+		Preview: true, Brightness: &level,
+	}); err != nil {
+		return nil, quiet(err)
+	}
+	settle(ctx, asker)
+	quieter, err := asker.Confirm(fmt.Sprintf("  %s can be turned down. Keep it dimmer?", knownName(device)))
+	if err != nil {
+		return nil, err
+	}
+	if !quieter {
+		return nil, nil
+	}
+	return &level, nil
+}
+
+// knownName is the shortest thing a person would call this device.
+func knownName(device api.Device) string {
+	if f := strings.Fields(device.Name); len(f) > 0 {
+		return strings.ToLower(f[0])
+	}
+	return device.Name
+}
+
+func without(list []string, drop string) []string {
+	var out []string
+	for _, item := range list {
+		if !strings.EqualFold(item, drop) {
+			out = append(out, item)
+		}
+	}
+	return out
 }
