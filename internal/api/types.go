@@ -38,10 +38,16 @@ type Device struct {
 
 	// InScope is whether hotaru would drive this device. Present so a listing
 	// answers "why did nothing happen to this one?" without a second call.
-	// Brightness is whether any of this device's modes takes one. The wizard
-	// only offers to dim a device that can be dimmed, and the CLI has no
-	// other way to know.
-	Brightness bool `json:"brightness,omitempty"`
+	/*
+		Dimmable is the modes that take a brightness, by name.
+
+		Not a single flag for the device. A Keychron's Direct mode -- the one
+		hotaru writes a colour in -- takes no brightness, while its animated
+		cycle modes all do. Asked as "can this device be dimmed?", the answer
+		is yes and the dimming does nothing: offered, demonstrated, written
+		down, and inert. The question is only answerable about a mode.
+	*/
+	Dimmable []string `json:"dimmable,omitempty"`
 
 	InScope bool `json:"in_scope"`
 

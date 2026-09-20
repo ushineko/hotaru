@@ -879,7 +879,7 @@ func TestAMachineThatBlanksIsAskedOnlyOnce(t *testing.T) {
 	}}
 	require.NoError(t, cli.Map(t.Context(), client, person))
 
-	asked := strings.Count(person.questions(), "still lit")
+	asked := strings.Count(person.questions(), "still glowing or lit up")
 	require.Equal(t, 1, asked, "a machine that blanks was interrogated device by device")
 }
 
@@ -892,4 +892,46 @@ func TestADeviceWithNoBrightnessIsNotOfferedOne(t *testing.T) {
 	person := &scripted{answers: []string{"y", "desk strip", "y", "n", "n"}}
 	require.NoError(t, cli.Map(t.Context(), client, person))
 	require.NotContains(t, person.questions(), "turned down")
+}
+
+func TestTheOffQuestionDoesNotAssertItsOwnAnswer(t *testing.T) {
+	/*
+		It used to say "Everything is off now. Is anything still lit?".
+
+		Somebody looking at a keyboard glowing white answered no: the program
+		had just told them everything was off, so white must be what off looks
+		like on this board. That is precisely the fault the question exists to
+		find, invited by the question.
+	*/
+	client := api.NewClient(serving(t, nil, openrgb.NewFake(keyboardThatWillNotBlank())))
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	person := &scripted{answers: []string{"y", "keyboard", "y", "n", "n"}}
+	require.NoError(t, cli.Map(t.Context(), client, person))
+
+	require.NotContains(t, person.questions(), "Everything is off now",
+		"the wizard stated the outcome it was asking about")
+	require.Contains(t, strings.Join(person.said, " "), "should be dark",
+		"somebody has to be told what they are looking for")
+}
+
+func TestDimmingIsOfferedOnlyForTheModeThatWillBeUsed(t *testing.T) {
+	/*
+		A Keychron's Direct mode -- the one hotaru writes a colour in -- takes
+		no brightness, while its animated cycle modes all do. Gated on "does
+		the device have a dimmable mode", hotaru offered to dim it, dimmed
+		nothing, and wrote a brightness that could never apply.
+	*/
+	device := keyboardThatWillNotBlank()
+	device.Modes = []devices.Mode{
+		{Name: "Direct", PerLED: true},        // used, not dimmable
+		{Name: "Cycle All", Brightness: true}, // dimmable, never used
+	}
+	client := api.NewClient(serving(t, nil, openrgb.NewFake(device)))
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	person := &scripted{answers: []string{"y", "keyboard", "y", "n", "n"}}
+	require.NoError(t, cli.Map(t.Context(), client, person))
+	require.NotContains(t, person.questions(), "turned down",
+		"a device was offered a dimming that would do nothing")
 }

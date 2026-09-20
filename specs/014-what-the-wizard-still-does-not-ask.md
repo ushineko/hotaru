@@ -69,6 +69,31 @@ A fixed pause is the whole fix. Long enough for the slowest thing measured on
 this hardware, short enough that nobody notices waiting: the same reasoning as
 `settleDelay` in the write path, and the same order of magnitude.
 
+### What the first run taught
+
+Both faults below were found by somebody running it and looking at their
+keyboard, and neither would have been found any other way.
+
+**A question must not assert what it is asking about.** The first wording was
+"Everything is off now. Is anything still lit?". The keyboard was glowing
+white, and the answer was no -- because the program had just said everything
+was off, so white must be what off looks like on this board. The wizard
+invited the exact mistake it exists to catch. It now says what *should* have
+happened and asks what did: "Everything hotaru controls should be dark now. Is
+anything still glowing or lit up?"
+
+**Dimming is a property of a mode, not of a device.** The question was gated on
+whether any of a device's modes took a brightness. A Keychron's `Direct` -- the
+mode hotaru writes a colour in -- takes none, while every one of its animated
+cycle modes does. So hotaru offered to turn the keyboard down, demonstrated
+nothing, and wrote a `brightness: 40` that could never apply to anything it
+does. On the development machine exactly one device of six is dimmable in the
+mode it is actually driven in.
+
+That is a wizard breaking its own rule from spec 008 -- never ask what cannot
+be acted on -- and it did so because the capability was read at the wrong
+granularity.
+
 ## Requirements
 
 **R1. A pause between lighting something and asking about it.** Applied
@@ -88,10 +113,15 @@ keyboard has -- the wizard offers it, demonstrates it, and records it in
 device cannot be turned off and moves on; that is a fact about the hardware and
 not a failure of the run.
 
-**R4. Brightness is offered only where the device takes one, and by
-demonstration.** The wizard turns the device down, asks whether that is better,
-and records the answer. It does not ask for a number. A device whose modes
-report no brightness is never asked about.
+**R4. Brightness is offered only where the mode hotaru will use takes one,
+and by demonstration.** Not where the device has some dimmable mode: a device
+driven in a mode without a brightness cannot be dimmed by anything hotaru does.
+The wizard turns it down, asks whether that is better, and records the answer.
+It never asks for a number.
+
+**R4a. A question states what should have happened, never what did.** The
+wizard is asking because it cannot know; a prompt that asserts the outcome
+tells somebody what to see.
 
 **R5. No jargon, as everywhere else in the wizard.** The existing test that
 fails on "zone", "LED" and mode names covers every new line.
@@ -114,7 +144,10 @@ holds: a second run offers the previous answers as defaults, including these.
       offered it, and accepting writes that mode first in `solid_modes`.
 - [ ] AC5. A device that will not go dark and has no such mode is told so in
       one sentence, and the run continues.
-- [ ] AC6. Brightness is offered only for devices whose modes report one.
+- [x] AC6. Brightness is offered only where the mode that will be used takes
+      one, with a test on a device that has a dimmable mode it never uses.
+- [x] AC6a. No question asserts its own answer, with a test on the wording of
+      the blanking question.
 - [ ] AC7. Accepting a dimmer setting writes `brightness`; declining writes
       nothing.
 - [ ] AC8. The no-jargon test covers the new questions.

@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -1059,10 +1060,22 @@ func blanking(ctx context.Context, client *api.Client, asker Asker,
 	}
 	settle(ctx, asker)
 
-	// One question for the whole machine. On hardware that blanks properly --
-	// which is most of it -- this is the only one asked, and the per-device
-	// round below never runs.
-	stillLit, err := asker.Confirm("\nEverything is off now. Is anything still lit?")
+	/*
+		One question for the whole machine. On hardware that blanks properly --
+		which is most of it -- this is the only one asked, and the per-device
+		round below never runs.
+
+		The wording matters more than the mechanism. An earlier version said
+		"Everything is off now. Is anything still lit?", which asserts the
+		thing it is asking about: somebody looking at a keyboard glowing white
+		answered no, because the program had just told them everything was
+		off and white must therefore be what off looks like. That is the exact
+		failure this question exists to catch, invited by the question.
+
+		So it says what *should* have happened, and asks what did.
+	*/
+	asker.Say("\nEverything hotaru controls should be dark now.")
+	stillLit, err := asker.Confirm("Is anything still glowing or lit up?")
 	if err != nil {
 		return err
 	}
@@ -1075,7 +1088,7 @@ func blanking(ctx context.Context, client *api.Client, asker Asker,
 		if !mapped {
 			continue
 		}
-		lit, err := asker.Confirm(fmt.Sprintf("  Is the %s still lit?", knownName(device)))
+		lit, err := asker.Confirm(fmt.Sprintf("  Is the %s still glowing?", knownName(device)))
 		if err != nil {
 			return err
 		}
@@ -1106,7 +1119,11 @@ func blanking(ctx context.Context, client *api.Client, asker Asker,
 // dimmer offers to turn a device down, for devices that have a brightness at
 // all. Demonstrated, and never asked as a number.
 func dimmer(ctx context.Context, client *api.Client, asker Asker, device api.Device, mode string) (*int, error) {
-	if !device.Brightness {
+	// Only where the mode hotaru will actually write in takes one. A device
+	// with a dimmable animation and an undimmable Direct cannot be dimmed by
+	// anything hotaru does, and offering it is a demonstration that
+	// demonstrates nothing.
+	if !slices.Contains(device.Dimmable, mode) {
 		return nil, nil
 	}
 	level := dimLevel
