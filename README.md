@@ -184,6 +184,11 @@ necessary is an artefact of where it used to live.
 - [specs/009-writes-that-mean-what-they-say.md](specs/009-writes-that-mean-what-they-say.md):
   why a write that lands in the buffer is not always a write, and what hotaru
   checks instead.
+- [specs/013-the-dashboard.md](specs/013-the-dashboard.md): the monitor's LCD
+  dashboard ported, and the settling time the panel turns out to need.
+- [specs/012-the-cooler-without-liquidctl.md](specs/012-the-cooler-without-liquidctl.md):
+  reaching the cooler and its screen directly, and what the panel's memory does
+  under repeated writes.
 - [specs/011-a-zone-is-what-the-hardware-writes.md](specs/011-a-zone-is-what-the-hardware-writes.md):
   why a device's zones are written separately, and the day spent not asking
   what was on the wire.
@@ -222,6 +227,12 @@ MIT. See [LICENSE](LICENSE).
   keyboard that takes the lighting back when told to go dark is now found and
   written down instead of leaving `hotaru light off` quietly not working
   (spec 014, #20, #25).
+
+- `hotaru light health` names the OpenRGB unit this machine actually uses. A
+  later candidate overwrote an earlier one, so a machine with the user unit
+  installed but stopped was told to `sudo systemctl start openrgb.service` --
+  the wrong unit, the wrong scope, and the only advice hotaru offers when
+  lighting is not working (#30).
 
 - A frame is written one request per zone rather than one for the whole
   device. An NZXT cooler's two channels are independent controllers behind one
