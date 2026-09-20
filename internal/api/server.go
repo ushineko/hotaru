@@ -199,6 +199,7 @@ func parse(req ApplyRequest) (service.Request, error) {
 	out := service.Request{
 		Off: req.Off, Devices: req.Devices,
 		Mode: req.Mode, Exactly: req.Exactly, Preview: req.Preview,
+		Brightness: req.Brightness,
 	}
 	if req.Colour != "" {
 		col, err := colour.Parse(req.Colour)
@@ -231,6 +232,11 @@ func describe(view service.View) Device {
 		Modes:      view.Device.ModeNames(),
 		ActiveMode: view.Device.ActiveMode,
 		InScope:    view.InScope,
+	}
+	for _, mode := range view.Device.Modes {
+		if mode.Brightness {
+			device.Dimmable = append(device.Dimmable, mode.Name)
+		}
 	}
 	for _, zone := range view.Device.Zones {
 		device.Zones = append(device.Zones, Zone{

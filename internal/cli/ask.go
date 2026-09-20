@@ -33,6 +33,23 @@ type Asker interface {
 }
 
 /*
+Watcher reports that an Asker's answers come from somebody looking at the
+machine.
+
+The wizard pauses between lighting something and asking about it, because a
+device can take a moment to show a colour and the honest answer before then is
+about the previous one. That pause is for a person's eyes. A scripted asker has
+none, and a suite that waits half a second per write takes minutes to say
+nothing.
+
+Implemented by the terminal asker, and by nothing else.
+*/
+type Watcher interface {
+	// Watching reports that a person is looking at hardware.
+	Watching() bool
+}
+
+/*
 terminal is an Asker over a real pair of streams.
 
 It holds a context because a question is a place a program waits, and a person
@@ -147,3 +164,6 @@ func (t *terminal) Choose(question string, options []string) (string, error) {
 // errNoAnswer ends a conversation that is not getting anywhere, rather than
 // proceeding on an answer nobody gave.
 var errNoAnswer = errors.New("no answer to that question, so nothing was changed")
+
+// Watching says there is somebody at the keyboard looking at their machine.
+func (t *terminal) Watching() bool { return true }

@@ -217,6 +217,17 @@ MIT. See [LICENSE](LICENSE).
 
 ### Unreleased
 
+- `hotaru light map --devices`, with nothing after it, offers the list to pick
+  from. Device names are the hardware's own and long enough to mistype, and a
+  mistyped one maps nothing while looking like it worked.
+
+- The wizard waits for the hardware before asking what you can see, and asks
+  what it never asked before: whether the lights actually go off, what to do
+  when they do not, and whether a device that can be dimmed should be. A
+  keyboard that takes the lighting back when told to go dark is now found and
+  written down instead of leaving `hotaru light off` quietly not working
+  (spec 014, #20, #25).
+
 - `hotaru light health` names the OpenRGB unit this machine actually uses. A
   later candidate overwrote an earlier one, so a machine with the user unit
   installed but stopped was told to `sudo systemctl start openrgb.service` --

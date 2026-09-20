@@ -7,6 +7,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -66,8 +68,59 @@ Nothing is written without your say-so, and the lights go back afterwards.`,
 			return nil
 		},
 	}
-	cmd.Flags().StringSlice("devices", nil, "only these devices, by name")
+	cmd.Flags().StringSlice("devices", nil, "only these devices, by name (or bare, to pick from a list)")
+	// Bare `--devices` means "ask me". Nobody wants to type
+	// "SteelSeries Apex Pro TKL Gen 3 Wireless" correctly, and getting it
+	// wrong maps nothing and says nothing about why.
+	cmd.Flags().Lookup("devices").NoOptDefVal = pickMe
 	return cmd
+}
+
+// pickMe is what a bare --devices becomes: a request for the list rather than
+// a device called that.
+const pickMe = "?"
+
+/*
+pickDevices asks which hardware to map, when nobody said.
+
+The names are the devices' own and they are long: a flag is the wrong place to
+retype one, and a typo there maps nothing while looking like it worked.
+*/
+func pickDevices(asker Asker, list []api.Device) ([]string, error) {
+	var usable []api.Device
+	for _, device := range list {
+		if device.InScope && device.LEDs > 0 {
+			usable = append(usable, device)
+		}
+	}
+	if len(usable) == 0 {
+		return nil, nil
+	}
+
+	asker.Say("Which would you like to go through?")
+	for i, device := range usable {
+		asker.Say("    %d  %s", i+1, device.Name)
+	}
+	asker.Say("    %d  all of them", len(usable)+1)
+
+	for {
+		answer, err := asker.Ask(fmt.Sprintf("  Pick one [1-%d, or return for all]", len(usable)+1))
+		if err != nil {
+			return nil, err
+		}
+		if strings.TrimSpace(answer) == "" {
+			return nil, nil // all of them
+		}
+		pick, err := strconv.Atoi(strings.TrimSpace(answer))
+		if err != nil || pick < 1 || pick > len(usable)+1 {
+			asker.Say("  Pick a number from the list, or press return for all of them.")
+			continue
+		}
+		if pick == len(usable)+1 {
+			return nil, nil
+		}
+		return []string{usable[pick-1].Name}, nil
+	}
 }
 
 // namedSegment is one thing the user named, and where it lives.
@@ -107,6 +160,14 @@ func Map(ctx context.Context, client *api.Client, asker Asker, only ...string) e
 		return quiet(err)
 	}
 
+	if len(only) == 1 && only[0] == pickMe {
+		chosen, err := pickDevices(asker, list)
+		if err != nil {
+			return err
+		}
+		only = chosen
+	}
+
 	// What was answered last time, offered back as the defaults. Making
 	// somebody retype "rad-front" to keep it is how a program stops being
 	// re-run.
@@ -119,7 +180,7 @@ func Map(ctx context.Context, client *api.Client, asker Asker, only ...string) e
 	asker.Say("Answer in your own words -- these become the names you use. Press return to skip anything.\n")
 
 	var found []namedSegment
-	corrections := map[string][]string{}
+	learned := map[string]notes{}
 	for _, device := range list {
 		if !device.InScope || device.LEDs == 0 || !wanted(only, device.Name) {
 			continue
@@ -143,8 +204,9 @@ func Map(ctx context.Context, client *api.Client, asker Asker, only ...string) e
 			}
 			continue
 		}
+		note := notes{}
 		if working.corrected {
-			corrections[device.Name] = working.order
+			note.solidModes = working.order
 			asker.Say("  Noted: %s only lights one particular way, and that is written down.", device.Name)
 		}
 
@@ -152,14 +214,59 @@ func Map(ctx context.Context, client *api.Client, asker Asker, only ...string) e
 		if err != nil {
 			return err
 		}
+		if len(segments) == 0 {
+			continue // nothing named on it, so nothing to treat specially
+		}
 		found = append(found, segments...)
+
+		/*
+			A device already set to stay dark until touched is asked about.
+
+			Otherwise the choice can never be revisited: it is only offered
+			when a device fails to go dark, and a device configured this way
+			no longer fails. Spec 008's reconfiguration pattern has to reach
+			this answer too.
+		*/
+		if was := configuredDark(existing, device, names(list)); was != "" {
+			keep, err := asker.Confirm(fmt.Sprintf(
+				"  The %s is set to stay dark until you touch it. Keep that?", knownName(device)))
+			if err != nil {
+				return err
+			}
+			switch {
+			case keep:
+				note.solidModes = withFallbacks(device, was, note.solidModes)
+			default:
+				alt, chosen, err := chooseDark(ctx, client, asker, device, working.mode, true)
+				switch {
+				case err != nil:
+					return err
+				case alt != "":
+					note.solidModes = withFallbacks(device, alt, note.solidModes)
+				case chosen:
+					note.plainAgain = true // lit all the time, as it was before
+				default:
+					note.solidModes = withFallbacks(device, was, note.solidModes)
+				}
+			}
+		}
+
+		// Brightness is offered only where the mode that will be used takes
+		// one, which is rare enough that most runs are never asked.
+		level, dimmable, err := dimmer(ctx, client, asker, device, working.mode)
+		if err != nil {
+			return err
+		}
+		note.brightness = level
+		note.undimmable = !dimmable
+		learned[device.Name] = note
 	}
 
 	if len(found) == 0 {
 		asker.Say("\nNothing was named, so there is nothing to write.")
 		return nil
 	}
-	return finish(ctx, client, asker, found, names(list), corrections, existing, path)
+	return finish(ctx, client, asker, found, list, learned, existing, path)
 }
 
 /*
@@ -229,6 +336,7 @@ func lightsUp(ctx context.Context, client *api.Client, asker Asker, device api.D
 
 		used := out.Results[0].Mode
 		asked = append(asked, used)
+		settle(ctx, asker) // a slow device has not shown the colour yet; spec 014
 		lit, err := asker.Confirm(fmt.Sprintf("  Is anything on it lit %s now?", probeColour))
 		if err != nil {
 			return working{}, err
@@ -310,7 +418,7 @@ func mapDevice(ctx context.Context, client *api.Client, asker Asker, device api.
 
 	var named []namedSegment
 	for _, zone := range zones {
-		if err := light(ctx, client, device.Name, mode, []api.Assignment{{
+		if err := light(ctx, client, asker, device.Name, mode, []api.Assignment{{
 			Target: target(device.Name, zone.Name), Colour: probeColour,
 		}}); err != nil {
 			return nil, err
@@ -472,7 +580,7 @@ func split(ctx context.Context, client *api.Client, asker Asker,
 		})
 	}
 
-	if err := light(ctx, client, device.Name, mode, partAssignments(device.Name, zone, parts)); err != nil {
+	if err := light(ctx, client, asker, device.Name, mode, partAssignments(device.Name, zone, parts)); err != nil {
 		return nil, err
 	}
 	right, err := asker.Confirm(fmt.Sprintf("  Each of the %d shows one colour?", count))
@@ -525,7 +633,7 @@ func bisect(ctx context.Context, client *api.Client, asker Asker,
 			break
 		}
 		first := []namedSegment{{First: 0, Last: k - 1}, {First: k, Last: zone.Count - 1}}
-		if err := light(ctx, client, device.Name, mode, partAssignments(device.Name, zone, first)); err != nil {
+		if err := light(ctx, client, asker, device.Name, mode, partAssignments(device.Name, zone, first)); err != nil {
 			return nil, err
 		}
 
@@ -587,8 +695,9 @@ func names(list []api.Device) []string {
 }
 
 func finish(ctx context.Context, client *api.Client, asker Asker, found []namedSegment,
-	presentNames []string, corrections map[string][]string, existing *config.Config, path string,
+	present []api.Device, learned map[string]notes, existing *config.Config, path string,
 ) error {
+	presentNames := names(present)
 	asker.Say("\nEverything you named, lit at once:")
 	byDevice := map[string][]namedSegment{}
 	for _, segment := range found {
@@ -603,7 +712,7 @@ func finish(ctx context.Context, client *api.Client, asker Asker, found []namedS
 			})
 			asker.Say("  %s → %s", palette[i%len(palette)], segment.Name)
 		}
-		if err := light(ctx, client, device, "", assignments); err != nil {
+		if err := light(ctx, client, asker, device, "", assignments); err != nil {
 			return err
 		}
 	}
@@ -617,7 +726,11 @@ func finish(ctx context.Context, client *api.Client, asker Asker, found []namedS
 		return nil
 	}
 
-	merged := merge(existing, found, corrections, presentNames)
+	if err := blanking(ctx, client, asker, present, learned); err != nil {
+		return err
+	}
+
+	merged := merge(existing, found, learned, presentNames)
 	rules := yamlFor(merged)
 	asker.Say("\n%s", rules)
 	return offerToWrite(ctx, client, asker, rules, path)
@@ -690,7 +803,7 @@ func partAssignments(device string, zone api.Zone, parts []namedSegment) []api.A
 }
 
 // light turns everything on this device off and shows only what is asked.
-func light(ctx context.Context, client *api.Client, device, mode string, assignments []api.Assignment) error {
+func light(ctx context.Context, client *api.Client, asker Asker, device, mode string, assignments []api.Assignment) error {
 	_, err := client.Apply(ctx, api.ApplyRequest{
 		Colour:      "black",
 		Assignments: assignments,
@@ -701,7 +814,35 @@ func light(ctx context.Context, client *api.Client, device, mode string, assignm
 	if err != nil {
 		return quiet(err)
 	}
+	settle(ctx, asker)
 	return nil
+}
+
+/*
+lookDelay is how long a device is given to show a colour before somebody is
+asked what they can see.
+
+Nothing announces that a device is slow. The development machine's cooler ring
+takes about half a second; its fans are immediate, and so is everything else on
+that desk. Asked in the same breath as the write, the honest answer to "what is
+lit now?" is whatever was there before -- which is what happened, and the ring
+went unnamed because of it.
+
+Long enough for the slowest thing measured here, short enough that nobody
+notices waiting. See spec 014.
+*/
+const lookDelay = 500 * time.Millisecond
+
+// settle waits for the hardware to catch up, or returns early if the run is
+// being abandoned. It waits only where somebody is looking; see Watcher.
+func settle(ctx context.Context, asker Asker) {
+	if w, ok := asker.(Watcher); !ok || !w.Watching() {
+		return
+	}
+	select {
+	case <-ctx.Done():
+	case <-time.After(lookDelay):
+	}
 }
 
 func keepNamed(parts []namedSegment) []namedSegment {
@@ -958,4 +1099,327 @@ func askNameOr(asker Asker, question, fallback string) (string, error) {
 		return fallback, nil // agreement, or nothing, depending on what was there
 	}
 	return validName(asker, answer, question)
+}
+
+/*
+notes are the corrections a device needs that no protocol reports.
+
+Three facts, each learned the same way the rest of the wizard learns: do the
+thing, and ask what happened in the room. See spec 014.
+*/
+type notes struct {
+	solidModes []string
+	neverBlank bool
+	brightness *int
+	// undimmable is set when the mode this device is driven in takes no
+	// brightness. A rule from an earlier run may carry one -- this wizard
+	// wrote one itself before it knew better -- and a setting that cannot
+	// apply is worse in a file than absent.
+	undimmable bool
+	// plainAgain undoes a stay-dark mode chosen on an earlier run.
+	plainAgain bool
+}
+
+// dimLevel is what "turned down" means when the wizard offers it. A number
+// rather than a question: somebody asked to pick a percentage is being asked
+// about hotaru rather than about their desk.
+const dimLevel = 40
+
+/*
+darkish is a mode that renders mostly dark, if the device has one.
+
+A keyboard that cannot be blanked can still be quiet: its reactive modes leave
+unpressed keys unlit and ripple the colour under typing, which is what somebody
+means by a keyboard that is off. The Python found the same thing and named
+`solid splash` outright; matching on what the modes are called finds it on
+hardware nobody has written down.
+*/
+/*
+likelyDark are words that name a mode which lights up under use.
+
+A hint for ordering, never a filter. These are the words this desk's Keychron
+happens to use, and peripheral-battery-monitor settled on Solid Splash after
+living with it: it ripples outward from each keypress rather than lighting only
+the key struck, which reads as the board answering rather than blinking.
+
+A SteelSeries Apex Pro names its effects differently, and so does everything
+else. Matching on these words alone would offer nothing at all on hardware
+nobody here has seen -- which is the over-fitting this project is supposed to
+avoid.
+*/
+var likelyDark = []string{"splash", "reactive", "ripple", "typing", "press", "react", "key"}
+
+/*
+darkishModes is every way a device can be lit, likeliest-first.
+
+Not a filtered list. hotaru cannot know which of a keyboard's twenty effects
+leaves most of it dark: the names are the vendor's, the behaviour is in the
+firmware, and the only instrument that can tell is somebody looking at the
+board. So everything is offered, ordered so the good guesses come first, and
+the person decides by watching.
+*/
+func darkishModes(device api.Device) []string {
+	var out []string
+	add := func(mode string) {
+		if !slices.Contains(out, mode) && !strings.EqualFold(mode, "off") {
+			out = append(out, mode)
+		}
+	}
+	for _, want := range likelyDark {
+		for _, mode := range device.Modes {
+			if strings.Contains(strings.ToLower(mode), want) {
+				add(mode)
+			}
+		}
+	}
+	// Then the rest, in the order the device lists them, so a machine whose
+	// vocabulary nobody anticipated still has every option on the table.
+	for _, mode := range device.Modes {
+		add(mode)
+	}
+	return out
+}
+
+/*
+chooseDark shows the ways a device can be lit, and lets somebody browse them.
+
+A menu rather than a march. Offered one at a time with "Use this one?", five
+times over, somebody decides about each without having seen the rest, cannot go
+back to the one they liked, and is not even told which one they are looking at.
+A list they can pick from, repeatedly, is how a person chooses between things
+that look different on their desk.
+
+The names are the vendor's own. "Solid Reactive Multinexus" means nothing to
+anybody, but it is what OpenRGB calls it and it is the only handle that exists
+for "the one with the ripple" once the light has moved on.
+
+An empty mode with chosen set means the plain steady light: how somebody stops
+using one of these after an earlier run set one.
+*/
+func chooseDark(ctx context.Context, client *api.Client, asker Asker, device api.Device,
+	steady string, revisiting bool,
+) (string, bool, error) {
+	// Without the mode it is already lit in: that one is the last entry,
+	// described as what it is, and listing it twice invites somebody to pick
+	// the same thing two different ways.
+	var options []string
+	for _, mode := range darkishModes(device) {
+		if !strings.EqualFold(mode, steady) {
+			options = append(options, mode)
+		}
+	}
+	if len(options) == 0 {
+		return "", false, nil
+	}
+	plain := len(options) + 1
+
+	if revisiting {
+		asker.Say("  Here is everything it can do, likeliest first.")
+	} else {
+		asker.Say("  It can be lit in these ways. The first few usually stay dark")
+		asker.Say("  until you touch it, but only looking at it will tell.")
+	}
+	for i, mode := range options {
+		asker.Say("    %d  %s", i+1, mode)
+	}
+	asker.Say("    %d  lit all the time, no reacting", plain)
+	asker.Say("  Type on it while one is showing to see what it does.")
+
+	for {
+		answer, err := asker.Ask(fmt.Sprintf("  Show which? [1-%d, or return to leave it as it is]", plain))
+		if err != nil {
+			return "", false, err
+		}
+		if strings.TrimSpace(answer) == "" {
+			asker.Say("  Leaving it as it was, then.")
+			return "", false, nil
+		}
+		pick, err := strconv.Atoi(strings.TrimSpace(answer))
+		if err != nil || pick < 1 || pick > plain {
+			asker.Say("  Pick a number from the list, or press return to leave it alone.")
+			continue
+		}
+
+		mode := steady
+		if pick <= len(options) {
+			mode = options[pick-1]
+		}
+		if err := light(ctx, client, asker, device.Name, mode, nil); err != nil {
+			return "", false, err
+		}
+		use, err := asker.Confirm("  Use this one?")
+		if err != nil {
+			return "", false, err
+		}
+		if !use {
+			continue // back to the list; changing your mind is the point
+		}
+		if pick == plain {
+			return "", true, nil
+		}
+		return mode, true, nil
+	}
+}
+
+/*
+withFallbacks puts a chosen mode first and keeps somewhere to go behind it.
+
+A single mode leaves nothing to fall back on if firmware changes under it, and
+this list is what hotaru tries in order -- the Python's is
+("solid splash", "direct", "solid color") for the same reason.
+*/
+func withFallbacks(device api.Device, chosen string, had []string) []string {
+	if chosen == "" {
+		return had
+	}
+	order := []string{chosen}
+	for _, fallback := range append(without(had, chosen), "direct", "static") {
+		known := slices.ContainsFunc(device.Modes, func(have string) bool {
+			return strings.EqualFold(have, fallback)
+		})
+		already := slices.ContainsFunc(order, func(have string) bool {
+			return strings.EqualFold(have, fallback)
+		})
+		if known && !already {
+			order = append(order, fallback)
+		}
+	}
+	return order
+}
+
+/*
+configuredDark is the stay-dark mode a rules file already names for a device.
+
+Matched against what the device advertises: a file naming a mode this hardware
+does not have belongs to somebody else's machine, and asking about it would be
+asking about nothing.
+*/
+func configuredDark(existing *config.Config, device api.Device, present []string) string {
+	if existing == nil {
+		return ""
+	}
+	match := matchFor(device.Name, present)
+	for _, rule := range existing.Devices {
+		if !strings.EqualFold(rule.Match, match) {
+			continue
+		}
+		for _, mode := range rule.SolidModes {
+			if slices.Contains(darkishModes(device), mode) {
+				return mode
+			}
+		}
+	}
+	return ""
+}
+
+/*
+habits asks the questions that decide how a device is treated, not what its
+parts are called.
+
+Every one is demonstrated. "Should this device be excluded from turning off?"
+is a question about hotaru's configuration; "I have turned it off, is it dark?"
+is a question about the room, and somebody answers it by looking up.
+*/
+func blanking(ctx context.Context, client *api.Client, asker Asker,
+	list []api.Device, learned map[string]notes,
+) error {
+	if _, err := client.Apply(ctx, api.ApplyRequest{Off: true, Preview: true}); err != nil {
+		return quiet(err)
+	}
+	settle(ctx, asker)
+
+	/*
+		One question for the whole machine. On hardware that blanks properly --
+		which is most of it -- this is the only one asked, and the per-device
+		round below never runs.
+
+		The wording matters more than the mechanism. An earlier version said
+		"Everything is off now. Is anything still lit?", which asserts the
+		thing it is asking about: somebody looking at a keyboard glowing white
+		answered no, because the program had just told them everything was
+		off and white must therefore be what off looks like. That is the exact
+		failure this question exists to catch, invited by the question.
+
+		So it says what *should* have happened, and asks what did.
+	*/
+	asker.Say("\nEverything hotaru controls should be dark now.")
+	stillLit, err := asker.Confirm("Is anything still glowing or lit up?")
+	if err != nil {
+		return err
+	}
+	if !stillLit {
+		return nil
+	}
+
+	for _, device := range list {
+		note, mapped := learned[device.Name]
+		if !mapped {
+			continue
+		}
+		lit, err := asker.Confirm(fmt.Sprintf("  Is the %s still glowing?", knownName(device)))
+		if err != nil {
+			return err
+		}
+		if !lit {
+			continue
+		}
+		note.neverBlank = true
+		asker.Say("  Noted: it is left alone instead of being turned off.")
+
+		alt, chosen, err := chooseDark(ctx, client, asker, device, device.ActiveMode, false)
+		if err != nil {
+			return err
+		}
+		if chosen && alt != "" {
+			note.solidModes = withFallbacks(device, alt, note.solidModes)
+		}
+		learned[device.Name] = note
+	}
+	return nil
+}
+
+// dimmer offers to turn a device down, for devices that have a brightness at
+// all. Demonstrated, and never asked as a number.
+func dimmer(ctx context.Context, client *api.Client, asker Asker, device api.Device, mode string) (*int, bool, error) {
+	// Only where the mode hotaru will actually write in takes one. A device
+	// with a dimmable animation and an undimmable Direct cannot be dimmed by
+	// anything hotaru does, and offering it is a demonstration that
+	// demonstrates nothing.
+	if !slices.Contains(device.Dimmable, mode) {
+		return nil, false, nil
+	}
+	level := dimLevel
+	if _, err := client.Apply(ctx, api.ApplyRequest{
+		Colour: probeColour, Devices: []string{device.Name}, Mode: mode,
+		Preview: true, Brightness: &level,
+	}); err != nil {
+		return nil, true, quiet(err)
+	}
+	settle(ctx, asker)
+	quieter, err := asker.Confirm(fmt.Sprintf("  %s can be turned down. Keep it dimmer?", knownName(device)))
+	if err != nil {
+		return nil, true, err
+	}
+	if !quieter {
+		return nil, true, nil
+	}
+	return &level, true, nil
+}
+
+// knownName is the shortest thing a person would call this device.
+func knownName(device api.Device) string {
+	if f := strings.Fields(device.Name); len(f) > 0 {
+		return strings.ToLower(f[0])
+	}
+	return device.Name
+}
+
+func without(list []string, drop string) []string {
+	var out []string
+	for _, item := range list {
+		if !strings.EqualFold(item, drop) {
+			out = append(out, item)
+		}
+	}
+	return out
 }
