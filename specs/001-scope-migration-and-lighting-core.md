@@ -681,6 +681,92 @@ A re-assert is **not a user choice**: it neither persists settings nor emits a
 change event, so it cannot be mistaken for an instruction and cannot ring the
 UI. Spec 037 tested exactly this, and the rule carries over.
 
+### Starting at boot, not at login
+
+The service starts with the machine, not with a desktop session. The point of
+recording desired state is to put the lights back the way the user left them,
+and a restore that waits for someone to log into Plasma is a restore that has
+missed the moment it existed for.
+
+So:
+
+- **A `systemd --user` unit with no desktop dependency.** `WantedBy=default.target`,
+  and nothing about `graphical-session.target`. Nothing in the service needs a
+  compositor, a display or a toolkit — the whole of it is a socket, an OpenRGB
+  connection and a liquidctl subprocess.
+- **Boot-time start needs lingering** (`loginctl enable-linger`), because a user
+  manager otherwise starts at first login. hotaru detects when it is not enabled
+  and offers to enable it, per "Offer, never act" — the package does not do it,
+  because turning on a user manager at boot is not a packager's decision.
+- **The socket is unaffected.** `$XDG_RUNTIME_DIR` exists from boot under
+  lingering, so the API is reachable before any login, and the user-scoped
+  security argument for having no authentication stands unchanged. This is the
+  reason not to make it a system service: root, `/etc`, and a socket the whole
+  machine can reach would all be new problems in exchange for a start-up
+  ordering that lingering already solves.
+- **The OpenRGB server may be anyone's.** The `openrgb` package ships a *system*
+  unit and udev rules; this machine runs a user unit of its own instead. hotaru
+  connects to the configured address and does not care which started it — but it
+  does mean the server's own start-up is outside hotaru's control, and the
+  restore has to tolerate that.
+
+#### Ordering is the wrong tool for the OpenRGB dependency
+
+A restore obviously depends on the OpenRGB server being up, and the reflex is to
+express that in the unit: `After=`, `Requires=`, `Wants=`. It does not work, for
+two independent reasons.
+
+**There is no one unit to name.** The `openrgb` package ships a *system* unit,
+`openrgb.service`, with udev rules. This machine instead runs a *user* unit,
+`openrgb-server.service`, carrying the HID enumeration gate from specs 026 and
+033. Someone else runs the server by hand, or from their desktop's autostart, or
+inside a container. A hard dependency on a unit name is a dependency on one
+person's setup — the same over-fitting the rest of this document is trying to
+avoid — and a failed `Requires=` would stop hotaru from starting at all, taking
+the cooler and the API down because the lighting daemon is named differently.
+
+**Started is not ready, and this is measured.** Even with correct ordering,
+`openrgb-server` has been observed reaching `Started` and enumerating two
+devices out of six on a cold boot, because OpenRGB detects devices once and USB
+enumeration had not finished. Ordering can only wait for a unit to report
+itself up; it cannot wait for the hardware to be there. Spec 033 exists because
+that distinction was learned the hard way.
+
+So the server is treated as a **resource that appears**, not a dependency that
+is satisfied: connect with retry, and judge readiness by the device list rather
+than by the socket accepting a connection. Where OpenRGB is installed but
+nothing is running it, hotaru says so and offers to start it — detecting which
+unit exists rather than assuming a name.
+
+**Restoring is reconciliation, not a start-up step.** The service does not apply
+state once at boot and consider itself done. It reconciles toward recorded state
+as soon as the backend is reachable, and keeps reconciling — which matters more
+at boot than anywhere else, because starting earlier means meeting the
+enumeration race more often, not less. OpenRGB detects devices once at server
+start, and a cold boot has been observed finding two of six. So a restore that
+matches fewer devices than the recorded state names is an **unfinished restore**:
+it retries with backoff, reports itself as incomplete rather than successful,
+and completes silently when the rest appear.
+
+A fresh install with no recorded state still does nothing at boot, which is the
+inert rule unchanged — there is simply nothing to restore.
+
+### The desktop parts attach when the desktop appears
+
+A service that starts before any session cannot register a KWin script at
+start-up, because KWin is not there. That is not an obstacle; it is the correct
+shape, and it fixes an old failure by accident.
+
+The hotkey integration **watches the session bus for `org.kde.KWin`** and
+installs the script when it appears — at login, and again whenever KWin
+restarts. The Python installed the script once, at monitor start, which is why a
+KWin restart silently took the shortcuts with it and left a program that
+believed it had them. Watching the name owner makes the binding as durable as
+the desktop rather than as durable as one moment in it.
+
+The same applies to anything else session-shaped: it is an attachment to a
+session that may come and go, never a precondition for starting.
+
 ### The service is the only actor; everything else asks it
 
 The CLI and the GUI are clients. Not "may write directly when convenient" — the
@@ -1245,6 +1331,24 @@ ownership of the hardware.
       going away restores desired state without the caller having said so.
 - [ ] `hotaru serve` listens on a Unix socket in `$XDG_RUNTIME_DIR`, serves
       `/v1`, and survives every backend being absent.
+- [ ] The user unit has no `graphical-session.target` dependency, and the
+      service starts and serves with no session at all — verified by starting it
+      with no desktop running.
+- [ ] hotaru reports when lingering is not enabled, explains that boot-time
+      restore needs it, and offers to enable it. It never enables it silently,
+      and the package never enables it.
+- [ ] A restore that reaches fewer devices than the recorded state names is
+      reported as incomplete, retries with backoff, and completes without
+      further instruction when the devices appear.
+- [ ] The unit declares no `After=`, `Requires=` or `Wants=` on any OpenRGB
+      unit: the server is a resource that appears, and neither its absence nor
+      its name can prevent hotaru from starting.
+- [ ] Readiness is judged by the device list, not by the socket accepting — a
+      server that answers while reporting fewer devices than recorded state
+      names is "not ready yet", not "healthy".
+- [ ] Where OpenRGB is installed but not running, hotaru detects which unit
+      exists (system `openrgb.service`, a user unit, or neither) and offers to
+      start it rather than naming one.
 - [ ] The CLI depends on `internal/api`'s client and on no device package — a
       test asserts the import graph, so a direct-write path cannot appear by
       accident.

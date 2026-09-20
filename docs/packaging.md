@@ -130,8 +130,19 @@ much as a testing one.
   be over-fitting by packaging
 - `/usr/share/licenses/hotaru/LICENSE`
 
-The service unit carries no `Requires` on OpenRGB. It starts whether or not
-anything is there to talk to, because that is what the program does.
+The service unit carries **no ordering or dependency on OpenRGB at all** — not
+`After=`, not `Wants=`. There is no single unit to name (the `openrgb` package
+ships a system unit; this developer's machine runs a user one; other people
+start it by hand), and ordering would not help anyway, because OpenRGB reaching
+`Started` does not mean its devices are enumerated. hotaru retries and judges
+readiness by the device list. It starts whether or not anything is there to talk
+to, because that is what the program does.
+
+The unit is also **not tied to a desktop session**: `WantedBy=default.target`,
+no `graphical-session.target`, so lighting is restored at boot rather than at
+login. That requires `loginctl enable-linger` for the user, which the package
+does **not** do — starting a user manager at boot is the user's decision, and
+hotaru offers it rather than a post-install script performing it.
 
 ## The three AUR packages
 

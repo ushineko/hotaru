@@ -97,6 +97,11 @@ The decisions worth knowing before reading any code:
   The CLI is its first client; the GUI is another; a future Go rewrite of
   [peripheral-battery-monitor](https://github.com/ushineko/peripheral-battery-monitor)
   is meant to be a third.
+- **It starts with the machine, not with your desktop.** The service is a user
+  unit with no session dependency, so the lights come back at boot rather than
+  when someone logs in. It waits for OpenRGB to actually have your devices
+  rather than for its unit to claim it started, because those are not the same
+  thing.
 - **Desired state, not fire-and-forget.** hotaru holds what *should* be true and
   reconciles toward it, because some hardware does not hold what it is told — a
   wireless mouse restores its onboard colour on wake, and the cooler's LCD drops

@@ -132,6 +132,12 @@ direction, not a commitment).
   outside the config directory entirely; and the GUI's own file holds nothing
   but view state. YAML throughout, which is why the file the user comments is
   not one the program ever serialises back.
+- **The service starts at boot, not at login.** A user unit with no desktop
+  dependency, restoring recorded state by reconciling toward it. The OpenRGB
+  server is a resource that appears rather than a unit to order after — started
+  is not ready, as a cold boot finding two devices of six demonstrated. Desktop
+  pieces such as the KWin script attach when the session shows up and reattach
+  when it restarts.
 - **Every backend is optional.** OpenRGB, liquidctl and OpenLinkHub are three
   independent legs; any of them missing removes its capabilities from the API
   and the GUI without failing the others or stopping the service. The KWin
