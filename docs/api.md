@@ -88,6 +88,11 @@ is re-asserted carries the interval in `reassert`.
 devices off rather than colouring them black, which is a different thing on
 hardware with a backlight. `devices` narrows to particular hardware by name.
 
+`preview` writes without remembering. What it lights is not what the machine
+restores at boot, which is how the mapping wizard can flash colours at somebody
+without the answers becoming their configuration. `hotaru light set --preview`
+is the same thing from the command line.
+
 ```console
 $ curl -s --unix-socket $XDG_RUNTIME_DIR/hotaru/hotaru.sock \
     -H 'Content-Type: application/json' \
