@@ -175,6 +175,8 @@ necessary is an artefact of where it used to live.
   scope, the migration contract, the KDE hotkey rules, acceptance criteria.
 - [docs/architecture.md](docs/architecture.md): the system diagram and what it
   asserts.
+- [docs/api.md](docs/api.md): the service's HTTP interface, with recorded
+  transcripts of every route.
 - [docs/hardware.md](docs/hardware.md): hardware that has been tested, the
   upstream device lists for everything else, and how to check your own machine.
 - [docs/packaging.md](docs/packaging.md): the AUR packages, the dependency
@@ -188,6 +190,9 @@ MIT. See [LICENSE](LICENSE).
 
 ### Unreleased
 
+- `hotaru serve` and the CLI: the service on its Unix socket, `/v1` for health,
+  devices and lighting, and `hotaru light list|set|off|health` as its first
+  client. The client commands import no device package, which a test asserts.
 - Spec 001: project scope, the migration contract from
   `peripheral-battery-monitor`, the KDE hotkey rules, and the baseline —
   service, API and lighting ([#1](https://github.com/ushineko/hotaru/issues/1)).

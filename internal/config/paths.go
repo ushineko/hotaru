@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 )
@@ -14,6 +15,7 @@ const (
 	RulesFile  = "hotaru.yml" // the user's. hotaru reads it and never writes it
 	ScenesFile = "scenes.yml" // the service's, written when asked
 	StateFile  = "state.yml"  // the service's, never hand-edited
+	SocketFile = "hotaru.sock"
 )
 
 /*
@@ -36,6 +38,29 @@ func ConfigDir() (string, error) {
 func StateDir() (string, error) {
 	return xdgDir("XDG_STATE_HOME", filepath.Join(".local", "state"))
 }
+
+/*
+RuntimeDir is $XDG_RUNTIME_DIR/hotaru: where the socket lives.
+
+Runtime rather than config or state, because the socket is meaningless once the
+process is gone and the directory is cleared at logout. Under lingering it
+exists from boot, which is what lets the service be reachable before anyone has
+logged in.
+
+There is no fallback to a home directory. A machine with no XDG_RUNTIME_DIR has
+no session-scoped place to put a socket, and inventing one in $HOME would put a
+world-readable path where a user-only one was promised.
+*/
+func RuntimeDir() (string, error) {
+	dir := os.Getenv("XDG_RUNTIME_DIR")
+	if !filepath.IsAbs(dir) {
+		return "", errors.New("XDG_RUNTIME_DIR is not set, so there is nowhere session-scoped to put the socket")
+	}
+	return filepath.Join(dir, App), nil
+}
+
+// SocketPath is the Unix socket the service listens on.
+func SocketPath() (string, error) { return inDir(RuntimeDir, SocketFile) }
 
 // RulesPath, ScenesPath and StatePath are the three files, fully resolved.
 func RulesPath() (string, error)  { return inDir(ConfigDir, RulesFile) }
