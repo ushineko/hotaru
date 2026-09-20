@@ -8,6 +8,7 @@ import (
 	"image/color"
 	"image/gif"
 	"os"
+	"time"
 )
 
 const (
@@ -249,12 +250,21 @@ func pushGIF(hid *os.File, usb *usbDevice, data []byte) error {
 	if _, err := hidWriteThenRead(hid, 0x36, 0x02); err != nil {
 		return fmt.Errorf("end transfer: %w", err)
 	}
+	if settleAfterTransfer > 0 {
+		time.Sleep(settleAfterTransfer)
+	}
 	// Point the screen at the bucket just written. Without this the transfer
 	// lands and nothing changes -- the device keeps showing whatever it was
 	// showing, which looks exactly like a failed write.
-	if ok, err := switchBucket(hid, index, 0x04); err != nil {
+	shown, err := switchBucket(hid, index, 0x04)
+	if err != nil {
 		return fmt.Errorf("show bucket: %w", err)
-	} else if !ok {
+	}
+	if verbose {
+		fmt.Printf("    bucket %d  addr %d  packets %d  bytes %d  shown=%v\n",
+			index, offset, packets, len(data), shown)
+	}
+	if !shown {
 		return fmt.Errorf("device refused to show bucket %d", index)
 	}
 
@@ -594,3 +604,9 @@ func clearAllBuckets(hid *os.File) error {
 	lastShown = -1
 	return nil
 }
+
+// verbose prints what each push negotiated with the device.
+var verbose = false
+
+// settleAfterTransfer waits before selecting a freshly written bucket.
+var settleAfterTransfer time.Duration

@@ -56,6 +56,26 @@ func read(f *os.File) (status, error) {
 }
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "sizes" {
+		sizesMain()
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "panel" {
+		secs, every := 60, time.Second
+		if len(os.Args) > 2 {
+			if n, err := strconv.Atoi(os.Args[2]); err == nil {
+				secs = n
+			}
+		}
+		if len(os.Args) > 3 {
+			if d, err := time.ParseDuration(os.Args[3]); err == nil {
+				every = d
+			}
+		}
+		verbose = false
+		panelMain(secs, every)
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "count" {
 		counterMain(10, 2*time.Second, len(os.Args) > 2 && os.Args[2] == "recycle")
 		return
