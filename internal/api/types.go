@@ -38,6 +38,17 @@ type Device struct {
 
 	// InScope is whether hotaru would drive this device. Present so a listing
 	// answers "why did nothing happen to this one?" without a second call.
+	/*
+		Dimmable is the modes that take a brightness, by name.
+
+		Not a single flag for the device. A Keychron's Direct mode -- the one
+		hotaru writes a colour in -- takes no brightness, while its animated
+		cycle modes all do. Asked as "can this device be dimmed?", the answer
+		is yes and the dimming does nothing: offered, demonstrated, written
+		down, and inert. The question is only answerable about a mode.
+	*/
+	Dimmable []string `json:"dimmable,omitempty"`
+
 	InScope bool `json:"in_scope"`
 
 	// Reassert, when set, is how often this device's colour is re-sent,
@@ -118,6 +129,11 @@ type ApplyRequest struct {
 	// being asked, and recording it would mean "put the lights back" put back
 	// the questions.
 	Preview bool `json:"preview,omitempty"`
+
+	// Brightness overrides the rule's, for this write only. The wizard needs
+	// it to show somebody what "turned down" looks like before there is a
+	// rule saying so -- demonstrating rather than asking for a number.
+	Brightness *int `json:"brightness,omitempty"`
 
 	// Exactly stops the fall-through, so the answer is about the mode that was
 	// asked for and no other. The wizard needs this: "what does Custom do on
