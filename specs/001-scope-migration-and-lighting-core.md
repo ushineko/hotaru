@@ -294,7 +294,8 @@ So the quirk table is an optimisation, not a prerequisite:
 - `hotaru light probe` characterises what is present — which modes each device
   advertises, which ones actually take, which do not hold their colour — and
   offers the rules it would write. A new user's quirk table is generated from
-  their hardware rather than inherited from mine.
+  their hardware rather than inherited from mine. Where a question needs eyes
+  rather than a read-back, it asks: see "Mapping is a wizard".
 
 The shipped rules then read as what they are: known corrections for named
 hardware, which a user with different hardware never loads.
@@ -373,6 +374,46 @@ at boot" behaviour that a user did not opt into by setting a colour.
 The same rule protects the migration: hotaru installed on the primary machine
 before cutover does not fight the monitor, because it has been asked for nothing
 yet.
+
+### Mapping is a wizard, because it is a conversation
+
+Naming segments cannot be derived. A zone called "Addressable RGB Header 2" with
+sixteen LEDs might be two daisy-chained fans, one fan with an unlit half, or
+nothing at all, and no amount of reading the protocol will say which. The only
+source is a person looking at the machine.
+
+So hotaru asks, in a loop that is the same in both shells:
+
+1. **Light distinctly.** Several zones at once, each a different colour, rather
+   than one at a time — four headers in one write is one question instead of
+   four. Beyond a handful of zones, or where colours are hard to tell apart, it
+   falls back to lighting one and asking about that one.
+2. **Ask what changed**, in the user's words: which fan is green, is any band
+   only half lit, did anything not light at all.
+3. **Split what needs splitting.** A zone that turned out to hold two fans is
+   lit in halves and asked about again, which is how a range gets named without
+   anyone counting LEDs.
+4. **Write it down**, and from then on the names work everywhere.
+
+This was rehearsed by hand on the development machine, and it took three rounds
+to map a board with four headers, two of them empty, one carrying a
+daisy-chained pair. The empty headers still reported sixteen LEDs each, which is
+the detail that makes the wizard necessary rather than nice: **a zone's size is
+what the board declares, not what is attached**, so an assignment to a header
+with nothing plugged into it succeeds and lights nothing, and no API can tell
+the difference.
+
+It runs at two moments: on first use, and when a device appears that hotaru has
+no mapping for. The second needs hotaru to remember which devices it has seen,
+which is a line in its state file rather than a new mechanism.
+
+A mapping session is a **preview** in the sense spec 004 gives the word: the
+lights it sets are not desired state, reconciliation is suspended for the
+devices involved, and what was showing before is restored when it ends —
+including when the shell driving it dies halfway through.
+
+**Where the answers are written is an open question** (see below). They are
+rules, and the rules file is the user's, which hotaru does not write.
 
 ### The test suite must contain machines that are not this one
 
@@ -1557,6 +1598,16 @@ firmware silently discards those writes — see the runbook), and packaging
    the service, and never the GUI. The GUI has its own file for its own view
    state, and reaches everything else through the API. See "Files on disk".
 5. ~~Config format.~~ **Decided**: YAML, `.yml`, via `settings/yamlcodec`.
+6. **Where does the mapping wizard write what it learns?** Segments are rules,
+   and `hotaru.yml` is the user's file, which the program never rewrites — so
+   the wizard cannot simply save into it. Three options: print the YAML for the
+   user to paste, which is honest and makes a GUI wizard end in a copy-paste;
+   write a machine-owned `learned.yml` in the config directory that is merged
+   underneath the user's rules, with the user's winning; or relax the
+   never-write rule for a file the user was explicitly editing through the GUI.
+   The middle one is the recommendation: it keeps the promise about the
+   hand-written file exactly, and it lets the GUI save a mapping without asking
+   someone to edit YAML — which is the whole reason the wizard exists.
 6. **Who edits the bindings?** The Python hardcoded `Ctrl+Alt+Num+N` from a
    template. hotaru could keep that, or make the binding part of each scene's
    config entry — more flexible, and one more thing that can claim a taken key.
