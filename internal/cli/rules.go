@@ -47,7 +47,10 @@ func yamlFor(cfg *config.Config) string {
 
 	out.WriteString("\ndevices:\n")
 	for _, rule := range cfg.Devices {
-		fmt.Fprintf(&out, "  - match: %s\n", rule.Match)
+		// Quoted, always. "0x18" is a perfectly good way to tell four
+		// identical sticks of RAM apart and a hexadecimal number to YAML, and
+		// a file that does not load is worse than one that is fussy.
+		fmt.Fprintf(&out, "  - match: %q\n", rule.Match)
 		if len(rule.SolidModes) > 0 {
 			// Why the order is not the default one. Without this, a line that
 			// took somebody standing in front of their machine to establish
@@ -73,14 +76,37 @@ func yamlFor(cfg *config.Config) string {
 		for _, name := range sorted(rule.Segments) {
 			segment := rule.Segments[name]
 			if segment.LEDs == nil {
-				fmt.Fprintf(&out, "      %s: {zone: %q}\n", name, segment.Zone)
+				fmt.Fprintf(&out, "      %s: {zone: %q}\n", key(name), segment.Zone)
 				continue
 			}
 			fmt.Fprintf(&out, "      %s: {zone: %q, leds: [%d, %d]}\n",
-				name, segment.Zone, segment.LEDs.First, segment.LEDs.Last)
+				key(name), segment.Zone, segment.LEDs.First, segment.LEDs.Last)
 		}
 	}
 	return out.String()
+}
+
+/*
+key is a segment name as a YAML mapping key.
+
+Quoted unless it is plainly a word. A person naming a fan "1" or "0x18" has
+said something reasonable, and it is this file's job to carry it rather than to
+reinterpret it as a number.
+*/
+func key(name string) string {
+	plain := name != "" && name[0] >= 'a' && name[0] <= 'z'
+	for _, r := range name {
+		lower := r >= 'a' && r <= 'z'
+		digit := r >= '0' && r <= '9'
+		if !lower && !digit && r != '-' {
+			plain = false
+			break
+		}
+	}
+	if plain {
+		return name
+	}
+	return fmt.Sprintf("%q", name)
 }
 
 func sorted(segments map[string]config.Segment) []string {
