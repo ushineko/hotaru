@@ -954,6 +954,54 @@ last write landed. That extends requirement 13 — the snapshot is the raw truth
 about the machine, and the view is a rendering of it, so the GUI never queries
 hardware itself.
 
+## Files on disk
+
+YAML, `.yml`, through `fynedesygn`'s `settings` package with `settings/yamlcodec`
+imported for its effect. YAML because these files are meant to be read and
+hand-edited: device rules and scenes are full of names, ranges and comments
+explaining which fan is which, and JSON is a poor host for all three.
+
+Four files, and the split is not tidiness — each one has a different owner and a
+different failure if that is confused:
+
+| File | Owner | Holds |
+|---|---|---|
+| `$XDG_CONFIG_HOME/hotaru/hotaru.yml` | The user | Device rules, named segments, service preferences. hotaru reads it and never rewrites it |
+| `$XDG_CONFIG_HOME/hotaru/scenes.yml` | The service, on request | Scenes. Machine-written, because the GUI is the scene editor |
+| `$XDG_STATE_HOME/hotaru/state.yml` | The service | Desired state, learned mode fall-throughs, last applied. Never hand-edited |
+| `$XDG_CONFIG_HOME/hotaru/gui.yml` | The GUI | Window geometry, colour scheme, fonts, last section, editor preferences |
+
+### Why rules and scenes are separate files
+
+**A YAML rewrite destroys comments.** Any encoder that serialises a decoded
+document drops every comment and every bit of formatting the user put there.
+That is fine for a file the machine owns and unacceptable for the one where a
+user wrote `# the top fan is the one nearest the radiator inlet` — which is
+exactly the comment that makes a segment table worth having.
+
+So the file the user writes is never rewritten by the program, and the file the
+program writes is one the user is not invited to decorate. Scene saving from the
+GUI touches `scenes.yml` only. A user who prefers to hand-write scenes may still
+do so; they simply inherit the machine's formatting the next time the GUI saves.
+
+### Why desired state is not config at all
+
+Desired state is a record of what the hardware should currently be showing. It
+changes every time a scene is applied, it is meaningless on another machine, and
+it belongs in `$XDG_STATE_HOME` rather than in a file anyone backs up as
+configuration. Keeping it out of the config file is also what lets the
+inert-on-install rule be simple: a fresh machine has no state file, so there is
+nothing to assert.
+
+### The GUI's file is the GUI's alone
+
+The service never reads `gui.yml`, and the GUI never writes any of the other
+three. Everything the GUI changes about hotaru's behaviour goes through the API
+as a request — saving a scene, editing a rule, rebinding a key — so there is one
+writer per file and no coordination problem to solve. What `gui.yml` holds is
+view state: where the window was, which scheme, which section was open. Losing
+it costs a user their window position and nothing else.
+
 ## Proposed layout
 
 The system these pieces make up is drawn in
@@ -1027,8 +1075,9 @@ ownership of the hardware.
 11. Writes coalesce per device so rapid repeats converge on the last request.
 12. The CLI and the GUI expose the same capabilities, one for one. A capability
    reachable from one shell and not the other is a test failure.
-13. The config file holds device rules and, from spec 005, scenes; it is seeded
-    per key on first run and an existing user-edited key is never overwritten.
+13. Configuration is YAML on disk, split by owner: a user-owned rules file the
+    program never rewrites, a machine-written scenes file, machine-owned state
+    outside the config directory, and a GUI file the service never reads.
 14. No credentials and no privileged operations. Network access is limited to
     the configured OpenRGB server and, from spec 002, the OpenLinkHub daemon —
     both localhost by default.
@@ -1108,9 +1157,14 @@ ownership of the hardware.
 - [ ] A rule can mark a device never-blanked: it is skipped for `off` and still
       receives colour scenes.
 - [ ] A rule can assert a brightness level on every write.
-- [ ] Config is read from the standard user config path via fynedesygn
-      `settings`, seeded per key on first run, and a user-edited key is never
-      overwritten.
+- [ ] Config is YAML (`.yml`) read through fynedesygn `settings` with
+      `settings/yamlcodec`, from `$XDG_CONFIG_HOME/hotaru/`, seeded per key on
+      first run, and a user-edited key is never overwritten.
+- [ ] `hotaru.yml` is never written by the program: a test asserts that a round
+      trip through load-and-save leaves a user's file, comments included, byte
+      for byte unchanged — because it is never saved at all.
+- [ ] Desired state is written to `$XDG_STATE_HOME/hotaru/`, not to the config
+      directory, and a machine with no state file writes to no device.
 - [ ] A malformed rule costs that entry only: it is reported with what is wrong
       and skipped, and the rest of the file still loads.
 - [ ] `hotaru light list` prints devices with their modes, marking the active
@@ -1338,13 +1392,10 @@ firmware silently discards those writes — see the runbook), and packaging
    merits — see "hotaru runs as a user service" — and the alert moving later
    does not depend on it.
 3. **Client dependency or vendored protocol** — see Risks.
-4. **Who writes the config file** once the GUI can save scenes — the service,
-   or the shells? The recommendation above is the service, so a save is a
-   request and takes effect without a reload. The editor holding a draft is
-   settled, so this is now only about which process opens the file.
-5. **Config format.** fynedesygn `settings` picks by extension. YAML reads better
-   for hand-edited rules and scenes; JSON avoids the `settings/yamlcodec`
-   import. The examples above assume YAML.
+4. ~~Who writes the config file once the GUI can save scenes?~~ **Decided**:
+   the service, and never the GUI. The GUI has its own file for its own view
+   state, and reaches everything else through the API. See "Files on disk".
+5. ~~Config format.~~ **Decided**: YAML, `.yml`, via `settings/yamlcodec`.
 6. **Who edits the bindings?** The Python hardcoded `Ctrl+Alt+Num+N` from a
    template. hotaru could keep that, or make the binding part of each scene's
    config entry — more flexible, and one more thing that can claim a taken key.

@@ -89,7 +89,8 @@ much as a testing one.
 - `/usr/share/applications/<app-id>.desktop` and the icon, named to match the
   Fyne app ID with `StartupWMClass` set, because KDE on Wayland matches the
   window to the entry that way and a mismatch silently gives a generic icon
-- `/usr/share/doc/hotaru/` — the example config with this desk's device rules,
+- `/usr/share/doc/hotaru/hotaru.yml.example` — the example rules file for this
+  desk, in the same YAML the program reads,
   and an example systemd drop-in for gating OpenRGB's start on device
   enumeration. **Examples, not defaults**: the enumeration gate exists because
   of one machine's boot ordering, and shipping it as active configuration would

@@ -35,7 +35,7 @@ flowchart TB
         STATE["Desired state<br/>one frame per device + LCD<br/>preview leases held apart"]
         RECON["Reconcilers<br/>reassert per device rule<br/>dashboard render + push gate<br/>LCD keepalive"]
         MBOX["Per-device mailboxes<br/>one goroutine each<br/>single slot: latest frame wins"]
-        CFG["Config owner<br/>device rules, scenes"]
+        CFG["Config + state<br/>hotaru.yml (user, read-only)<br/>scenes.yml · state.yml"]
     end
 
     subgraph backends["Backends"]
@@ -127,6 +127,11 @@ direction, not a commitment).
 - **Two backends, one device.** The Kraken's lighting is OpenRGB's; its LCD and
   telemetry are liquidctl's. liquidctl exposes no colour channels for this
   model at all.
+- **One writer per file.** Rules are the user's and are never rewritten;
+  scenes are machine-written because the GUI edits them; desired state lives
+  outside the config directory entirely; and the GUI's own file holds nothing
+  but view state. YAML throughout, which is why the file the user comments is
+  not one the program ever serialises back.
 - **Every backend is optional.** OpenRGB, liquidctl and OpenLinkHub are three
   independent legs; any of them missing removes its capabilities from the API
   and the GUI without failing the others or stopping the service. The KWin
