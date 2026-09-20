@@ -91,9 +91,46 @@ Two things were tried against it:
   it is how the device says where a write may go. A build that skipped it
   failed 100% of the time.
 
-So `0x05` is "no room" and `0x04` is "not yours to place", and the honest
-reading is that this protocol is meant for storing a handful of images, not for
-refreshing one.
+Both readings were wrong, and the correction matters more than the original
+claim. Probing the device directly -- clear everything, then ask for one setup
+at a time -- produced this:
+
+	setup at address 0, varying size:
+	  bucket 0, 1 packets -> ok=true  reply[14]=0x01
+	  bucket 0, 2 packets -> ok=false reply[14]=0x04
+	  bucket 0, 3 packets -> ok=false reply[14]=0x04
+	  ...
+	setup of 5 packets, varying bucket:
+	  bucket 0 -> ok=false reply[14]=0x04
+	  bucket 1 -> ok=false reply[14]=0x05
+
+The first setup after a clear succeeds and **every setup after it is refused,
+because the probe never completed the transfer in between**. This is a state
+machine, not an allocator: the device permits one outstanding transfer, and a
+setup issued while one is pending is refused -- `0x04` for the same bucket,
+`0x05` for a different one.
+
+So the address correlation recorded above may be coincidence. What is certain
+is that a sequence which does not complete each transfer before beginning the
+next is refused, and that hotaru's implementation must model that state rather
+than treat setup as an allocation request.
+
+### A dashboard at one frame per second
+
+Built as a prototype and run against the panel: seven-segment coolant
+temperature, CPU and GPU, pump and fan, rendered to a GIF and pushed every
+second.
+
+**30 updates, 1 landed, 29 refused.** Clearing the panel's memory first changed
+nothing. Whatever the correct sequence is, this implementation does not have
+it, and the failure is not the memory pressure the earlier experiments
+suggested.
+
+That is the state of knowledge, and the spec records it rather than an
+implementation plan built on top of it. A dashboard needs the transfer state
+machine understood, and the fastest way to that is a capture of the vendor
+software driving the same panel -- the same answer as the streaming path below,
+and probably the same investigation.
 
 ### The path that would be right, and is not ours yet
 
@@ -155,11 +192,12 @@ does not.
 concerned, the bucket must also be selected, and the result says which bucket
 is being displayed rather than that a transfer completed.
 
-**R6. Bucket memory is managed, and its exhaustion is reported honestly.** The
-previously displayed bucket is released once the new one is shown. When the
-device still refuses with `0x05`, hotaru clears all sixteen buckets and retries
-once; if that fails, it says the screen could not be updated rather than
-reporting success.
+**R6. The transfer state machine is modelled, not guessed.** One transfer is
+outstanding at a time and each is completed or explicitly abandoned before the
+next begins. A refused setup is reported as a refusal with its code, never
+retried blindly, and never reported as a successful update. Until the sequence
+is understood well enough to refresh reliably, hotaru offers still images and
+animations -- which work -- and not a live dashboard.
 
 **R7. Degradation is per capability.** No cooler, no telemetry and no screen.
 No `nvidia-smi`, no GPU temperature and everything else unaffected. A cooler
@@ -185,10 +223,11 @@ running hotaru does not keep a stale dashboard.
 - [ ] AC7. Brightness and orientation are settable.
 - [ ] AC8. The screen returns to the firmware readout on request and on
       service shutdown.
-- [ ] AC9. A bucket setup refused with `0x05` triggers a full clear and one
-      retry, and a second failure is reported as a failure.
-- [ ] AC10. The previously displayed bucket is released after a successful
-      switch, and a test says so.
+- [ ] AC9. A refused setup is surfaced with its reply code and does not count
+      as an update.
+- [ ] AC10. Only one transfer is outstanding at a time, enforced by the type
+      rather than by convention, and a test drives a refused setup through the
+      fake.
 - [ ] AC11. CPU, board and PSU temperatures are read from hwmon by label
       rather than by hwmon index, which is not stable across boots.
 - [ ] AC12. Every capability degrades alone: unplugging the cooler leaves
