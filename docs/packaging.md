@@ -51,14 +51,13 @@ Verified against this machine's repositories:
 | Package | Repo | Role |
 |---|---|---|
 | `openrgb` | extra | Lighting. Without it, lighting is absent |
-| `liquidctl` | extra | Cooler telemetry and the LCD. Without it, both are absent |
-| `openlinkhub` | AUR | CPU package temperature only. Without it, that one field is missing |
 | `go` | extra | Build only |
 | `libglvnd`, `libx11`, `libxcursor`, `libxrandr`, `libxinerama`, `libxi`, `libxxf86vm`, `libxkbcommon`, `wayland` | extra | The GUI's runtime graphics stack |
 
 ```
 # hotaru
-depends=('glibc' 'openrgb' 'liquidctl' 'openlinkhub')
+depends=('glibc' 'openrgb')
+optdepends=('nvidia-utils: GPU temperature on the dashboard')
 
 # hotaru-gui
 depends=('hotaru' 'libglvnd' 'libx11' 'libxcursor' 'libxrandr'
@@ -67,21 +66,54 @@ depends=('hotaru' 'libglvnd' 'libx11' 'libxcursor' 'libxrandr'
 makedepends=('go')
 ```
 
-Two consequences to accept knowingly:
+**`liquidctl` and `openlinkhub` were here and are not any more.** hotaru reads
+the cooler and drives its screen itself, over `/dev/hidraw*` and usbfs, and
+takes every temperature the Corsair daemon used to supply from
+`/sys/class/hwmon`. See [spec 012](../specs/012-the-cooler-without-liquidctl.md).
+That removes Python — `python`, `python-pillow`, `python-pyusb`, `i2c-tools` —
+from machines that may have no liquid cooler at all, and removes an AUR daemon
+that was installed for one field of the snapshot.
 
-- **`openlinkhub` is in the AUR, not the official repositories.** An AUR package
-  may depend on another, and helpers resolve it, but it means every hotaru
-  install builds and runs a Corsair-device daemon for one field of the snapshot.
-- **`liquidctl` brings Python** — `python`, `python-pillow`, `python-pyusb`,
-  `i2c-tools` — onto a machine that may have no liquid cooler, and `openrgb`
-  brings `qt6-base`, which on a Plasma desktop is already installed.
+`nvidia-utils` is the one `optdepends`, and it is one honestly: a machine with
+no NVIDIA card has no GPU temperature, which is a missing number rather than a
+broken program. That is the case `optdepends` is for, and it is the difference
+from the backends below.
+
+### Device permissions are part of the package
+
+hotaru opens two nodes to reach the cooler: a `/dev/hidraw*` for status and
+control, and `/dev/bus/usb/BBB/DDD` for the screen's bulk endpoint. Neither
+needs root — `systemd-logind` puts an ACL on them for the logged-in user — but
+**only if a udev rule tags the device `uaccess`**.
+
+On the development machine that rule came from the `liquidctl` package, which
+hotaru no longer depends on. So a machine that has never had liquidctl
+installed has no such rule, and hotaru finds the cooler and cannot open it:
+lighting works, telemetry and the screen do not, and the reason is invisible.
+
+That is precisely the "someone else's machine" failure spec 001 exists to
+prevent, and it would not have shown up here, because this machine has had
+liquidctl installed all along.
+
+So **the package ships its own rule**, naming the devices hotaru supports:
+
+```
+# /usr/lib/udev/rules.d/60-hotaru.rules
+KERNEL=="hidraw*", SUBSYSTEMS=="usb", ATTRS{idVendor}=="1e71", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="1e71", TAG+="uaccess"
+```
+
+Two rules because the two interfaces surface differently: one as a hidraw
+character device, one as the USB device node itself.
+
+`hotaru light health` reports a device it can see and cannot open as exactly
+that, rather than as missing hardware, because "permission denied on
+/dev/hidraw7" is a sentence somebody can act on and "no cooler found" is not.
 
 The alternative was `optdepends`, and it was rejected for a better reason than
 install size: **`optdepends` asks the user a question they have no way to
 answer.** Choosing correctly from that list means already knowing that lighting
-comes from OpenRGB, that the cooler's screen is liquidctl's, and that one field
-of the telemetry comes from a third daemon — that is, knowing how hotaru is put
-together internally. Nobody installing a program to make their fans blue should
+comes from OpenRGB — that is, knowing how hotaru is put together internally. Nobody installing a program to make their fans blue should
 have to read an architecture document first, and a user who guesses wrong gets a
 program that looks broken and has no way to tell that it is not.
 
@@ -117,6 +149,9 @@ much as a testing one.
 ## What gets installed
 
 - `/usr/bin/hotaru`, `/usr/bin/hotaru-gui`
+- `/usr/lib/udev/rules.d/60-hotaru.rules` — the `uaccess` tags that let the
+  service open the cooler without root. Without it hotaru sees the device and
+  cannot talk to it; see "Device permissions are part of the package" above.
 - `/usr/lib/systemd/user/hotaru.service` — **not enabled**, per Arch policy. The
   README says `systemctl --user enable --now hotaru`. The unit itself is in
   [`packaging/`](../packaging/), already written
