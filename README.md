@@ -133,12 +133,12 @@ installing and using hotaru must take no extra steps.
 | Spec | | |
 |---|---|---|
 | 001 | Scope, migration contract, and the baseline: the service, its API, and lighting | [#1](https://github.com/ushineko/hotaru/issues/1) |
-| 002 | Cooler telemetry behind the same API | |
-| 003 | The LCD and the dashboard | |
-| 004 | Scenes, preview and leases | |
-| 005 | The GUI on [fynedesygn](https://github.com/ushineko/fynedesygn) | |
-| 006 | Hotkeys and the cutover | |
-| 007 | Packaging and release | |
+| 002 | Cooler telemetry behind the same API | [#2](https://github.com/ushineko/hotaru/issues/2) |
+| 003 | The LCD and the dashboard | [#3](https://github.com/ushineko/hotaru/issues/3) |
+| 004 | Scenes, preview and leases | [#4](https://github.com/ushineko/hotaru/issues/4) |
+| 005 | The GUI on [fynedesygn](https://github.com/ushineko/fynedesygn) | [#5](https://github.com/ushineko/hotaru/issues/5) |
+| 006 | Hotkeys and the cutover | [#6](https://github.com/ushineko/hotaru/issues/6) |
+| 007 | Packaging and release | [#7](https://github.com/ushineko/hotaru/issues/7) |
 
 ## Where it comes from
 
