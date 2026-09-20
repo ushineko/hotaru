@@ -194,7 +194,7 @@ func sortedNames(in []string) []string {
 // parse turns the wire's strings into the service's types. A client sends what
 // a person would type; the knowledge of what those words mean lives here.
 func parse(req ApplyRequest) (service.Request, error) {
-	out := service.Request{Off: req.Off, Devices: req.Devices, Mode: req.Mode}
+	out := service.Request{Off: req.Off, Devices: req.Devices, Mode: req.Mode, Exactly: req.Exactly}
 	if req.Colour != "" {
 		col, err := colour.Parse(req.Colour)
 		if err != nil {
@@ -245,11 +245,13 @@ func describe(view service.View) Device {
 
 func result(got service.Result) Result {
 	out := Result{
-		Device:     got.Device,
-		Applied:    got.Applied,
-		Mode:       got.Mode,
-		Skipped:    got.Skipped,
-		Superseded: got.Superseded,
+		Device:      got.Device,
+		Applied:     got.Applied,
+		Mode:        got.Mode,
+		Skipped:     got.Skipped,
+		Superseded:  got.Superseded,
+		Unconfirmed: got.Unconfirmed,
+		Problems:    got.Problems,
 	}
 	if got.Err != nil {
 		out.Error = got.Err.Error()
@@ -259,6 +261,8 @@ func result(got service.Result) Result {
 			Mode:     attempt.Mode,
 			Accepted: attempt.Accepted,
 			Active:   attempt.Active,
+			Showing:  attempt.Showing,
+			Settled:  attempt.Settled,
 			Why:      attempt.Why,
 		})
 	}

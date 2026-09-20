@@ -120,7 +120,15 @@ func Map(ctx context.Context, client *api.Client, asker Asker, only ...string) e
 			return err
 		}
 		if working.none {
-			asker.Say("  Nothing on %s lights up in any mode it offers. Skipping it.", device.Name)
+			// Say which modes were tried: on a device that will not light, the
+			// useful next step is knowing what was already ruled out.
+			if len(working.tried) > 0 {
+				asker.Say("  Nothing lit in %s. Skipping %s.",
+					strings.Join(working.tried, " or "), device.Name)
+			} else {
+				asker.Say("  %s would not take any plain mode, so there is nothing to see. Skipping it.",
+					device.Name)
+			}
 			continue
 		}
 		if working.corrected {
@@ -158,7 +166,17 @@ type working struct {
 	order     []string
 	corrected bool
 	none      bool
+	tried     []string
 }
+
+/*
+probeColour is what a device is lit with while asking whether it lights.
+
+Red rather than white. "Is it white?" is a harder question than it sounds on
+hardware that is dim, tinted behind a filter, or lighting only some of itself,
+and the question needs to be one a person can answer at a glance.
+*/
+const probeColour = "red"
 
 /*
 lightsUp finds a mode that visibly lights a device, by asking.
@@ -166,44 +184,43 @@ lightsUp finds a mode that visibly lights a device, by asking.
 The one question no software can answer for itself. A board that accepts Static
 and lights only its onboard LED reports Static either way; the probe cannot see
 it, the read-back cannot see it, and the user can see nothing else.
+
+Each mode is applied **exactly**, with no fall-through. Letting hotaru try the
+next candidate would answer a different question and then ask the person about
+it: the first run of this on someone else's machine asked about Direct four
+times, because every other mode it tried fell through to Direct and was
+reported as Direct.
 */
 func lightsUp(ctx context.Context, client *api.Client, asker Asker, device api.Device) (working, error) {
 	asker.Say("── %s (%d LEDs, %d zones)", device.Name, device.LEDs, len(device.Zones))
 
+	var order, asked []string
 	tried := map[string]bool{}
-	var order []string
 
-	// First whatever hotaru would choose on its own, then the device's other
-	// plain modes. Effects are left alone: a light show is not a diagnostic.
-	first := true
-	for attempt := range 4 {
-		var mode string
-		if !first {
-			mode = nextPlainMode(device, tried)
-			if mode == "" {
-				break
-			}
+	for _, mode := range plainModes(device) {
+		if tried[strings.ToLower(mode)] {
+			continue
 		}
+		tried[strings.ToLower(mode)] = true
 
 		out, err := client.Apply(ctx, api.ApplyRequest{
-			Colour: "white", Devices: []string{device.Name}, Mode: mode,
+			Colour:  probeColour,
+			Devices: []string{device.Name},
+			Mode:    mode,
+			Exactly: true,
 		})
 		if err != nil {
 			return working{}, quiet(err)
 		}
 		if len(out.Results) == 0 || !out.Results[0].Applied {
-			if first {
-				first = false
-				continue
-			}
-			tried[strings.ToLower(mode)] = true
+			// The device would not take that mode at all, which is an answer
+			// and not worth a question.
 			continue
 		}
 
 		used := out.Results[0].Mode
-		tried[strings.ToLower(used)] = true
-
-		lit, err := asker.Confirm(fmt.Sprintf("  Is anything on it lit white now? (%s)", used))
+		asked = append(asked, used)
+		lit, err := asker.Confirm(fmt.Sprintf("  Is it lit %s now? (%s)", probeColour, used))
 		if err != nil {
 			return working{}, err
 		}
@@ -212,29 +229,30 @@ func lightsUp(ctx context.Context, client *api.Client, asker Asker, device api.D
 			// fallbacks: dropping them would leave the device one option and
 			// nowhere to go if firmware changes under it.
 			order = append([]string{strings.ToLower(used)}, order...)
-			return working{mode: used, order: order, corrected: attempt > 0}, nil
+			return working{mode: used, order: order, corrected: len(asked) > 1}, nil
 		}
 		order = append(order, strings.ToLower(used))
-		first = false
 	}
-	return working{none: true}, nil
+
+	return working{none: true, tried: asked}, nil
 }
 
-// nextPlainMode is a mode worth trying that has not been tried: solid-looking
-// ones only, because setting Rainbow Wave to see what happens is a light show
-// nobody asked for.
-func nextPlainMode(device api.Device, tried map[string]bool) string {
+/*
+plainModes are the modes worth trying, in order.
+
+Solid-looking ones only. Setting Rainbow Wave to find out whether a device
+lights would be a light show rather than a diagnostic, and a user watching an
+animation cannot answer "is it red" anyway.
+*/
+func plainModes(device api.Device) []string {
+	var out []string
 	for _, mode := range device.Modes {
-		lowered := strings.ToLower(mode)
-		if tried[lowered] {
-			continue
-		}
-		switch lowered {
-		case "direct", "static", "solid color", "solid", "custom":
-			return mode
+		switch strings.ToLower(mode) {
+		case "direct", "static", "custom", "solid color", "solid":
+			out = append(out, mode)
 		}
 	}
-	return ""
+	return out
 }
 
 // mapDevice asks about one device's zones, then about what is on them.

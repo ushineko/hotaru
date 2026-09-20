@@ -154,6 +154,14 @@ func apply(cmd *cobra.Command, req api.ApplyRequest) error {
 	}
 
 	for _, result := range out.Results {
+		for _, problem := range result.Problems {
+			// Said first, and to stderr: an assignment that did not apply is
+			// the part of the answer somebody needs to act on.
+			cmd.PrintErrf("%s: %s\n", result.Device, problem)
+		}
+		if result.Unconfirmed != "" {
+			cmd.PrintErrf("%s: unconfirmed — %s\n", result.Device, result.Unconfirmed)
+		}
 		switch {
 		case result.Applied:
 			cmd.Printf("%s: %s\n", result.Device, result.Mode)

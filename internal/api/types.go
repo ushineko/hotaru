@@ -95,6 +95,12 @@ type ApplyRequest struct {
 	// Preferred, not forced: a mode that cannot carry the frame is skipped
 	// rather than used to show one colour where several were asked for.
 	Mode string `json:"mode,omitempty"`
+
+	// Exactly stops the fall-through, so the answer is about the mode that was
+	// asked for and no other. The wizard needs this: "what does Custom do on
+	// this device" cannot be answered by quietly trying Direct instead and
+	// reporting that it worked.
+	Exactly bool `json:"exactly,omitempty"`
 }
 
 /*
@@ -115,6 +121,15 @@ type Result struct {
 	Superseded bool      `json:"superseded,omitempty"`
 	Error      string    `json:"error,omitempty"`
 	Attempts   []Attempt `json:"attempts,omitempty"`
+	// Unconfirmed is a device that accepted the write and will not say what it
+	// is showing. Some hardware reports a stale buffer while displaying
+	// exactly what it was sent, so this is a note rather than a failure.
+	Unconfirmed string `json:"unconfirmed,omitempty"`
+
+	// Problems are assignments that named something the device does not have.
+	// Present even on a write that succeeded: an exception that did not apply
+	// is a scene quietly doing something other than what was asked.
+	Problems []string `json:"problems,omitempty"`
 }
 
 // Attempt is one mode that was tried, and what the device did with it.
@@ -122,7 +137,14 @@ type Attempt struct {
 	Mode     string `json:"mode"`
 	Accepted bool   `json:"accepted"`
 	Active   string `json:"active,omitempty"`
-	Why      string `json:"why,omitempty"`
+	// Showing is whether the device was displaying the colours it was sent.
+	// False with Active matching Mode is a device that took the mode and
+	// ignored the frame -- which looks like success to everything but a read.
+	Showing bool `json:"showing"`
+	// Settled is a device that needed the colours written twice, because its
+	// mode change had not finished when the first frame arrived.
+	Settled bool   `json:"settled,omitempty"`
+	Why     string `json:"why,omitempty"`
 }
 
 // ApplyResponse is the body of POST /v1/lighting/apply.

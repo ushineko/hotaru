@@ -297,8 +297,9 @@ func TestTheWizardFindsAModeThatActuallyLightsTheDevice(t *testing.T) {
 		"and why it is there")
 
 	asked := person.questions()
-	require.Contains(t, asked, "Is anything on it lit white now? (Static)")
-	require.Contains(t, asked, "Is anything on it lit white now? (Direct)")
+	require.Contains(t, asked, "Is it lit red now? (Static)")
+	require.Contains(t, asked, "Is it lit red now? (Direct)",
+		"each mode is asked about on its own; the first run elsewhere asked about Direct four times")
 }
 
 func TestADeviceThatLightsInNoModeIsSkippedRatherThanMapped(t *testing.T) {
@@ -315,7 +316,8 @@ func TestADeviceThatLightsInNoModeIsSkippedRatherThanMapped(t *testing.T) {
 	require.NoError(t, cli.Map(t.Context(), client, person))
 
 	said := strings.Join(person.said, "\n")
-	require.Contains(t, said, "lights up in any mode it offers")
+	require.Contains(t, said, "Nothing lit in Static or Direct",
+		"a device that would not light should say what was already ruled out")
 	require.Contains(t, said, "nothing to write")
 	require.NotContains(t, person.questions(), "What is red?",
 		"a device nobody can see was asked about anyway")
