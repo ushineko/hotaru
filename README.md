@@ -184,6 +184,8 @@ necessary is an artefact of where it used to live.
 - [specs/009-writes-that-mean-what-they-say.md](specs/009-writes-that-mean-what-they-say.md):
   why a write that lands in the buffer is not always a write, and what hotaru
   checks instead.
+- [specs/013-the-dashboard.md](specs/013-the-dashboard.md): the monitor's LCD
+  dashboard ported, and the settling time the panel turns out to need.
 - [specs/012-the-cooler-without-liquidctl.md](specs/012-the-cooler-without-liquidctl.md):
   reaching the cooler and its screen directly, and what the panel's memory does
   under repeated writes.
