@@ -878,6 +878,24 @@ matches fewer devices than the recorded state names is an **unfinished restore**
 it retries with backoff, reports itself as incomplete rather than successful,
 and completes silently when the rest appear.
 
+**Measured on the first cold boot after this landed.** The machine came up, and
+the journal is the argument for every paragraph above:
+
+	13:29:26  Started hotaru lighting service
+	13:29:26  no OpenRGB server at 127.0.0.1:6742 yet; lighting waits for one
+	13:29:42  openrgb-server.service becomes active
+	13:29:49  connected to the OpenRGB server (protocol 3)
+	13:29:49  restore incomplete: 1 devices put back, still waiting for 5
+	13:29:50  restore incomplete: 3 devices put back, still waiting for 3
+	13:29:53  restored 6 devices to what they were showing
+
+hotaru started **sixteen seconds before** the server it depends on, waited,
+connected seven seconds after that unit reported itself active, and found
+**one** device of six enumerated. Ordering after any OpenRGB unit would have
+restored that one device and stopped. The full restore took twenty-seven
+seconds from service start, and every device came back to the colour it was
+showing before the reboot.
+
 A fresh install with no recorded state still does nothing at boot, which is the
 inert rule unchanged — there is simply nothing to restore.
 
