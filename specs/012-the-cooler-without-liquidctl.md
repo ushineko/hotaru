@@ -199,11 +199,11 @@ running hotaru does not keep a stale dashboard.
 
 ## Acceptance Criteria
 
-- [ ] AC1. Status is read over hidraw and matches `liquidctl --json status`
+- [x] AC1. Status is read over hidraw and matches `liquidctl --json status`
       for coolant temperature, pump speed and duty, fan speed and duty.
-- [ ] AC2. A reading costs single-digit milliseconds, asserted by a test that
+- [x] AC2. A reading costs single-digit milliseconds, asserted by a test that
       fails if a process is spawned on the status path.
-- [ ] AC3. The cooler is located by USB ids through sysfs; no device path is
+- [x] AC3. The cooler is located by USB ids through sysfs; no device path is
       written down anywhere in the source or the rules file.
 - [ ] AC4. The bulk interface is claimed while hidraw stays open, in one
       process, and released on shutdown.
@@ -212,21 +212,52 @@ running hotaru does not keep a stale dashboard.
 - [ ] AC7. Brightness and orientation are settable.
 - [ ] AC8. The screen returns to the firmware readout on request and on
       service shutdown.
-- [ ] AC9. Every command's reply is matched by prefix, and a test feeds an
+- [x] AC9. Every command's reply is matched by prefix, and a test feeds an
       interleaved status report through the fake to prove a mismatched reply is
       never read as a result.
 - [ ] AC10. The bytes delivered equal the packet count declared, with a test.
 - [ ] AC11. A dashboard pushed once a second lands every update, verified on
       the machine with a value that changes on every tick.
-- [ ] AC12. CPU, board and PSU temperatures are read from hwmon by label
+- [x] AC12. CPU, board and PSU temperatures are read from hwmon by label
       rather than by hwmon index, which is not stable across boots.
 - [ ] AC13. Every capability degrades alone: unplugging the cooler leaves
       lighting, telemetry and the API working.
-- [ ] AC14. The fake cooler models the device's unsolicited status reports, so
+- [x] AC14. The fake cooler models the device's unsolicited status reports, so
       reply matching is exercised without hardware.
 - [ ] AC15. Verified on the development machine with somebody watching the
       screen: status, a still image, an animation, brightness, orientation,
       and the return to the firmware readout.
+
+## Built so far
+
+`internal/cooler`, telemetry only. The screen is not in it yet.
+
+Discovery walks sysfs from the USB ids to a hidraw node and a usbfs path, so
+nothing is written down: on the development machine it finds
+`/dev/hidraw7` and `/dev/bus/usb/001/013`, which is what the prototype had
+hardcoded and would have been wrong on the next boot. A cooler this package
+does not recognise is declined rather than guessed at, and a machine with no
+cooler gets `ErrNoCooler`, which is an ordinary state.
+
+Reply matching is in the type rather than in a caller's memory: there is no
+method that reads the next report, only `ask`, which matches the prefix. The
+probe that justified it, run against the machine, is worth recording --
+twelve reads after one request produced:
+
+	75 01  x1    the reply
+	75 02  x11   status reports the device streams unasked
+
+The prototype matched only the first byte, so eleven times in twelve it parsed
+a broadcast. It worked because a broadcast carries status too, which is luck
+rather than design. The fake chatters for the same reason: a fake that answered
+politely would let the bug straight back in.
+
+Measured against liquidctl on the same cooler, same minute:
+
+	hotaru:     coolant 37.3 C  pump 2596 rpm (81%)  fan 1244 rpm (51%)
+	liquidctl:  37.3 C          2596 rpm   81 %      1244 rpm   51 %
+
+Every field identical, at **2.003 ms per reading against 105 ms**.
 
 ## Risks & Assumptions
 
