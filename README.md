@@ -106,6 +106,11 @@ The decisions worth knowing before reading any code:
   reconciles toward it, because some hardware does not hold what it is told — a
   wireless mouse restores its onboard colour on wake, and the cooler's LCD drops
   a static image within seconds while retaining a GIF indefinitely.
+- **It is fast because of its shape, not its tuning.** A whole scene across six
+  devices is 2.4 ms service-side, against roughly 180 ms for the tool this
+  replaces: one persistent socket rather than a subprocess per device, one
+  frame per device rather than a mode call and a colour call, and no queue to
+  wait behind.
 - **A frame per device.** Assignments compose into one complete frame before any
   write, so a write is atomic from the device's point of view, coalescing cannot
   drop half a scene, and "is this device showing what it should?" has an answer.
@@ -175,6 +180,13 @@ necessary is an artefact of where it used to live.
   scope, the migration contract, the KDE hotkey rules, acceptance criteria.
 - [docs/architecture.md](docs/architecture.md): the system diagram and what it
   asserts.
+- [examples/hotaru.yml](examples/hotaru.yml): a worked rules file from a real
+  machine — device corrections and named segments, none of it a default.
+- [docs/api.md](docs/api.md): the service's HTTP interface, with recorded
+  transcripts of every route.
+- [docs/migration.md](docs/migration.md): what moves out of
+  `peripheral-battery-monitor`, the cutover order, and the KDE hotkey rules
+  four investigations paid for.
 - [docs/hardware.md](docs/hardware.md): hardware that has been tested, the
   upstream device lists for everything else, and how to check your own machine.
 - [docs/packaging.md](docs/packaging.md): the AUR packages, the dependency
@@ -188,6 +200,16 @@ MIT. See [LICENSE](LICENSE).
 
 ### Unreleased
 
+- Desired state, and the reconciler that puts the lights back: at boot, when a
+  device wakes up having forgotten, and when a server hands devices back with no
+  colour. A fresh install remembers nothing and so writes to nothing.
+- `hotaru light probe`, `status`, `reconcile` and `reload`; per-device write
+  queues where a newer request replaces a waiting one rather than queueing
+  behind it; and the systemd user unit, which depends on no OpenRGB unit and on
+  no desktop session.
+- `hotaru serve` and the CLI: the service on its Unix socket, `/v1` for health,
+  devices and lighting, and `hotaru light list|set|off|health` as its first
+  client. The client commands import no device package, which a test asserts.
 - Spec 001: project scope, the migration contract from
   `peripheral-battery-monitor`, the KDE hotkey rules, and the baseline —
   service, API and lighting ([#1](https://github.com/ushineko/hotaru/issues/1)).

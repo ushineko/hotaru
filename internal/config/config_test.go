@@ -189,3 +189,39 @@ func TestScopeIsNarrowedNeverEnabled(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, cfg.InScope("Keychron K4 HE"))
 }
+
+func TestTheShippedExampleParsesAndMeansWhatItSays(t *testing.T) {
+	// The example is a real machine's file, and a documented example that does
+	// not load is worse than none: someone copies it, it fails, and the
+	// program looks broken rather than the sample.
+	cfg, problems, err := config.Load(filepath.Join("..", "..", "examples", "hotaru.yml"))
+	require.NoError(t, err)
+	require.Empty(t, problems)
+
+	board := cfg.RulesFor("ASUS ROG MAXIMUS Z790 HERO")
+	require.Len(t, board, 1)
+	require.Equal(t, []string{"direct", "static"}, board[0].SolidModes)
+	require.Equal(t, "Addressable RGB Header 2", board[0].Segments["front-top"].Zone)
+	require.Equal(t, 0, board[0].Segments["front-top"].LEDs.First)
+	require.Equal(t, 8, board[0].Segments["front-bot"].LEDs.Count())
+	require.Nil(t, board[0].Segments["rear"].LEDs, "a whole zone needs no range")
+
+	// The three radiator fans, daisy-chained into one channel of the cooler.
+	cooler := cfg.RulesFor("NZXT Kraken 2024 ELITE Series RGB")
+	require.Len(t, cooler, 1)
+	for name, first := range map[string]int{"rad-rear": 0, "rad-mid": 8, "rad-front": 16} {
+		segment := cooler[0].Segments[name]
+		require.Equal(t, "Hue 2 Channel 2", segment.Zone, name)
+		require.Equal(t, first, segment.LEDs.First, name)
+		require.Equal(t, 8, segment.LEDs.Count(), name)
+	}
+	require.NotContains(t, cooler[0].Segments, "channel-1",
+		"a segment that addresses nothing is a scene silently doing less than it says")
+
+	require.True(t, cfg.RulesFor("Keychron K4 HE")[0].NeverBlank)
+	require.Equal(t, time.Minute, cfg.RulesFor("G502 X PLUS")[0].Reassert.Duration())
+
+	// And with the example loaded, everything is still in scope: the file
+	// corrects behaviour, it does not select devices.
+	require.True(t, cfg.InScope("Some Device Nobody Mentioned"))
+}

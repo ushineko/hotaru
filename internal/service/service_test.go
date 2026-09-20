@@ -238,3 +238,29 @@ func mustTarget(t *testing.T, s string) devices.Target {
 	require.NoError(t, err)
 	return target
 }
+
+func TestABrightnessRuleIsAssertedOnEveryWrite(t *testing.T) {
+	// Brightness is device state nobody owned: whatever was last written
+	// stuck, so a value set once by hand became permanent and invisible.
+	// Asserting it makes hotaru's picture of the device complete rather than
+	// partial.
+	server := openrgb.NewFake(keyboard())
+	level := 100
+	cfg := &config.Config{Devices: []config.DeviceRule{{Match: "keychron", Brightness: &level}}}
+	svc := service.New(cfg, server, "")
+
+	_, err := svc.Apply(t.Context(), service.Request{Assignments: solid("Keychron", "red")})
+	require.NoError(t, err)
+
+	require.NotEmpty(t, server.Modes)
+	require.NotNil(t, server.Modes[0].Brightness, "the rule's brightness never reached the device")
+	require.Equal(t, 100, *server.Modes[0].Brightness)
+
+	// A device with no such rule is not sent one, because a write nobody asked
+	// for is still a write.
+	plain := openrgb.NewFake(board())
+	svc = service.New(nil, plain, "")
+	_, err = svc.Apply(t.Context(), service.Request{Assignments: solid("ASUS", "red")})
+	require.NoError(t, err)
+	require.Nil(t, plain.Modes[0].Brightness)
+}

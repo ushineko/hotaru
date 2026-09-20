@@ -2,7 +2,16 @@
 
 **Issue**: [#1](https://github.com/ushineko/hotaru/issues/1)
 
-## Status: DRAFT — awaiting review
+## Status: IMPLEMENTED, except the second-machine test
+
+Every acceptance criterion is met but one, and that one cannot be met here: the
+second-machine test runs on hardware the author does not own. Until it does,
+this spec is not complete — which is the point of having written it down that
+way, since "it works on my machine" is the failure the criterion exists to
+catch.
+
+Preview and lease moved to spec 004, and walking a zone LED by LED to spec 005.
+Both are marked where they were, with the reasoning.
 
 ## Context
 
@@ -142,6 +151,18 @@ grammar of a `Modes:` line. That existed because PyQt already had `QProcess`. In
 Go the SDK is a binary protocol on TCP 6742 and a client is an ordinary
 dependency; the parsers, the 9-second silent-fallback trap and the
 "3-character minimum name match" rule all disappear with the subprocess.
+
+Measured on the development machine once the baseline existed, against the same
+six devices: **0.6 ms to write one device and 2.4 ms to write all six**,
+service-side, including the read-back after every write. Through the CLI, which
+starts a process each time, a whole scene is 7.5 ms.
+
+The Python's own measurement was 30 ms per `openrgb --client` invocation, one
+invocation per device, serialised behind a queue — call it 180 ms for the same
+scene, and 9.1 s for a single device if the server happened not to be running.
+That is not a tuning difference. It is one persistent socket instead of a
+subprocess per device, one frame per device instead of a mode call and a colour
+call, and nothing to wait behind.
 
 **The cooler still goes through liquidctl, as a subprocess.** Reimplementing the
 Kraken's HID protocol is not in scope and liquidctl is the reference
@@ -294,7 +315,8 @@ So the quirk table is an optimisation, not a prerequisite:
 - `hotaru light probe` characterises what is present — which modes each device
   advertises, which ones actually take, which do not hold their colour — and
   offers the rules it would write. A new user's quirk table is generated from
-  their hardware rather than inherited from mine.
+  their hardware rather than inherited from mine. Where a question needs eyes
+  rather than a read-back, it asks: see "Mapping is a wizard".
 
 The shipped rules then read as what they are: known corrections for named
 hardware, which a user with different hardware never loads.
@@ -373,6 +395,105 @@ at boot" behaviour that a user did not opt into by setting a colour.
 The same rule protects the migration: hotaru installed on the primary machine
 before cutover does not fight the monitor, because it has been asked for nothing
 yet.
+
+### Mapping is a wizard, because it is a conversation
+
+Naming segments cannot be derived. A zone called "Addressable RGB Header 2" with
+sixteen LEDs might be two daisy-chained fans, one fan with an unlit half, or
+nothing at all, and no amount of reading the protocol will say which. The only
+source is a person looking at the machine.
+
+So hotaru asks, in a loop that is the same in both shells:
+
+1. **Light distinctly.** Several zones at once, each a different colour, rather
+   than one at a time — four headers in one write is one question instead of
+   four. Beyond a handful of zones, or where colours are hard to tell apart, it
+   falls back to lighting one and asking about that one.
+2. **Ask what changed**, in the user's words: which fan is green, is any band
+   only half lit, did anything not light at all.
+3. **Split what needs splitting.** A zone that turned out to hold two fans is
+   lit in halves and asked about again, which is how a range gets named without
+   anyone counting LEDs.
+4. **Write it down**, and from then on the names work everywhere.
+
+This was rehearsed by hand on the development machine, and it took three rounds
+to map a board with four headers, two of them empty, one carrying a
+daisy-chained pair. The empty headers still reported sixteen LEDs each, which is
+the detail that makes the wizard necessary rather than nice: **a zone's size is
+what the board declares, not what is attached**, so an assignment to a header
+with nothing plugged into it succeeds and lights nothing, and no API can tell
+the difference.
+
+#### The colours are the question
+
+The wizard does not ask "which LEDs are the rear fan?" — nobody knows. It
+assigns a colour per zone and asks the inverse: **what colour is each thing you
+can see?** The user answers in their own words, naming their own hardware —
+"rear blue, front dual is green" — and the mapping falls out of it, because
+hotaru already knows which zone it made blue.
+
+That shape has three properties worth keeping:
+
+- **The user never learns hotaru's vocabulary.** They say "rear fan"; hotaru
+  hears "Addressable RGB Header 3". The names in the rules file are then the
+  user's own, which is why `maximus/rear` reads like something a person meant.
+- **One round answers many questions.** Four zones in four colours is one look
+  and one sentence, not four rounds of blink-and-confirm.
+- **Wrong answers are cheap.** Nothing has been written; the lights are a
+  preview. A user who mixes up two fans re-runs it, or fixes the name
+  afterwards, and nothing on the machine is worse for it.
+
+Use few colours and unmistakable ones. The rehearsal produced "bottom cyan(?)"
+— a question mark that is entirely fair, because cyan and teal and white-blue
+are the same colour to most people under a tinted case window. Red, green, blue
+and white first; anything else only when there are more zones than that.
+
+#### Ask how many things are on the chain
+
+NZXT's own software does this, and so do other vendors' tools: light every zone
+a different colour and ask which fan is which. That is worth knowing for two
+reasons. It is evidence the interaction is right -- the people with the most to
+lose from a confusing setup arrived at the same place -- and it means some users
+will recognise it and expect its conventions.
+
+It also asks a question this spec had missed. Before splitting anything, ask
+**how many lit things are on this channel**. A daisy-chain is usually identical
+fans, so one answer and the LED count give the split arithmetically: the
+development machine's 24 LEDs over three fans is eight each, and the even split
+was right the first time. Bisection is the fallback for when the division is not
+clean -- mixed hardware, a strip on the same chain, a fan with a dead LED --
+rather than the first move.
+
+So the order is: how many, divide, light the proposed split, confirm. Three
+questions where the naive version asks a dozen.
+
+#### Finding a boundary nobody can count
+
+When one zone turns out to hold several fans, the split has to land exactly
+between them, and neither side knows where that is. Bisection finds it: light
+the first half one colour and the second half another, and ask **whether any
+single fan is showing two colours at once**.
+
+- No fan is split, and the colours land on whole fans: the boundary is right.
+- One fan shows both colours: the split falls inside it, and the next round
+  moves the line by half the remaining distance.
+
+That question — "is anything showing two colours?" — is the one a person can
+always answer by looking, and it converges in a handful of rounds on a chain of
+any length. Counting LEDs, which is the alternative, is something nobody does
+twice.
+
+It runs at two moments: on first use, and when a device appears that hotaru has
+no mapping for. The second needs hotaru to remember which devices it has seen,
+which is a line in its state file rather than a new mechanism.
+
+A mapping session is a **preview** in the sense spec 004 gives the word: the
+lights it sets are not desired state, reconciliation is suspended for the
+devices involved, and what was showing before is restored when it ends —
+including when the shell driving it dies halfway through.
+
+**Where the answers are written is an open question** (see below). They are
+rules, and the rules file is the user's, which hotaru does not write.
 
 ### The test suite must contain machines that are not this one
 
@@ -1247,156 +1368,165 @@ ownership of the hardware.
 
 ## Acceptance Criteria
 
-- [ ] `go.mod` is `github.com/ushineko/hotaru`, Go 1.26.0, no `toolchain` line.
-- [ ] An OpenRGB SDK client connects to a configured host/port, lists devices
+- [x] `go.mod` is `github.com/ushineko/hotaru`, Go 1.26.0, no `toolchain` line.
+- [x] An OpenRGB SDK client connects to a configured host/port, lists devices
       with name, type, modes, active mode and zones, and sets a device's mode
       and colour, with no subprocess and no output parsing.
-- [ ] Duplicate device names from a rescanned server collapse to the first
+- [x] Duplicate device names from a rescanned server collapse to the first
       occurrence.
-- [ ] Devices are addressed by name throughout; no index is written to disk or
+- [x] Devices are addressed by name throughout; no index is written to disk or
       carried between operations.
-- [ ] Mode resolution returns the device's own spelling of the chosen mode, or
+- [x] Mode resolution returns the device's own spelling of the chosen mode, or
       nothing when the device cannot express the intent, and the nothing case is
       a skip-with-reason at the call site rather than an error.
-- [ ] A target resolves as device, `device/zone`, `device/zone[a:b]` or
+- [x] A target resolves as device, `device/zone`, `device/zone[a:b]` or
       `device/segment-name`, and a whole-device target is the same code path
       filling every zone.
-- [ ] Named segments are read from device rules and are what scenes reference;
+- [x] Named segments are read from device rules and are what scenes reference;
       an unknown segment name is reported with the names that do exist, and the
       rest of the scene still applies.
-- [ ] Assignments compose into one frame per device before any write: a test
+- [x] Assignments compose into one frame per device before any write: a test
       asserts that a three-assignment scene produces exactly one write per
       device, and that a later assignment overrides an earlier one on the same
       LEDs.
-- [ ] A frame with more than one distinct colour resolves against a mode that
+- [x] A frame with more than one distinct colour resolves against a mode that
       accepts per-LED data; a device with no such mode is reported in the
       per-device output, and its colours are never averaged or reduced to one.
-- [ ] `hotaru light probe` reports zones and LED counts, and can walk a zone one
-      LED at a time so a user can see which light is which before naming it.
-- [ ] With no config file at all, every device OpenRGB reports is in scope, and
+- [x] `hotaru light probe` reports zones and LED counts. **Walking a zone one
+      LED at a time moved to spec 005**: it is a conversation, not a report, and
+      belongs with the wizard that asks the questions.
+- [x] A partial assignment composes onto what hotaru last wrote, falling back to
+      what the device reports and then to black — never onto a device's claim
+      when a better answer is remembered.
+- [x] With no config file at all, every device OpenRGB reports is in scope, and
       a test with an invented device list asserts it.
-- [ ] Solid resolves static-first by default; a rule can invert it to
+- [x] Solid resolves static-first by default; a rule can invert it to
       direct-first; the shipped example config inverts it for Aura/Maximus and
       is not loaded unless the user adopts it.
-- [ ] A write is read back: a device that accepts a mode without taking it falls
+- [x] A write is read back: a device that accepts a mode without taking it falls
       through to the next candidate, and the outcome is remembered for the
       session. A test drives a fake device that lies about a mode.
-- [ ] `hotaru light probe` reports what each present device advertises, what
+- [x] `hotaru light probe` reports what each present device advertises, what
       actually took, and the rules it would suggest — and writes nothing unless
       asked.
-- [ ] A fresh install writes to no device: a test asserts that a service started
+- [x] A fresh install writes to no device: a test asserts that a service started
       with empty state performs no write, and that reconciliation with nothing
       recorded is a no-op rather than an assertion of a default.
 - [ ] The second-machine test passes on hardware the author does not own, with
       no hand-written configuration. It is run before the version that claims
       lighting support is tagged.
-- [ ] A rule can mark a device never-blanked: it is skipped for `off` and still
+- [x] A rule can mark a device never-blanked: it is skipped for `off` and still
       receives colour scenes.
-- [ ] A rule can assert a brightness level on every write.
-- [ ] Config is YAML (`.yml`) read through fynedesygn `settings` with
+- [x] A rule can assert a brightness level on every write.
+- [x] Config is YAML (`.yml`) read through fynedesygn `settings` with
       `settings/yamlcodec`, from `$XDG_CONFIG_HOME/hotaru/`, seeded per key on
       first run, and a user-edited key is never overwritten.
-- [ ] `hotaru.yml` is never written by the program: a test asserts that a round
+- [x] `hotaru.yml` is never written by the program: a test asserts that a round
       trip through load-and-save leaves a user's file, comments included, byte
       for byte unchanged — because it is never saved at all.
-- [ ] Desired state is written to `$XDG_STATE_HOME/hotaru/`, not to the config
+- [x] Desired state is written to `$XDG_STATE_HOME/hotaru/`, not to the config
       directory, and a machine with no state file writes to no device.
-- [ ] A malformed rule costs that entry only: it is reported with what is wrong
+- [x] A malformed rule costs that entry only: it is reported with what is wrong
       and skipped, and the rest of the file still loads.
-- [ ] `hotaru light list` prints devices with their modes, marking the active
+- [x] `hotaru light list` prints devices with their modes, marking the active
       one and which are in scope.
-- [ ] `hotaru light set <colour> [--devices ...]` applies a colour, printing one
+- [x] `hotaru light set <colour> [--devices ...]` applies a colour, printing one
       line per device: mode used, skipped with reason, or failed.
-- [ ] `hotaru light health` distinguishes server unreachable, up with no
+- [x] `hotaru light health` distinguishes server unreachable, up with no
       devices, up with no in-scope devices, and healthy, exiting non-zero for
       the first three, and reports the negotiated protocol version.
-- [ ] Each unhealthy state names what to do about it, and distinguishes "OpenRGB
+- [x] Each unhealthy state names what to do about it, and distinguishes "OpenRGB
       is not installed" from "installed but not running" from "running but
       enumerated nothing" — three different remedies, not one error.
-- [ ] Any remedy hotaru can perform — starting the OpenRGB server, enabling its
+- [x] Any remedy hotaru can perform — starting the OpenRGB server, enabling its
       own user service, restarting a server that enumerated a partial list — is
       offered explicitly and performed only on an answer. A test asserts that no
       such action happens without one.
-- [ ] `--json` on every listing and health command emits a stable shape.
-- [ ] With the server unreachable, every command fails in under a second with
+- [x] `--json` on every listing and health command emits a stable shape.
+- [x] With the server unreachable, every command fails in under a second with
       one line naming the address it tried. Nothing hangs.
-- [ ] Per-device coalescing: rapid repeated writes to one device converge on the
+- [x] Per-device coalescing: rapid repeated writes to one device converge on the
       last, verified with a fake client.
-- [ ] The service interface distinguishes preview from apply, and a test asserts
-      that a preview followed by a revert leaves desired state untouched.
-- [ ] A preview suspends reconciliation for the devices it covers and resumes it
-      when the preview ends; a test asserts a reassert does not fire against a
-      previewed device and does fire against one outside the preview.
-- [ ] A preview is a lease bound to its caller: a test asserts that a caller
-      going away restores desired state without the caller having said so.
-- [ ] `hotaru serve` listens on a Unix socket in `$XDG_RUNTIME_DIR`, serves
+> **Preview moved to spec 004.** The three criteria below are unchanged and
+> unmet; they are listed there instead, because preview only means something
+> once scenes exist to preview and the editor that needs it is built on them.
+> The machinery they depend on — desired state, reconciliation, per-device
+> queues — is finished here, so spec 004 adds semantics rather than mechanism.
+>
+> - The service interface distinguishes preview from apply, and a test asserts
+>   that a preview followed by a revert leaves desired state untouched.
+> - A preview suspends reconciliation for the devices it covers and resumes it
+>   when the preview ends.
+> - A preview is a lease bound to its caller: a caller going away restores
+>   desired state without having said so.
+- [x] `hotaru serve` listens on a Unix socket in `$XDG_RUNTIME_DIR`, serves
       `/v1`, and survives every backend being absent.
-- [ ] The user unit has no `graphical-session.target` dependency, and the
+- [x] The user unit has no `graphical-session.target` dependency, and the
       service starts and serves with no session at all — verified by starting it
       with no desktop running.
-- [ ] hotaru reports when lingering is not enabled, explains that boot-time
+- [x] hotaru reports when lingering is not enabled, explains that boot-time
       restore needs it, and offers to enable it. It never enables it silently,
       and the package never enables it.
-- [ ] A restore that reaches fewer devices than the recorded state names is
+- [x] A restore that reaches fewer devices than the recorded state names is
       reported as incomplete, retries with backoff, and completes without
       further instruction when the devices appear.
-- [ ] The unit declares no `After=`, `Requires=` or `Wants=` on any OpenRGB
+- [x] The unit declares no `After=`, `Requires=` or `Wants=` on any OpenRGB
       unit: the server is a resource that appears, and neither its absence nor
       its name can prevent hotaru from starting.
-- [ ] Readiness is judged by the device list, not by the socket accepting — a
+- [x] Readiness is judged by the device list, not by the socket accepting — a
       server that answers while reporting fewer devices than recorded state
       names is "not ready yet", not "healthy".
-- [ ] Where OpenRGB is installed but not running, hotaru detects which unit
+- [x] Where OpenRGB is installed but not running, hotaru detects which unit
       exists (system `openrgb.service`, a user unit, or neither) and offers to
       start it rather than naming one.
-- [ ] The CLI depends on `internal/api`'s client and on no device package — a
+- [x] The CLI depends on `internal/api`'s client and on no device package — a
       test asserts the import graph, so a direct-write path cannot appear by
       accident.
-- [ ] Every `/v1` endpoint has a recorded one-off client transcript — the
+- [x] Every `/v1` endpoint has a recorded one-off client transcript — the
       request, the response, and what it establishes — kept as the worked
       example in the API documentation and reused as the test fixture.
-- [ ] With the service not running, a CLI write fails with one line saying so
+- [x] With the service not running, a CLI write fails with one line saying so
       and a non-zero exit; `--direct` performs read-only queries only.
-- [ ] Every operation on `internal/service` is reachable from `cmd/hotaru`, and
+- [x] Every operation on `internal/service` is reachable from `cmd/hotaru`, and
       a test enumerates the service surface and fails on one the CLI cannot
       reach. The same test covers the GUI when spec 004 lands.
-- [ ] Tests run headless with no OpenRGB server and no hardware, against a fake
+- [x] Tests run headless with no OpenRGB server and no hardware, against a fake
       client, covering mode resolution for facts 1, 3 and 4, duplicate
       collapsing, config merge and coalescing.
-- [ ] Tests include machine profiles that are not this desk: one device, no
+- [x] Tests include machine profiles that are not this desk: one device, no
       devices, only unknown mode names, an OpenRGB that is up but empty. Each
       asserts what a stranger sees, not what this author sees.
-- [ ] Every absent-backend path is covered: server unreachable, server empty,
+- [x] Every absent-backend path is covered: server unreachable, server empty,
       and (from 002) no liquidctl, no cooler, no LCD, no OpenLinkHub. In each
       case unrelated operations still work and the service stays up.
-- [ ] At least one test exercises a real OpenRGB server when one is reachable
+- [x] At least one test exercises a real OpenRGB server when one is reachable
       and skips cleanly when it is not — the integration boundary is the wire
       protocol, which a fake cannot fail the way a real server can.
-- [ ] No test is a translation of a Python test. Each is written against the Go
+- [x] No test is a translation of a Python test. Each is written against the Go
       structure, and the Python suite is mined for hardware assertions only.
-- [ ] Each device quirk carried from the Python has a test named for it —
+- [x] Each device quirk carried from the Python has a test named for it —
       `TestGPURejectsStatic`, `TestAuraNeedsDirect`, `TestKeychronNeverBlanks` —
       so a hardware or upstream change fails one named test rather than
       silently changing behaviour.
-- [ ] No package reimplements the bounded-drop queue: per-device serialisation
+- [x] No package reimplements the bounded-drop queue: per-device serialisation
       is a goroutine with a single-slot mailbox, and a test asserts that N rapid
       requests to one device produce one write of the last value, with nothing
       dropped silently.
-- [ ] The service listens on a Unix socket only; a test asserts no listener is
+- [x] The service listens on a Unix socket only; a test asserts no listener is
       created on any network address.
-- [ ] No SDK-candidate package holds mutable package-level state, prints, or
+- [x] No SDK-candidate package holds mutable package-level state, prints, or
       calls `os.Exit`; a test asserts it rather than a review catching it.
-- [ ] Every device and socket call takes a `context.Context` and honours
+- [x] Every device and socket call takes a `context.Context` and honours
       cancellation, including the connect.
-- [ ] `hotaru light list --json` and `light health --json` shapes are documented
+- [x] `hotaru light list --json` and `light health --json` shapes are documented
       in the README as an interface, with the note that they are consumed by
       other programs and changing them is breaking.
-- [ ] `go test ./...` passes with no hardware, no OpenRGB, no liquidctl and no
+- [x] `go test ./...` passes with no hardware, no OpenRGB, no liquidctl and no
       root, because that is what lets a PKGBUILD's `check()` run it.
-- [ ] `make test`, `make lint` and `govulncheck ./...` pass.
-- [ ] README covers what it is, what it needs (a running OpenRGB server; from
+- [x] `make test`, `make lint` and `govulncheck ./...` pass.
+- [x] README covers what it is, what it needs (a running OpenRGB server; from
       002, liquidctl), the commands, and the config file with example rules.
-- [ ] The migration contract, the cutover order and the KDE hotkey rules are
+- [x] The migration contract, the cutover order and the KDE hotkey rules are
       carried into `docs/migration.md` so specs 002-006 do not have to rediscover
       them.
 
@@ -1557,6 +1687,16 @@ firmware silently discards those writes — see the runbook), and packaging
    the service, and never the GUI. The GUI has its own file for its own view
    state, and reaches everything else through the API. See "Files on disk".
 5. ~~Config format.~~ **Decided**: YAML, `.yml`, via `settings/yamlcodec`.
+6. **Where does the mapping wizard write what it learns?** Segments are rules,
+   and `hotaru.yml` is the user's file, which the program never rewrites — so
+   the wizard cannot simply save into it. Three options: print the YAML for the
+   user to paste, which is honest and makes a GUI wizard end in a copy-paste;
+   write a machine-owned `learned.yml` in the config directory that is merged
+   underneath the user's rules, with the user's winning; or relax the
+   never-write rule for a file the user was explicitly editing through the GUI.
+   The middle one is the recommendation: it keeps the promise about the
+   hand-written file exactly, and it lets the GUI save a mapping without asking
+   someone to edit YAML — which is the whole reason the wizard exists.
 6. **Who edits the bindings?** The Python hardcoded `Ctrl+Alt+Num+N` from a
    template. hotaru could keep that, or make the binding part of each scene's
    config entry — more flexible, and one more thing that can claim a taken key.

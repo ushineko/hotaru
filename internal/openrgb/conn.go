@@ -77,7 +77,10 @@ func (c *Conn) ProtocolVersion() uint32 { return c.version }
 func (c *Conn) Close() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.client.Close()
+	if err := c.client.Close(); err != nil {
+		return fmt.Errorf("hang up on %s: %w", c.address, err)
+	}
+	return nil
 }
 
 /*
@@ -101,20 +104,36 @@ func (c *Conn) list(ctx context.Context) ([]devices.Device, error) {
 	}
 
 	out := make([]devices.Device, 0, count.Count)
-	seen := make(map[string]bool, count.Count)
 	for i := uint32(0); i < count.Count; i++ {
 		data, err := c.client.RequestControllerDataCtx(ctx, i)
 		if err != nil {
 			return nil, fmt.Errorf("read device %d from %s: %w", i, c.address, err)
 		}
-		device := convert(data.Controller)
-		if device.Name == "" || seen[strings.ToLower(device.Name)] {
+		out = append(out, convert(data.Controller))
+	}
+	return collapse(out), nil
+}
+
+/*
+collapse keeps the first device of each name.
+
+A server that has rescanned lists every device twice -- six devices arriving as
+twelve. Addressing the second copy means sending every command to the same
+hardware twice, which shows up as a device that takes two writes to change and
+as nothing else at all.
+*/
+func collapse(in []devices.Device) []devices.Device {
+	out := make([]devices.Device, 0, len(in))
+	seen := make(map[string]bool, len(in))
+	for _, device := range in {
+		key := strings.ToLower(device.Name)
+		if device.Name == "" || seen[key] {
 			continue
 		}
-		seen[strings.ToLower(device.Name)] = true
+		seen[key] = true
 		out = append(out, device)
 	}
-	return out, nil
+	return out
 }
 
 /*
@@ -282,13 +301,13 @@ Devices disagree: some take 0-100, some 0-255, some 0-3. A rule says "100" and
 means "as bright as this goes", which is the only portable reading of a number
 a person typed.
 */
-func scaleBrightness(percent int, min, max uint32) uint32 {
+func scaleBrightness(percent int, lowest, highest uint32) uint32 {
 	switch {
 	case percent <= 0:
-		return min
+		return lowest
 	case percent >= 100:
-		return max
+		return highest
 	}
-	span := float64(max) - float64(min)
-	return min + uint32(span*float64(percent)/100.0+0.5)
+	span := float64(highest) - float64(lowest)
+	return lowest + uint32(span*float64(percent)/100.0+0.5)
 }
