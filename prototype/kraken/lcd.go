@@ -25,16 +25,21 @@ func hidWrite(f *os.File, data ...byte) error {
 	return err
 }
 
-// hidWriteThenRead sends a report and returns the next one, as liquidctl does.
+/*
+hidWriteThenRead sends a command and returns its reply.
+
+The reply's prefix is the command's, with the first byte incremented: 0x32 0x01
+is answered by 0x33 0x01. Matching on it is not optional. This cooler streams
+status reports of its own accord, so "read the next report" returns a
+temperature reading about a third of the time -- and byte 14 of a temperature
+reading, read as a result code, is noise. Every refusal measured before this
+was matched this way and cannot be trusted.
+*/
 func hidWriteThenRead(f *os.File, data ...byte) ([]byte, error) {
 	if err := hidWrite(f, data...); err != nil {
 		return nil, err
 	}
-	buf := make([]byte, reportLen)
-	if _, err := f.Read(buf); err != nil {
-		return nil, err
-	}
-	return buf, nil
+	return readUntil(f, data[0]+1, data[1])
 }
 
 // readUntil returns the first report whose two-byte prefix matches.
@@ -221,9 +226,23 @@ func pushGIF(hid *os.File, usb *usbDevice, data []byte) error {
 	if _, err := usb.bulkWrite(0x02, header, 5000); err != nil {
 		return err
 	}
-	for i := 0; i < len(data); i += bulkBufferSize {
-		end := min(i+bulkBufferSize, len(data))
-		if _, err := usb.bulkWrite(0x02, data[i:end], 5000); err != nil {
+	/*
+		Send as many bytes as were declared, padding the last packet.
+
+		The transfer is described to the device in whole 1024-byte packets and
+		the payload rarely divides evenly, so sending only the payload leaves
+		the tail of the last packet holding whatever was in that memory
+		before -- which the panel draws, as a band of noise along the bottom
+		of the image.
+	*/
+	padded := data
+	if want := packets * 1024; len(header)+len(data) < want {
+		padded = make([]byte, want-len(header))
+		copy(padded, data)
+	}
+	for i := 0; i < len(padded); i += bulkBufferSize {
+		end := min(i+bulkBufferSize, len(padded))
+		if _, err := usb.bulkWrite(0x02, padded[i:end], 5000); err != nil {
 			return err
 		}
 	}
@@ -558,4 +577,20 @@ func animatedCard(frames int) []byte {
 		Config:    image.Config{ColorModel: pal, Width: lcdSide, Height: lcdSide},
 	})
 	return buf.Bytes()
+}
+
+// clearAllBuckets returns the panel's memory to empty. The device keeps its
+// allocations across host restarts, so a program that pushes images has to be
+// able to start from nothing rather than inherit whatever was left behind.
+func clearAllBuckets(hid *os.File) error {
+	if _, err := switchBucket(hid, 0, 0x02); err != nil { // firmware readout first
+		return err
+	}
+	for i := range 16 {
+		if _, err := deleteBucket(hid, i); err != nil {
+			return fmt.Errorf("delete bucket %d: %w", i, err)
+		}
+	}
+	lastShown = -1
+	return nil
 }
