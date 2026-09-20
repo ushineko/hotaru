@@ -1,0 +1,176 @@
+# hotaru
+
+**Version**: unreleased — specified, not yet built
+
+RGB lighting and AIO cooler control for Linux, as a CLI, a user service and a
+desktop GUI. 蛍 — fireflies, small lights that pulse.
+
+It drives lighting through [OpenRGB](https://openrgb.org/) and a liquid cooler
+through [liquidctl](https://github.com/liquidctl/liquidctl): set colours down to
+individual fans, define scenes, put a live dashboard on the cooler's screen, and
+bind it all to keys.
+
+> **Status**: there is no code yet. This repository currently holds the
+> specification, the architecture and the packaging plan. Work starts at spec
+> 001; see [Roadmap](#roadmap). The design is public from the start because the
+> decisions are the interesting part and they are easier to argue with written
+> down.
+
+## Contents
+
+- [What it does](#what-it-does)
+- [Architecture](#architecture)
+- [What it runs on](#what-it-runs-on)
+- [Roadmap](#roadmap)
+- [Where it comes from](#where-it-comes-from)
+- [Documentation](#documentation)
+- [Licence](#licence)
+- [Changelog](#changelog)
+
+## What it does
+
+| | |
+|---|---|
+| **Lighting** | Every device OpenRGB can see, addressed by device, zone, LED range, or a segment you name once — so "top fan red, bottom fan blue" is a thing you can say |
+| **Scenes** | A named set of colour assignments plus an LCD mode, applied as a unit |
+| **The cooler** | Coolant and CPU temperature, pump and fan speeds, read where the kernel has no driver for the device |
+| **The screen** | The cooler's LCD: its own readout, an image, an animation, or a live dashboard rendered from the telemetry |
+| **Hotkeys** | Scenes on global shortcuts. On Plasma through a KWin script; on any other desktop by binding the CLI in that desktop's own shortcut editor |
+| **A GUI** | Manage the service, see the machine's devices and zones drawn as a picture, stage a scene, preview it on the hardware, name the segments you just worked out, save it |
+
+## Architecture
+
+One program, three faces: a resident service that owns the hardware, and a CLI
+and GUI that are clients of it.
+
+```mermaid
+%%{init: {"theme":"base","themeVariables":{
+  "background":"#202326",
+  "primaryColor":"#292c30","primaryTextColor":"#fcfcfc","primaryBorderColor":"#3c4045",
+  "secondaryColor":"#1d1f22","tertiaryColor":"#141618",
+  "lineColor":"#a1a9b1","textColor":"#fcfcfc","titleColor":"#fcfcfc",
+  "clusterBkg":"#141618","clusterBorder":"#3c4045",
+  "edgeLabelBackground":"#202326","nodeTextColor":"#fcfcfc",
+  "fontFamily":"Noto Sans, Segoe UI, sans-serif","fontSize":"14px"
+}}}%%
+flowchart TB
+    KEY["global shortcut"] --> KWIN["KWin script"]
+    GUI["hotaru-gui"] --> API
+    CLI["hotaru CLI"] --> API
+    KWIN -->|"D-Bus: the only IPC<br/>KWin scripting has"| DOOR
+
+    subgraph svc["hotaru serve — the only actor on the hardware"]
+        API["HTTP/JSON API<br/>unix socket · /v1 · event stream"]
+        DOOR["D-Bus door<br/>hotkeys only"]
+        CORE["service core"]
+        STATE["desired state<br/>one frame per device"]
+        RECON["reconcilers<br/>re-assert · dashboard · keepalive"]
+        MBOX["per-device mailboxes<br/>latest frame wins"]
+    end
+
+    API --> CORE
+    DOOR --> CORE
+    CORE --> STATE --> RECON --> MBOX
+    CORE --> MBOX
+    MBOX -->|"mode + frame"| ORGB["OpenRGB server"]
+    MBOX -->|"set screen"| LQC["liquidctl"]
+    CORE -->|"telemetry"| LQC
+    ORGB --> LIT["lit devices"]
+    LQC --> COOL["cooler + LCD"]
+
+    classDef s fill:#292c30,stroke:#3daee9,color:#fcfcfc
+    classDef b fill:#1d1f22,stroke:#3c4045,color:#fcfcfc
+    classDef h fill:#141618,stroke:#3c4045,color:#a1a9b1
+    class API,DOOR,CORE,STATE,RECON,MBOX s
+    class ORGB,LQC b
+    class LIT,COOL h
+```
+
+The decisions worth knowing before reading any code:
+
+- **The service is the only writer.** No shell ever holds a device handle. Two
+  callers cannot fight over a device because there is only ever one caller, and
+  that is true from the first commit rather than something the project grew into.
+- **The API is the contract.** HTTP and JSON over a Unix socket in
+  `$XDG_RUNTIME_DIR` — no port, because the socket's filesystem permissions are
+  the authentication and adding a listener would mean adding auth to go with it.
+  The CLI is its first client; the GUI is another; a future Go rewrite of
+  [peripheral-battery-monitor](https://github.com/ushineko/peripheral-battery-monitor)
+  is meant to be a third.
+- **Desired state, not fire-and-forget.** hotaru holds what *should* be true and
+  reconciles toward it, because some hardware does not hold what it is told — a
+  wireless mouse restores its onboard colour on wake, and the cooler's LCD drops
+  a static image within seconds while retaining a GIF indefinitely.
+- **A frame per device.** Assignments compose into one complete frame before any
+  write, so a write is atomic from the device's point of view, coalescing cannot
+  drop half a scene, and "is this device showing what it should?" has an answer.
+- **Nothing is required.** OpenRGB, liquidctl and OpenLinkHub are each optional
+  at runtime. Absent ones are reported as absent and their features disappear
+  from the interface; the service still starts and serves.
+- **A fresh install is inert.** With nothing recorded, hotaru discovers your
+  hardware and touches none of it until asked — so installing it cannot stamp
+  over lighting you configured elsewhere.
+
+Full detail, including the failure each decision answers, is in
+[docs/architecture.md](docs/architecture.md).
+
+## What it runs on
+
+Linux, with a KDE Plasma integration that is a convenience rather than a
+dependency. The core — OpenRGB client, scenes, the service, the API — is
+portable; the platform pieces (the systemd user unit, the KWin script, the
+desktop entry) are build-tagged and their absence costs only those features.
+
+Nothing is assumed about your hardware. The machine this was written for is a
+test case, not the target: scope defaults to every device OpenRGB reports, and
+device quirks are discovered by reading back what a write actually did rather
+than by matching names against a table someone else's desk produced. The
+acceptance test is a second machine with entirely different hardware, where
+installing and using hotaru must take no extra steps.
+
+## Roadmap
+
+| Spec | | |
+|---|---|---|
+| 001 | Scope, migration contract, and the baseline: the service, its API, and lighting | [#1](https://github.com/ushineko/hotaru/issues/1) |
+| 002 | Cooler telemetry behind the same API | |
+| 003 | The LCD and the dashboard | |
+| 004 | Scenes, preview and leases | |
+| 005 | The GUI on [fynedesygn](https://github.com/ushineko/fynedesygn) | |
+| 006 | Hotkeys and the cutover | |
+| 007 | Packaging and release | |
+
+## Where it comes from
+
+All of this lived in `peripheral-battery-monitor`, a KDE tray widget for
+peripheral battery levels that grew a cooling monitor, an LCD dashboard, an RGB
+controller and a hotkey host because that is where the serialising queue
+happened to be.
+
+hotaru is a rearchitecture rather than a port. What carries over is the
+knowledge — eleven measured hardware facts, and the KDE global-shortcut rules
+that four separate investigations established. What does not carry over is the
+structure, or the tests: a behaviour that cannot cite the fact making it
+necessary is an artefact of where it used to live.
+
+## Documentation
+
+- [specs/001-scope-migration-and-lighting-core.md](specs/001-scope-migration-and-lighting-core.md):
+  scope, the migration contract, the KDE hotkey rules, acceptance criteria.
+- [docs/architecture.md](docs/architecture.md): the system diagram and what it
+  asserts.
+- [docs/packaging.md](docs/packaging.md): the AUR packages, the dependency
+  question, and the release flow.
+
+## Licence
+
+MIT. See [LICENSE](LICENSE).
+
+## Changelog
+
+### Unreleased
+
+- Spec 001: project scope, the migration contract from
+  `peripheral-battery-monitor`, the KDE hotkey rules, and the baseline —
+  service, API and lighting ([#1](https://github.com/ushineko/hotaru/issues/1)).
+- The architecture and the packaging plan, decided ahead of implementation.
