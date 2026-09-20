@@ -27,9 +27,12 @@ devices:
       rad-rear:  {zone: "Hue 2 Channel 2", leds: [0, 7]}
       rad-mid:   {zone: "Hue 2 Channel 2", leds: [8, 15]}
       rad-front: {zone: "Hue 2 Channel 2", leds: [16, 23]}
-      # "Hue 2 Channel 1" has nothing plugged into it and still reports 24
-      # LEDs. It is not named here, because naming a segment that addresses
-      # nothing is how a scene silently does less than it says.
+      # The ring around the pump head, on the cooler's other channel. The
+      # wizard asked about it and got no name, which was put down to somebody
+      # not looking -- wrongly. This ring takes about half a second to show a
+      # colour, and the wizard asks its question immediately, so the honest
+      # answer to "what is lit now?" was whatever was there before. See #25.
+      ring: {zone: "Hue 2 Channel 1"}
 
   - match: maximus
     # Static drives only this board's onboard LED and leaves the addressable
