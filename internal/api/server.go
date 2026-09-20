@@ -20,6 +20,26 @@ A plain http.Handler rather than a bespoke server, so the socket is a detail of
 how it is listened on and the tests can drive it with httptest. The service is
 the only thing it holds: this layer parses, calls, and encodes.
 */
+/*
+Routes is every route the service serves.
+
+Enumerated rather than implied, so a test can assert that both shells can reach
+all of them. Parity is otherwise a thing people mean to keep and do not: a
+capability added to the API and wired into only the GUI looks finished from
+every angle except a terminal.
+*/
+func Routes() []string {
+	return []string{
+		"GET /" + Version + "/health",
+		"GET /" + Version + "/devices",
+		"GET /" + Version + "/status",
+		"POST /" + Version + "/lighting/apply",
+		"POST /" + Version + "/lighting/probe",
+		"POST /" + Version + "/reconcile",
+		"POST /" + Version + "/reload",
+	}
+}
+
 func Handler(svc *service.Service) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /"+Version+"/health", func(w http.ResponseWriter, r *http.Request) {

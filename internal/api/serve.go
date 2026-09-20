@@ -34,7 +34,7 @@ crash costs a user their lighting until they know to delete a path they have
 never heard of. A socket that something is actually listening on is a different
 matter, and is reported rather than stolen.
 */
-func Listen(socket string) (net.Listener, error) {
+func Listen(ctx context.Context, socket string) (net.Listener, error) {
 	// A Unix socket address is a fixed-size field in a kernel struct, and a
 	// path that overruns it fails as "invalid argument" -- which sends someone
 	// looking at their permissions, their directory and their sanity before
@@ -56,7 +56,8 @@ func Listen(socket string) (net.Listener, error) {
 		}
 	}
 
-	listener, err := net.Listen("unix", socket)
+	var config net.ListenConfig
+	listener, err := config.Listen(ctx, "unix", socket)
 	if err != nil {
 		return nil, fmt.Errorf("listen on %s: %w", socket, err)
 	}
@@ -68,7 +69,11 @@ func Listen(socket string) (net.Listener, error) {
 }
 
 func live(socket string) bool {
-	conn, err := net.DialTimeout("unix", socket, 200*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+
+	var dialer net.Dialer
+	conn, err := dialer.DialContext(ctx, "unix", socket)
 	if err != nil {
 		return false
 	}
@@ -97,13 +102,13 @@ func Serve(ctx context.Context, listener net.Listener, svc *service.Service) err
 		shutdown, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer cancel()
 		if err := server.Shutdown(shutdown); err != nil {
-			return err
+			return fmt.Errorf("stop serving on %s: %w", listener.Addr(), err)
 		}
 		return nil
 	case err := <-done:
 		if errors.Is(err, http.ErrServerClosed) {
 			return nil
 		}
-		return err
+		return fmt.Errorf("serve on %s: %w", listener.Addr(), err)
 	}
 }

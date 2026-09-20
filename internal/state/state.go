@@ -98,7 +98,7 @@ func Open(path string) (*Store, error) {
 	if err != nil {
 		var parse *settings.ParseError
 		if !errors.As(err, &parse) || file == nil {
-			return nil, err
+			return nil, fmt.Errorf("read the state file: %w", err)
 		}
 		// Unreadable machine state is a cache miss, not a crisis. Start again
 		// rather than refuse to ever save: the cost is one scene's memory.
@@ -132,7 +132,10 @@ func (s *Store) Record(name string, device Device) error {
 	s.cache.Devices[name] = device
 	snapshot := copyOf(s.cache)
 	s.mu.Unlock()
-	return s.file.Set(sectionKey, snapshot)
+	if err := s.file.Set(sectionKey, snapshot); err != nil {
+		return fmt.Errorf("remember %s: %w", name, err)
+	}
+	return nil
 }
 
 // Forget drops a device, for one that has been turned off deliberately rather
@@ -142,11 +145,19 @@ func (s *Store) Forget(name string) error {
 	delete(s.cache.Devices, name)
 	snapshot := copyOf(s.cache)
 	s.mu.Unlock()
-	return s.file.Set(sectionKey, snapshot)
+	if err := s.file.Set(sectionKey, snapshot); err != nil {
+		return fmt.Errorf("forget %s: %w", name, err)
+	}
+	return nil
 }
 
 // Flush writes any pending change immediately.
-func (s *Store) Flush() error { return s.file.Flush() }
+func (s *Store) Flush() error {
+	if err := s.file.Flush(); err != nil {
+		return fmt.Errorf("write %s: %w", s.path, err)
+	}
+	return nil
+}
 
 func copyOf(in Snapshot) Snapshot {
 	out := Snapshot{Devices: make(map[string]Device, len(in.Devices))}

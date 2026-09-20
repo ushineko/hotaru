@@ -28,7 +28,16 @@ import (
 	"github.com/ushineko/hotaru/internal/version"
 )
 
-func main() {
+func main() { os.Exit(run()) }
+
+/*
+run is main with a return value.
+
+os.Exit does not run deferred functions, so the signal handler has to be
+released before exiting rather than by a defer that never fires -- which is
+what this split buys and why main does nothing else.
+*/
+func run() int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -40,8 +49,9 @@ func main() {
 		if !cli.Silent(err) {
 			fmt.Fprintln(os.Stderr, "hotaru: "+err.Error())
 		}
-		os.Exit(1)
+		return 1
 	}
+	return 0
 }
 
 func root() *cobra.Command {

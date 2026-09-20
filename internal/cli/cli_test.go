@@ -90,7 +90,7 @@ func serving(t *testing.T, cfg *config.Config, server openrgb.Client) string {
 
 	dir := t.TempDir()
 	socket := filepath.Join(dir, "s")
-	listener, err := api.Listen(socket)
+	listener, err := api.Listen(t.Context(), socket)
 	require.NoError(t, err)
 
 	// A recorder, as the daemon gives it: without one the service drives

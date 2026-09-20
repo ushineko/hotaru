@@ -95,7 +95,9 @@ func Parse(s string) (Colour, error) {
 	if err != nil {
 		return Colour{}, fmt.Errorf("%q is not a colour name or a hex colour like #ff8800", s)
 	}
-	return Colour{R: uint8(v >> 16), G: uint8(v >> 8), B: uint8(v)}, nil
+	// Masked explicitly: ParseUint has already bounded this to 24 bits, and
+	// saying so is cheaper than explaining it to every reader and linter.
+	return Colour{R: uint8(v >> 16 & 0xff), G: uint8(v >> 8 & 0xff), B: uint8(v & 0xff)}, nil
 }
 
 // MustParse is Parse for a constant the author already knows is good. It panics
@@ -116,6 +118,7 @@ func (c Colour) String() string { return fmt.Sprintf("#%02x%02x%02x", c.R, c.G, 
 // scene file holds "#ff8800" rather than three numbers nobody can read.
 func (c Colour) MarshalText() ([]byte, error) { return []byte(c.String()), nil }
 
+// UnmarshalText reads a colour name or hex string.
 func (c *Colour) UnmarshalText(b []byte) error {
 	got, err := Parse(string(b))
 	if err != nil {

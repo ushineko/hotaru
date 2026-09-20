@@ -54,7 +54,7 @@ type lines struct {
 	said []string
 }
 
-func (l *lines) report(format string, args ...any) {
+func (l *lines) report(format string, _ ...any) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.said = append(l.said, format)

@@ -127,7 +127,7 @@ func Parse(path string, raw []byte) (*Config, []Problem, error) {
 
 	codec, err := settings.CodecFor(path)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("choose a format for %s: %w", path, err)
 	}
 
 	// One section per top-level key, decoded separately, so a broken section

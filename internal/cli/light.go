@@ -59,13 +59,13 @@ func listCommand() *cobra.Command {
 			}
 
 			w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-			fmt.Fprintln(w, "DEVICE\tLEDS\tACTIVE\tSCOPE\tMODES")
+			_, _ = fmt.Fprintln(w, "DEVICE\tLEDS\tACTIVE\tSCOPE\tMODES")
 			for _, device := range list {
 				scope := "-"
 				if device.InScope {
 					scope = "yes"
 				}
-				fmt.Fprintf(w, "%s\t%d\t%s\t%s\t%s\n",
+				_, _ = fmt.Fprintf(w, "%s\t%d\t%s\t%s\t%s\n",
 					device.Name, device.LEDs, device.ActiveMode, scope, strings.Join(device.Modes, ", "))
 			}
 			return w.Flush()
@@ -236,7 +236,10 @@ func asJSON(cmd *cobra.Command) bool {
 func emit(cmd *cobra.Command, body any) error {
 	enc := json.NewEncoder(cmd.OutOrStdout())
 	enc.SetIndent("", "  ")
-	return enc.Encode(body)
+	if err := enc.Encode(body); err != nil {
+		return fmt.Errorf("write the answer: %w", err)
+	}
+	return nil
 }
 
 // client is the connection to the service every command here uses.

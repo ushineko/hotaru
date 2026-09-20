@@ -140,7 +140,7 @@ func (s *Service) probeOne(ctx context.Context, client openrgbClient, device *de
 		}
 	}
 
-	finding.Suggested = suggest(device, took, candidates, finding.NoOffMode)
+	finding.Suggested = suggest(took, candidates, finding.NoOffMode)
 	return finding
 }
 
@@ -152,7 +152,7 @@ needs no rule, and a probe that suggested one for every device would turn a
 diagnostic into a configuration generator -- which is how a rules file ends up
 full of lines nobody understands and nobody can safely delete.
 */
-func suggest(device *devices.Device, took, tried []string, noOffMode bool) string {
+func suggest(took, tried []string, noOffMode bool) string {
 	var lines []string
 
 	// Only worth saying when the default order would have picked wrong: the
