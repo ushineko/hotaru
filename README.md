@@ -206,6 +206,11 @@ MIT. See [LICENSE](LICENSE).
 
 ### Unreleased
 
+- `--preview` on `hotaru light set` and `hotaru light off`: write a colour to
+  the hardware without making it the state the machine returns to. Setting
+  colours to find out which fan is which no longer leaves the last one as what
+  a reboot restores (#18).
+
 - A solid colour is now set on the mode as well as on the device's buffer,
   where the mode is one that carries its own. Without it, a device put into
   such a mode showed the colour its vendor last stored there: asked for purple,
