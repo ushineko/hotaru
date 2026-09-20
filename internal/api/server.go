@@ -235,8 +235,7 @@ func describe(view service.View) Device {
 	}
 	for _, mode := range view.Device.Modes {
 		if mode.Brightness {
-			device.Brightness = true
-			break
+			device.Dimmable = append(device.Dimmable, mode.Name)
 		}
 	}
 	for _, zone := range view.Device.Zones {
