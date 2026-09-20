@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"github.com/ushineko/hotaru/internal/colour"
@@ -484,4 +485,62 @@ func (s stuckColour) SetMode(ctx context.Context, device, mode string, brightnes
 		return s.Fake.SetMode(ctx, device, mode, brightness, nil)
 	}
 	return s.Fake.SetMode(ctx, device, mode, brightness, c)
+}
+
+func TestTheModePacketIsSentEvenWhenTheDeviceIsAlreadyInThatMode(t *testing.T) {
+	/*
+		It looks redundant. It is the commit.
+
+		Suppressing it was tried, on the grounds that a mode change the device
+		did not need could knock the frame behind it off. Built both ways and
+		looked at: with the packet suppressed, an NZXT cooler's ring and fans
+		ignored every write and held their old colour while the rest of the
+		machine changed around them. Spec 010.
+	*/
+	device := board()
+	device.ActiveMode = "Static" // the mode the default order picks first
+	server := openrgb.NewFake(device)
+	svc := service.New(nil, server, "")
+
+	results, err := svc.Apply(t.Context(), service.Request{Assignments: solid("ASUS", "red")})
+	require.NoError(t, err)
+	require.True(t, results[0].Applied)
+	require.NotEmpty(t, server.Modes,
+		"the mode packet was skipped; on NZXT hardware that is the write not landing at all")
+}
+
+func TestBrightnessIsAssertedOnEveryWrite(t *testing.T) {
+	// Brightness is device state nobody owns: whatever was written last
+	// sticks, invisibly, until something asserts it. Carried from the Python.
+	level := 100
+	cfg := &config.Config{Devices: []config.DeviceRule{
+		{Match: "asus", Brightness: &level},
+	}}
+	device := board()
+	device.ActiveMode = "Static"
+	server := openrgb.NewFake(device)
+	svc := service.New(cfg, server, "")
+
+	_, err := svc.Apply(t.Context(), service.Request{Assignments: solid("ASUS", "red")})
+	require.NoError(t, err)
+	require.NotEmpty(t, server.Modes)
+	require.Equal(t, &level, server.Modes[0].Brightness, "brightness was not asserted")
+}
+
+func TestTheOrdinaryWritePathDoesNotWait(t *testing.T) {
+	/*
+		Devices are written one after another, so a pause per device is paid
+		for every device on the machine. The reporter noticed hotaru's speed
+		over the program it replaces; keeping it is a requirement, not a
+		nicety. Spec 010 AC7.
+	*/
+	server := openrgb.NewFake(board(), strip(), keyboard())
+	svc := service.New(nil, server, "")
+
+	start := time.Now()
+	red := colour.MustParse("red")
+	_, err := svc.Apply(t.Context(), service.Request{Colour: &red})
+	require.NoError(t, err)
+	require.Less(t, time.Since(start), 50*time.Millisecond,
+		"the ordinary write path is sleeping; the settle delay has leaked into it")
 }

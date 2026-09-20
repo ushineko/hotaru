@@ -432,6 +432,16 @@ func (s *Service) writeFrame(ctx context.Context, client openrgb.Client,
 	for _, mode := range candidates {
 		attempt := Attempt{Mode: mode}
 
+		/*
+			The mode packet goes every time, including when the device is
+			already in that mode.
+
+			It looks redundant and is not. On an NZXT cooler it is what
+			commits the frame: with the packet suppressed, the ring and the
+			fans ignored every write and kept whatever they were showing,
+			while the rest of the machine changed colour around them. Measured
+			by building both ways and looking at the case. See spec 010.
+		*/
 		if err := client.SetMode(ctx, device.Name, mode, rule.Brightness, modeColour); err != nil {
 			attempt.Why = err.Error()
 			result.Attempts = append(result.Attempts, attempt)
