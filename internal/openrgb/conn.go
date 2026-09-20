@@ -104,20 +104,36 @@ func (c *Conn) list(ctx context.Context) ([]devices.Device, error) {
 	}
 
 	out := make([]devices.Device, 0, count.Count)
-	seen := make(map[string]bool, count.Count)
 	for i := uint32(0); i < count.Count; i++ {
 		data, err := c.client.RequestControllerDataCtx(ctx, i)
 		if err != nil {
 			return nil, fmt.Errorf("read device %d from %s: %w", i, c.address, err)
 		}
-		device := convert(data.Controller)
-		if device.Name == "" || seen[strings.ToLower(device.Name)] {
+		out = append(out, convert(data.Controller))
+	}
+	return collapse(out), nil
+}
+
+/*
+collapse keeps the first device of each name.
+
+A server that has rescanned lists every device twice -- six devices arriving as
+twelve. Addressing the second copy means sending every command to the same
+hardware twice, which shows up as a device that takes two writes to change and
+as nothing else at all.
+*/
+func collapse(in []devices.Device) []devices.Device {
+	out := make([]devices.Device, 0, len(in))
+	seen := make(map[string]bool, len(in))
+	for _, device := range in {
+		key := strings.ToLower(device.Name)
+		if device.Name == "" || seen[key] {
 			continue
 		}
-		seen[strings.ToLower(device.Name)] = true
+		seen[key] = true
 		out = append(out, device)
 	}
-	return out, nil
+	return out
 }
 
 /*
