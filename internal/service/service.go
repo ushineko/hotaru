@@ -19,19 +19,40 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/ushineko/hotaru/internal/colour"
 	"github.com/ushineko/hotaru/internal/config"
 	"github.com/ushineko/hotaru/internal/devices"
 	"github.com/ushineko/hotaru/internal/openrgb"
+	"github.com/ushineko/hotaru/internal/queue"
+	"github.com/ushineko/hotaru/internal/state"
 )
 
 // Service performs hotaru's operations against one OpenRGB server.
 type Service struct {
-	mu     sync.RWMutex
-	cfg    *config.Config
-	client openrgb.Client
-	addr   string
+	mu       sync.RWMutex
+	cfg      *config.Config
+	client   openrgb.Client
+	addr     string
+	rules    string
+	recorder Recorder
+	queue    *queue.Set
+	env      Environment
+}
+
+/*
+SetQueue routes every write through one goroutine per device.
+
+Without one, writes run on the caller's goroutine: correct, and fine for a test
+or a one-shot command. With one, a reconcile and a user's scene cannot
+interleave on the same device, and a write that is superseded before it runs is
+replaced rather than queued behind the thing that countermanded it.
+*/
+func (s *Service) SetQueue(q *queue.Set) {
+	s.mu.Lock()
+	s.queue = q
+	s.mu.Unlock()
 }
 
 // New is a service over a client. A nil client is a server that is not there,
@@ -52,6 +73,46 @@ func (s *Service) SetClient(client openrgb.Client) {
 	s.mu.Lock()
 	s.client = client
 	s.mu.Unlock()
+}
+
+// SetRulesPath is where the rules file lives, so the service can re-read it
+// when asked. Empty means there is no file to reload, which is the ordinary
+// case on a machine that has never been configured.
+func (s *Service) SetRulesPath(path string) {
+	s.mu.Lock()
+	s.rules = path
+	s.mu.Unlock()
+}
+
+/*
+Reload re-reads the rules file.
+
+Returns what was wrong with it, entry by entry, rather than refusing: a typo in
+the third rule should cost that rule and nothing else, and the caller decides
+how loudly to say so.
+*/
+func (s *Service) Reload() ([]config.Problem, error) {
+	s.mu.RLock()
+	path := s.rules
+	s.mu.RUnlock()
+	if path == "" {
+		return nil, nil
+	}
+
+	cfg, problems, err := config.Load(path)
+	if err != nil {
+		return nil, err
+	}
+	s.SetConfig(cfg)
+	return problems, nil
+}
+
+// RulesPath is the file Reload reads, for a status that says where settings
+// came from.
+func (s *Service) RulesPath() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.rules
 }
 
 // SetConfig swaps the configuration, for a file that was reloaded.
@@ -115,6 +176,11 @@ narrows to particular hardware by name substring, for a caller who means one
 device rather than everything in scope.
 */
 type Request struct {
+	// Colour, when set, applies to every device the request covers, before
+	// any assignments. "Everything blue, except the top fan" is this plus one
+	// assignment, which is how a caller says it and how it is stored.
+	Colour *colour.Colour
+
 	Assignments []devices.Assignment
 	Off         bool
 	Devices     []string
@@ -132,12 +198,18 @@ A caller reports all three per device, because "the scene worked" is not a
 useful thing to say about six devices when one of them is dark.
 */
 type Result struct {
-	Device   string
-	Mode     string
-	Applied  bool
-	Skipped  string
-	Err      error
-	Attempts []Attempt
+	Device string
+	Mode   string
+	// Applied is a write that was confirmed by reading the device back.
+	Applied bool
+	// Skipped is a device that could not express the request, and why.
+	Skipped string
+	// Superseded is a write replaced by a newer one for the same device before
+	// it ran. Not a failure: lighting is a state, and the newer request is the
+	// state that was wanted.
+	Superseded bool
+	Err        error
+	Attempts   []Attempt
 }
 
 // Attempt is one mode hotaru tried, and what the device did with it.
@@ -160,6 +232,13 @@ That read-back is what lets hotaru work on hardware nobody has written a rule
 for. The ASUS board accepts Static, reports success, and leaves its addressable
 headers dark; the fall-through finds Direct without being told, and the rules
 file becomes an optimisation rather than a prerequisite.
+
+**What it cannot catch**: a device already sitting in the mode it lies about.
+The read-back compares the active mode, and a device that was in Static before
+the write is in Static after it, so there is nothing to notice. The lie is
+invisible for exactly as long as nothing else moves that device. For that case
+the rules file earns its keep, and `probe` -- which sets a mode, looks, and
+asks -- is how the rule gets written without the user reasoning it out.
 */
 func (s *Service) Apply(ctx context.Context, req Request) ([]Result, error) {
 	cfg, client, addr := s.current()
@@ -183,6 +262,10 @@ func (s *Service) Apply(ctx context.Context, req Request) ([]Result, error) {
 		}
 
 		assignments := forDevice(req.Assignments, device.Name)
+		if req.Colour != nil {
+			whole := devices.Assignment{Target: devices.Target{Device: device.Name}, Colour: *req.Colour}
+			assignments = append([]devices.Assignment{whole}, assignments...)
+		}
 		if len(assignments) == 0 && !req.Off {
 			continue
 		}
@@ -201,7 +284,7 @@ func (s *Service) applyOne(ctx context.Context, client openrgb.Client, cfg *conf
 	if off {
 		frame = devices.Solid(device, colour.Black)
 	} else {
-		composed, problems := devices.Compose(device, rule, device.Colours, assignments)
+		composed, problems := devices.Compose(device, rule, s.base(device), assignments)
 		if len(problems) > 0 {
 			// Every assignment for this device failed to resolve; there is
 			// nothing to write, and the reason is the useful part.
@@ -212,6 +295,55 @@ func (s *Service) applyOne(ctx context.Context, client openrgb.Client, cfg *conf
 		}
 		frame = composed
 	}
+
+	result = s.through(ctx, device.Name, func(ctx context.Context) Result {
+		return s.writeFrame(ctx, client, device, frame, off)
+	})
+	if result.Applied && !off {
+		s.remember(device.Name, result.Mode, frame)
+	}
+	if result.Applied && off {
+		// A device deliberately turned off has nothing to restore: putting
+		// black back at boot is not what anybody meant by "off".
+		s.forget(device.Name)
+	}
+	return result
+}
+
+/*
+through runs a device's write on that device's own queue, when there is one.
+
+A superseded write is reported as such rather than as a failure: the user asked
+for something, and then asked for something else, and the second answer is the
+one that matters.
+*/
+func (s *Service) through(ctx context.Context, device string, write func(context.Context) Result) Result {
+	s.mu.RLock()
+	q := s.queue
+	s.mu.RUnlock()
+	if q == nil {
+		return write(ctx)
+	}
+
+	var result Result
+	outcome := q.Do(device, func(ctx context.Context) { result = write(ctx) })
+	if outcome.Superseded {
+		return Result{Device: device, Superseded: true}
+	}
+	return result
+}
+
+/*
+writeFrame is the write-and-confirm half, shared by applying and reconciling.
+
+Reconciling must not be a second implementation of this: the fall-through, the
+read-back and the reasons a device is skipped are the same facts whoever asked.
+*/
+func (s *Service) writeFrame(ctx context.Context, client openrgb.Client,
+	device *devices.Device, frame devices.Frame, off bool,
+) Result {
+	result := Result{Device: device.Name}
+	rule := devices.RuleFor(s.config(), device.Name)
 
 	want := devices.Want{Off: off, PerLED: frame.PerLED()}
 	candidates := device.SolidCandidates(rule, want)
@@ -269,6 +401,61 @@ func (s *Service) applyOne(ctx context.Context, client openrgb.Client, cfg *conf
 
 	result.Skipped = fmt.Sprintf("tried %s; none of them took", strings.Join(modesOf(result.Attempts), ", "))
 	return result
+}
+
+/*
+base is what a partial assignment composes onto: the LEDs nobody mentioned.
+
+What hotaru last wrote is preferred over what the device reports, because a
+device's reported colours are only its LED buffer while it is in a per-LED
+mode. Observed on real hardware: a board in Static reports its *mode* colour,
+and a cooler in Static reports black while visibly lit. Composing "the top fan
+red" onto either would blank everything else and call it a scene.
+
+Falling back to what the device says is still better than assuming black, and
+assuming black is what happens when hotaru has never written to this device and
+the device will not say -- which is honest: nothing here knows what those lights
+are showing.
+*/
+func (s *Service) base(device *devices.Device) []colour.Colour {
+	remembered := s.Desired().Devices[device.Name]
+	if len(remembered.Colours) == device.LEDCount && device.LEDCount > 0 {
+		return remembered.Colours
+	}
+	if len(device.Colours) == device.LEDCount {
+		return device.Colours
+	}
+	return nil
+}
+
+// remember records what a user asked for, so it can be put back.
+func (s *Service) remember(name, mode string, frame devices.Frame) {
+	s.mu.RLock()
+	recorder := s.recorder
+	s.mu.RUnlock()
+	if recorder == nil {
+		return
+	}
+	_ = recorder.Record(name, state.Device{
+		Mode:    mode,
+		Colours: append([]colour.Colour(nil), frame.Colours...),
+		Applied: time.Now(),
+	})
+}
+
+func (s *Service) forget(name string) {
+	s.mu.RLock()
+	recorder := s.recorder
+	s.mu.RUnlock()
+	if recorder != nil {
+		_ = recorder.Forget(name)
+	}
+}
+
+func (s *Service) config() *config.Config {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.cfg
 }
 
 func offCandidates(d *devices.Device) []string {

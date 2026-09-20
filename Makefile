@@ -7,6 +7,14 @@ TAG        := $(shell cat .tag)
 MODULE     := github.com/ushineko/hotaru
 LDFLAGS    := -X $(MODULE)/internal/version.Version=$(TAG)
 GOFLAGS    := -trimpath
+# Pinned, like the other ushineko repositories: a linter that moves under you
+# turns an unrelated commit into a day of style changes.
+LINT_VERSION       := v2.12.2
+GOLANGCI           := $(HOME)/go/bin/golangci-lint-$(LINT_VERSION)
+# The linter is a Go program, and it can only parse source its own toolchain
+# understands. Pinned to what it was built with, or a newer local Go makes it
+# panic on files it thinks are from the future.
+LINT_GO_TOOLCHAIN  ?= go1.26.0
 
 .PHONY: all test race lint vuln build tidy clean
 
@@ -18,8 +26,10 @@ test:
 race:
 	go test -race ./...
 
+lint: export GOTOOLCHAIN = $(LINT_GO_TOOLCHAIN)
 lint:
-	golangci-lint run
+	@go version
+	$(GOLANGCI) run --timeout 5m0s --config config/.golangci-$(LINT_VERSION).yml ./...
 
 vuln:
 	govulncheck ./...

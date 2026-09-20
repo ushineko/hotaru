@@ -20,16 +20,18 @@ func krakenRule() devices.Rule {
 }
 
 func TestTheFormsAPersonWritesAllParse(t *testing.T) {
-	for in, want := range map[string]string{
-		"kraken":            "kraken",
-		"kraken/ring":       "kraken/ring",
-		"kraken/ring[0:11]": "kraken/ring[0:11]",
-		"kraken/fan-top":    "kraken/fan-top",
-		"  kraken / ring ":  "kraken/ring",
+	// A list rather than a map: one of these deliberately carries the spacing
+	// a person leaves behind, and a map key full of whitespace reads as a typo.
+	for _, form := range []struct{ in, want string }{
+		{"kraken", "kraken"},
+		{"kraken/ring", "kraken/ring"},
+		{"kraken/ring[0:11]", "kraken/ring[0:11]"},
+		{"kraken/fan-top", "kraken/fan-top"},
+		{"  kraken / ring ", "kraken/ring"},
 	} {
-		got, err := devices.ParseTarget(in)
-		require.NoError(t, err, in)
-		require.Equal(t, want, got.String(), in)
+		got, err := devices.ParseTarget(form.in)
+		require.NoError(t, err, form.in)
+		require.Equal(t, form.want, got.String(), form.in)
 	}
 }
 

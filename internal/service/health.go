@@ -17,16 +17,16 @@ identical from "no lights changed".
 type State string
 
 const (
-	// StateUnreachable: nothing is listening. Start the server.
+	// StateUnreachable is nothing listening. The remedy is to start the server.
 	StateUnreachable State = "unreachable"
-	// StateNoDevices: the server answered and knows of no hardware at all.
-	// Usually permissions, or a server that started before the devices did --
-	// OpenRGB enumerates once, at startup.
+	// StateNoDevices is a server that answered and knows of no hardware at
+	// all. Usually permissions, or a server that started before the devices
+	// did -- OpenRGB enumerates once, at startup.
 	StateNoDevices State = "no-devices"
-	// StateNoneInScope: hardware is there, and the rules file excludes all of
-	// it. A configuration problem, and the only one of the four that is.
+	// StateNoneInScope is hardware present with the rules file excluding all
+	// of it: a configuration problem, and the only one of the four that is.
 	StateNoneInScope State = "none-in-scope"
-	// StateHealthy: hotaru can see devices it is allowed to drive.
+	// StateHealthy is hotaru seeing devices it is allowed to drive.
 	StateHealthy State = "healthy"
 )
 
@@ -38,6 +38,40 @@ type Health struct {
 	Devices  int
 	InScope  int
 	Detail   string
+
+	// Remedies are things a person could do about it, each a sentence with a
+	// command in it. Offered, never performed: starting a daemon or enabling a
+	// user manager at boot is the user's decision, and a program that made it
+	// for them would be the other kind of annoying.
+	Remedies []string
+}
+
+/*
+Environment is what this machine could do about a problem.
+
+An interface because the answer comes from systemd on Linux and from nothing at
+all elsewhere, and because a test should be able to describe a machine rather
+than run on one.
+*/
+type Environment interface {
+	Remedies(ctx context.Context) []string
+}
+
+// SetEnvironment gives health somewhere to get its remedies.
+func (s *Service) SetEnvironment(e Environment) {
+	s.mu.Lock()
+	s.env = e
+	s.mu.Unlock()
+}
+
+func (s *Service) remedies(ctx context.Context) []string {
+	s.mu.RLock()
+	env := s.env
+	s.mu.RUnlock()
+	if env == nil {
+		return nil
+	}
+	return env.Remedies(ctx)
 }
 
 // OK reports whether hotaru can drive anything.
@@ -57,6 +91,7 @@ func (s *Service) Health(ctx context.Context) Health {
 	if client == nil {
 		health.State = StateUnreachable
 		health.Detail = fmt.Sprintf("no OpenRGB server at %s. Start it, and lighting works from then on.", addr)
+		health.Remedies = s.remedies(ctx)
 		return health
 	}
 	health.Protocol = client.ProtocolVersion()
@@ -65,11 +100,13 @@ func (s *Service) Health(ctx context.Context) Health {
 	if err != nil {
 		health.State = StateUnreachable
 		health.Detail = fmt.Sprintf("the OpenRGB server at %s stopped answering: %v", addr, err)
+		health.Remedies = s.remedies(ctx)
 		return health
 	}
 	health.Devices = len(found)
 
 	if len(found) == 0 {
+		health.Remedies = s.remedies(ctx)
 		health.State = StateNoDevices
 		health.Detail = "the OpenRGB server is running and knows of no devices. " +
 			"It detects hardware once, when it starts, so a device connected since then is invisible until it restarts."

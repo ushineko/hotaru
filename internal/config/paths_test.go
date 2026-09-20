@@ -51,3 +51,19 @@ func TestARelativeXDGValueIsIgnoredAsTheSpecificationSays(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, filepath.Join(home, ".config", "hotaru", "hotaru.yml"), rules)
 }
+
+func TestTheSocketLivesInTheRuntimeDirectory(t *testing.T) {
+	t.Setenv("XDG_RUNTIME_DIR", "/run/user/1000")
+	socket, err := config.SocketPath()
+	require.NoError(t, err)
+	require.Equal(t, "/run/user/1000/hotaru/hotaru.sock", socket)
+}
+
+func TestWithNoRuntimeDirectoryTheSocketHasNowhereToGoAndSaysSo(t *testing.T) {
+	// Inventing a path under $HOME would put a world-readable socket where a
+	// user-only one was promised, and the socket's permissions are the whole
+	// authentication story.
+	t.Setenv("XDG_RUNTIME_DIR", "")
+	_, err := config.SocketPath()
+	require.ErrorContains(t, err, "XDG_RUNTIME_DIR")
+}
