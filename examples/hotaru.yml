@@ -1,0 +1,50 @@
+# An example rules file, not a default.
+#
+# hotaru ships none of this. With no configuration at all every device OpenRGB
+# reports is in scope and every decision comes from what the hardware says
+# about itself -- which is what makes the program work on a machine its author
+# has never seen. Rules narrow and correct; they never enable.
+#
+# What follows is one real desk, kept because a worked example is easier to
+# adapt than a description. Every line was established by looking: setting a
+# colour, seeing what changed, and writing down the answer.
+
+# Uncomment to narrow hotaru to particular devices. Absent, it drives
+# everything present, which is usually what you want.
+#
+# scope:
+#   - kraken
+#   - maximus
+
+devices:
+  - match: maximus
+    # Static drives only this board's onboard LED and leaves the four
+    # addressable headers dark -- it reports success either way, so the
+    # failure is silent. Direct-first is the correction.
+    solid_modes: [direct, static]
+    segments:
+      # Header 2 carries a two-fan front frame, daisy-chained into one zone:
+      # the first eight LEDs are the top fan, the second eight the bottom.
+      # Splitting a zone like this is why segments have ranges.
+      front-top: {zone: "Addressable RGB Header 2", leds: [0, 7]}
+      front-bot: {zone: "Addressable RGB Header 2", leds: [8, 15]}
+      # Header 3 is the rear fan, alone, so the segment is the whole zone.
+      rear: {zone: "Addressable RGB Header 3"}
+      # Headers 1 and 4 have nothing plugged into them here. They still
+      # report sixteen LEDs each: a zone's size is what the board declares,
+      # not what is attached, so an assignment to an empty header succeeds
+      # and lights nothing.
+
+  - match: keychron
+    # This keyboard advertises no Off mode, so "off" would resolve to Direct
+    # with black -- a dead backlight rather than a dimmed one. Colour scenes
+    # still reach it.
+    never_blank: true
+    brightness: 100
+
+  - match: g502
+    # Wireless, and it restores its onboard colour when it wakes. OpenRGB sets
+    # a volatile effect and has no way to make one stick, so the colour is
+    # re-sent on an interval. Sixty seconds sits under the sleep timeout with
+    # margin; the real wake behaviour has never been characterised.
+    reassert: 60s

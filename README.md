@@ -175,6 +175,8 @@ necessary is an artefact of where it used to live.
   scope, the migration contract, the KDE hotkey rules, acceptance criteria.
 - [docs/architecture.md](docs/architecture.md): the system diagram and what it
   asserts.
+- [examples/hotaru.yml](examples/hotaru.yml): a worked rules file from a real
+  machine — device corrections and named segments, none of it a default.
 - [docs/api.md](docs/api.md): the service's HTTP interface, with recorded
   transcripts of every route.
 - [docs/hardware.md](docs/hardware.md): hardware that has been tested, the
