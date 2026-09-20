@@ -735,3 +735,48 @@ func TestWhatItWritesIsInUseBeforeItPutsTheLightsBack(t *testing.T) {
 	require.Equal(t, "Direct", out.Results[0].Mode,
 		"the correction the wizard had just established was not in use")
 }
+
+func TestOnlyALineOfLightsIsAskedAboutChaining(t *testing.T) {
+	/*
+		"How many separate things are chained on keyboard?" -- asked of a
+		device with a hundred addressable keys, somebody quite reasonably
+		wondered whether they were being asked about keys.
+
+		They were not: the question is about separate objects sharing one
+		connector, which only a line of lights can be. A keyboard is a grid,
+		and a grid is one object however many lights it has.
+	*/
+	keyboard := devices.Device{
+		Name:     "Keychron K4 HE",
+		LEDCount: 100,
+		Modes:    []devices.Mode{{Name: "Direct", PerLED: true}},
+		Zones: []devices.Zone{
+			{Name: "Keyboard", Shape: devices.ShapeGrid, First: 0, Count: 100},
+		},
+		ActiveMode: "Direct",
+	}
+	fans := devices.Device{
+		Name:     "NZXT Kraken",
+		LEDCount: 24,
+		Modes:    []devices.Mode{{Name: "Direct", PerLED: true}},
+		Zones: []devices.Zone{
+			{Name: "Hue 2 Channel 2", Shape: devices.ShapeLine, First: 0, Count: 24},
+		},
+		ActiveMode: "Direct",
+	}
+	client := api.NewClient(serving(t, nil, openrgb.NewFake(keyboard, fans)))
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	person := &scripted{answers: []string{
+		"y", "keyboard", // no chaining question follows a grid
+		"y", "radiator", "1", // a line gets one
+		"n",
+	}}
+	require.NoError(t, cli.Map(t.Context(), client, person))
+
+	asked := person.questions()
+	require.NotContains(t, asked, "chained on keyboard",
+		"somebody was asked how many things were chained on a keyboard")
+	require.Contains(t, asked, "chained on radiator",
+		"a line of lights is exactly where the question belongs")
+}
