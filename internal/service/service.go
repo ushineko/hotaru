@@ -206,6 +206,10 @@ type Request struct {
 	*/
 	Preview bool
 
+	// Brightness overrides the rule's for this write. Nil leaves the rule in
+	// charge, which is the ordinary case.
+	Brightness *int
+
 	// Exactly stops the fall-through. A caller asking what one particular mode
 	// does needs an answer about that mode: trying the next candidate and
 	// reporting it as a success answers a question nobody asked, and looks to
@@ -340,7 +344,7 @@ func (s *Service) applyOne(ctx context.Context, client openrgb.Client, cfg *conf
 
 	problems := result.Problems
 	result = s.through(ctx, device.Name, func(ctx context.Context) Result {
-		return s.writeFrame(ctx, client, device, frame, off, preferred, exactly)
+		return s.writeFrame(ctx, client, device, frame, off, preferred, exactly, req.Brightness)
 	})
 	result.Problems = problems
 	if result.Applied && !off && !req.Preview {
@@ -385,10 +389,16 @@ read-back and the reasons a device is skipped are the same facts whoever asked.
 */
 func (s *Service) writeFrame(ctx context.Context, client openrgb.Client,
 	device *devices.Device, frame devices.Frame, off bool, preferred string, exactly bool,
+	brightness *int,
 ) Result {
 	result := Result{Device: device.Name}
 	rule := devices.RuleFor(s.config(), device.Name)
 
+	// A caller may override the rule's brightness for one write. The wizard
+	// does, to show somebody what dimmer looks like before writing a rule.
+	if brightness != nil {
+		rule.Brightness = brightness
+	}
 	want := devices.Want{Off: off, PerLED: frame.PerLED()}
 	candidates := device.SolidCandidates(rule, want)
 	if preferred != "" {
