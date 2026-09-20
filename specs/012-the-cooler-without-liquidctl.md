@@ -108,6 +108,28 @@ result flickers and tears. It is a glimpse of the right mechanism through the
 wrong door. Identifying the real one means capturing the vendor software's USB
 traffic, which is a project of its own and is not this spec.
 
+### Where this reasoning stops
+
+This spec is not an argument that hotaru should speak to hardware directly
+wherever it can. It is an argument about one device where there was nothing to
+speak to.
+
+**OpenRGB stays the lighting backend.** It is a server with a documented
+protocol, maintained, covering hundreds of controllers that hotaru will never
+own. Reimplementing it would mean adopting every one of those device protocols
+and tracking them forever, in exchange for latency that is already sub-
+millisecond. The integration point exists and is the right one.
+
+liquidctl offers no such thing. It is a command-line program: there is no
+library to link and no socket to open, so "using liquidctl" could only ever
+mean starting a Python interpreter per call. The 105 ms was not liquidctl being
+slow at its job; it was the absence of any way to ask it a question.
+
+So the rule is about interfaces rather than about speed: **use the integration
+point where one exists, and only write the protocol where none does.** A native
+lighting backend is an interesting experiment for another day, and is
+deliberately not this.
+
 ## Requirements
 
 **R1. No process is spawned to reach the cooler.** Status and screen writes go
