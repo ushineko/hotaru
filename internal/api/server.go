@@ -77,7 +77,97 @@ func Handler(svc *service.Service) http.Handler {
 		write(w, http.StatusOK, out)
 	})
 
+	mux.HandleFunc("POST /"+Version+"/lighting/probe", func(w http.ResponseWriter, r *http.Request) {
+		var req ProbeRequest
+		if r.ContentLength > 0 {
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				write(w, http.StatusBadRequest, Error{Error: "that request does not decode", Detail: err.Error()})
+				return
+			}
+		}
+		findings, err := svc.Probe(r.Context(), req.Devices)
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		out := ProbeResponse{Findings: make([]Finding, 0, len(findings))}
+		for _, found := range findings {
+			out.Findings = append(out.Findings, finding(found))
+		}
+		write(w, http.StatusOK, out)
+	})
+
+	mux.HandleFunc("GET /"+Version+"/status", func(w http.ResponseWriter, r *http.Request) {
+		health := svc.Health(r.Context())
+		desired := svc.Desired()
+		status := Status{
+			Version:    version.Version,
+			Connected:  health.State != service.StateUnreachable,
+			Address:    health.Address,
+			Protocol:   health.Protocol,
+			RulesFile:  svc.RulesPath(),
+			Remembered: sortedNames(desired.Names()),
+		}
+		write(w, http.StatusOK, status)
+	})
+
+	mux.HandleFunc("POST /"+Version+"/reconcile", func(w http.ResponseWriter, r *http.Request) {
+		restore, err := svc.Reconcile(r.Context(), nil)
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		out := RestoreResponse{
+			Applied:  restore.Applied,
+			Missing:  restore.Missing,
+			Complete: restore.Complete(),
+		}
+		for _, got := range restore.Results {
+			out.Results = append(out.Results, result(got))
+		}
+		write(w, http.StatusOK, out)
+	})
+
+	mux.HandleFunc("POST /"+Version+"/reload", func(w http.ResponseWriter, _ *http.Request) {
+		problems, err := svc.Reload()
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		out := ReloadResponse{RulesFile: svc.RulesPath()}
+		for _, problem := range problems {
+			out.Problems = append(out.Problems, problem.Error())
+		}
+		write(w, http.StatusOK, out)
+	})
+
 	return mux
+}
+
+func finding(in service.Finding) Finding {
+	out := Finding{
+		Device:    in.Device,
+		NoOffMode: in.NoOffMode,
+		Suggested: in.Suggested,
+	}
+	if in.Err != nil {
+		out.Error = in.Err.Error()
+	}
+	for _, mode := range in.Modes {
+		out.Modes = append(out.Modes, ModeFinding{
+			Name: mode.Name, PerLED: mode.PerLED, Tried: mode.Tried, Took: mode.Took,
+		})
+	}
+	for _, zone := range in.Zones {
+		out.Zones = append(out.Zones, Zone{Name: zone.Name, First: zone.First, Count: zone.Count})
+	}
+	return out
+}
+
+func sortedNames(in []string) []string {
+	out := append([]string(nil), in...)
+	sortStrings(out)
+	return out
 }
 
 // parse turns the wire's strings into the service's types. A client sends what

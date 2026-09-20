@@ -90,6 +90,35 @@ func (c *Client) Apply(ctx context.Context, req ApplyRequest) (ApplyResponse, er
 	return out, err
 }
 
+// Probe asks the service to find out what each device can actually do. It
+// writes, and puts everything back.
+func (c *Client) Probe(ctx context.Context, req ProbeRequest) ([]Finding, error) {
+	var out ProbeResponse
+	err := c.do(ctx, http.MethodPost, "/"+Version+"/lighting/probe", req, &out)
+	return out.Findings, err
+}
+
+// Status is what the service is and what it remembers.
+func (c *Client) Status(ctx context.Context) (Status, error) {
+	var out Status
+	err := c.do(ctx, http.MethodGet, "/"+Version+"/status", nil, &out)
+	return out, err
+}
+
+// Reconcile puts the lights back to what was last asked for.
+func (c *Client) Reconcile(ctx context.Context) (RestoreResponse, error) {
+	var out RestoreResponse
+	err := c.do(ctx, http.MethodPost, "/"+Version+"/reconcile", struct{}{}, &out)
+	return out, err
+}
+
+// Reload re-reads the rules file and reports what was wrong with it.
+func (c *Client) Reload(ctx context.Context) (ReloadResponse, error) {
+	var out ReloadResponse
+	err := c.do(ctx, http.MethodPost, "/"+Version+"/reload", struct{}{}, &out)
+	return out, err
+}
+
 func (c *Client) do(ctx context.Context, method, path string, body, out any) error {
 	var reader io.Reader
 	if body != nil {

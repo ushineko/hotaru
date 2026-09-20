@@ -177,3 +177,36 @@ func TestReconcilingWithNoServerSaysSoRatherThanForgetting(t *testing.T) {
 	require.Contains(t, svc.Desired().Devices, "ASUS ROG MAXIMUS Z790 HERO",
 		"a server that went away is not a reason to forget what the lights should be")
 }
+
+func TestAPartialSceneBuildsOnWhatHotaruWroteNotOnWhatTheDeviceClaims(t *testing.T) {
+	// A device's reported colours are its LED buffer only while it is in a
+	// per-LED mode. Observed on real hardware: a board in Static reports its
+	// mode colour, and a cooler in Static reports black while visibly lit.
+	// Composing an exception onto either would blank the rest of the scene.
+	server := openrgb.NewFake(board())
+	svc := service.New(nil, server, "")
+	svc.SetRecorder(recorder(t))
+
+	_, err := svc.Apply(t.Context(), service.Request{Assignments: solid("ASUS", "teal")})
+	require.NoError(t, err)
+
+	// The device now misreports what it is showing, as real hardware does.
+	lying := openrgb.NewFake(board())
+	require.NoError(t, lying.SetFrame(t.Context(), "ASUS ROG MAXIMUS Z790 HERO", devices.Frame{
+		Device: "ASUS ROG MAXIMUS Z790 HERO", Colours: make([]colour.Colour, 4),
+	}))
+	svc.SetClient(lying)
+
+	// One LED is changed; the rest should keep the teal hotaru last wrote.
+	target, err := devices.ParseTarget("ASUS/Addressable 1[0:0]")
+	require.NoError(t, err)
+	_, err = svc.Apply(t.Context(), service.Request{Assignments: []devices.Assignment{
+		{Target: target, Colour: colour.MustParse("red")},
+	}})
+	require.NoError(t, err)
+
+	showing, _ := lying.Showing("ASUS ROG MAXIMUS Z790 HERO")
+	require.Equal(t, colour.MustParse("red"), showing.Colours[0], "the exception")
+	require.Equal(t, colour.MustParse("teal"), showing.Colours[1],
+		"the rest of the scene was blanked by trusting the device's report")
+}
