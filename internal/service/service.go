@@ -25,6 +25,7 @@ import (
 	"github.com/ushineko/hotaru/internal/config"
 	"github.com/ushineko/hotaru/internal/devices"
 	"github.com/ushineko/hotaru/internal/openrgb"
+	"github.com/ushineko/hotaru/internal/queue"
 	"github.com/ushineko/hotaru/internal/state"
 )
 
@@ -36,6 +37,21 @@ type Service struct {
 	addr     string
 	rules    string
 	recorder Recorder
+	queue    *queue.Set
+}
+
+/*
+SetQueue routes every write through one goroutine per device.
+
+Without one, writes run on the caller's goroutine: correct, and fine for a test
+or a one-shot command. With one, a reconcile and a user's scene cannot
+interleave on the same device, and a write that is superseded before it runs is
+replaced rather than queued behind the thing that countermanded it.
+*/
+func (s *Service) SetQueue(q *queue.Set) {
+	s.mu.Lock()
+	s.queue = q
+	s.mu.Unlock()
 }
 
 // New is a service over a client. A nil client is a server that is not there,
@@ -181,12 +197,18 @@ A caller reports all three per device, because "the scene worked" is not a
 useful thing to say about six devices when one of them is dark.
 */
 type Result struct {
-	Device   string
-	Mode     string
-	Applied  bool
-	Skipped  string
-	Err      error
-	Attempts []Attempt
+	Device string
+	Mode   string
+	// Applied is a write that was confirmed by reading the device back.
+	Applied bool
+	// Skipped is a device that could not express the request, and why.
+	Skipped string
+	// Superseded is a write replaced by a newer one for the same device before
+	// it ran. Not a failure: lighting is a state, and the newer request is the
+	// state that was wanted.
+	Superseded bool
+	Err        error
+	Attempts   []Attempt
 }
 
 // Attempt is one mode hotaru tried, and what the device did with it.
@@ -273,7 +295,9 @@ func (s *Service) applyOne(ctx context.Context, client openrgb.Client, cfg *conf
 		frame = composed
 	}
 
-	result = s.writeFrame(ctx, client, device, frame, off)
+	result = s.through(ctx, device.Name, func(ctx context.Context) Result {
+		return s.writeFrame(ctx, client, device, frame, off)
+	})
 	if result.Applied && !off {
 		s.remember(device.Name, result.Mode, frame)
 	}
@@ -281,6 +305,29 @@ func (s *Service) applyOne(ctx context.Context, client openrgb.Client, cfg *conf
 		// A device deliberately turned off has nothing to restore: putting
 		// black back at boot is not what anybody meant by "off".
 		s.forget(device.Name)
+	}
+	return result
+}
+
+/*
+through runs a device's write on that device's own queue, when there is one.
+
+A superseded write is reported as such rather than as a failure: the user asked
+for something, and then asked for something else, and the second answer is the
+one that matters.
+*/
+func (s *Service) through(ctx context.Context, device string, write func(context.Context) Result) Result {
+	s.mu.RLock()
+	q := s.queue
+	s.mu.RUnlock()
+	if q == nil {
+		return write(ctx)
+	}
+
+	var result Result
+	outcome := q.Do(device, func(ctx context.Context) { result = write(ctx) })
+	if outcome.Superseded {
+		return Result{Device: device, Superseded: true}
 	}
 	return result
 }

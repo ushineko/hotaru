@@ -16,6 +16,7 @@ import (
 	"github.com/ushineko/hotaru/internal/api"
 	"github.com/ushineko/hotaru/internal/config"
 	"github.com/ushineko/hotaru/internal/openrgb"
+	"github.com/ushineko/hotaru/internal/queue"
 	"github.com/ushineko/hotaru/internal/service"
 	"github.com/ushineko/hotaru/internal/state"
 	"github.com/ushineko/hotaru/internal/version"
@@ -85,6 +86,14 @@ func run(cmd *cobra.Command) error {
 	}
 	svc.SetRecorder(desired)
 	defer func() { _ = desired.Flush() }()
+
+	// One goroutine per device, created on first write. A reconcile and a
+	// user's scene cannot interleave on the same device, and a write that is
+	// superseded before it runs is replaced rather than queued behind the
+	// thing that countermanded it.
+	writes := queue.New(ctx)
+	defer writes.Close()
+	svc.SetQueue(writes)
 
 	listener, err := api.Listen(socket)
 	if err != nil {

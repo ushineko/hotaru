@@ -96,12 +96,16 @@ fields. A skip is a device saying it cannot do this and why — not an error, an
 not something to retry.
 */
 type Result struct {
-	Device   string    `json:"device"`
-	Applied  bool      `json:"applied"`
-	Mode     string    `json:"mode,omitempty"`
-	Skipped  string    `json:"skipped,omitempty"`
-	Error    string    `json:"error,omitempty"`
-	Attempts []Attempt `json:"attempts,omitempty"`
+	Device  string `json:"device"`
+	Applied bool   `json:"applied"`
+	Mode    string `json:"mode,omitempty"`
+	Skipped string `json:"skipped,omitempty"`
+	// Superseded is a write replaced by a newer one for the same device before
+	// it ran. Not a failure, and not a device declining: the caller asked for
+	// something else immediately afterwards, and that is what happened.
+	Superseded bool      `json:"superseded,omitempty"`
+	Error      string    `json:"error,omitempty"`
+	Attempts   []Attempt `json:"attempts,omitempty"`
 }
 
 // Attempt is one mode that was tried, and what the device did with it.
