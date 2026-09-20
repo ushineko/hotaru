@@ -15,9 +15,11 @@ package devices
 import (
 	"fmt"
 	"strings"
+
+	"github.com/ushineko/hotaru/internal/colour"
 )
 
-// Device is one controller as it describes itself.
+// Device is one controller as it describes itself, plus what it is showing.
 type Device struct {
 	Name       string
 	Type       string
@@ -25,6 +27,18 @@ type Device struct {
 	ActiveMode string
 	Zones      []Zone
 	LEDCount   int
+
+	// Colours is what the device reports it is currently showing, one per LED.
+	// Observed state rather than configuration: it is the base a partial scene
+	// composes onto, and the thing reconciliation compares desired state
+	// against.
+	Colours []colour.Colour
+}
+
+// Showing is the device's current lighting as a frame, for comparing against
+// what it should be showing.
+func (d *Device) Showing() Frame {
+	return Frame{Device: d.Name, Colours: d.Colours}
 }
 
 /*
