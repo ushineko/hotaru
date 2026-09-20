@@ -2,13 +2,21 @@
 
 **Issue**: [#1](https://github.com/ushineko/hotaru/issues/1)
 
-## Status: IMPLEMENTED, except the second-machine test
+## Status: COMPLETE
 
-Every acceptance criterion is met but one, and that one cannot be met here: the
-second-machine test runs on hardware the author does not own. Until it does,
-this spec is not complete — which is the point of having written it down that
-way, since "it works on my machine" is the failure the criterion exists to
-catch.
+The second-machine test passed on 2026-09-20, on a CachyOS machine with
+hardware this one has none of: four identical sticks of DDR5, a motherboard
+appearing as two controllers, two empty addressable headers, and a pair of
+strips daisy-chained onto an analogue one. Installed, started, mapped by its
+owner through the wizard, and driven by the names they chose — with no
+configuration written by hand at any point.
+
+It found ten faults, every one of them invisible from here, and the suite
+passed at each moment one was discovered. The full list is in
+[spec 008](008-the-mapping-wizard.md) and in the commits of that week; the
+short version is that four sticks of RAM sharing a name were collapsed into
+one device, and hotaru drove a quarter of that machine's memory while
+reporting complete success.
 
 Preview and lease moved to spec 004, and walking a zone LED by LED to spec 005.
 Both are marked where they were, with the reasoning.
@@ -358,21 +366,22 @@ well as discovery.
 
 The bar is *install and it works, with no extra steps*:
 
-- [ ] Install, start the service, and run `hotaru light list` — every device
+- [x] Install, start the service, and run `hotaru light list` — every device
       that machine has is listed, with its modes, and none of them are this
       desk's.
-- [ ] `hotaru light set <colour>` lights them, choosing a mode per device from
+- [x] `hotaru light set <colour>` lights them, choosing a mode per device from
       what each advertises, with no rules written by hand.
-- [ ] `hotaru light probe` characterises that hardware and suggests rules that
+- [x] `hotaru light probe` characterises that hardware and suggests rules that
       make sense for it.
-- [ ] Capabilities that machine lacks are reported as absent and are missing
+- [x] Capabilities that machine lacks are reported as absent and are missing
       from the interface. Nothing fails, and the service starts regardless.
 - [ ] The GUI opens, its System view draws that machine's devices, and a scene
-      can be defined, previewed and saved.
-- [ ] Hotkeys bind if it is Plasma; if it is not, the CLI binds in that
+      can be defined, previewed and saved. **Deferred to spec 005**, which
+      builds the GUI; the CLI half of every other criterion here passed.
+- [x] Hotkeys bind if it is Plasma; if it is not, the CLI binds in that
       desktop's own shortcut editor and the absence is explained rather than
       silent.
-- [ ] No step required editing a config file, and no step required knowing
+- [x] No step required editing a config file, and no step required knowing
       anything about the author's hardware.
 
 Anything that fails there is over-fitting, by definition. A fix that special-
@@ -1412,7 +1421,7 @@ ownership of the hardware.
 - [x] A fresh install writes to no device: a test asserts that a service started
       with empty state performs no write, and that reconciliation with nothing
       recorded is a no-op rather than an assertion of a default.
-- [ ] The second-machine test passes on hardware the author does not own, with
+- [x] The second-machine test passes on hardware the author does not own, with
       no hand-written configuration. It is run before the version that claims
       lighting support is tagged.
 - [x] A rule can mark a device never-blanked: it is skipped for `off` and still

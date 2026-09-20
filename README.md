@@ -10,11 +10,11 @@ through [liquidctl](https://github.com/liquidctl/liquidctl): set colours down to
 individual fans, define scenes, put a live dashboard on the cooler's screen, and
 bind it all to keys.
 
-> **Status**: there is no code yet. This repository currently holds the
-> specification, the architecture and the packaging plan. Work starts at spec
-> 001; see [Roadmap](#roadmap). The design is public from the start because the
-> decisions are the interesting part and they are easier to argue with written
-> down.
+> **Status**: the lighting half works. The service, its API, the CLI and the
+> mapping wizard are built and tested on two machines with nothing in common —
+> the second one mapped end to end by its owner, who had never run it, with no
+> configuration written by hand. The cooler, the LCD, scenes, the GUI and the
+> hotkeys are specified and not yet built; see [Roadmap](#roadmap).
 
 ## Contents
 
@@ -153,7 +153,8 @@ installing and using hotaru must take no extra steps.
 
 | Spec | | |
 |---|---|---|
-| 001 | Scope, migration contract, and the baseline: the service, its API, and lighting | [#1](https://github.com/ushineko/hotaru/issues/1) |
+| 001 | Scope, migration contract, and the baseline: the service, its API, and lighting | **done** — [#1](https://github.com/ushineko/hotaru/issues/1) |
+| 008 | The mapping wizard: naming a machine's lights by looking at them | **done** — [#10](https://github.com/ushineko/hotaru/issues/10) |
 | 002 | Cooler telemetry behind the same API | [#2](https://github.com/ushineko/hotaru/issues/2) |
 | 003 | The LCD and the dashboard | [#3](https://github.com/ushineko/hotaru/issues/3) |
 | 004 | Scenes, preview and leases | [#4](https://github.com/ushineko/hotaru/issues/4) |
@@ -199,6 +200,10 @@ MIT. See [LICENSE](LICENSE).
 ## Changelog
 
 ### Unreleased
+
+- The mapping wizard: `hotaru light map` lights one thing at a time and asks
+  what you can see, and the names you give become the ones you use. Tested end
+  to end on a machine the author has never seen (spec 008, #10).
 
 - Desired state, and the reconciler that puts the lights back: at boot, when a
   device wakes up having forgotten, and when a server hands devices back with no
