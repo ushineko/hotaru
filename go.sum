@@ -12,6 +12,8 @@ github.com/stretchr/testify v1.12.1 h1:EuwCh5fleGS7H32xRwO3wRGT7DxrDhLAT6FF8MpWD
 github.com/stretchr/testify v1.12.1/go.mod h1:MDEgiDPPsNp5cuIrHPPCyornHKgEVbtFUmoNlxoYthg=
 github.com/ushineko/fynedesygn v0.1.29 h1:WPFBkh3Gcnw5ZLIXEmTi2/rJCT2beA/hhmEZzRtwwEI=
 github.com/ushineko/fynedesygn v0.1.29/go.mod h1:B+VDYk2VtBT+DkKto27aEa8pt2qhCUHpoH9GWG1aACY=
+github.com/ushineko/fynedesygn v0.1.30-0.20260920062435-15cb51bf1cfb h1:IisoPk8xSPR/UjDXSVKy/ZWL37RXl00IeR9/dyTOVss=
+github.com/ushineko/fynedesygn v0.1.30-0.20260920062435-15cb51bf1cfb/go.mod h1:B+VDYk2VtBT+DkKto27aEa8pt2qhCUHpoH9GWG1aACY=
 go.yaml.in/yaml/v3 v3.0.4/go.mod h1:DhzuOOF2ATzADvBadXxruRBLzYTpT36CKvDb3+aBEFg=
 go.yaml.in/yaml/v3 v3.0.5 h1:N6y/pJk8buWs9NY5ERU2HSMfm+IuD/OtfdAnq6kESPw=
 go.yaml.in/yaml/v3 v3.0.5/go.mod h1:HVTZu1O7/Vkt2N+BFy8Zza+lnLsABggaTM2ZpNIGuKg=

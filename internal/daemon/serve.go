@@ -17,6 +17,7 @@ import (
 	"github.com/ushineko/hotaru/internal/config"
 	"github.com/ushineko/hotaru/internal/openrgb"
 	"github.com/ushineko/hotaru/internal/service"
+	"github.com/ushineko/hotaru/internal/state"
 	"github.com/ushineko/hotaru/internal/version"
 )
 
@@ -71,6 +72,19 @@ func run(cmd *cobra.Command) error {
 	address, _ := cmd.Flags().GetString("openrgb")
 	svc := service.New(cfg, nil, address)
 
+	// Desired state: what the lights were last asked to show. An absent file
+	// is the normal starting condition, and means there is nothing to restore.
+	statePath, err := config.StatePath()
+	if err != nil {
+		return err
+	}
+	desired, err := state.Open(statePath)
+	if err != nil {
+		return err
+	}
+	svc.SetRecorder(desired)
+	defer func() { _ = desired.Flush() }()
+
 	listener, err := api.Listen(socket)
 	if err != nil {
 		return err
@@ -80,7 +94,13 @@ func run(cmd *cobra.Command) error {
 	// The OpenRGB server is a resource that appears, not a dependency that is
 	// satisfied: it may start after this does, or never. Connecting happens in
 	// the background and keeps trying, so the API is up either way.
-	go connect(ctx, svc, address, func(format string, args ...any) { cmd.PrintErrf(format+"\n", args...) })
+	report := func(format string, args ...any) { cmd.PrintErrf(format+"\n", args...) }
+	go func() {
+		connect(ctx, svc, address, report)
+		// Restoring waits for a server rather than being ordered after one:
+		// there is no unit to order against, and "started" is not "ready".
+		(&Reconciler{Service: svc, Report: report}).Run(ctx)
+	}()
 
 	return api.Serve(ctx, listener, svc)
 }
