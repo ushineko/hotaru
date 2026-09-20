@@ -1511,7 +1511,7 @@ ownership of the hardware.
 - [ ] `make test`, `make lint` and `govulncheck ./...` pass.
 - [ ] README covers what it is, what it needs (a running OpenRGB server; from
       002, liquidctl), the commands, and the config file with example rules.
-- [ ] The migration contract, the cutover order and the KDE hotkey rules are
+- [x] The migration contract, the cutover order and the KDE hotkey rules are
       carried into `docs/migration.md` so specs 002-006 do not have to rediscover
       them.
 

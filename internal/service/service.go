@@ -38,6 +38,7 @@ type Service struct {
 	rules    string
 	recorder Recorder
 	queue    *queue.Set
+	env      Environment
 }
 
 /*

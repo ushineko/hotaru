@@ -198,6 +198,9 @@ func healthCommand() *cobra.Command {
 				}
 			} else {
 				cmd.Printf("%s: %s\n", health.State, health.Detail)
+				for _, remedy := range health.Remedies {
+					cmd.Printf("  %s\n", remedy)
+				}
 				if health.Protocol > 0 {
 					cmd.Printf("  %s, protocol %d, %d devices, %d in scope\n",
 						health.Address, health.Protocol, health.Devices, health.InScope)

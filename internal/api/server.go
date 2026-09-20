@@ -47,6 +47,7 @@ func Handler(svc *service.Service) http.Handler {
 		write(w, http.StatusOK, Health{
 			State:    string(health.State),
 			Detail:   health.Detail,
+			Remedies: health.Remedies,
 			Address:  health.Address,
 			Protocol: health.Protocol,
 			Devices:  health.Devices,

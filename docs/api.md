@@ -136,6 +136,93 @@ Each result is one of three things, kept apart deliberately:
 | `skipped` | the device cannot express this, and why. Not a failure, not worth retrying |
 | `error` | the server or the hardware went wrong |
 
+## GET /v1/status
+
+What the service *is*, rather than what it can see. `health` answers "why is
+nothing happening"; this answers "what is running, and what does it remember".
+
+```console
+$ curl -s --unix-socket $XDG_RUNTIME_DIR/hotaru/hotaru.sock http://hotaru/v1/status
+{
+  "version": "0.0.0",
+  "connected": true,
+  "address": "127.0.0.1:6742",
+  "protocol": 3,
+  "rules_file": "/home/you/.config/hotaru/hotaru.yml"
+}
+```
+
+`remembered` lists the devices hotaru would put back. Its absence above is a
+fresh install that has been asked for nothing — which is why it restores
+nothing, and why installing hotaru cannot disturb lighting configured elsewhere.
+
+## POST /v1/reconcile
+
+Puts the lights back to what was last asked for. Not an apply: nothing here is
+a new user choice, so desired state is unchanged and a re-assert cannot be
+mistaken for an instruction.
+
+```console
+$ curl -s --unix-socket … -X POST http://hotaru/v1/reconcile
+{
+  "applied": 0,
+  "complete": true
+}
+```
+
+`complete: false` with `missing` naming devices is an **unfinished restore**,
+not a failure: OpenRGB enumerates once at server start, and a cold boot has been
+seen finding two devices of six. It retries, and completes when they appear.
+
+## POST /v1/reload
+
+Re-reads the rules file, reporting what was wrong with it entry by entry rather
+than refusing the file.
+
+```console
+$ curl -s --unix-socket … -X POST http://hotaru/v1/reload
+{
+  "rules_file": "/home/you/.config/hotaru/hotaru.yml"
+}
+```
+
+## POST /v1/lighting/probe
+
+Finds out what each device can actually do: sets modes, reads back which ones
+the device honoured, and puts everything back. A POST because it writes.
+
+```console
+$ curl -s --unix-socket … -X POST -d '{"devices":["mm700"]}' http://hotaru/v1/lighting/probe
+{
+  "findings": [
+    {
+      "device": "Corsair MM700",
+      "modes": [
+        { "name": "Direct", "per_led": true, "tried": true, "took": true }
+      ],
+      "zones": [
+        { "name": "Left",  "first": 0, "count": 1 },
+        { "name": "Right", "first": 1, "count": 1 },
+        { "name": "Logo",  "first": 2, "count": 1 }
+      ],
+      "no_off_mode": true,
+      "suggested": "# this device has no Off mode, so `off` writes black to it.\n# if that blanks something that should stay lit, add:\n# never_blank: true"
+    }
+  ]
+}
+```
+
+Two things that transcript shows. The suggestion is a **comment**: black is off
+for a mousepad and a dead backlight for a keyboard, and nothing in the protocol
+says which this is — so the probe reports what it found and leaves the decision
+to someone who can see the machine.
+
+And what probing cannot do. Run against an ASUS board, it reports that Static
+"took", because the mode change does take — the addressable headers going dark
+is invisible to a read-back. A user with only the probe would never be offered
+the direct-first rule. That is the gap the mapping wizard fills: it asks a
+person to look.
+
 ## Status codes
 
 | Code | When |
