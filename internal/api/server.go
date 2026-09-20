@@ -194,7 +194,10 @@ func sortedNames(in []string) []string {
 // parse turns the wire's strings into the service's types. A client sends what
 // a person would type; the knowledge of what those words mean lives here.
 func parse(req ApplyRequest) (service.Request, error) {
-	out := service.Request{Off: req.Off, Devices: req.Devices, Mode: req.Mode, Exactly: req.Exactly}
+	out := service.Request{
+		Off: req.Off, Devices: req.Devices,
+		Mode: req.Mode, Exactly: req.Exactly, Preview: req.Preview,
+	}
 	if req.Colour != "" {
 		col, err := colour.Parse(req.Colour)
 		if err != nil {

@@ -195,6 +195,17 @@ type Request struct {
 	// would be a worse answer than choosing a mode that works.
 	Mode string
 
+	/*
+		Preview writes without remembering.
+
+		What the mapping wizard lights is a question, not an intention: it is
+		asking which fan is green, and recording that would make "put the
+		lights back" put the questions back. Desired state is what somebody
+		asked their machine to look like, and a preview is by definition not
+		that yet.
+	*/
+	Preview bool
+
 	// Exactly stops the fall-through. A caller asking what one particular mode
 	// does needs an answer about that mode: trying the next candidate and
 	// reporting it as a success answers a question nobody asked, and looks to
@@ -298,14 +309,15 @@ func (s *Service) Apply(ctx context.Context, req Request) ([]Result, error) {
 		if len(assignments) == 0 && !req.Off {
 			continue
 		}
-		results = append(results, s.applyOne(ctx, client, cfg, &device, assignments, req.Off, req.Mode, req.Exactly))
+		results = append(results, s.applyOne(ctx, client, cfg, &device, assignments, req))
 	}
 	return results, nil
 }
 
 func (s *Service) applyOne(ctx context.Context, client openrgb.Client, cfg *config.Config,
-	device *devices.Device, assignments []devices.Assignment, off bool, preferred string, exactly bool,
+	device *devices.Device, assignments []devices.Assignment, req Request,
 ) Result {
+	off, preferred, exactly := req.Off, req.Mode, req.Exactly
 	result := Result{Device: device.Name}
 	rule := devices.RuleFor(cfg, device.Name)
 
@@ -331,10 +343,10 @@ func (s *Service) applyOne(ctx context.Context, client openrgb.Client, cfg *conf
 		return s.writeFrame(ctx, client, device, frame, off, preferred, exactly)
 	})
 	result.Problems = problems
-	if result.Applied && !off {
+	if result.Applied && !off && !req.Preview {
 		s.remember(device.Name, result.Mode, frame)
 	}
-	if result.Applied && off {
+	if result.Applied && off && !req.Preview {
 		// A device deliberately turned off has nothing to restore: putting
 		// black back at boot is not what anybody meant by "off".
 		s.forget(device.Name)

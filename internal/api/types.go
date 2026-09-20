@@ -96,6 +96,12 @@ type ApplyRequest struct {
 	// rather than used to show one colour where several were asked for.
 	Mode string `json:"mode,omitempty"`
 
+	// Preview writes without remembering. What the mapping wizard lights is
+	// not what the user wants their machine to look like: it is a question
+	// being asked, and recording it would mean "put the lights back" put back
+	// the questions.
+	Preview bool `json:"preview,omitempty"`
+
 	// Exactly stops the fall-through, so the answer is about the mode that was
 	// asked for and no other. The wizard needs this: "what does Custom do on
 	// this device" cannot be answered by quietly trying Direct instead and

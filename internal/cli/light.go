@@ -229,6 +229,9 @@ func healthCommand() *cobra.Command {
 var (
 	errNothingChanged = &silent{"nothing changed"}
 	errUnhealthy      = &silent{"not healthy"}
+	// errStopped is somebody pressing Ctrl-C, which is a decision rather than
+	// a fault and has already been acknowledged on screen.
+	errStopped = &silent{"stopped"}
 )
 
 type silent struct{ why string }
