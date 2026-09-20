@@ -143,6 +143,18 @@ Go the SDK is a binary protocol on TCP 6742 and a client is an ordinary
 dependency; the parsers, the 9-second silent-fallback trap and the
 "3-character minimum name match" rule all disappear with the subprocess.
 
+Measured on the development machine once the baseline existed, against the same
+six devices: **0.6 ms to write one device and 2.4 ms to write all six**,
+service-side, including the read-back after every write. Through the CLI, which
+starts a process each time, a whole scene is 7.5 ms.
+
+The Python's own measurement was 30 ms per `openrgb --client` invocation, one
+invocation per device, serialised behind a queue — call it 180 ms for the same
+scene, and 9.1 s for a single device if the server happened not to be running.
+That is not a tuning difference. It is one persistent socket instead of a
+subprocess per device, one frame per device instead of a mode call and a colour
+call, and nothing to wait behind.
+
 **The cooler still goes through liquidctl, as a subprocess.** Reimplementing the
 Kraken's HID protocol is not in scope and liquidctl is the reference
 implementation. So the queue comes with it — see below.
