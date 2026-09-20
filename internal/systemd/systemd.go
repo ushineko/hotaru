@@ -74,3 +74,38 @@ func (f Facts) startCommand() string {
 // Look reports what this machine offers. A machine that cannot be asked
 // returns zero facts, and the remedies are then silent rather than wrong.
 func Look(ctx context.Context) Facts { return look(ctx) }
+
+// unit is one OpenRGB unit this machine has, and whether it is running.
+type unit struct {
+	name   string
+	user   bool
+	active bool
+}
+
+/*
+choose picks the unit to talk about.
+
+An active one settles it. Otherwise the **first** in candidate order wins,
+because that list is ordered by what is worth trying: a later match must not
+overwrite an earlier one.
+
+It did, and the result was a wrong answer in the one message hotaru offers when
+lighting is not working. A machine with the user unit installed but stopped,
+and the system unit merely present and disabled, was told to
+`sudo systemctl start openrgb.service` -- wrong scope, wrong unit, and with a
+sudo in front of it.
+*/
+func choose(seen []unit, lingering bool) Facts {
+	facts := Facts{Lingering: lingering}
+	for _, u := range seen {
+		if u.active {
+			return Facts{Installed: true, Unit: u.name, User: u.user, Active: true, Lingering: lingering}
+		}
+		if !facts.Installed {
+			facts.Installed = true
+			facts.Unit = u.name
+			facts.User = u.user
+		}
+	}
+	return facts
+}
