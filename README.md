@@ -127,6 +127,11 @@ dependency. The core — OpenRGB client, scenes, the service, the API — is
 portable; the platform pieces (the systemd user unit, the KWin script, the
 desktop entry) are build-tagged and their absence costs only those features.
 
+**What works is whatever OpenRGB and liquidctl support** — hotaru contains no
+device drivers of its own, which is also why installing it installs them.
+[docs/hardware.md](docs/hardware.md) lists what has actually been tested, and
+points at those projects' own device lists for everything else.
+
 Nothing is assumed about your hardware. The machine this was written for is a
 test case, not the target: scope defaults to every device OpenRGB reports, and
 device quirks are discovered by reading back what a write actually did rather
@@ -165,6 +170,8 @@ necessary is an artefact of where it used to live.
   scope, the migration contract, the KDE hotkey rules, acceptance criteria.
 - [docs/architecture.md](docs/architecture.md): the system diagram and what it
   asserts.
+- [docs/hardware.md](docs/hardware.md): hardware that has been tested, the
+  upstream device lists for everything else, and how to check your own machine.
 - [docs/packaging.md](docs/packaging.md): the AUR packages, the dependency
   question, and the release flow.
 

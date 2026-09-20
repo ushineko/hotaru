@@ -89,6 +89,11 @@ Hard dependencies move that knowledge into the package, where it belongs. The
 cost is paid once, in disk space, by the packager's decision rather than by a
 stranger's debugging.
 
+The place a user *can* reason about all this is
+[docs/hardware.md](hardware.md), which says what each backend contributes and
+what hardware it covers. "Why does this install a Corsair daemon?" has an answer
+there, in terms of devices rather than of package manifests.
+
 `kwin` is deliberately *not* listed, in either form: the hotkey integration is a
 Plasma convenience, and on every other desktop the CLI is the binding mechanism.
 A package that named KWin would imply hotaru wants it.
