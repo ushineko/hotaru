@@ -234,6 +234,14 @@ Leaving that as an instruction meant the last act of a successful run was
 putting the lights back with the rules from before it ran, undoing the
 correction it had just established. It reloads, and says the rules are in use.
 
+**Only ask a question the hardware makes sensible.** "How many separate things
+are chained on keyboard" is a question about a run of lights on one cable, and a
+keyboard is not one -- its keys are individually addressable, so somebody
+reading it carefully had no way to answer. The count alone does not distinguish
+the two: a keyboard and a light strip both report many lights. OpenRGB says
+which shape each part is, and the question is asked only where the shape is a
+line. A grid is never chained, and a single light has nothing to divide.
+
 ## Risks & Assumptions
 
 - **A wizard is a user interface, and this one has no pixels.** Its whole
