@@ -115,6 +115,11 @@ narrows to particular hardware by name substring, for a caller who means one
 device rather than everything in scope.
 */
 type Request struct {
+	// Colour, when set, applies to every device the request covers, before
+	// any assignments. "Everything blue, except the top fan" is this plus one
+	// assignment, which is how a caller says it and how it is stored.
+	Colour *colour.Colour
+
 	Assignments []devices.Assignment
 	Off         bool
 	Devices     []string
@@ -160,6 +165,13 @@ That read-back is what lets hotaru work on hardware nobody has written a rule
 for. The ASUS board accepts Static, reports success, and leaves its addressable
 headers dark; the fall-through finds Direct without being told, and the rules
 file becomes an optimisation rather than a prerequisite.
+
+**What it cannot catch**: a device already sitting in the mode it lies about.
+The read-back compares the active mode, and a device that was in Static before
+the write is in Static after it, so there is nothing to notice. The lie is
+invisible for exactly as long as nothing else moves that device. For that case
+the rules file earns its keep, and `probe` -- which sets a mode, looks, and
+asks -- is how the rule gets written without the user reasoning it out.
 */
 func (s *Service) Apply(ctx context.Context, req Request) ([]Result, error) {
 	cfg, client, addr := s.current()
@@ -183,6 +195,10 @@ func (s *Service) Apply(ctx context.Context, req Request) ([]Result, error) {
 		}
 
 		assignments := forDevice(req.Assignments, device.Name)
+		if req.Colour != nil {
+			whole := devices.Assignment{Target: devices.Target{Device: device.Name}, Colour: *req.Colour}
+			assignments = append([]devices.Assignment{whole}, assignments...)
+		}
 		if len(assignments) == 0 && !req.Off {
 			continue
 		}
