@@ -122,14 +122,14 @@ None of these stop being true in Go, and each cost real diagnosis:
 8. **liquidctl exposes no colour channels for this cooler.** Every
    `set <channel> color` returns "operation not supported by the device".
    Lighting is OpenRGB's; the LCD is liquidctl's. Two backends, one device.
-9. **The LCD does not retain a static image.** A pushed PNG reverts to the
+10. **The LCD does not retain a static image.** A pushed PNG reverts to the
    built-in display in 5-10 s with nothing touching the device; a GIF plays
    indefinitely. The "flaky dashboard" was an expiry, not a race.
-10. **The LCD misbehaves under repeated writes** (liquidctl#774 bucket-switch
+11. **The LCD misbehaves under repeated writes** (liquidctl#774 bucket-switch
     failures, and the firmware readout showing through mid-rewrite). The
     cheapest mitigation is not writing: a machine at steady idle should push
     nothing at all.
-11. **One hidraw node, many callers.** The 5 s status poll, LCD writes and the
+12. **One hidraw node, many callers.** The 5 s status poll, LCD writes and the
     OpenRGB server all reach the same device. Two concurrent liquidctl
     processes on one node is a corruption risk.
 
@@ -382,6 +382,52 @@ modes nobody has heard of, a cooler with no LCD, an OpenRGB that is up but
 empty, a liquidctl that is not installed. The question every test answers is
 "what does a stranger see?", which is the question no amount of testing on the
 author's machine ever asks.
+
+## Out of the box, or it may as well be a script
+
+Everything hotaru does can be done with a shell script. `openrgb --client` sets a
+colour; `liquidctl set screen` pushes an image; a `.desktop` file binds a key.
+The author had exactly that before any of this existed.
+
+So the justification for a program is that it removes the gymnastics — and if a
+feature does not remove any, a script would have served. That is the standing
+test for anything proposed here: **what does this save a user who would
+otherwise write ten lines of shell?** Serialising two backends onto one device,
+re-asserting a colour a mouse keeps forgetting, discovering what a device can
+actually do rather than what it claims, naming LED ranges by looking at them,
+binding a key through an API that lies about success — those are the answer.
+A wrapper around `openrgb --client` is not.
+
+The same test applied to the first five minutes:
+
+- **No configuration file is required.** Scope defaults to every device present;
+  rules exist to correct, never to enable.
+- **Nothing must be read first.** A user who does not know that lighting comes
+  from OpenRGB and the screen from liquidctl should not be blocked by that —
+  which is why the packages depend on the backends rather than suggesting them.
+- **Diagnostics name the remedy, not the symptom.** "OpenRGB is installed but
+  not running" beats a refused connection to a socket path. Where hotaru can
+  perform the remedy itself, it offers to: start the OpenRGB server, enable its
+  own user service, restart a server that enumerated a partial device list
+  (spec 033's failure, which on someone else's machine is not diagnosable at
+  all — hotaru knows what healthy looks like and can say so).
+- **The GUI replaces the gymnastics that remain.** Naming LED ranges, binding
+  keys, building a scene: each is otherwise hand-edited configuration, and each
+  is a thing a picture does better.
+
+### Offer, never act
+
+The balance to hold, because it is easy to overshoot into the opposite
+annoyance: hotaru **offers** and never surprises. Starting a daemon, enabling a
+unit, writing rules, taking a key — each is one clear question with a visible
+answer, not something that happened while the user was looking elsewhere.
+
+This is not in tension with "a fresh install is inert". Inert means hotaru
+asserts nothing over hardware nobody asked it to touch. Out-of-the-box means
+that when the user *does* ask, nothing between them and the result requires
+knowing how the program is built. A program that stamps colours on install is
+rude; a program that makes you read an architecture document to see one light
+change is useless. The line between them is a question with a Yes button.
 
 ## Spec roadmap
 
@@ -1178,6 +1224,13 @@ ownership of the hardware.
 - [ ] `hotaru light health` distinguishes server unreachable, up with no
       devices, up with no in-scope devices, and healthy, exiting non-zero for
       the first three, and reports the negotiated protocol version.
+- [ ] Each unhealthy state names what to do about it, and distinguishes "OpenRGB
+      is not installed" from "installed but not running" from "running but
+      enumerated nothing" — three different remedies, not one error.
+- [ ] Any remedy hotaru can perform — starting the OpenRGB server, enabling its
+      own user service, restarting a server that enumerated a partial list — is
+      offered explicitly and performed only on an answer. A test asserts that no
+      such action happens without one.
 - [ ] `--json` on every listing and health command emits a stable shape.
 - [ ] With the server unreachable, every command fails in under a second with
       one line naming the address it tried. Nothing hangs.

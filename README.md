@@ -110,6 +110,12 @@ The decisions worth knowing before reading any code:
 - **A fresh install is inert.** With nothing recorded, hotaru discovers your
   hardware and touches none of it until asked — so installing it cannot stamp
   over lighting you configured elsewhere.
+- **It should work out of the box.** No configuration file to write, nothing to
+  read first, and diagnostics that name the remedy rather than the symptom —
+  with anything hotaru can fix itself offered as a question rather than done
+  behind your back. Everything here is possible with a shell script; the point
+  of a program is to remove the gymnastics, and a feature that removes none has
+  not earned its place.
 
 Full detail, including the failure each decision answers, is in
 [docs/architecture.md](docs/architecture.md).
