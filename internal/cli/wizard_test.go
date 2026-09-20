@@ -1170,3 +1170,69 @@ func TestPickingAllFromTheListMapsEverything(t *testing.T) {
 	require.Contains(t, person.questions(), "lit red now",
 		"picking all of them mapped nothing")
 }
+
+func TestTheRunEndsByUsingWhatItLearned(t *testing.T) {
+	/*
+		The wizard turns everything off to ask its questions, and a device
+		named for the first time has nothing to be put back to -- so a first
+		run ended with a written file, a dark keyboard, and an instruction to
+		go and type another command.
+	*/
+	server := openrgb.NewFake(board())
+	client := api.NewClient(serving(t, nil, server))
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	person := &scripted{answers: []string{
+		"y", "front fans", "1",
+		"y",      // is that right?
+		"n",      // nothing still glowing
+		"y",      // write it
+		"purple", // and light it
+	}}
+	require.NoError(t, cli.Map(t.Context(), client, person))
+
+	showing, ok := server.Showing("ASUS ROG MAXIMUS Z790 HERO")
+	require.True(t, ok)
+	require.Equal(t, colour.MustParse("purple"), showing.Colours[0],
+		"the machine was left dark after being told what its lights are called")
+}
+
+func TestAColourIsRememberedRatherThanPreviewed(t *testing.T) {
+	// It has to survive a reboot, which a preview does not: the point is that
+	// hotaru puts it back, not that it looks right for the next five minutes.
+	client := api.NewClient(serving(t, nil, openrgb.NewFake(board())))
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	person := &scripted{answers: []string{
+		"y", "front fans", "1", "y", "n", "y", "purple",
+	}}
+	require.NoError(t, cli.Map(t.Context(), client, person))
+	require.Contains(t, strings.Join(person.said, "\n"), "put it back at boot")
+}
+
+func TestAnUnknownColourIsAskedAgainRatherThanFailing(t *testing.T) {
+	// A typo at the last question must not end a successful run on an error.
+	client := api.NewClient(serving(t, nil, openrgb.NewFake(board())))
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	person := &scripted{answers: []string{
+		"y", "front fans", "1", "y", "n", "y",
+		"purpel", // a typo
+		"purple",
+	}}
+	require.NoError(t, cli.Map(t.Context(), client, person))
+	require.Contains(t, strings.Join(person.said, "\n"), "I do not know that colour")
+}
+
+func TestReturnAtTheColourQuestionLeavesTheMachineAlone(t *testing.T) {
+	// Somebody re-running the wizard to change one name does not want their
+	// lighting reset as a side effect.
+	client := api.NewClient(serving(t, nil, openrgb.NewFake(board())))
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	person := &scripted{answers: []string{
+		"y", "front fans", "1", "y", "n", "y", "",
+	}}
+	require.NoError(t, cli.Map(t.Context(), client, person))
+	require.NotContains(t, strings.Join(person.said, "\n"), "put it back at boot")
+}
