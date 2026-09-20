@@ -61,12 +61,40 @@ type Mode struct {
 	Brightness bool
 }
 
-// Zone is a contiguous run of LEDs within a device, as the device groups them.
+/*
+Zone is a contiguous run of LEDs within a device, as the device groups them.
+
+Shape matters, and the device reports it. A line of lights can be a chain of
+separate objects -- three fans on one cable, two strips on one header -- and
+dividing it into named parts is meaningful. A grid is one object laid out in
+rows: a keyboard has a hundred keys and is still one keyboard. A single light
+is a single light.
+
+Asking somebody how many things are on a grid invites the answer "a hundred
+keys", which is true and answers a question nobody asked.
+*/
 type Zone struct {
 	Name  string
+	Shape Shape
 	First int // index of the zone's first LED within the device
 	Count int
 }
+
+// Shape is how a zone's lights are arranged, as the device describes them.
+type Shape string
+
+const (
+	// ShapeSingle is one light, whatever is attached to it.
+	ShapeSingle Shape = "single"
+	// ShapeLine is lights in a row: the only shape that can be a chain of
+	// separate things.
+	ShapeLine Shape = "line"
+	// ShapeGrid is lights laid out in rows and columns, which is one object.
+	ShapeGrid Shape = "grid"
+)
+
+// Chainable reports whether several separate things could share this zone.
+func (z Zone) Chainable() bool { return z.Shape == ShapeLine && z.Count > 1 }
 
 // Last is the index of the zone's final LED.
 func (z Zone) Last() int { return z.First + z.Count - 1 }

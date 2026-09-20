@@ -47,9 +47,26 @@ type Device struct {
 	Segments []string `json:"segments,omitempty"`
 }
 
+/*
+Zone shapes, as a device describes its own.
+
+On the wire because a client needs them and cannot import the device packages:
+only a line of lights can be several separate things on one connector, which is
+the difference between a question worth asking somebody and one that invites
+the answer "a hundred keys".
+*/
+const (
+	ShapeSingle = "single"
+	ShapeLine   = "line"
+	ShapeGrid   = "grid"
+)
+
 // Zone is a contiguous run of LEDs, as the device groups them.
 type Zone struct {
-	Name  string `json:"name"`
+	Name string `json:"name"`
+	// Shape is "single", "line" or "grid". Only a line can be several separate
+	// things sharing one connector; a grid is one object with many lights.
+	Shape string `json:"shape,omitempty"`
 	First int    `json:"first"`
 	Count int    `json:"count"`
 }
