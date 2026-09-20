@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -31,15 +32,24 @@ type Asker interface {
 	Choose(question string, options []string) (string, error)
 }
 
-// terminal is an Asker over a real pair of streams.
+/*
+terminal is an Asker over a real pair of streams.
+
+It holds a context because a question is a place a program waits, and a person
+who has changed their mind presses Ctrl-C while it is waiting. Reading stdin on
+its own goroutine is what lets the answer and the interrupt race, so the first
+Ctrl-C ends it rather than the second.
+*/
 type terminal struct {
+	ctx context.Context
 	in  *bufio.Reader
 	out io.Writer
 }
 
-// NewTerminal is an Asker reading from in and writing to out.
-func NewTerminal(in io.Reader, out io.Writer) Asker {
-	return &terminal{in: bufio.NewReader(in), out: out}
+// NewTerminal is an Asker reading from in and writing to out, which gives up
+// when ctx is done.
+func NewTerminal(ctx context.Context, in io.Reader, out io.Writer) Asker {
+	return &terminal{ctx: ctx, in: bufio.NewReader(in), out: out}
 }
 
 func (t *terminal) Say(format string, args ...any) {
@@ -48,11 +58,27 @@ func (t *terminal) Say(format string, args ...any) {
 
 func (t *terminal) Ask(question string) (string, error) {
 	_, _ = fmt.Fprintf(t.out, "%s ", question)
-	line, err := t.in.ReadString('\n')
-	if err != nil && line == "" {
-		return "", fmt.Errorf("read the answer: %w", err)
+
+	type answer struct {
+		line string
+		err  error
 	}
-	return strings.TrimSpace(line), nil
+	heard := make(chan answer, 1)
+	go func() {
+		line, err := t.in.ReadString('\n')
+		heard <- answer{line: line, err: err}
+	}()
+
+	select {
+	case <-t.ctx.Done():
+		_, _ = fmt.Fprintln(t.out)
+		return "", t.ctx.Err() //nolint:wrapcheck // the caller tests for cancellation
+	case got := <-heard:
+		if got.err != nil && got.line == "" {
+			return "", fmt.Errorf("read the answer: %w", got.err)
+		}
+		return strings.TrimSpace(got.line), nil
+	}
 }
 
 func (t *terminal) Confirm(question string) (bool, error) {

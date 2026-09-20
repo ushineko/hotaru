@@ -84,6 +84,14 @@ no rules file, which is the case it exists for.
       before anything is named.
 - [x] AC13 Several things sharing one control are named once, and said to be
       controlled together, rather than divided between LEDs that do not exist.
+- [x] AC15 A question is asked only where its answer can be acted on: a zone
+      with one light is named, never divided.
+- [x] AC16 Every question has an answer that ends it, including "nothing is
+      lit" and "cannot tell".
+- [x] AC17 What the wizard lights is written as a preview and not remembered,
+      so restoring puts back what the machine wanted rather than the questions.
+- [x] AC18 Ctrl-C ends the wizard on the first press, restores the lights, and
+      says one line.
 - [ ] AC14 A resizable zone with no length set is asked about before it is
       mapped, and sized through the service, so an attached strip is found
       rather than recorded as an empty header.
@@ -157,6 +165,43 @@ the negatives: two addressable headers with nothing attached, and a pair of
 strips on the analogue one that their owner had forgotten were there. That is
 the argument for the whole feature -- "I do not remember what is plugged in" is
 the normal condition, and it is answerable by lighting things and asking.
+
+## What using it taught
+
+Everything below came from its author watching somebody else use it on their own
+machine, and none of it was visible from the machine it was written on.
+
+**Never ask what cannot be acted on.** A question implies its answer will be
+used. Asked how many things were chained on a 12V header, somebody answered
+"two strips" -- true about their desk, and meaningless here, because that header
+is one control signal and reports one LED. hotaru knows the difference from the
+LED count, so the question is not asked at all where nothing can be divided.
+Handling the answer more gracefully would have been the wrong fix.
+
+**Ask for a name, not a colour.** "What is red?" asks somebody to identify a
+colour. They are naming a thing. It is "the red one -- what do you want to call
+it?".
+
+**Say when the question changes.** The mode probe lights a whole device one
+colour, and the mapping round then lights its zones in several. Without a
+sentence between them, "red" still means "the thing that just lit up", and
+somebody named an empty header after the strips they had seen a moment earlier.
+
+**Every question needs an answer that ends it.** Told there were two things on
+an empty header, the wizard asked which of them the red part covered, and
+refused every answer that was not one of three it expected -- about lights that
+were not there. "Can you see it lit at all?" comes first now, and "cannot tell"
+is an accepted answer to the rest.
+
+**What the wizard lights is not what the machine wants.** Its colours were being
+recorded as desired state, so putting the lights back put the questions back,
+and a reboot would have restored whatever it happened to be lighting when
+somebody walked away. They are previews: written, and not remembered.
+
+**Stopping is a decision, not a fault.** Ctrl-C mid-question left the lights on
+a question and printed two lines about a URL nobody typed, because the cleanup
+used the context that had just been cancelled and the prompt was blocked on
+stdin. It now ends on the first press, puts the lights back, and says one line.
 
 ## Risks & Assumptions
 

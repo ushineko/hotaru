@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/ushineko/hotaru/internal/api"
@@ -52,8 +53,17 @@ Nothing is written without your say-so, and the lights go back afterwards.`,
 				return err
 			}
 			names, _ := cmd.Flags().GetStringSlice("devices")
-			asker := NewTerminal(cmd.InOrStdin(), cmd.OutOrStdout())
-			return Map(cmd.Context(), client, asker, names...)
+			asker := NewTerminal(cmd.Context(), cmd.InOrStdin(), cmd.OutOrStdout())
+			if err := Map(cmd.Context(), client, asker, names...); err != nil {
+				if errors.Is(err, context.Canceled) {
+					// Somebody changed their mind. That is not an error, and
+					// printing a URL at them about it is not an answer.
+					cmd.Println("Stopped. Nothing was written.")
+					return errStopped
+				}
+				return err
+			}
+			return nil
 		},
 	}
 	cmd.Flags().StringSlice("devices", nil, "only these devices, by name")
@@ -208,6 +218,7 @@ func lightsUp(ctx context.Context, client *api.Client, asker Asker, device api.D
 			Devices: []string{device.Name},
 			Mode:    mode,
 			Exactly: true,
+			Preview: true,
 		})
 		if err != nil {
 			return working{}, quiet(err)
@@ -263,6 +274,13 @@ func mapDevice(ctx context.Context, client *api.Client, asker Asker, device api.
 	if len(zones) == 0 {
 		zones = []api.Zone{{Name: "", First: 0, Count: device.LEDs}}
 	}
+	if len(zones) > 1 {
+		// The mode probe lit the whole device one colour. Without saying that
+		// the question has changed, "red" still means "the thing that just lit
+		// up" -- which is how somebody came to name an empty header.
+		asker.Say("  Now lighting its %d parts in different colours. Nothing will be lit in more than one.",
+			len(zones))
+	}
 
 	var named []namedSegment
 	for batch := 0; batch < len(zones); batch += len(palette) {
@@ -275,9 +293,9 @@ func mapDevice(ctx context.Context, client *api.Client, asker Asker, device api.
 
 		for i, zone := range group {
 			colour := palette[i]
-			question := fmt.Sprintf("  What is %s?", colour)
+			question := fmt.Sprintf("  The %s one -- what do you want to call it?", colour)
 			if was := knownAs(existing, device.Name, zone.Name, present); was != "" {
-				question = fmt.Sprintf("  What is %s? [%s]", colour, was)
+				question = fmt.Sprintf("  The %s one -- what do you want to call it? [%s]", colour, was)
 			}
 			what, err := askNameOr(asker, question, knownAs(existing, device.Name, zone.Name, present))
 			if err != nil {
@@ -311,6 +329,22 @@ func split(ctx context.Context, client *api.Client, asker Asker,
 ) ([]namedSegment, error) {
 	whole := namedSegment{Device: device.Name, Zone: zone.Name, Name: what, Whole: true,
 		First: 0, Last: zone.Count - 1}
+
+	/*
+		A zone with one light in it cannot be divided, whatever is plugged into
+		it, so there is nothing to ask.
+
+		The difference is electrical and hotaru already knows it: a 12V header
+		carries one control signal and reports one LED, so ten strips chained
+		onto it are one colour and one thing to name. An addressable header
+		reports a light per LED, and there the boundary between two chained
+		strips is a real place. Asking somebody to count things they cannot
+		address invites an answer that is true about their case and useless
+		here -- which is what happened.
+	*/
+	if zone.Count <= 1 {
+		return []namedSegment{whole}, nil
+	}
 
 	/*
 		Asked about things, not LEDs.
@@ -382,6 +416,18 @@ func split(ctx context.Context, client *api.Client, asker Asker,
 		return nil, err
 	}
 	if !right {
+		// Before hunting for a boundary, check there is anything to see. A
+		// header with nothing plugged into it answers "no" to every question
+		// about what it is showing, and bisecting on that is a dead end with
+		// no way out of it -- which is exactly what it was.
+		lit, err := asker.Confirm("  Can you see it lit at all?")
+		if err != nil {
+			return nil, err
+		}
+		if !lit {
+			asker.Say("    Nothing on it, then -- leaving it out.")
+			return nil, nil
+		}
 		return bisect(ctx, client, asker, device, zone, what, count, mode)
 	}
 
@@ -422,9 +468,14 @@ func bisect(ctx context.Context, client *api.Client, asker Asker,
 		asker.Say("    The first %d LEDs are red and the rest are %s.", k, palette[1])
 		answer, err := asker.Choose(
 			"  Does the red part cover exactly one thing, more than one, or part of one?",
-			[]string{"exactly", "more", "part"})
+			[]string{"exactly", "more", "part", "cannot-tell"})
 		if err != nil {
 			return nil, err
+		}
+		if answer == "cannot-tell" {
+			asker.Say("    Leaving %s undivided, then.", what)
+			return []namedSegment{{Device: device.Name, Zone: zone.Name, Name: what, Whole: true,
+				First: 0, Last: zone.Count - 1}}, nil
 		}
 		switch answer {
 		case "exactly":
@@ -593,6 +644,7 @@ func light(ctx context.Context, client *api.Client, device, mode string, assignm
 		Assignments: assignments,
 		Devices:     []string{device},
 		Mode:        mode,
+		Preview:     true,
 	})
 	if err != nil {
 		return quiet(err)
@@ -727,6 +779,15 @@ goes back; where it does not -- a fresh install, which is this wizard's whole
 audience -- there is nothing to return to and saying so beats inventing one.
 */
 func restore(ctx context.Context, client *api.Client, asker Asker, remembered bool) {
+	/*
+		Cleanup runs on the way out, including the way out through Ctrl-C --
+		when the context that got us here is already cancelled. Using it would
+		mean the lights stay on whatever the wizard last lit, and the failure
+		reported as the same interrupt that caused it.
+	*/
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+
 	if !remembered {
 		asker.Say("\nThe lights are showing the last thing the wizard lit. " +
 			"`hotaru light set <colour>` when you want something else.")
