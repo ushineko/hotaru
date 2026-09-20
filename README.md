@@ -184,6 +184,9 @@ necessary is an artefact of where it used to live.
 - [specs/009-writes-that-mean-what-they-say.md](specs/009-writes-that-mean-what-they-say.md):
   why a write that lands in the buffer is not always a write, and what hotaru
   checks instead.
+- [specs/011-a-zone-is-what-the-hardware-writes.md](specs/011-a-zone-is-what-the-hardware-writes.md):
+  why a device's zones are written separately, and the day spent not asking
+  what was on the wire.
 - [specs/010-the-mode-packet-is-the-commit.md](specs/010-the-mode-packet-is-the-commit.md):
   the packet that looks redundant and is not, and a metric that improved
   because hotaru stopped talking to the hardware.
@@ -208,6 +211,14 @@ MIT. See [LICENSE](LICENSE).
 ## Changelog
 
 ### Unreleased
+
+- A frame is written one request per zone rather than one for the whole
+  device. An NZXT cooler's two channels are independent controllers behind one
+  USB endpoint, and a single array spanning both was never delivered together:
+  one channel held a stale colour while the other moved, frames rendered torn
+  part way along a chain of fans, and a run of writes stopped it responding for
+  minutes. A zone is not a way of naming part of a device -- on some hardware
+  it is a separate controller (spec 011, #24).
 
 - The mode packet is sent on every write, including to a device already in
   that mode. It looks redundant and is the commit: suppressing it stopped an

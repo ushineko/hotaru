@@ -339,10 +339,59 @@ func (c *Conn) SetFrame(ctx context.Context, device string, frame devices.Frame)
 	for i, col := range frame.Colours {
 		payload[i] = sdk.Color{R: col.R, G: col.G, B: col.B}
 	}
-	if err := c.client.RGBControllerUpdateLeds(entry.index, &sdk.RGBControllerUpdateLedsRequest{LedColor: payload}); err != nil {
-		return fmt.Errorf("write %d LEDs to %s: %w", len(payload), device, err)
+	/*
+		One request per zone, not one for the device.
+
+		A device's zones are what the hardware treats as separate: an NZXT
+		cooler's two Hue 2 channels are independent controllers behind one
+		USB endpoint, and handing OpenRGB a single array spanning both meant
+		they were never delivered together. That cooler showed a stale colour
+		on one channel while the other moved, rendered a frame torn partway
+		along a chain of fans, and stopped responding for minutes at a time
+		under a run of writes.
+
+		Written per zone, it tracks. See spec 011.
+	*/
+	for i, leds := range byZone(data.Zones, payload) {
+		if len(leds) == 0 {
+			continue
+		}
+		if err := c.client.RGBControllerUpdateZoneLeds(entry.index,
+			&sdk.RGBControllerUpdateZoneLedsRequest{ZoneIdx: uint32(i), LedColor: leds}); err != nil {
+			return fmt.Errorf("write %s zone %d: %w", device, i, err)
+		}
 	}
 	return nil
+}
+
+/*
+byZone cuts a device's frame into one run of colours per zone.
+
+Zones are contiguous in device LED order and the protocol gives their sizes,
+which is the same assumption the catalogue makes when it counts their offsets.
+A device that reports no zones, or fewer LEDs in its zones than it has in
+total, keeps the remainder in the last run rather than losing it: a frame is
+the whole device or it is a bug.
+*/
+func byZone(zones []*sdk.Zone, payload []sdk.Color) [][]sdk.Color {
+	if len(zones) == 0 {
+		return [][]sdk.Color{payload}
+	}
+	out := make([][]sdk.Color, 0, len(zones))
+	at := 0
+	for i, zone := range zones {
+		n := int(zone.ZoneLedsCount)
+		if last := i == len(zones)-1; last || at+n > len(payload) {
+			n = len(payload) - at
+		}
+		if n <= 0 {
+			out = append(out, nil)
+			continue
+		}
+		out = append(out, payload[at:at+n])
+		at += n
+	}
+	return out
 }
 
 /*
