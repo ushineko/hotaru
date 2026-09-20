@@ -2,7 +2,7 @@
 
 **Issues**: [#20](https://github.com/ushineko/hotaru/issues/20), [#25](https://github.com/ushineko/hotaru/issues/25)
 
-## Status: INCOMPLETE
+## Status: COMPLETE
 
 ## Context
 
@@ -177,27 +177,62 @@ holds: a second run offers the previous answers as defaults, including these.
 
 ## Acceptance Criteria
 
-- [ ] AC1. The wizard pauses between writing and asking, in every round that
+- [x] AC1. The wizard pauses between writing and asking, in every round that
       does both, and a test asserts the pause exists on each path.
-- [ ] AC2. A device that does not go dark gets `never_blank: true` in the
+- [x] AC2. A device that does not go dark gets `never_blank: true` in the
       written file.
-- [ ] AC3. A device that does go dark gets nothing written about it.
-- [ ] AC4. A device that will not go dark and has a mostly-dark mode is
+- [x] AC3. A device that does go dark gets nothing written about it.
+- [x] AC4. A device that will not go dark and has a mostly-dark mode is
       offered it, and accepting writes that mode first in `solid_modes`.
-- [ ] AC5. A device that will not go dark and has no such mode is told so in
+- [x] AC5. A device that will not go dark and has no such mode is told so in
       one sentence, and the run continues.
 - [x] AC6. Brightness is offered only where the mode that will be used takes
       one, with a test on a device that has a dimmable mode it never uses.
 - [x] AC6a. No question asserts its own answer, with a test on the wording of
       the blanking question.
-- [ ] AC7. Accepting a dimmer setting writes `brightness`; declining writes
+- [x] AC7. Accepting a dimmer setting writes `brightness`; declining writes
       nothing.
-- [ ] AC8. The no-jargon test covers the new questions.
-- [ ] AC9. Pressing return at any new question writes nothing for it.
-- [ ] AC10. A second run offers the previous answers as defaults.
-- [ ] AC11. Verified on the development machine: the Keychron is found to not
+- [x] AC8. The no-jargon test covers the new questions.
+- [x] AC9. Pressing return at any new question writes nothing for it.
+- [x] AC10. A second run offers the previous answers as defaults.
+- [x] AC11. Verified on the development machine: the Keychron is found to not
       go dark, is offered its reactive mode, and the written file carries both
       corrections; the cooler's ring is named on a first pass.
+
+## Verified on hardware
+
+Two machines, two keyboards, two vendors.
+
+**The development machine's Keychron K4 HE.** Turned off, it glows white: the
+board takes the lighting back when sent a frame that rounds to nothing. The
+wizard found it, offered the twenty-three ways it can be lit, and wrote what
+was chosen with a fallback behind it:
+
+	solid_modes: [Solid Reactive Multinexus, direct]
+	never_blank: true
+
+**A second machine's SteelSeries Apex Pro TKL Gen 3 Wireless.** It advertises
+exactly two modes, `Direct` and `Onboard`, and neither is named anything like
+"splash" or "reactive". The name-matching version of this would have offered
+nothing at all, on a keyboard that plainly has an alternative. It mapped, it
+turns off properly -- "when it sets to dark, it really goes dark" -- so nothing
+was written about it, and `hotaru light set purple` afterwards drove it along
+with everything else.
+
+The two keyboards are the two sides of the question: one that cannot be
+blanked and needs a correction recorded, one that can and needs nothing. A run
+that wrote something about both would be guessing.
+
+Also found on that machine, and not a hotaru fault: the keyboard was invisible
+because OpenRGB had started twelve hours before it was plugged in, and OpenRGB
+enumerates once. hotaru reported "8 of 8 devices in scope" -- healthy, and
+quietly missing a keyboard. Worth its own issue.
+
+**A papercut, left open.** A device mapped for the first time is dark when the
+run ends: the wizard turns everything off to ask its question, and putting the
+lights back means restoring remembered state, which a newly named device does
+not have. The next `hotaru light set` fixes it, but the run should not end with
+something dark that was lit when it started.
 
 ## Risks & Assumptions
 

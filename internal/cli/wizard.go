@@ -68,8 +68,59 @@ Nothing is written without your say-so, and the lights go back afterwards.`,
 			return nil
 		},
 	}
-	cmd.Flags().StringSlice("devices", nil, "only these devices, by name")
+	cmd.Flags().StringSlice("devices", nil, "only these devices, by name (or bare, to pick from a list)")
+	// Bare `--devices` means "ask me". Nobody wants to type
+	// "SteelSeries Apex Pro TKL Gen 3 Wireless" correctly, and getting it
+	// wrong maps nothing and says nothing about why.
+	cmd.Flags().Lookup("devices").NoOptDefVal = pickMe
 	return cmd
+}
+
+// pickMe is what a bare --devices becomes: a request for the list rather than
+// a device called that.
+const pickMe = "?"
+
+/*
+pickDevices asks which hardware to map, when nobody said.
+
+The names are the devices' own and they are long: a flag is the wrong place to
+retype one, and a typo there maps nothing while looking like it worked.
+*/
+func pickDevices(asker Asker, list []api.Device) ([]string, error) {
+	var usable []api.Device
+	for _, device := range list {
+		if device.InScope && device.LEDs > 0 {
+			usable = append(usable, device)
+		}
+	}
+	if len(usable) == 0 {
+		return nil, nil
+	}
+
+	asker.Say("Which would you like to go through?")
+	for i, device := range usable {
+		asker.Say("    %d  %s", i+1, device.Name)
+	}
+	asker.Say("    %d  all of them", len(usable)+1)
+
+	for {
+		answer, err := asker.Ask(fmt.Sprintf("  Pick one [1-%d, or return for all]", len(usable)+1))
+		if err != nil {
+			return nil, err
+		}
+		if strings.TrimSpace(answer) == "" {
+			return nil, nil // all of them
+		}
+		pick, err := strconv.Atoi(strings.TrimSpace(answer))
+		if err != nil || pick < 1 || pick > len(usable)+1 {
+			asker.Say("  Pick a number from the list, or press return for all of them.")
+			continue
+		}
+		if pick == len(usable)+1 {
+			return nil, nil
+		}
+		return []string{usable[pick-1].Name}, nil
+	}
 }
 
 // namedSegment is one thing the user named, and where it lives.
@@ -107,6 +158,14 @@ func Map(ctx context.Context, client *api.Client, asker Asker, only ...string) e
 	list, err := client.Devices(ctx)
 	if err != nil {
 		return quiet(err)
+	}
+
+	if len(only) == 1 && only[0] == pickMe {
+		chosen, err := pickDevices(asker, list)
+		if err != nil {
+			return err
+		}
+		only = chosen
 	}
 
 	// What was answered last time, offered back as the defaults. Making
@@ -1140,7 +1199,15 @@ using one of these after an earlier run set one.
 func chooseDark(ctx context.Context, client *api.Client, asker Asker, device api.Device,
 	steady string, revisiting bool,
 ) (string, bool, error) {
-	options := darkishModes(device)
+	// Without the mode it is already lit in: that one is the last entry,
+	// described as what it is, and listing it twice invites somebody to pick
+	// the same thing two different ways.
+	var options []string
+	for _, mode := range darkishModes(device) {
+		if !strings.EqualFold(mode, steady) {
+			options = append(options, mode)
+		}
+	}
 	if len(options) == 0 {
 		return "", false, nil
 	}
