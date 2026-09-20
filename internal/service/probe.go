@@ -51,6 +51,7 @@ type ModeFinding struct {
 // ZoneFinding is a zone and its size, which is what segment naming starts from.
 type ZoneFinding struct {
 	Name  string
+	Shape devices.Shape
 	First int
 	Count int
 }
@@ -92,7 +93,9 @@ func (s *Service) Probe(ctx context.Context, only []string) ([]Finding, error) {
 func (s *Service) probeOne(ctx context.Context, client openrgbClient, device *devices.Device) Finding {
 	finding := Finding{Device: device.Name}
 	for _, zone := range device.Zones {
-		finding.Zones = append(finding.Zones, ZoneFinding{Name: zone.Name, First: zone.First, Count: zone.Count})
+		finding.Zones = append(finding.Zones, ZoneFinding{
+			Name: zone.Name, Shape: zone.Shape, First: zone.First, Count: zone.Count,
+		})
 	}
 
 	_, hasOff := device.Mode("off")

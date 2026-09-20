@@ -180,7 +180,9 @@ func finding(in service.Finding) Finding {
 		})
 	}
 	for _, zone := range in.Zones {
-		out.Zones = append(out.Zones, Zone{Name: zone.Name, First: zone.First, Count: zone.Count})
+		out.Zones = append(out.Zones, Zone{
+			Name: zone.Name, Shape: string(zone.Shape), First: zone.First, Count: zone.Count,
+		})
 	}
 	return out
 }
@@ -231,7 +233,9 @@ func describe(view service.View) Device {
 		InScope:    view.InScope,
 	}
 	for _, zone := range view.Device.Zones {
-		device.Zones = append(device.Zones, Zone{Name: zone.Name, First: zone.First, Count: zone.Count})
+		device.Zones = append(device.Zones, Zone{
+			Name: zone.Name, Shape: string(zone.Shape), First: zone.First, Count: zone.Count,
+		})
 	}
 	for _, col := range view.Device.Colours {
 		device.Colours = append(device.Colours, col.String())

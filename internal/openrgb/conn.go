@@ -381,6 +381,7 @@ func convert(data *sdk.ControllerData) devices.Device {
 	for _, zone := range data.Zones {
 		device.Zones = append(device.Zones, devices.Zone{
 			Name:  clean(zone.ZoneName),
+			Shape: shapeOf(zone.ZoneType),
 			First: first,
 			Count: int(zone.ZoneLedsCount),
 		})
@@ -392,6 +393,25 @@ func convert(data *sdk.ControllerData) devices.Device {
 		device.Colours[i] = colour.Colour{R: col.R, G: col.G, B: col.B}
 	}
 	return device
+}
+
+/*
+shapeOf reads OpenRGB's zone type.
+
+0 is a single light, 1 a line of them, 2 a grid. The numbers are the protocol's
+and the words are for people: what a caller needs to know is whether several
+separate things could be attached to it, and "line" answers that where "1"
+does not.
+*/
+func shapeOf(zoneType int32) devices.Shape {
+	switch zoneType {
+	case 0:
+		return devices.ShapeSingle
+	case 2:
+		return devices.ShapeGrid
+	default:
+		return devices.ShapeLine
+	}
 }
 
 /*

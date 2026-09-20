@@ -383,6 +383,19 @@ func split(ctx context.Context, client *api.Client, asker Asker,
 		First: 0, Last: zone.Count - 1}
 
 	/*
+		Only a line of lights can be several separate things.
+
+		A keyboard is one keyboard with a hundred keys, and asked how many
+		things were chained on it somebody quite reasonably wondered whether
+		they were being asked about keys. The device says which of its parts
+		are lines, which are grids and which are single lights; a question
+		about chaining belongs only to the first.
+	*/
+	if zone.Shape != "" && zone.Shape != api.ShapeLine {
+		return []namedSegment{whole}, nil
+	}
+
+	/*
 		A zone with one light in it cannot be divided, whatever is plugged into
 		it, so there is nothing to ask.
 
