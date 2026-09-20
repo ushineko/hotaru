@@ -1127,3 +1127,46 @@ func TestTheModeOfferIsNeverEmptyWhereTheDeviceHasModes(t *testing.T) {
 	require.NoError(t, cli.Map(t.Context(), client, person))
 	require.Contains(t, strings.Join(person.said, "\n"), "Mode 2")
 }
+
+func TestABareDevicesFlagOffersTheList(t *testing.T) {
+	/*
+		The names are the devices' own and they are long. Typing
+		"SteelSeries Apex Pro TKL Gen 3 Wireless" exactly, into a flag, is a
+		thing a person gets wrong -- and getting it wrong maps nothing while
+		looking like it worked.
+	*/
+	client := api.NewClient(serving(t, nil, openrgb.NewFake(board(), cooler())))
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	person := &scripted{answers: []string{
+		"2",               // the cooler, from the list
+		"y",               // lit red?
+		"nothing", "ring", // its two parts
+		"1", // one thing on the ring
+		"y", // is that right?
+		"n", // nothing still glowing
+		"n", // do not write
+	}}
+	require.NoError(t, cli.Map(t.Context(), client, person, "?"))
+
+	shown := strings.Join(person.said, "\n")
+	require.Contains(t, shown, "Which would you like to go through?")
+	require.Contains(t, shown, "all of them")
+	require.NotContains(t, person.questions(), "ASUS",
+		"a device that was not picked was mapped anyway")
+}
+
+func TestPickingAllFromTheListMapsEverything(t *testing.T) {
+	// Pressing return is the same as not passing the flag at all.
+	client := api.NewClient(serving(t, nil, openrgb.NewFake(board())))
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	person := &scripted{answers: []string{
+		"", // return: all of them
+		"y", "nothing", "fans", "1",
+		"y", "n", "n",
+	}}
+	require.NoError(t, cli.Map(t.Context(), client, person, "?"))
+	require.Contains(t, person.questions(), "lit red now",
+		"picking all of them mapped nothing")
+}

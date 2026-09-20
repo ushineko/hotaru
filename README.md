@@ -212,6 +212,10 @@ MIT. See [LICENSE](LICENSE).
 
 ### Unreleased
 
+- `hotaru light map --devices`, with nothing after it, offers the list to pick
+  from. Device names are the hardware's own and long enough to mistype, and a
+  mistyped one maps nothing while looking like it worked.
+
 - The wizard waits for the hardware before asking what you can see, and asks
   what it never asked before: whether the lights actually go off, what to do
   when they do not, and whether a device that can be dimmed should be. A
