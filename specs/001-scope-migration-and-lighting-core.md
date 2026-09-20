@@ -439,6 +439,25 @@ Use few colours and unmistakable ones. The rehearsal produced "bottom cyan(?)"
 are the same colour to most people under a tinted case window. Red, green, blue
 and white first; anything else only when there are more zones than that.
 
+#### Ask how many things are on the chain
+
+NZXT's own software does this, and so do other vendors' tools: light every zone
+a different colour and ask which fan is which. That is worth knowing for two
+reasons. It is evidence the interaction is right -- the people with the most to
+lose from a confusing setup arrived at the same place -- and it means some users
+will recognise it and expect its conventions.
+
+It also asks a question this spec had missed. Before splitting anything, ask
+**how many lit things are on this channel**. A daisy-chain is usually identical
+fans, so one answer and the LED count give the split arithmetically: the
+development machine's 24 LEDs over three fans is eight each, and the even split
+was right the first time. Bisection is the fallback for when the division is not
+clean -- mixed hardware, a strip on the same chain, a fan with a dead LED --
+rather than the first move.
+
+So the order is: how many, divide, light the proposed split, confirm. Three
+questions where the naive version asks a dozen.
+
 #### Finding a boundary nobody can count
 
 When one zone turns out to hold several fans, the split has to land exactly
