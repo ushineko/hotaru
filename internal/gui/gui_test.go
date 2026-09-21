@@ -1158,3 +1158,74 @@ func TestShowingADashboardAsksTheService(t *testing.T) {
 		}
 	}, 3*time.Second, 10*time.Millisecond, "tapping Show it never reached the service")
 }
+
+func TestABindingIsChangedFromTheRowThatShowsIt(t *testing.T) {
+	/*
+		The key was already the first thing on a scene's line and the one
+		thing on that line the window could not change. Moving it is two
+		calls: the service binds a key to a scene and does not know a scene
+		should have at most one, so the old key is unbound and the new one
+		bound.
+	*/
+	a := test.NewApp()
+	t.Cleanup(a.Quit)
+
+	routes := healthy()
+	routes["GET /"+api.Version+"/keys"] = api.KeysResponse{
+		Bindings: []api.Binding{
+			{Key: "Ctrl+Alt+Num+1", Scene: "red"},
+			{Key: "Ctrl+Alt+Num+2", Scene: "evening"},
+		},
+		Reserved: []string{"Ctrl+Alt+Shift+Num+1"},
+	}
+	routes["POST /"+api.Version+"/keys/bind"] = struct{}{}
+
+	client, asked := watching(t, routes)
+	app := gui.New(client)
+	opts := app.Options("s")
+	opts.SettingsPath = filepath.Join(t.TempDir(), "gui.yml")
+	sh := shell.Headless(a, opts)
+
+	window := test.NewWindow(widget.NewLabel("behind"))
+	t.Cleanup(window.Close)
+	sh.Window = window
+	app.Refresh(context.Background())
+
+	/*
+		The chooser offers every key, free or not, unshifted first.
+
+		A key already pointing at another scene is a legitimate thing to
+		choose -- rearranging a bank means moving keys between scenes -- so a
+		chooser that hid the taken ones would hide the rearrangement.
+	*/
+	bank := gui.KeyBank(api.KeysResponse{
+		Bindings: []api.Binding{
+			{Key: "Ctrl+Alt+Num+2", Scene: "evening"},
+			{Key: "Ctrl+Alt+Shift+Num+1", Scene: "mine"},
+			{Key: "Ctrl+Alt+Num+1", Scene: "red"},
+		},
+		Reserved: []string{"Ctrl+Alt+Shift+Num+2", "Ctrl+Alt+Shift+Num+1"},
+	})
+	require.Equal(t, []string{
+		"Ctrl+Alt+Num+1", "Ctrl+Alt+Num+2",
+		"Ctrl+Alt+Shift+Num+1", "Ctrl+Alt+Shift+Num+2",
+	}, bank, "a key was offered twice or in the wrong order")
+
+	// And moving one is an unbind and a bind, in that order.
+	section := &gui.ScenesSection{}
+	gui.OpenScenes(section, app)
+	section.Rebind(sh, "evening", "Ctrl+Alt+Shift+Num+1", "Ctrl+Alt+Num+2")
+
+	want := "POST /" + api.Version + "/keys/bind"
+	seen := 0
+	require.Eventually(t, func() bool {
+		select {
+		case route := <-asked:
+			if route == want {
+				seen++
+			}
+		default:
+		}
+		return seen == 2
+	}, 3*time.Second, 10*time.Millisecond, "moving a shortcut made %d calls, not two", seen)
+}

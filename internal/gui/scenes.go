@@ -53,6 +53,16 @@ type ScenesSection struct {
 	showing string
 }
 
+// OpenScenes gives a section its app, which the shell normally does. For
+// tests, like OpenEditor.
+func OpenScenes(s *ScenesSection, app *App) { s.app = app }
+
+// Rebind moves a scene's shortcut, for tests: the dialog that calls it is a
+// dialog, and a test that drove it would be a test about radio buttons.
+func (s *ScenesSection) Rebind(sh *shell.Shell, scene, key, was string) {
+	s.rebind(sh, scene, key, was)
+}
+
 /*
 OpenEditor puts a section into its editing state.
 
@@ -374,9 +384,17 @@ func (s *ScenesSection) row(sh *shell.Shell, scene api.Scene, key string) fyne.C
 	swatch := canvas.NewRectangle(parse(sceneColour(scene)))
 	swatch.SetMinSize(fyne.NewSize(zoneHeight, zoneHeight))
 
-	// The key first, because that is what somebody recognises the scene by:
-	// the bank has been on this numpad for two years.
-	left := []fyne.CanvasObject{widgets.Dim(pretty(key)), swatch, widget.NewLabel(name)}
+	/*
+		The key first, because that is what somebody recognises the scene by:
+		the bank has been on this numpad for two years.
+
+		And it is a button, because it was the one thing on this line that
+		could not be changed without the terminal. What looks like the thing
+		you click has to be the thing you click.
+	*/
+	shortcut := widget.NewButton(pretty(key), func() { s.bind(sh, scene, key) })
+	shortcut.Importance = widget.LowImportance
+	left := []fyne.CanvasObject{shortcut, swatch, widget.NewLabel(name)}
 
 	return container.NewBorder(nil, nil,
 		container.NewHBox(left...),
