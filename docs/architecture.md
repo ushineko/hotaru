@@ -40,14 +40,15 @@ flowchart TB
 
     subgraph backends["Backends"]
         ORGB["OpenRGB server<br/>SDK protocol, TCP 6742<br/>systemd --user, enumeration gate"]
-        LQC["liquidctl<br/>explicit argv subprocess"]
-        OLH["OpenLinkHub<br/>localhost HTTP"]
+        COOL["Cooler driver · in hotaru<br/>/dev/hidraw + usbfs<br/>NZXT protocol, no cgo"]
+        HWMON["Kernel sensors<br/>/sys/class/hwmon by label<br/>nvidia-smi where there is none"]
     end
 
     subgraph hw["Hardware"]
         LIT["Lit devices<br/>Kraken · GPU · Aura · MM700 · G502 · Keychron"]
         LCD["Kraken LCD<br/>640x640, GIF only"]
-        TELEM["Cooler telemetry<br/>coolant · pump · fans · CPU pkg"]
+        TELEM["Cooler telemetry<br/>coolant · pump · fans"]
+        TEMP["CPU package · GPU"]
     end
 
     PBM["peripheral-battery-monitor<br/>batteries, bandwidth,<br/>read-only AIO display + pump alert"]
@@ -68,18 +69,17 @@ flowchart TB
     CORE --> MBOX
 
     MBOX -->|"mode + frame<br/>per zone / per LED"| ORGB
-    MBOX -->|"set screen"| LQC
-    CORE -->|"status poll"| LQC
-    CORE -->|"CPU package temp"| OLH
+    RECON -->|"dashboard frames<br/>hash gate + size floor"| COOL
+    CORE -->|"status, coalesced"| COOL
+    CORE -->|"package + card temps"| HWMON
 
     ORGB --> LIT
-    LQC --> LCD
-    LQC --> TELEM
-    OLH --> TELEM
+    COOL --> LCD
+    COOL --> TELEM
+    HWMON --> TEMP
 
-    PBM -.->|"temporary: its own reads<br/>until the Go rewrite"| LQC
-    PBM -.-> OLH
-    FUTURE -.->|"GET /v1/cooler<br/>no device handle"| API
+    PBM -.->|"temporary: its own liquidctl<br/>until the Go rewrite"| TELEM
+    FUTURE -.->|"GET /v1/cooling<br/>no device handle"| API
 
     classDef svcnode fill:#292c30,stroke:#3daee9,color:#fcfcfc
     classDef backend fill:#1d1f22,stroke:#3c4045,color:#fcfcfc
@@ -88,8 +88,8 @@ flowchart TB
     classDef entry fill:#292c30,stroke:#3c4045,color:#fcfcfc
 
     class DBUS,API,CORE,STATE,RECON,MBOX,CFG svcnode
-    class ORGB,LQC,OLH backend
-    class LIT,LCD,TELEM hwnode
+    class ORGB,COOL,HWMON backend
+    class LIT,LCD,TELEM,TEMP hwnode
     class KEY,GUI,CLI,KWIN entry
     class DEV future
     class FUTURE,PBM future
@@ -216,9 +216,13 @@ took the shortcuts and left a program that believed it still had them.
   device compose into one complete frame before anything is written. That is
   what makes a write atomic from the device's point of view, and what lets a
   single-slot mailbox coalesce without dropping half a scene.
-- **Two backends, one device.** The Kraken's lighting is OpenRGB's; its LCD and
-  telemetry are liquidctl's. liquidctl exposes no colour channels for this
-  model at all.
+- **Two paths, one device.** The Kraken's lighting is OpenRGB's; its telemetry
+  and its screen are hotaru's own, spoken to over `/dev/hidraw` and usbfs. The
+  split is the hardware's rather than a preference: OpenRGB exposes the colour
+  channels and nothing else, and liquidctl — which used to fill the gap —
+  exposes no colour channels for this model at all. Doing the cooler directly
+  took a Python interpreter and a subprocess per reading out of the service,
+  and a reading from 105 ms to about two (spec 012).
 - **One writer per file.** Rules are the user's and are never rewritten;
   scenes are machine-written because the GUI edits them; desired state lives
   outside the config directory entirely; and the GUI's own file holds nothing
@@ -230,10 +234,12 @@ took the shortcuts and left a program that believed it still had them.
   is not ready, as a cold boot finding two devices of six demonstrated. Desktop
   pieces such as the KWin script attach when the session shows up and reattach
   when it restarts.
-- **Every backend is optional.** OpenRGB, liquidctl and OpenLinkHub are three
-  independent legs; any of them missing removes its capabilities from the API
-  and the GUI without failing the others or stopping the service. The KWin
-  script is a KDE convenience — elsewhere the CLI is the binding mechanism.
+- **Every backend is optional.** OpenRGB, the cooler and the kernel's sensors
+  are independent legs; any of them missing removes its capabilities from the
+  API and the GUI without failing the others or stopping the service. A machine
+  with no liquid cooler is the ordinary case, not an error, and says so through
+  the same route a reading would take. The KWin script is a KDE convenience —
+  elsewhere the CLI is the binding mechanism.
 - **The monitor is a consumer, eventually.** It keeps its own reads for now —
   an accepted, temporary overlap — and becomes an API client when it is
   rewritten in Go.
