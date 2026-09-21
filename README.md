@@ -188,6 +188,8 @@ necessary is an artefact of where it used to live.
 - [specs/009-writes-that-mean-what-they-say.md](specs/009-writes-that-mean-what-they-say.md):
   why a write that lands in the buffer is not always a write, and what hotaru
   checks instead.
+- [specs/024-the-check-that-cost-four-fifths.md](specs/024-the-check-that-cost-four-fifths.md):
+  the first profile of the window, and the debug check that was most of it.
 - [specs/023-a-dashboard-you-can-change.md](specs/023-a-dashboard-you-can-change.md):
   the dashboard editor, and the font cache that killed the service when two
   goroutines drew at once.
@@ -237,6 +239,15 @@ MIT. See [LICENSE](LICENSE).
 ## Changelog
 
 ### Unreleased
+
+- The window is built without Fyne's thread-safety check, which was 82% of the
+  CPU of a window drag: Fyne calls `runtime.Stack` on every canvas refresh to
+  find out which goroutine it is on, formatting a whole traceback to keep the
+  first thirty bytes. The window's own resize work fell 3.8x. Safe here
+  because `internal/gui/thread_test.go` fails the build when anything inside a
+  `Perform` callback touches the interface unwrapped — the tag and that guard
+  are one decision. `make install` is the way to build it; `go install` misses
+  the tag (spec 024, #55).
 
 - The window can be profiled. `HOTARU_PPROF=:6060 hotaru-gui` serves
   `net/http/pprof` on loopback, and the window runs under a soft 512 MiB
