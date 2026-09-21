@@ -219,9 +219,10 @@ MIT. See [LICENSE](LICENSE).
 
 ### Unreleased
 
-- The README no longer says the cooler is reached through liquidctl. It has not
-  been since spec 012, and the front page is the only description most readers
-  get.
+- The README, the architecture diagram and the hardware page no longer say the
+  cooler is reached through liquidctl, or that the CPU temperature comes from
+  OpenLinkHub. Neither has been true since spec 012, and the docs were still
+  describing the architecture the project replaced.
 
 - The cooler's screen shows a live dashboard: coolant temperature with a
   severity-coloured ring, the processor, the graphics card and the pump, over a
