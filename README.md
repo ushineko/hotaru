@@ -188,6 +188,8 @@ necessary is an artefact of where it used to live.
 - [specs/009-writes-that-mean-what-they-say.md](specs/009-writes-that-mean-what-they-say.md):
   why a write that lands in the buffer is not always a write, and what hotaru
   checks instead.
+- [specs/026-a-scene-is-a-list-not-a-column.md](specs/026-a-scene-is-a-list-not-a-column.md):
+  what 225 lines in a column cost, and what a list costs instead.
 - [specs/025-the-editor-is-mostly-blocks.md](specs/025-the-editor-is-mostly-blocks.md):
   why the scene editor was slow to resize, and what a colour block costs.
 - [specs/024-the-check-that-cost-four-fifths.md](specs/024-the-check-that-cost-four-fifths.md):
@@ -241,6 +243,13 @@ MIT. See [LICENSE](LICENSE).
 ## Changelog
 
 ### Unreleased
+
+- A scene's lines are a list rather than a column. A scene that names lights
+  individually has 225 of them, and each was seven objects that Fyne measured
+  on every layout — with a wrapping label re-measuring at every width. The
+  list builds the rows on screen and recycles them: resizing the editor with
+  that scene loaded went from 9.16 s of CPU in a 25-second drag to 6.10 s, and
+  from 18.84 s before any of this work (spec 026, #59).
 
 - Resizing the scene editor costs half what it did. Each light block was a
   rectangle with an invisible button stacked over it — five objects, hundreds
