@@ -247,6 +247,27 @@ MIT. See [LICENSE](LICENSE).
 
 ### Unreleased
 
+- System says which display was found: the panel the cooler model has, "none"
+  for one without, or the panel and the reason when it cannot be reached.
+  `hotaru cooling` says the same. Asking the device would mean claiming the
+  interface, which would take somebody's screen off liquidctl to answer a
+  question nobody asked (spec 032, #73).
+
+- A screen that will not open is an absence rather than a fault. Another
+  program holding the interface, or a usbfs node this user may not open, made
+  every scene report "the screen: permission denied" permanently — all nine
+  shipped scenes name a screen state — and made the dashboard loop fail every
+  two seconds for the life of the service. The lights still work, the loop
+  stops after one refusal, and the Screen section says so once at the top and
+  stays open: a screen is a file, and it travels to a machine that has a panel
+  (spec 032, #73).
+
+- `hotaru scene adopt` takes the pictures scenes point at into the library. A
+  scene written before hotaru kept pictures names a file wherever it happened
+  to be, which works until the file moves — and the window could not offer it,
+  because the chooser lists what hotaru keeps. The original is left where it
+  is (spec 033, #74).
+
 - Colours taken from a picture are pushed apart as far as somebody asks. A
   slice of a starfield averages to dark grey and a slice of a sunset to brown,
   so the mean is weighted by chroma now — and even then a photograph is mostly
