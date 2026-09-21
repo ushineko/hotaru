@@ -313,3 +313,22 @@ type Cooling struct {
 	Absent bool   `json:"absent,omitempty"`
 	Detail string `json:"detail,omitempty"`
 }
+
+/*
+ScreenRequest is the body of POST /v1/screen.
+
+Exactly one thing at a time. A GIF arrives base64-encoded because this is JSON
+and a picture is not text; the alternative is a second content type for one
+route, which costs every client more than it saves.
+*/
+type ScreenRequest struct {
+	// Image is a base64 GIF. Still pictures are not retained by the firmware,
+	// so one frame of a GIF is how a static image is shown.
+	Image string `json:"image,omitempty"`
+	// Readout hands the panel back to the cooler's own display.
+	Readout bool `json:"readout,omitempty"`
+	// Brightness is 0-100, Orientation one of 0, 90, 180, 270. The device
+	// keeps both across restarts.
+	Brightness  *int `json:"brightness,omitempty"`
+	Orientation *int `json:"orientation,omitempty"`
+}

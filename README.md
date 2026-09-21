@@ -217,6 +217,11 @@ MIT. See [LICENSE](LICENSE).
 
 ### Unreleased
 
+- `hotaru screen` puts a picture on the cooler's panel, sets its brightness and
+  orientation, and hands it back. hotaru hands it back on the way out too, so a
+  machine that has stopped running it is not left showing a stale picture
+  (spec 012, #2).
+
 - `hotaru cooling` reads the liquid cooler without liquidctl: coolant
   temperature, pump and fan, over `/dev/hidraw` at about two milliseconds
   against a hundred and five through a Python interpreter. A machine with no

@@ -93,14 +93,39 @@ func TestALiveCoolerAgreesWithLiquidctl(t *testing.T) {
 
 	theirs := string(out)
 	t.Logf("liquidctl says:\n%s", theirs)
-	require.Contains(t, theirs, formatted(mine.PumpRPM),
+
+	/*
+		Compared with tolerance, because these are live numbers.
+
+		A pump drifts by a few rpm between two readings a fraction of a second
+		apart, so an exact comparison tests the weather. What is being checked
+		is that both implementations are reading the same fields of the same
+		report -- a byte offset taken off the wrong driver is wrong by
+		hundreds, not by five.
+	*/
+	require.InDelta(t, mine.Coolant, number(t, theirs, "Liquid temperature"), 1.0,
+		"hotaru and liquidctl disagree about the coolant temperature")
+	require.InEpsilon(t, float64(mine.PumpRPM), number(t, theirs, "Pump speed"), 0.1,
 		"hotaru and liquidctl disagree about the pump speed")
-	require.Contains(t, theirs, formatted(mine.FanRPM),
+	require.InEpsilon(t, float64(mine.FanRPM), number(t, theirs, "Fan speed"), 0.15,
 		"hotaru and liquidctl disagree about the fan speed")
 }
 
-func formatted(rpm int) string {
-	return strings.TrimSpace(strings.Join(strings.Fields(itoa(rpm)), ""))
+// number pulls one labelled value out of liquidctl's report.
+func number(t *testing.T, report, label string) float64 {
+	t.Helper()
+	for line := range strings.SplitSeq(report, "\n") {
+		if !strings.Contains(line, label) {
+			continue
+		}
+		for _, field := range strings.Fields(line) {
+			if v, err := strconv.ParseFloat(field, 64); err == nil {
+				return v
+			}
+		}
+	}
+	t.Fatalf("liquidctl did not report %q:\n%s", label, report)
+	return 0
 }
 
 func TestALiveCoolerSurvivesBeingLeftAlone(t *testing.T) {
@@ -185,6 +210,3 @@ func testCard() []byte {
 	})
 	return buf.Bytes()
 }
-
-// itoa avoids pulling strconv in for one call in a log line.
-func itoa(n int) string { return strconv.Itoa(n) }
