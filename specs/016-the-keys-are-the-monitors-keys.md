@@ -216,6 +216,24 @@ That also settles a question the CLI's import rule would otherwise have raised:
 that rule is about **devices** -- no command may write a light -- and the
 desktop's shortcut file is not one.
 
+### The panel says no by showing nothing
+
+Five of the nine animations were blank, and the five were exactly the 480x480
+ones. The panel is 640x640, and an image of any other size **transfers
+successfully, switches buckets successfully, and displays nothing at all** --
+no error anywhere, on either side.
+
+It was found by reading the device's own slot table, which showed the picture
+sitting in memory at the address it had been given, and then by running `file`
+over the nine GIFs. The program this replaces never met the problem because
+Pillow resized every frame on its way out; hotaru sends files, so hotaru fits
+them now, in palette space by nearest neighbour so that nothing is re-quantised
+and a twenty-megabyte animation that is already the right size is not decoded
+at all.
+
+Worth keeping in mind for anything else sent to this panel: a silent blank
+screen is the device's way of refusing, and it looks identical to a hotaru bug.
+
 ### Deleting the lines does not clear a claim
 
 The remedy this spec inherited -- hand-edit `kglobalshortcutsrc` -- does not

@@ -219,6 +219,11 @@ MIT. See [LICENSE](LICENSE).
 
 ### Unreleased
 
+- An image that is not the panel's size is scaled to fit before it is sent. The
+  cooler displays nothing at all for an image of the wrong size — no error, on
+  either side — which had five of the development machine's nine LCD animations
+  silently blank (spec 016).
+
 - An image larger than four megabytes reaches the cooler's screen. usbfs takes
   one contiguous kernel allocation per transfer, so a bulk write is split into
   one-megabyte pieces; four of the development machine's nine LCD animations
