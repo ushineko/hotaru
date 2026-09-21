@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ushineko/hotaru/internal/colour"
+	"github.com/ushineko/hotaru/internal/cooler"
 	"github.com/ushineko/hotaru/internal/devices"
 	"github.com/ushineko/hotaru/internal/service"
 	"github.com/ushineko/hotaru/internal/version"
@@ -26,6 +27,7 @@ func Routes() []string {
 		"GET /" + Version + "/health",
 		"GET /" + Version + "/devices",
 		"GET /" + Version + "/status",
+		"GET /" + Version + "/cooling",
 		"POST /" + Version + "/lighting/apply",
 		"POST /" + Version + "/lighting/probe",
 		"POST /" + Version + "/reconcile",
@@ -130,6 +132,35 @@ func Handler(svc *service.Service) http.Handler {
 			Remembered: sortedNames(desired.Names()),
 		}
 		write(w, http.StatusOK, status)
+	})
+
+	/*
+		The cooler, or the fact that there is not one.
+
+		A machine with no cooler answers 200 with Absent set, rather than 404
+		or an error: "this machine has no cooler" is a fact a consumer wants,
+		and making it an error means every caller writes the same special
+		case. The same goes for a cooler that is present and would not answer
+		-- that is Detail, not a failed request.
+	*/
+	mux.HandleFunc("GET /"+Version+"/cooling", func(w http.ResponseWriter, r *http.Request) {
+		status, device, err := svc.Cooling(r.Context())
+		switch {
+		case errors.Is(err, cooler.ErrNoCooler):
+			write(w, http.StatusOK, Cooling{Absent: true, Detail: err.Error()})
+		case err != nil:
+			write(w, http.StatusOK, Cooling{Device: device.Name, Absent: true, Detail: err.Error()})
+		default:
+			write(w, http.StatusOK, Cooling{
+				Device:   device.Name,
+				Coolant:  status.Coolant,
+				PumpRPM:  status.PumpRPM,
+				PumpDuty: status.PumpDuty,
+				FanRPM:   status.FanRPM,
+				FanDuty:  status.FanDuty,
+				Taken:    status.Taken,
+			})
+		}
 	})
 
 	mux.HandleFunc("POST /"+Version+"/reconcile", func(w http.ResponseWriter, r *http.Request) {

@@ -166,3 +166,16 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any) err
 	}
 	return nil
 }
+
+/*
+Cooling is what the liquid cooler reports, or that there is none.
+
+Absence is not an error here: a machine without a cooler answers with Absent
+set, because "no cooler" is a fact a caller wants rather than a failure it has
+to distinguish from a broken socket.
+*/
+func (c *Client) Cooling(ctx context.Context) (Cooling, error) {
+	var out Cooling
+	err := c.do(ctx, http.MethodGet, "/"+Version+"/cooling", nil, &out)
+	return out, err
+}

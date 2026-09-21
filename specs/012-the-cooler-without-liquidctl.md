@@ -186,11 +186,19 @@ liquidctl does neither: it takes hidapi's first match, filtered by serial
 number where it has one. That works until a device exposes two nodes, which
 most of the ones on the development machine do.
 
-**R4. One goroutine owns the device.** Both interfaces, one owner, a single
-slot mailbox where a newer request replaces a waiting one -- the pattern
-lighting already uses. The Python needed a priority queue because every call
-was a separate process contending for one node; hotaru holds two handles and
-does not.
+**R4. One owner, and reads coalesce rather than supersede.** Two callers on one
+HID endpoint interleave control transfers, which corrupts rather than merely
+delaying, so access is serialised. The Python needed a priority queue because
+every call was a separate process contending for one node; hotaru holds the
+handle, so a mutex is the whole mechanism.
+
+Lighting's rule does **not** apply here. Its queue drops a waiting write when a
+newer one arrives, because nobody wants the second-to-last scene applied after
+the last. A read is not like that: a caller whose request was superseded still
+wants a number. So concurrent readers share one recent answer -- a quarter of a
+second -- which is what a dashboard, a status endpoint and a telemetry consumer
+asking at once actually want, and it keeps hotaru from writing to the device
+more often than anybody needs.
 
 **R5. A write is not finished when the device accepts it.** Where the screen is
 concerned, the bucket must also be selected, and the result says which bucket
@@ -282,6 +290,18 @@ Measured against liquidctl on the same cooler, same minute:
 	liquidctl:  37.3 C          2596 rpm   81 %      1244 rpm   51 %
 
 Every field identical, at **2.003 ms per reading against 105 ms**.
+
+### Absence is an answer
+
+`GET /v1/cooling` reports a machine with no cooler as `200` with `absent` set,
+rather than `404` or an error. "This machine has no cooler" is a fact a
+consumer wants; making it a failure means every caller writes the same special
+case to tell it from a broken socket, and a dashboard that cannot distinguish
+them raises an alarm about an ordinary desktop.
+
+A cooler that is present and will not answer is the same shape with its name
+attached, because present-and-silent is a different problem from absent and the
+name is the first thing somebody needs in order to chase it.
 
 ## Risks & Assumptions
 

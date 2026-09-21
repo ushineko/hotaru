@@ -23,6 +23,7 @@ import (
 
 	"github.com/ushineko/hotaru/internal/colour"
 	"github.com/ushineko/hotaru/internal/config"
+	"github.com/ushineko/hotaru/internal/cooler"
 	"github.com/ushineko/hotaru/internal/devices"
 	"github.com/ushineko/hotaru/internal/openrgb"
 	"github.com/ushineko/hotaru/internal/queue"
@@ -39,6 +40,54 @@ type Service struct {
 	recorder Recorder
 	queue    *queue.Set
 	env      Environment
+	cooler   Cooler
+}
+
+/*
+Cooler is the liquid cooler, if this machine has one.
+
+An interface so the service does not depend on how one is opened, and so a
+machine with no cooler is the nil case rather than a special one: every method
+below reports absence as an ordinary answer.
+*/
+type Cooler interface {
+	Status(ctx context.Context) (cooler.Status, error)
+	Device() cooler.Device
+}
+
+/*
+SetCooler gives the service a cooler to read.
+
+Optional, always. No cooler means telemetry is absent and everything else --
+lighting, reconciliation, the API -- is unaffected, which is spec 012's
+degradation rule and the reason this is a setter rather than a constructor
+argument.
+*/
+func (s *Service) SetCooler(c Cooler) {
+	s.mu.Lock()
+	s.cooler = c
+	s.mu.Unlock()
+}
+
+/*
+Cooling is the cooler's reading, or why there is none.
+
+ErrNoCooler is the ordinary answer on a machine without one, and callers are
+expected to show that as an absence rather than a fault.
+*/
+func (s *Service) Cooling(ctx context.Context) (cooler.Status, cooler.Device, error) {
+	s.mu.RLock()
+	c := s.cooler
+	s.mu.RUnlock()
+
+	if c == nil {
+		return cooler.Status{}, cooler.Device{}, cooler.ErrNoCooler
+	}
+	status, err := c.Status(ctx)
+	if err != nil {
+		return cooler.Status{}, c.Device(), err
+	}
+	return status, c.Device(), nil
 }
 
 /*
