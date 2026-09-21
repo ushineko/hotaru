@@ -584,27 +584,36 @@ func (s *ScenesSection) led(sh *shell.Shell, device api.Device, zone api.Zone,
 ) fyne.CanvasObject {
 	spot := Lights(device.Name, zone.Name, first, last)
 
-	block := canvas.NewRectangle(sample(colours, zone.First+first, device.InScope))
+	/*
+		A swatch rather than a rectangle under an invisible button.
+
+		This is the widget the editor has most of -- one per run of lights,
+		across every device -- and a scroller lays out everything it holds
+		rather than what is visible. A resize profile put
+		`buttonRenderer.MinSize` at 14% of all samples: a theme lookup, a
+		padding calculation and a RichText.MinSize per block, for blocks
+		whose label is the empty string. See spec 025.
+	*/
+	block := widgets.NewSwatch(fyne.NewSize(blockSize, blockSize))
+	block.Fill = sample(colours, zone.First+first, device.InScope)
 	if colour, has := s.draft.Colour(spot.Target()); has {
 		// What the draft will do to it, which is the point of drawing it here
 		// rather than in the read-only view.
-		block.FillColor = parse(colour)
+		block.Fill = parse(colour)
 	}
 	block.StrokeWidth = 1
-	block.StrokeColor = theme.Color(theme.ColorNameSeparator)
+	block.Stroke = theme.Color(theme.ColorNameSeparator)
 	if s.picked.Has(spot) {
 		block.StrokeWidth = 3
-		block.StrokeColor = theme.Color(theme.ColorNamePrimary)
+		block.Stroke = theme.Color(theme.ColorNamePrimary)
 	}
-
-	button := widget.NewButton("", func() {
+	block.OnTapped = func() {
 		s.stopPicking()
 		s.picked.Toggle(spot)
 		sh.Invalidate()
-	})
-	button.Importance = widget.LowImportance
+	}
 
-	return widgets.WithTip(container.NewStack(block, button), spot.Describe())
+	return widgets.WithTip(block, spot.Describe())
 }
 
 // pick is one selectable spot, carrying the draft's colour for it.
