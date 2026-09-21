@@ -79,11 +79,57 @@ about to read a result code out of it, and a report from somewhere else would
 answer a question nobody asked.
 */
 func (h *hid) ask(ctx context.Context, data ...byte) ([]byte, error) {
+	h.drain()
 	if err := h.tell(data...); err != nil {
 		return nil, err
 	}
 	return h.await(ctx, data[0]+1, data[1])
 }
+
+/*
+drain discards reports that arrived before the question was asked.
+
+This cooler broadcasts its state about once a second whether or not anybody
+asked, the kernel queues those per open handle, and hotaru's handle is open for
+the life of the service. So the queue is as deep as the service has been idle:
+a minute of quiet leaves sixty stale reports ahead of the next reply, and a
+reader that looks at the first twelve finds none of them are it.
+
+That is what this was, reported from the machine as "no 7501 reply in 12
+reports" -- intermittently, because a run of calls keeps the queue empty and
+only idleness fills it. liquidctl calls the same thing clear_enqueued_reports
+and does it before every status read.
+
+Errors are ignored on purpose: a queue that cannot be drained is a device that
+will fail the read that follows, and reporting it twice helps nobody.
+*/
+func (h *hid) drain() {
+	if err := h.f.SetReadDeadline(time.Now().Add(drainWait)); err != nil {
+		return
+	}
+	buf := make([]byte, reportLen)
+	for range queueDepth {
+		if _, err := h.f.Read(buf); err != nil {
+			return
+		}
+	}
+}
+
+/*
+queueDepth is how many reports the kernel will hold for one open handle.
+
+Linux queues up to 64 per hidraw file description and drops the oldest beyond
+that, so this bounds a drain rather than guessing at one.
+*/
+const queueDepth = 64
+
+/*
+drainWait is how long draining waits for a report that is not there.
+
+Queued reports are readable immediately, so this is only the cost of finding
+out that the queue is empty -- paid once per question.
+*/
+const drainWait = 2 * time.Millisecond
 
 /*
 await returns the next report with this prefix.

@@ -312,7 +312,25 @@ name is the first thing somebody needs in order to chase it.
 - **One cooler, one firmware.** Everything here was learned from an Elite V2 on
   1.2.0. The Kraken family differs by product id, and hotaru should decline to
   drive a cooler it does not recognise rather than guess.
-- **Another program holds the same node, and takes replies.** The OpenRGB
+- **A long-lived handle accumulates broadcasts.** This cooler reports its state
+  about once a second whether or not anybody asked, and the kernel queues those
+  per open handle -- up to 64, then it drops the oldest. hotaru's handle is
+  open for the life of the service, so the queue is as deep as the service has
+  been idle: a minute of quiet leaves sixty stale reports ahead of the next
+  reply, and a reader that looks at twelve finds none of them are it.
+
+  Reported from the machine as "no 7501 reply in 12 reports". It looked
+  intermittent because a run of calls keeps the queue empty -- forty
+  back-to-back calls passed either side of the failure -- and only idleness
+  fills it, which is exactly how a person uses the command and not how a loop
+  does.
+
+  Clearing the queue before each question is the fix, and it is what liquidctl
+  calls `clear_enqueued_reports`. It was considered earlier and dismissed on a
+  measurement taken against a **freshly opened** handle, which by definition
+  has nothing queued.
+
+- **Another program holds the same node.** The OpenRGB
   server had this cooler on a different hidraw node earlier in development, so
   the two were assumed not to collide. After a reboot they were on the same
   one:
@@ -320,16 +338,16 @@ name is the first thing somebody needs in order to chase it.
 	openrgb  576461  fd 26u  /dev/hidraw7
 	hotaru  1056349  fd  3u  /dev/hidraw7
 
-  A report OpenRGB reads is a report hotaru does not, so the reply to a status
-  request occasionally never arrives -- reported from the machine as "no 7501
-  reply in 12 reports", intermittently, with forty consecutive calls succeeding
-  either side of it.
+  This was first blamed for the failure above, on the theory that a report
+  OpenRGB reads is a report hotaru does not. That is **wrong**: Linux queues
+  hidraw reports per open file description, so both readers receive every
+  report and neither can take the other's. The mechanism was assumed rather
+  than checked.
 
-  Nothing can prevent it: peripheral-battery-monitor documented the same hazard
-  and could only serialise its own calls. Asking again is the mitigation, and
-  it is enough because losing a reply is occasional rather than persistent. The
-  retry lives on the Cooler rather than in the transport so that the fake
-  exercises it -- a retry the tests cannot reach is a retry nobody has checked.
+  Sharing the node is still worth knowing about -- two writers on one interrupt
+  endpoint would interleave control transfers -- and hotaru retries an exchange
+  that finds no reply, which costs nothing and covers a report genuinely lost.
+  But it is not what the reported failure was.
 - **Rollback** is a revert to shelling out, which is why R1 is a requirement
   about behaviour and not a rewrite of the interface the rest of hotaru sees.
 

@@ -112,3 +112,37 @@ func TestGivingUpSaysWhatWasTried(t *testing.T) {
 	require.ErrorContains(t, err, "7501")
 	require.Len(t, fake.Told, exchanges, "it gave up without asking again")
 }
+
+func TestABacklogOfBroadcastsDoesNotHideTheReply(t *testing.T) {
+	/*
+		Reported from the machine: "no 7501 reply in 12 reports", and only
+		after the service had been left alone for a while.
+
+		This cooler broadcasts about once a second whether or not anybody
+		asked, and the kernel queues those per open handle. hotaru's handle is
+		open for the life of the service, so the queue is as deep as the
+		service has been idle -- a minute of quiet puts sixty stale reports
+		ahead of the next reply, and a reader that looks at twelve finds none
+		of them are it.
+
+		A run of calls keeps the queue empty, which is why forty back-to-back
+		calls passed either side of the failure.
+	*/
+	fake := NewFake()
+	fake.Queued = 40 // as after forty seconds of quiet
+	c := NewWithFake(fake)
+
+	status, err := c.Status(context.Background())
+	require.NoError(t, err, "stale broadcasts hid the reply")
+	require.InDelta(t, 37.5, status.Coolant, 0.05)
+}
+
+func TestNotClearingTheBacklogIsWhatFailed(t *testing.T) {
+	// The other half: without clearing, a deep queue does exhaust the reader,
+	// so the test above is measuring something real.
+	fake := NewFake()
+	fake.Queued = 40
+
+	_, err := fake.await(context.Background(), 0x75, 0x01)
+	require.ErrorContains(t, err, "no 7501 reply")
+}
