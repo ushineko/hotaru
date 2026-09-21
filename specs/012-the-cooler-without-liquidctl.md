@@ -159,10 +159,21 @@ board from `nct6798`, the PSU from `corsairpsu`, all under `/sys/class/hwmon`.
 The GPU comes from `nvidia-smi` for want of an hwmon node. OpenLinkHub is not a
 dependency of hotaru: everything the Python used it for is a file read.
 
-**R3. Devices are found, not configured.** USB vendor and product ids identify
-the cooler, and the hidraw node and usbfs path are derived from sysfs. No
-hardcoded `/dev/hidraw7`, which is what the prototype does and is the first
-thing that breaks on another machine, or on this one after a reboot.
+**R3. Devices are found, not configured, and the device confirms which.** USB
+vendor and product ids identify candidates, and the hidraw node and usbfs path
+are derived from sysfs. No hardcoded `/dev/hidraw7`.
+
+Sysfs alone is not enough. One device commonly exposes several hidraw nodes --
+on the development machine a Logitech receiver has three, a keyboard two, and
+this cooler had two earlier the same day -- and they are indistinguishable from
+outside. The glob is lexical besides, so `hidraw10` sorts before `hidraw7` and
+"the first match" is a coin toss that lands differently after a reboot.
+
+So every candidate is asked for a reading, with a short deadline, and the one
+that replies is the cooler. It is safe, because candidates are already filtered
+to a known vendor and product, and it is decisive, because a mismatched device
+answers with its own prefix -- a Corsair power supply asked this replied
+`74 96`, which is not a status reply.
 
 **R4. One goroutine owns the device.** Both interfaces, one owner, a single
 slot mailbox where a newer request replaces a waiting one -- the pattern
@@ -235,7 +246,9 @@ running hotaru does not keep a stale dashboard.
 Discovery walks sysfs from the USB ids to a hidraw node and a usbfs path, so
 nothing is written down: on the development machine it finds
 `/dev/hidraw7` and `/dev/bus/usb/001/013`, which is what the prototype had
-hardcoded and would have been wrong on the next boot. A cooler this package
+hardcoded and would have been wrong on the next boot. Where sysfs offers more
+than one node -- which it does for most devices on that machine -- the cooler
+is asked which one it is, because nothing outside the device can tell. A cooler this package
 does not recognise is declined rather than guessed at, and a machine with no
 cooler gets `ErrNoCooler`, which is an ordinary state.
 

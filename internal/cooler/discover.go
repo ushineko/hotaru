@@ -48,14 +48,25 @@ type Device struct {
 	USB string
 }
 
-// Find locates a supported cooler, or reports that there is none.
-func Find() (Device, error) { return find("/sys", "/dev") }
+/*
+Find lists every node that might be a supported cooler.
 
-func find(sysRoot, devRoot string) (Device, error) {
+Candidates, not an answer. One device commonly exposes several hidraw nodes --
+on the development machine a Logitech receiver has three, a keyboard two, and
+this cooler had two earlier the same day -- and they are indistinguishable from
+sysfs. Worse, the glob is lexical, so hidraw10 sorts before hidraw7 and "the
+first match" is a coin toss that lands differently after a reboot.
+
+Which one actually answers is settled by asking it. See pick.
+*/
+func Find() ([]Device, error) { return find("/sys", "/dev") }
+
+func find(sysRoot, devRoot string) ([]Device, error) {
 	nodes, err := filepath.Glob(filepath.Join(sysRoot, "class", "hidraw", "hidraw*"))
 	if err != nil {
-		return Device{}, fmt.Errorf("look for hidraw devices: %w", err)
+		return nil, fmt.Errorf("look for hidraw devices: %w", err)
 	}
+	var found []Device
 	for _, node := range nodes {
 		vendor, product, ok := hidID(filepath.Join(node, "device", "uevent"))
 		if !ok || vendor != nzxt {
@@ -67,16 +78,22 @@ func find(sysRoot, devRoot string) (Device, error) {
 		}
 		usb, err := usbNode(devRoot, node)
 		if err != nil {
-			return Device{}, err
+			// A node whose USB device cannot be found is not a candidate, and
+			// not a reason to abandon the others: sysfs is not guaranteed to
+			// look the way this machine's does.
+			continue
 		}
-		return Device{
+		found = append(found, Device{
 			Product: product,
 			Name:    name,
 			HID:     filepath.Join(devRoot, filepath.Base(node)),
 			USB:     usb,
-		}, nil
+		})
 	}
-	return Device{}, ErrNoCooler
+	if len(found) == 0 {
+		return nil, ErrNoCooler
+	}
+	return found, nil
 }
 
 // ErrNoCooler is a machine with no cooler this package knows how to drive,
