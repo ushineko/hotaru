@@ -34,6 +34,11 @@ type App struct {
 	// changed nothing can rebuild nothing.
 	drawn Snapshot
 
+	// create is the group the picture library lives in, so a dropped file
+	// can send the window to the part that takes it rather than to a
+	// section title that stopped existing when it was grouped.
+	create *Create
+
 	// pictures takes files dropped on the window, wherever the navigation
 	// happens to be.
 	pictures *PicturesSection
@@ -117,7 +122,7 @@ func (a *App) Options(socket string) shell.Options {
 		NavModes:      []shell.NavMode{shell.NavLabels, shell.NavIcons, shell.NavHidden},
 		NavPlacements: []shell.NavPlacement{shell.NavLeft, shell.NavTop},
 		OnCreate: func(s *shell.Shell) {
-			a.shell, a.pictures = s, pictures
+			a.shell, a.pictures, a.create = s, pictures, create
 		},
 		OnStart: func(s *shell.Shell) {
 			/*
@@ -130,8 +135,7 @@ func (a *App) Options(socket string) shell.Options {
 			*/
 			if s.Window != nil {
 				s.Window.SetOnDropped(func(_ fyne.Position, uris []fyne.URI) {
-					s.Select("Pictures")
-					a.pictures.Dropped(s, uris)
+					a.dropped(s, uris)
 				})
 			}
 			a.Start(context.Background())
@@ -307,3 +311,28 @@ goroutine.
 fyne.Do, never DoAndWait: the worker must not wait on the thread it is feeding.
 */
 func onScreen(do func()) { fyne.Do(do) }
+
+/*
+dropped takes files dragged onto the window: the library's part is shown, and
+then it is handed them.
+
+**The group, and then the part inside it.** "Pictures" stopped being a section
+when it became one of three under Create, and the handler still asked for it
+by that name -- so every dropped picture was converted, kept, and followed by
+the window jumping to the front page, because a title nothing answered to
+selected the first section. fynedesygn ignores an unknown title now (its spec
+028); this asks for the two things that do exist.
+*/
+func (a *App) dropped(sh *shell.Shell, uris []fyne.URI) {
+	if a.create != nil {
+		a.create.Show("Pictures")
+	}
+	sh.Select("Create")
+	if a.pictures != nil {
+		a.pictures.Dropped(sh, uris)
+	}
+}
+
+// Drop is dropped, for tests: the handler it belongs to is a window callback,
+// and a test that set one would be a test about Fyne.
+func Drop(a *App, sh *shell.Shell, uris []fyne.URI) { a.dropped(sh, uris) }
