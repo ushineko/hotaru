@@ -82,3 +82,33 @@ func TestAnAbandonedReadGivesUp(t *testing.T) {
 	_, err := c.Status(ctx)
 	require.ErrorIs(t, err, context.Canceled)
 }
+
+func TestAStolenReplyIsAskedForAgain(t *testing.T) {
+	/*
+		Another program holds the same hidraw node open -- the OpenRGB server
+		does on the development machine -- and a report it reads is a report
+		hotaru does not. The reply to a status request simply does not arrive.
+
+		Nothing can stop that happening; asking again is the whole mitigation.
+	*/
+	fake := NewFake()
+	fake.LoseFirst = 1 // the other reader takes the first reply
+	c := NewWithFake(fake)
+
+	status, err := c.Status(context.Background())
+	require.NoError(t, err, "one lost reply ended the reading")
+	require.InDelta(t, 37.5, status.Coolant, 0.05)
+	require.Greater(t, len(fake.Told), 1, "the question was not asked again")
+}
+
+func TestGivingUpSaysWhatWasTried(t *testing.T) {
+	// Persistent silence is a different problem from a stolen reply, and the
+	// message has to be good enough to act on.
+	fake := NewFake()
+	fake.Silent = true
+	c := NewWithFake(fake)
+
+	_, err := c.Status(context.Background())
+	require.ErrorContains(t, err, "7501")
+	require.Len(t, fake.Told, exchanges, "it gave up without asking again")
+}
