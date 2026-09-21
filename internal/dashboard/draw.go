@@ -1,0 +1,157 @@
+package dashboard
+
+import (
+	"image"
+	"image/color"
+	"image/draw"
+	"math"
+	"math/rand"
+	"strconv"
+
+	"golang.org/x/image/font"
+	"golang.org/x/image/font/gofont/gobold"
+	"golang.org/x/image/font/gofont/goregular"
+	"golang.org/x/image/font/opentype"
+	"golang.org/x/image/math/fixed"
+)
+
+// ptToPx converts the Python's Qt point sizes, which were chosen by looking at
+// the panel, into the pixels this rasteriser wants.
+const ptToPx = 4.0 / 3.0
+
+var faces = map[string]font.Face{}
+
+func face(pt float64, bold bool) font.Face {
+	key := "r"
+	source := goregular.TTF
+	if bold {
+		key, source = "b", gobold.TTF
+	}
+	key += strconv.Itoa(int(pt))
+	if f, ok := faces[key]; ok {
+		return f
+	}
+	parsed, err := opentype.Parse(source)
+	if err != nil {
+		panic(err) // the fonts are compiled in; a failure here is a broken build
+	}
+	f, err := opentype.NewFace(parsed, &opentype.FaceOptions{
+		Size: pt * ptToPx, DPI: 72, Hinting: font.HintingFull,
+	})
+	if err != nil {
+		panic(err)
+	}
+	faces[key] = f
+	return f
+}
+
+/*
+centred draws text centred in both axes within a rect.
+
+The reason the Python has this helper: text is top-aligned by default, which
+lets a large glyph overrun its box and collide with the band beneath it.
+*/
+func centred(dst draw.Image, s string, x, y, w, h int, pt float64, bold bool, c color.Color) {
+	f := face(pt, bold)
+	advance := font.MeasureString(f, s)
+	metrics := f.Metrics()
+	(&font.Drawer{
+		Dst: dst, Src: image.NewUniform(c), Face: f,
+		Dot: fixed.P(x+(w-advance.Round())/2, y+(h+metrics.Ascent.Round()-metrics.Descent.Round())/2),
+	}).DrawString(s)
+}
+
+// nebulae are placed off-centre and kept dim: the middle of the panel carries
+// the headline number and stays the darkest part of the image.
+var nebulae = []struct {
+	cx, cy, r float64
+	c         color.RGBA
+}{
+	{0.20, 0.22, 0.46, color.RGBA{96, 60, 190, 255}},
+	{0.82, 0.30, 0.40, color.RGBA{30, 120, 170, 255}},
+	{0.68, 0.84, 0.44, color.RGBA{150, 45, 120, 255}},
+	{0.30, 0.78, 0.34, color.RGBA{40, 90, 160, 255}},
+}
+
+var sky *image.Paletted
+
+/*
+background is the starfield, drawn and quantised once.
+
+Once for two reasons. A field regenerated per frame would shimmer between
+updates, which on a screen that only redraws when something changes reads as a
+fault rather than decoration -- so the Python caches it, with a fixed seed so
+the sky is the same after every restart. And re-quantising four hundred
+thousand pixels per frame cost 128 ms against 7.8 ms for copying a quantised
+one, which is the difference between a renderer that could run forever and one
+that could not.
+*/
+func background() *image.Paletted {
+	if sky != nil {
+		return sky
+	}
+	rgba := image.NewRGBA(image.Rect(0, 0, Size, Size))
+	draw.Draw(rgba, rgba.Bounds(), image.NewUniform(colBG), image.Point{}, draw.Src)
+
+	for _, n := range nebulae {
+		cx, cy, r := n.cx*Size, n.cy*Size, n.r*Size
+		for y := range Size {
+			for x := range Size {
+				d := math.Hypot(float64(x)-cx, float64(y)-cy)
+				if d > r {
+					continue
+				}
+				f := (1 - d/r)
+				f = f * f * 0.28 // dim: decoration, not content
+				o := rgba.RGBAAt(x, y)
+				rgba.SetRGBA(x, y, color.RGBA{
+					R: clamp(float64(o.R) + float64(n.c.R)*f),
+					G: clamp(float64(o.G) + float64(n.c.G)*f),
+					B: clamp(float64(o.B) + float64(n.c.B)*f),
+					A: 255,
+				})
+			}
+		}
+	}
+
+	/*
+		Stars as small blocks, and fewer than the Python's 420.
+
+		Single scattered pixels are the worst possible input to LZW: each one
+		breaks a run that would otherwise compress away. The Python did not
+		care because it was pushing to a screen over a path that tolerated it;
+		this panel will not display a frame that is too large to settle in the
+		time between updates.
+	*/
+	rng := rand.New(rand.NewSource(0x5EED)) //nolint:gosec // a fixed sky, not a secret
+	for range 150 {
+		x, y := rng.Intn(Size-2), rng.Intn(Size-2)
+		for dy := range 2 {
+			for dx := range 2 {
+				rgba.SetRGBA(x+dx, y+dy, color.RGBA{200, 205, 230, 255})
+			}
+		}
+	}
+
+	sky = image.NewPaletted(rgba.Bounds(), palette())
+	draw.Draw(sky, sky.Bounds(), rgba, image.Point{}, draw.Src)
+	return sky
+}
+
+// arc strokes a circle segment, clockwise from twelve o'clock.
+func arc(dst draw.Image, cx, cy, radius, width, from, sweep float64, c color.Color) {
+	steps := int(math.Abs(sweep) * radius / 0.5)
+	if steps < 2 {
+		return
+	}
+	for i := range steps {
+		a := from + sweep*float64(i)/float64(steps-1)
+		for w := -width / 2; w <= width/2; w += 0.5 {
+			r := radius + w
+			x, y := int(cx+r*math.Cos(a)), int(cy-r*math.Sin(a))
+			if x >= 0 && y >= 0 && x < Size && y < Size {
+				dst.Set(x, y, c)
+			}
+		}
+	}
+}

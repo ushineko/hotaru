@@ -2,7 +2,7 @@
 
 **Issue**: [#3](https://github.com/ushineko/hotaru/issues/3)
 
-## Status: INCOMPLETE
+## Status: COMPLETE
 
 ## Context
 
@@ -122,26 +122,58 @@ service died.
 
 ## Acceptance Criteria
 
-- [ ] AC1. The rendered panel matches the Python's layout: ring, headline,
+- [x] AC1. The rendered panel matches the Python's layout: ring, headline,
       unit, and three metric columns at the same coordinates.
-- [ ] AC2. Coolant colour bands change at 50 C and 60 C, matching the alert
+- [x] AC2. Coolant colour bands change at 50 C and 60 C, matching the alert
       thresholds so the screen and the notifications never disagree.
-- [ ] AC3. CPU is never colour-graded; a pump reading zero is always critical,
+- [x] AC3. CPU is never colour-graded; a pump reading zero is always critical,
       whatever else the screen is doing.
-- [ ] AC4. A missing metric renders a placeholder and the frame still encodes.
-- [ ] AC5. The frame hash gates pushes, and a run with unchanging inputs
+- [x] AC4. A missing metric renders a placeholder and the frame still encodes.
+- [x] AC5. The frame hash gates pushes, and a run with unchanging inputs
       pushes once and then stops.
-- [ ] AC6. An element advances with each accepted update, and a test asserts
+- [x] AC6. An element advances with each accepted update, and a test asserts
       two successive frames with identical inputs are byte-identical -- so the
       indicator cannot defeat the gate.
-- [ ] AC7. The push floor is enforced against the encoded frame size, with the
+- [x] AC7. The push floor is enforced against the encoded frame size, with the
       measured table in the code as a comment and in the spec as the source.
-- [ ] AC8. The background is rendered and quantised once per process.
-- [ ] AC9. Rendering is allocation-light enough to run forever: a benchmark
+- [x] AC8. The background is rendered and quantised once per process.
+- [x] AC9. Rendering is allocation-light enough to run forever: a benchmark
       asserts the per-frame allocation does not grow across frames.
-- [ ] AC10. The screen returns to the firmware readout when the service stops.
-- [ ] AC11. Verified on the development machine: the dashboard updating at the
+- [x] AC10. The screen returns to the firmware readout when the service stops.
+- [x] AC11. Verified on the development machine: the dashboard updating at the
       floor with the indicator advancing, and an idle machine not pushing.
+
+## Verified on hardware
+
+Development machine, NZXT Kraken Elite V2, with somebody watching the panel.
+
+The dashboard draws, the numbers agree with `hotaru cooling` and `nvidia-smi`,
+the indicator advances, and the service costs 0.6% of one core -- the 0.55% the
+table above predicted. `hotaru screen readout` takes the panel and the
+dashboard stops rather than drawing over it two seconds later; `hotaru screen
+dashboard` gives it back and it redraws at once.
+
+### The panel blanked at random, and it was hotaru deleting the picture
+
+The first run on hardware blanked every so often, with no pattern anybody could
+see and nothing reported wrong -- every transfer succeeded.
+
+**The slot being displayed is not free, whatever the device says about it.**
+Each push took the next free slot of sixteen and nothing ever released the old
+ones. Once all sixteen were occupied, placement wrapped around and cleared the
+slot that was on screen; the transfer that followed takes about a second, and
+the panel has nothing to show for the duration. Whether a given update blanked
+depended on which slots happened to refuse to clear, which is why it looked
+random rather than periodic.
+
+The fix is double buffering, which on this panel is not an optimisation: write
+into a slot that is not displayed, switch to it, and only then delete the
+previous one. hotaru tracks what it last asked the device to show, because the
+device does not report it.
+
+This is the same shape as every other finding in specs 009 through 012 -- a
+write that succeeds at the protocol level and is wrong at the panel -- and it
+was found the same way, by somebody looking at the machine.
 
 ## Risks & Assumptions
 
@@ -152,6 +184,13 @@ service died.
 - **The floor is a discovery, not a specification.** Nothing in the protocol
   announces it. If a future firmware changes it, the symptom will be a screen
   that quietly stops updating while every write reports success.
+- **A graphics card temperature may need a process.** The kernel exposes one
+  for AMD and nouveau; NVIDIA's own driver registers no hwmon, so hotaru asks
+  `nvidia-smi` -- 18 ms wall and about 2 ms of CPU, once per update. The
+  objection this project has to spawning processes was `liquidctl` blocking
+  every frame on the write path for 105 ms; a sensor read at 0.5 Hz is not
+  that, and the alternative is cgo for one integer. A machine with neither
+  draws a placeholder.
 - **`golang.org/x/image` is a dependency the service takes on** for a font
   rasteriser. It is a Go project module, pure Go, and the alternative is
   hand-drawn glyphs -- which were tried, work, and suit the panel, but are not

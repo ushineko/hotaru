@@ -12,17 +12,23 @@ import (
 /*
 screenCommand is the cooler's panel.
 
-Deliberately small. It shows a picture, gives the screen back, and sets the two
-things the device remembers. What it does not do is render anything: a live
-dashboard is spec 013's, and a command that quietly started one would make
-"show me this picture" mean something different tomorrow.
+Deliberately small. It shows a picture, hands the panel to the cooler or back
+to hotaru's dashboard, and sets the two things the device remembers. What it
+does not do is render anything: the dashboard is the service's, and a command
+that quietly started one would make "show me this picture" mean something
+different tomorrow.
+
+The screen has one picture on it, so showing one stops the dashboard until
+`hotaru screen dashboard` asks for it back. A picture replaced two seconds
+later was not shown.
 */
 func screenCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "screen",
 		Short: "The cooler's screen",
 	}
-	cmd.AddCommand(screenShowCommand(), screenOffCommand(), screenAppearanceCommand())
+	cmd.AddCommand(screenShowCommand(), screenOffCommand(),
+		screenDashboardCommand(), screenAppearanceCommand())
 	return cmd
 }
 
@@ -50,7 +56,7 @@ static picture stays up.`,
 			}); err != nil {
 				return quiet(err)
 			}
-			cmd.Printf("Showing %s.\n", args[0])
+			cmd.Printf("Showing %s. Run `hotaru screen dashboard` to put the dashboard back.\n", args[0])
 			return nil
 		},
 	}
@@ -76,6 +82,30 @@ is not left showing a stale picture.`,
 				return quiet(err)
 			}
 			cmd.Println("The screen is showing the cooler's own display again.")
+			return nil
+		},
+	}
+}
+
+func screenDashboardCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "dashboard",
+		Short: "Put hotaru's dashboard back on the screen",
+		Long: `Put hotaru's dashboard back on the screen.
+
+What the screen shows by default: coolant temperature, the processor, the
+graphics card and the pump. Showing a picture or asking for the cooler's own
+display stops it, and this starts it again.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			client, err := client(cmd)
+			if err != nil {
+				return err
+			}
+			if err := client.Screen(cmd.Context(), api.ScreenRequest{Dashboard: true}); err != nil {
+				return quiet(err)
+			}
+			cmd.Println("The dashboard is back.")
 			return nil
 		},
 	}
