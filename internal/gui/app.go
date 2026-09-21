@@ -60,7 +60,8 @@ func New(client *api.Client) *App {
 
 // Options describes the window to fynedesygn's shell.
 func (a *App) Options(socket string) shell.Options {
-	pictures := &PicturesSection{app: a}
+	create := NewCreate(a)
+	pictures, _ := create.parts[0].(*PicturesSection)
 
 	return shell.Options{
 		AppID:   AppID,
@@ -70,10 +71,13 @@ func (a *App) Options(socket string) shell.Options {
 		Sections: []shell.Section{
 			&ServiceSection{app: a},
 			&SystemSection{app: a},
-			&ScenesSection{app: a},
-			pictures,
-			&DashboardsSection{app: a},
-			&CoolingSection{app: a},
+			/*
+				Pictures, Screen and Scenes under one entry, in the order
+				the work is done in: a picture is what you bring from
+				outside, the screen is what the panel does with one, and a
+				scene names both. See create.go.
+			*/
+			create,
 			/*
 				The standard Appearance section, as every program on this
 				module has.
@@ -87,7 +91,13 @@ func (a *App) Options(socket string) shell.Options {
 				somebody is choosing a monospace font for here is reading
 				that.
 			*/
-			shell.AppearanceSection("hotaru: keys: 18 shortcuts registered"),
+			/*
+				Wrapped, because the poll rebuilds whatever is on screen
+				unless the section says what it watches -- and a rebuild
+				takes the page back to the top under somebody who is
+				scrolling it. The appearance does not follow the machine.
+			*/
+			still{shell.AppearanceSection("hotaru: keys: 18 shortcuts registered")},
 			about(socket),
 		},
 		SettingsPath: a.settingsPath(),
@@ -217,6 +227,18 @@ func (a *App) redraw() {
 		says what it watches is rebuilt when that moves and left alone
 		otherwise.
 	*/
+	/*
+		A section that can take a new snapshot without being rebuilt gets
+		one, whether or not anything it watches moved.
+
+		This is the half that makes a narrow Changed affordable: the System
+		section is rebuilt when a device appears, and its coolant reading
+		arrives here every poll instead.
+	*/
+	if ticker, ok := current.(Ticker); ok {
+		fyne.Do(func() { ticker.Tick(got) })
+	}
+
 	changed := !got.Same(a.drawn)
 	if watcher, ok := current.(Watcher); ok {
 		changed = watcher.Changed(a.drawn, got)
@@ -237,6 +259,21 @@ with a running pump is every poll.
 */
 type Watcher interface {
 	Changed(before, after Snapshot) bool
+}
+
+/*
+Ticker is implemented by a section that updates what it draws in place.
+
+For the things that move faster than a section should be rebuilt. A section
+that is rebuilt to show a new number loses the scroll position, the open
+dropdown and the half-typed entry of whoever is using it, which is why the
+rule is to build the tree once and update it -- and this is where the updating
+arrives.
+
+Called on the UI thread, and only for the section on screen.
+*/
+type Ticker interface {
+	Tick(got Snapshot)
 }
 
 /*

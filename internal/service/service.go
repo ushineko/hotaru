@@ -66,6 +66,10 @@ type Service struct {
 	*/
 	shortcuts Shortcuts
 	report    func(format string, args ...any)
+
+	// applied and showing are the last scene somebody applied and what the
+	// panel was last asked to draw: see showing.go.
+	applied, showing string
 }
 
 /*
