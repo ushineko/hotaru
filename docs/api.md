@@ -316,6 +316,30 @@ is not revived -- the devices may belong to somebody else by now.
 Ends a preview and puts the lights back to what was last applied, answering
 with the same shape as `/v1/reconcile`. `{"token": "…"}`.
 
+## GET /v1/readings
+
+Every number this machine can put on the panel, each with its label, its unit
+and whether the machine had it to give.
+
+```console
+$ curl -s --unix-socket … http://hotaru/v1/readings
+{
+  "readings": [
+    {"source": "coolant",  "label": "Coolant", "unit": "°C",  "value": 38.5, "known": true, "text": "38.5"},
+    {"source": "cpu_pct",  "label": "CPU",     "unit": "%",   "value": 3,    "known": true, "text": "3"},
+    {"source": "gpu_pct",  "label": "GPU",     "unit": "%",   "known": false, "text": "--"}
+  ]
+}
+```
+
+`known` is the field to read. A sensor that has gone away is absent rather
+than zero, because a pump drawn at 0 RPM is the most alarming number this
+machine can show, on no evidence — so a client shows `text`, which is already
+`--` in that case.
+
+Utilisation is a rate: it is the share of the interval since the last time
+anything asked, which between dashboard ticks is about two seconds.
+
 ## GET /v1/images
 
 The pictures stored for the cooler's screen, already converted.

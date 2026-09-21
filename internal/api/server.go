@@ -13,6 +13,7 @@ import (
 	"github.com/ushineko/hotaru/internal/cooler"
 	"github.com/ushineko/hotaru/internal/devices"
 	"github.com/ushineko/hotaru/internal/images"
+	"github.com/ushineko/hotaru/internal/readings"
 	"github.com/ushineko/hotaru/internal/scenes"
 	"github.com/ushineko/hotaru/internal/service"
 	"github.com/ushineko/hotaru/internal/version"
@@ -40,6 +41,7 @@ func Routes() []string {
 		"DELETE /" + Version + "/scenes/{name}",
 		"POST /" + Version + "/scenes/{name}/apply",
 		"POST /" + Version + "/scenes/{name}/capture",
+		"GET /" + Version + "/readings",
 		"GET /" + Version + "/images",
 		"POST /" + Version + "/images/preview",
 		"PUT /" + Version + "/images/{name}",
@@ -295,6 +297,20 @@ func Handler(svc *service.Service) http.Handler {
 			the kernel, with no clock and no heartbeat involved.
 		*/
 		hold(w, r, svc, outcome)
+	})
+
+	mux.HandleFunc("GET /"+Version+"/readings", func(w http.ResponseWriter, r *http.Request) {
+		taken := svc.Readings(r.Context())
+		out := ReadingsResponse{Readings: make([]ReadingValue, 0, len(readings.All))}
+		for _, source := range readings.All {
+			label, unit := readings.Describe(source)
+			value, known := taken.Value(source)
+			out.Readings = append(out.Readings, ReadingValue{
+				Source: string(source), Label: label, Unit: unit,
+				Value: value, Known: known, Text: taken.Text(source),
+			})
+		}
+		write(w, http.StatusOK, out)
 	})
 
 	mux.HandleFunc("GET /"+Version+"/images", func(w http.ResponseWriter, _ *http.Request) {

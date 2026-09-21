@@ -28,6 +28,7 @@ import (
 	"github.com/ushineko/hotaru/internal/devices"
 	"github.com/ushineko/hotaru/internal/openrgb"
 	"github.com/ushineko/hotaru/internal/queue"
+	"github.com/ushineko/hotaru/internal/readings"
 	"github.com/ushineko/hotaru/internal/state"
 )
 
@@ -42,10 +43,13 @@ type Service struct {
 	queue    *queue.Set
 	env      Environment
 	cooler   Cooler
-	panel    Dashboard
-	scenes   SceneStore
-	images   ImageLibrary
-	desktop  string
+	// processor samples utilisation, which is a rate: one sampler for the
+	// whole service so the first answer is not always a dash.
+	processor *readings.CPU
+	panel     Dashboard
+	scenes    SceneStore
+	images    ImageLibrary
+	desktop   string
 
 	// leases maps a device to the preview held over it. One device, one
 	// preview: see preview.go.
@@ -151,7 +155,7 @@ func New(cfg *config.Config, client openrgb.Client, address string) *Service {
 	if address == "" {
 		address = openrgb.DefaultAddress
 	}
-	return &Service{cfg: cfg, client: client, addr: address}
+	return &Service{cfg: cfg, client: client, addr: address, processor: readings.NewCPU()}
 }
 
 // SetClient swaps the connection, for a server that came back.

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"github.com/ushineko/hotaru/internal/readings"
 )
 
 // panel records what it was shown. It is not a stand-in for the cooler: the
@@ -60,7 +61,7 @@ func TestAChangedReadingIsPushed(t *testing.T) {
 	p := NewPusher(screen, func(context.Context) Reading { return r })
 
 	p.cycle(context.Background())
-	r.Coolant = 41.0
+	r.Set(readings.Coolant, 41.0)
 	p.cycle(context.Background())
 
 	require.Equal(t, 2, screen.count())

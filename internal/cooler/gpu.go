@@ -2,12 +2,10 @@ package cooler
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"os/exec"
-	"strconv"
-	"strings"
 	"time"
+
+	"github.com/ushineko/hotaru/internal/readings"
 )
 
 /*
@@ -25,7 +23,8 @@ var GPUSensors = []Sensor{
 }
 
 /*
-GPUTemperature reads the graphics card, in degrees.
+Graphics reads the card's temperature in degrees and its utilisation as a
+percentage, by whichever route the machine has.
 
 The kernel first. Where the kernel has nothing -- which is every machine
 running NVIDIA's own driver, including the one this was written on -- it asks
@@ -40,35 +39,61 @@ alternative is NVML, which is cgo, for one integer.
 A machine with neither answers "unknown", and the dashboard draws a placeholder
 rather than a zero. See spec 013.
 */
-func GPUTemperature(ctx context.Context) (int, error) {
+func Graphics(ctx context.Context) Card {
+	var card Card
 	for _, sensor := range GPUSensors {
 		if t, err := sensor.Temperature(); err == nil {
-			return t, nil
+			card.Temperature, card.TemperatureOK = float64(t), true
+			break
 		}
 	}
-	return nvidiaSMI(ctx)
+	if load, ok := readings.Busy(); ok {
+		card.Load, card.LoadOK = load, true
+	}
+	if card.TemperatureOK && card.LoadOK {
+		return card
+	}
+
+	/*
+		One spawn for both numbers.
+
+		The refusal to spawn a process per frame was about the write path
+		(spec 012). This is one process per dashboard tick either way, so
+		asking it for the second number is free -- and asking twice would
+		not be.
+	*/
+	temperature, load, gotTemp, gotLoad := nvidiaSMI(ctx)
+	if !card.TemperatureOK && gotTemp {
+		card.Temperature, card.TemperatureOK = temperature, true
+	}
+	if !card.LoadOK && gotLoad {
+		card.Load, card.LoadOK = load, true
+	}
+	return card
+}
+
+// Card is what the graphics card had to say. Either number can be missing,
+// and a machine with no card at all reports neither.
+type Card struct {
+	Temperature   float64
+	TemperatureOK bool
+	Load          float64
+	LoadOK        bool
 }
 
 // smiTimeout bounds the fallback. A sensor read that hangs must not hold up a
 // screen update, let alone the shutdown it would be blocking during.
 const smiTimeout = 2 * time.Second
 
-func nvidiaSMI(ctx context.Context) (int, error) {
+func nvidiaSMI(ctx context.Context) (temperature, load float64, gotTemp, gotLoad bool) {
 	ctx, cancel := context.WithTimeout(ctx, smiTimeout)
 	defer cancel()
 
+	//nolint:gosec // both arguments are constants; nothing here is input
 	out, err := exec.CommandContext(ctx, "nvidia-smi",
-		"--query-gpu=temperature.gpu", "--format=csv,noheader").Output()
+		readings.SMIFlag, "--format=csv,noheader").Output()
 	if err != nil {
-		return 0, fmt.Errorf("no graphics card temperature: %w", err)
+		return 0, 0, false, false
 	}
-	fields := strings.Fields(string(out))
-	if len(fields) == 0 {
-		return 0, errors.New("no graphics card temperature: nvidia-smi said nothing")
-	}
-	t, err := strconv.Atoi(fields[0])
-	if err != nil {
-		return 0, fmt.Errorf("no graphics card temperature: %w", err)
-	}
-	return t, nil
+	return readings.ParseSMI(string(out))
 }
