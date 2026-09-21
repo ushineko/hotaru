@@ -71,6 +71,17 @@ func red() scenes.Scene {
 	}
 }
 
+func byName(t *testing.T, saved []api.Scene, name string) api.Scene {
+	t.Helper()
+	for _, scene := range saved {
+		if scene.Name == name {
+			return scene
+		}
+	}
+	t.Fatalf("no scene called %q", name)
+	return api.Scene{}
+}
+
 func colours(t *testing.T, server *openrgb.Fake) string {
 	t.Helper()
 	frame, ok := server.Showing("Keychron K4 HE")
@@ -90,15 +101,20 @@ func TestAScenesRoundTripThroughTheSocket(t *testing.T) {
 
 	saved, err := client.Scenes(t.Context())
 	require.NoError(t, err)
-	require.Len(t, saved, 1)
-	require.Equal(t, "evening", saved[0].Name)
-	require.Equal(t, "Direct", saved[0].Effects["Keychron"])
-	require.Equal(t, api.ScreenDashboard, saved[0].Screen)
+	mine := byName(t, saved, "evening")
+	require.Equal(t, "Direct", mine.Effects["Keychron"])
+	require.Equal(t, api.ScreenDashboard, mine.Screen)
+	require.False(t, mine.Shipped)
+
+	// The nine shipped scenes are there alongside it, and stay there.
+	require.True(t, byName(t, saved, "red").Shipped)
 
 	require.NoError(t, client.DeleteScene(t.Context(), "evening"))
 	saved, err = client.Scenes(t.Context())
 	require.NoError(t, err)
-	require.Empty(t, saved)
+	for _, scene := range saved {
+		require.NotEqual(t, "evening", scene.Name)
+	}
 }
 
 func TestAPreviewHeldOnAConnectionEndsWhenTheConnectionDoes(t *testing.T) {
@@ -184,5 +200,5 @@ func TestCapturingSavesWhatIsShowing(t *testing.T) {
 
 	saved, err := client.Scenes(t.Context())
 	require.NoError(t, err)
-	require.Len(t, saved, 2)
+	require.Equal(t, api.ScreenReadout, byName(t, saved, "kept").Screen)
 }

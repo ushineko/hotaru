@@ -337,3 +337,94 @@ func TestAMachineWithNoScenesFileSaysSoRatherThanFailingQuietly(t *testing.T) {
 	_, err = svc.ApplyScene(context.Background(), "anything")
 	require.ErrorIs(t, err, service.ErrNoScenes)
 }
+
+func TestTheShippedKeysApplyTheShippedScenes(t *testing.T) {
+	/*
+		The bank this desk's hands already know: Ctrl+Alt+Num1 has been red
+		for two years, and a rearchitecture that changes what a key does has
+		broken something no test would otherwise catch.
+	*/
+	svc, _ := lit(t)
+
+	keys, err := svc.Keys()
+	require.NoError(t, err)
+	require.Len(t, keys.Bindings, 9)
+
+	bound := map[string]string{}
+	for _, binding := range keys.Bindings {
+		require.False(t, binding.Missing, "%s applies a scene that does not exist", binding.Key)
+		bound[binding.Key] = binding.Scene
+	}
+	require.Equal(t, "red", bound["Ctrl+Alt+Num+1"])
+	require.Equal(t, "off", bound["Ctrl+Alt+Num+9"])
+	require.NotContains(t, bound, "Ctrl+Alt+Shift+Num+1",
+		"hotaru bound a key it reserves for somebody else's scenes")
+}
+
+func TestApplyingTheNinthSceneTurnsTheLightsOff(t *testing.T) {
+	// "off" is not a colour. It resolves the device's own Off mode and
+	// honours the keyboard correction, which no assignment can ask for.
+	svc, server := lit(t)
+	_, err := svc.ApplyScene(t.Context(), "red")
+	require.NoError(t, err)
+	require.Equal(t, "#ff0000", showing(t, server, "Keychron K4 HE")[0].String())
+
+	done, err := svc.ApplyScene(t.Context(), "off")
+	require.NoError(t, err)
+	require.NotEmpty(t, done.Results)
+	require.Equal(t, "#000000", showing(t, server, "Keychron K4 HE")[0].String())
+}
+
+func TestTurningOffIsNotRememberedAsAColour(t *testing.T) {
+	// A device deliberately turned off has nothing to restore: putting black
+	// back at boot is not what anybody meant by "off".
+	svc, _ := lit(t)
+	_, err := svc.ApplyScene(t.Context(), "red")
+	require.NoError(t, err)
+	_, err = svc.ApplyScene(t.Context(), "off")
+	require.NoError(t, err)
+
+	require.True(t, svc.Desired().Empty(), "an off scene was recorded as a colour to restore")
+}
+
+func TestABindingToASceneThatIsNotThereSaysSoBeforeItIsPressed(t *testing.T) {
+	// Otherwise the first anybody hears of it is a key that does nothing,
+	// which is indistinguishable from the key not being registered at all.
+	svc, _ := lit(t)
+	require.NoError(t, svc.SaveScene(scenes.Scene{Name: "evening", Colour: "blue"}))
+	require.NoError(t, svc.Bind("Ctrl+Alt+Shift+Num+1", "evening"))
+	require.NoError(t, svc.DeleteScene("evening"))
+
+	keys, err := svc.Keys()
+	require.NoError(t, err)
+	var missing bool
+	for _, binding := range keys.Bindings {
+		if binding.Key == "Ctrl+Alt+Shift+Num+1" {
+			missing = binding.Missing
+		}
+	}
+	require.True(t, missing)
+}
+
+func TestBindingAKeyToANonexistentSceneIsRefused(t *testing.T) {
+	svc, _ := lit(t)
+	require.ErrorContains(t, svc.Bind("Ctrl+Alt+Shift+Num+2", "nothing-like-this"), "no scene")
+}
+
+func TestAKeypressTakesTheSamePathAsTheApiCall(t *testing.T) {
+	// One flow, two doors. A keypress that went another way would be a
+	// second implementation of applying a scene.
+	svc, server := lit(t)
+
+	said, err := svc.ApplyByName(t.Context(), "green")
+	require.NoError(t, err)
+	require.Contains(t, said, "green")
+	require.Equal(t, "#00ff00", showing(t, server, "Keychron K4 HE")[0].String())
+	require.Contains(t, svc.Desired().Devices, "Keychron K4 HE")
+}
+
+func TestAKeypressForASceneThatIsGoneReportsRatherThanCrashing(t *testing.T) {
+	svc, _ := lit(t)
+	_, err := svc.ApplyByName(t.Context(), "never-existed")
+	require.Error(t, err)
+}

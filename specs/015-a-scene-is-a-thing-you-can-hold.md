@@ -216,7 +216,7 @@ Development machine, six devices, with somebody watching the room.
 
 A scene written out, saved, shown and applied:
 
-	$ hotaru scene set evening kraken=#201040 keychron=#100820 \
+	$ hotaru scene write evening kraken=#201040 keychron=#100820 \
 	      --effect keychron="Solid Splash" --screen dashboard
 	$ hotaru scene apply evening
 	evening: 2 of 2 device(s) lit.
