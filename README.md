@@ -2,7 +2,7 @@
 
 *lights, cooler, action!*
 
-**Version**: 0.1.0
+**Version**: 0.1.1
 
 RGB lighting and AIO cooler control for Linux, as a CLI, a user service and a
 desktop GUI. 蛍 — fireflies, small lights that pulse.
@@ -316,7 +316,12 @@ MIT. See [LICENSE](LICENSE).
 
 ## Changelog
 
-### Unreleased
+### 0.1.1 (2026-09-21)
+
+The first release after this one was installed somewhere else, and everything
+in it was found by that: a service sandboxed out of its own directories, a
+window that jumped to the front page when a picture was dropped on it, and a
+bank of shortcuts every one of which is a numpad key.
 
 - A key that is not on the numpad can be bound from the window. Every key
   hotaru ships is a numpad key, because that is what this desk has had for
