@@ -238,6 +238,14 @@ MIT. See [LICENSE](LICENSE).
 
 ### Unreleased
 
+- The window can be profiled. `HOTARU_PPROF=:6060 hotaru-gui` serves
+  `net/http/pprof` on loopback, and the window runs under a soft 512 MiB
+  memory ceiling that `GOMEMLIMIT` and `HOTARU_MEMLIMIT` override. Both come
+  from fynedesygn's `profiling` package; its
+  [performance guidance](https://github.com/ushineko/fynedesygn/blob/main/docs/performance.md)
+  says what to do with what comes back. The ceiling is a starting point and
+  not a measurement: it is the first thing a profile should correct.
+
 - The cooler's screen is something you can change. Named dashboards, saved and
   switched like scenes: four arrangements drawn against the round panel, any
   of the nine readings in each slot with a label of its own, rings that each
