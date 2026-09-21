@@ -2,7 +2,7 @@
 
 **Issue**: [#5](https://github.com/ushineko/hotaru/issues/5)
 
-## Status: INCOMPLETE
+## Status: COMPLETE
 
 ## Context
 
@@ -146,9 +146,26 @@ and no service.
 - [x] AC10. The GUI's settings file holds view state only, and the service's
       files are untouched by it.
 - [x] AC11. Tests run headless with no display and no socket.
-- [ ] AC12. Verified on the development machine: the window draws its six
+- [x] AC12. Verified on the development machine: the window draws its six
       devices with their real colours and the cooler's numbers match `hotaru
       cooling`.
+
+## Verified on hardware
+
+Development machine, Plasma on Wayland, with somebody looking at the window.
+
+It draws the six devices with the colours on the desk, the cooler's numbers
+match `hotaru cooling`, and `gui.yml` appeared in hotaru's configuration
+directory holding a navigation split and nothing else -- `hotaru.yml` and
+`scenes.yml` keeping the timestamps they had before the window ever ran, which
+is the one-writer rule holding rather than being asserted.
+
+Two things came from somebody seeing it rather than from a test. The glance
+panel was built, shown, and removed: it had a titlebar Plasma would not give
+up without a window rule, and the question that followed -- *why do we need
+this, the monitor does it* -- was the better one. And the section blurbs went,
+because prose under a heading is read once per glance and competes with what it
+sits above.
 
 ## Risks & Assumptions
 
