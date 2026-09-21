@@ -247,6 +247,14 @@ MIT. See [LICENSE](LICENSE).
 
 ### Unreleased
 
+- Choosing a dashboard takes the screen back. Anything that puts a picture on
+  the panel holds the dashboard — `hotaru screen show`, the readout, and every
+  scene that names an image — and only asking for the dashboard gives it up.
+  Choosing one redrew a loop that was not running, so the store changed, the
+  panel kept showing the picture, and nothing said why. Saving a dashboard
+  still does not take the screen: editing one while a picture is up is not a
+  request for the picture to go away (#64).
+
 - Thumbnails are decoded once, small, and shared. The Pictures section cached
   each picture's file bytes and handed them to Fyne, which decodes a GIF in
   full — `berserk-slide` is sixty frames at 640x640 — to draw a square ninety
