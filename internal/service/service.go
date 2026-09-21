@@ -43,6 +43,11 @@ type Service struct {
 	env      Environment
 	cooler   Cooler
 	panel    Dashboard
+	scenes   SceneStore
+
+	// leases maps a device to the preview held over it. One device, one
+	// preview: see preview.go.
+	leases map[string]*Lease
 }
 
 /*
@@ -222,6 +227,15 @@ type View struct {
 	Device  devices.Device
 	InScope bool
 	Rule    devices.Rule
+	/*
+		Preview is the draft somebody is holding on this device, if any.
+
+		Said out loud rather than left implicit: a machine showing something
+		nobody chose is the confusion this project keeps running into, and a
+		device whose re-assertion is suspended looks identical to one that is
+		simply behaving.
+	*/
+	Preview *Lease
 }
 
 // List is every device the server has, with scope and rules resolved.
@@ -238,11 +252,15 @@ func (s *Service) List(ctx context.Context) ([]View, error) {
 
 	out := make([]View, 0, len(found))
 	for _, device := range found {
-		out = append(out, View{
+		view := View{
 			Device:  device,
 			InScope: cfg.InScope(device.Name),
 			Rule:    devices.RuleFor(cfg, device.Name),
-		})
+		}
+		if lease, held := s.Previewing(device.Name); held {
+			view.Preview = lease
+		}
+		out = append(out, view)
 	}
 	return out, nil
 }
@@ -273,6 +291,16 @@ type Request struct {
 	// still no use, and silently showing one colour where three were asked for
 	// would be a worse answer than choosing a mode that works.
 	Mode string
+
+	/*
+		Effects prefer a mode per device, keyed by any part of a device's name.
+
+		What a scene carries, and the reason Mode above is not enough: a scene
+		wants the keyboard rippling under typing and the cooler steady, which
+		is two different modes in one application. Preferred rather than
+		forced, exactly as Mode is.
+	*/
+	Effects map[string]string
 
 	/*
 		Preview writes without remembering.
@@ -402,6 +430,22 @@ func (s *Service) applyOne(ctx context.Context, client openrgb.Client, cfg *conf
 ) Result {
 	off, preferred, exactly := req.Off, req.Mode, req.Exactly
 	result := Result{Device: device.Name}
+	if effect := effectFor(req.Effects, device.Name); effect != "" {
+		preferred = effect
+		if _, has := device.Mode(effect); !has {
+			/*
+				Reported, and then ignored. A scene naming an effect this
+				device does not have costs the effect and not the scene: the
+				colours are still what somebody asked for, and a name that
+				resolves to nothing must not be silently indistinguishable
+				from one that worked -- which is the case an effect hotaru
+				renders itself will arrive into.
+			*/
+			result.Problems = append(result.Problems,
+				fmt.Sprintf("%s has no effect called %q", device.Name, effect))
+			preferred = req.Mode
+		}
+	}
 	rule := devices.RuleFor(cfg, device.Name)
 
 	var frame devices.Frame
@@ -435,6 +479,25 @@ func (s *Service) applyOne(ctx context.Context, client openrgb.Client, cfg *conf
 		s.forget(device.Name)
 	}
 	return result
+}
+
+/*
+effectFor is the mode a request names for one device.
+
+Matched by substring and case-insensitively, the way every device name a person
+types is matched here: a scene says "keychron" and the hardware calls itself
+"Keychron K4 HE".
+*/
+func effectFor(effects map[string]string, device string) string {
+	for name, effect := range effects {
+		if name == "" || effect == "" {
+			continue
+		}
+		if strings.Contains(strings.ToLower(device), strings.ToLower(name)) {
+			return effect
+		}
+	}
+	return ""
 }
 
 /*

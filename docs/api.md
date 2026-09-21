@@ -161,6 +161,142 @@ $ curl -s --unix-socket $XDG_RUNTIME_DIR/hotaru/hotaru.sock http://hotaru/v1/sta
 fresh install that has been asked for nothing — which is why it restores
 nothing, and why installing hotaru cannot disturb lighting configured elsewhere.
 
+## GET /v1/scenes
+
+Every saved scene. A scene is colour assignments addressed at whatever depth
+somebody meant them, an effect per device, and what the cooler's screen shows.
+
+```console
+$ curl -s --unix-socket … http://hotaru/v1/scenes
+{
+  "scenes": [
+    {
+      "name": "evening",
+      "assignments": [
+        { "target": "kraken",   "colour": "#201040" },
+        { "target": "keychron", "colour": "#100820" }
+      ],
+      "effects": { "keychron": "Solid Splash" },
+      "screen": "dashboard"
+    }
+  ]
+}
+```
+
+`screen` is `dashboard`, `readout`, or a path to a GIF. **Absent means the
+scene says nothing about the screen and applying it changes nothing about it**
+-- a lighting scene must not take somebody's dashboard away because its author
+never thought about the panel.
+
+`effects` names a mode the device advertises, keyed by any part of the device's
+name. It is preferred, not forced: a mode that cannot carry the frame falls
+through as it always does, and a name the device does not have costs the effect
+rather than the scene and is reported in that device's `problems`.
+
+## PUT /v1/scenes/{name}
+
+Writes a scene under a name, replacing one already there. The body is a scene
+without its name, which comes from the path.
+
+## DELETE /v1/scenes/{name}
+
+Removes one. Deleting a scene that is not there is not an error.
+
+## POST /v1/scenes/{name}/capture
+
+Saves what the lights are showing now, under a name, from desired state. The
+body may carry `screen`, which is what the saved scene should say about the
+panel.
+
+## POST /v1/scenes/{name}/apply
+
+Lights a scene. Recorded as what the machine should be showing, so it survives
+a reboot and is re-sent to hardware that forgets.
+
+```console
+$ curl -s --unix-socket … -X POST http://hotaru/v1/scenes/evening/apply
+{
+  "scene": "evening",
+  "results": [
+    {
+      "device": "NZXT Kraken 2024 ELITE Series RGB",
+      "applied": true,
+      "mode": "Direct",
+      "attempts": [ { "mode": "Direct", "accepted": true, "active": "Direct", "showing": true } ]
+    },
+    {
+      "device": "Keychron K4 HE",
+      "applied": true,
+      "mode": "Solid Splash",
+      "attempts": [ { "mode": "Solid Splash", "accepted": true, "active": "Solid Splash", "showing": true } ]
+    }
+  ],
+  "screen": "dashboard"
+}
+```
+
+### Previewing
+
+`{"preview": true}` lights the scene **without meaning it**: nothing is
+recorded, and re-assertion is suspended for the devices it covers so that the
+timer which exists to correct hardware that forgets does not correct the person
+looking at a draft instead.
+
+A preview is a lease, and it ends when its holder does. Two ways, and a client
+uses whichever it already has:
+
+- `{"preview": true, "hold": true}` -- the response is sent as soon as the
+  draft is up and **the request stays open**. The lease is that connection: the
+  socket closing is the client going away, reported by the kernel, with no
+  clock involved. This is what `hotaru scene preview` does, and killing it with
+  `kill -9` puts the lights back.
+- `{"preview": true}` alone -- the lease carries an expiry the holder renews.
+  For a client that cannot sit on a connection.
+
+```console
+$ curl -s --unix-socket … -X POST -d '{"preview":true,"holder":"a shell"}' \
+    http://hotaru/v1/scenes/loud/apply
+{
+  "scene": "loud",
+  "results": [ … ],
+  "preview": {
+    "token": "3d87ebe9ee7025f8",
+    "scene": "loud",
+    "holder": "a shell",
+    "devices": ["NZXT Kraken 2024 ELITE Series RGB", "Keychron K4 HE"],
+    "expires": "2026-09-20T18:39:00.918882713-07:00"
+  }
+}
+```
+
+No `expires` means the lease is bound to a connection instead.
+
+Devices showing a draft carry it in `GET /v1/devices`, because a device whose
+re-assertion is suspended otherwise looks exactly like one that is behaving:
+
+```console
+$ curl -s --unix-socket … http://hotaru/v1/devices
+{
+  "devices": [
+    {
+      "name": "Keychron K4 HE",
+      "in_scope": true,
+      "preview": { "token": "3d87ebe9ee7025f8", "scene": "loud", "holder": "a shell", … }
+    }
+  ]
+}
+```
+
+## POST /v1/preview/renew
+
+Pushes a lease's expiry out. `{"token": "…"}`. A lease that has already lapsed
+is not revived -- the devices may belong to somebody else by now.
+
+## POST /v1/preview/release
+
+Ends a preview and puts the lights back to what was last applied, answering
+with the same shape as `/v1/reconcile`. `{"token": "…"}`.
+
 ## POST /v1/reconcile
 
 Puts the lights back to what was last asked for. Not an apply: nothing here is

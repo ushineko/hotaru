@@ -105,6 +105,18 @@ func (r *Reconciler) reassert(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case now := <-ticker.C:
+			/*
+				Lapsed previews first.
+
+				A holder that stopped talking has left a draft on somebody's
+				hardware with re-assertion suspended on its behalf, so the
+				loop that would notice a device needing correction is exactly
+				the loop that should notice one whose holder is gone.
+			*/
+			if _, err := r.Service.Expired(ctx); err != nil {
+				r.report("could not end a lapsed preview: %v", err)
+			}
+
 			rules, err := r.Service.ReassertRules(ctx)
 			if err != nil || len(rules) == 0 {
 				continue
