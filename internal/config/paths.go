@@ -15,8 +15,12 @@ const App = "hotaru"
 const (
 	RulesFile  = "hotaru.yml" // the user's. hotaru reads it and never writes it
 	ScenesFile = "scenes.yml" // the service's, written when asked
-	StateFile  = "state.yml"  // the service's, never hand-edited
-	SocketFile = "hotaru.sock"
+	// DashboardsFile is what the cooler's screen can be asked to draw:
+	// configuration, because it is somebody's choices rather than machine
+	// state, and beside the scenes for the same reason.
+	DashboardsFile = "dashboards.yml"
+	StateFile      = "state.yml" // the service's, never hand-edited
+	SocketFile     = "hotaru.sock"
 )
 
 /*
@@ -80,6 +84,9 @@ func RulesPath() (string, error) { return inDir(Dir, RulesFile) }
 
 // ScenesPath is the scenes file, which the service writes when asked.
 func ScenesPath() (string, error) { return inDir(Dir, ScenesFile) }
+
+// DashboardsPath is the dashboards file.
+func DashboardsPath() (string, error) { return inDir(Dir, DashboardsFile) }
 
 // StatePath is the desired-state file, outside the configuration directory
 // because it is not configuration.

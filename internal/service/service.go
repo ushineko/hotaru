@@ -25,9 +25,11 @@ import (
 	"github.com/ushineko/hotaru/internal/colour"
 	"github.com/ushineko/hotaru/internal/config"
 	"github.com/ushineko/hotaru/internal/cooler"
+	"github.com/ushineko/hotaru/internal/dashboard"
 	"github.com/ushineko/hotaru/internal/devices"
 	"github.com/ushineko/hotaru/internal/openrgb"
 	"github.com/ushineko/hotaru/internal/queue"
+	"github.com/ushineko/hotaru/internal/readings"
 	"github.com/ushineko/hotaru/internal/state"
 )
 
@@ -42,14 +44,20 @@ type Service struct {
 	queue    *queue.Set
 	env      Environment
 	cooler   Cooler
-	panel    Dashboard
-	scenes   SceneStore
-	images   ImageLibrary
-	desktop  string
+	// processor samples utilisation, which is a rate: one sampler for the
+	// whole service so the first answer is not always a dash.
+	processor *readings.CPU
+	panel     Dashboard
+	scenes    SceneStore
+	images    ImageLibrary
+	desktop   string
 
 	// leases maps a device to the preview held over it. One device, one
 	// preview: see preview.go.
 	leases map[string]*Lease
+
+	// dashboards is what the panel can be asked to draw: see dashboards.go.
+	dashboards *dashboard.Store
 }
 
 /*
@@ -64,6 +72,10 @@ type Dashboard interface {
 	Hold()
 	// Release gives it back, and the dashboard redraws at once.
 	Release()
+	// Redraw says that what is being drawn has changed, which a reading
+	// moving does not cover: a new arrangement of the same numbers says the
+	// same thing to a hash of the last frame's content.
+	Redraw()
 }
 
 // SetDashboard gives the service the dashboard to stand down, where there is
@@ -151,7 +163,7 @@ func New(cfg *config.Config, client openrgb.Client, address string) *Service {
 	if address == "" {
 		address = openrgb.DefaultAddress
 	}
-	return &Service{cfg: cfg, client: client, addr: address}
+	return &Service{cfg: cfg, client: client, addr: address, processor: readings.NewCPU()}
 }
 
 // SetClient swaps the connection, for a server that came back.

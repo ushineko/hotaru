@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"github.com/ushineko/hotaru/internal/readings"
 )
 
 // panel records what it was shown. It is not a stand-in for the cooler: the
@@ -60,7 +61,7 @@ func TestAChangedReadingIsPushed(t *testing.T) {
 	p := NewPusher(screen, func(context.Context) Reading { return r })
 
 	p.cycle(context.Background())
-	r.Coolant = 41.0
+	r.Set(readings.Coolant, 41.0)
 	p.cycle(context.Background())
 
 	require.Equal(t, 2, screen.count())
@@ -101,7 +102,7 @@ func TestAFailedPushIsNotCountedAsShown(t *testing.T) {
 func TestTheSameFrameTwiceIsByteIdentical(t *testing.T) {
 	// The gate compares what a frame says; this is what makes that safe. If
 	// rendering were not deterministic the comparison would be a coin toss.
-	require.Equal(t, Render(reading(), 3).GIF, Render(reading(), 3).GIF)
+	require.Equal(t, shown(reading(), 3).GIF, shown(reading(), 3).GIF)
 }
 
 func TestSomebodyElseCanHaveTheScreen(t *testing.T) {
@@ -143,7 +144,7 @@ func TestThePushFloorFollowsTheFrame(t *testing.T) {
 	require.Equal(t, 3*time.Second, Floor(64*1024))
 
 	// And the floor that matters is the one this design actually asks for.
-	require.Equal(t, 2*time.Second, Floor(len(Render(reading(), 0).GIF)))
+	require.Equal(t, 2*time.Second, Floor(len(shown(reading(), 0).GIF)))
 }
 
 func TestRenderingDoesNotGrowPerFrame(t *testing.T) {
@@ -153,8 +154,8 @@ func TestRenderingDoesNotGrowPerFrame(t *testing.T) {
 		a background dashboard must never need.
 	*/
 	r := reading()
-	first := testing.AllocsPerRun(20, func() { _ = Render(r, 1) })
-	later := testing.AllocsPerRun(20, func() { _ = Render(r, 1) })
+	first := testing.AllocsPerRun(20, func() { _ = shown(r, 1) })
+	later := testing.AllocsPerRun(20, func() { _ = shown(r, 1) })
 
 	require.LessOrEqual(t, later, first*1.05,
 		"allocation per frame grew between the first frames and the later ones")

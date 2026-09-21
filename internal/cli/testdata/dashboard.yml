@@ -1,0 +1,16 @@
+# A dashboard as the service keeps one. The parity test saves this, and it is
+# also the worked example somebody copies on a machine with no window.
+arrangement: grid
+theme: ice
+caption: workstation
+headline:
+  source: coolant
+  label: COOLANT
+rings:
+  - coolant
+  - cpu_pct
+slots:
+  - {source: cpu_pct, label: CPU}
+  - {source: gpu_pct, label: GPU}
+  - {source: cpu_c, label: CPU}
+  - {source: gpu_c, label: GPU}
