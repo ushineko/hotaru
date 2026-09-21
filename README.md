@@ -10,11 +10,11 @@ cooler itself, over `/dev/hidraw` and usbfs: set colours down to individual
 fans, define scenes, put a live dashboard on the cooler's screen, and bind it
 all to keys.
 
-> **Status**: the lighting half works. The service, its API, the CLI and the
-> mapping wizard are built and tested on two machines with nothing in common —
-> the second one mapped end to end by its owner, who had never run it, with no
-> configuration written by hand. The cooler, the LCD, scenes, the GUI and the
-> hotkeys are specified and not yet built; see [Roadmap](#roadmap).
+> **Status**: lighting, the cooler, its screen and scenes work. The service, its
+> API, the CLI and the mapping wizard are built and tested on two machines with
+> nothing in common — the second one mapped end to end by its owner, who had
+> never run it, with no configuration written by hand. The GUI and the hotkeys
+> are specified and not yet built; see [Roadmap](#roadmap).
 
 ## Contents
 
@@ -32,7 +32,7 @@ all to keys.
 | | |
 |---|---|
 | **Lighting** | Every device OpenRGB can see, addressed by device, zone, LED range, or a segment you name once — so "top fan red, bottom fan blue" is a thing you can say |
-| **Scenes** | A named set of colour assignments plus an LCD mode, applied as a unit |
+| **Scenes** | A named set of colour assignments, an effect per device and what the screen shows, applied as a unit — with a preview you can hold while you decide |
 | **The cooler** | Coolant and CPU temperature, pump and fan speeds, read where the kernel has no driver for the device |
 | **The screen** | The cooler's LCD: its own readout, an image, an animation, or a live dashboard rendered from the telemetry |
 | **Hotkeys** | Scenes on global shortcuts. On Plasma through a KWin script; on any other desktop by binding the CLI in that desktop's own shortcut editor |
@@ -159,7 +159,7 @@ installing and using hotaru must take no extra steps.
 | 008 | The mapping wizard: naming a machine's lights by looking at them | **done** — [#10](https://github.com/ushineko/hotaru/issues/10) |
 | 002 | Cooler telemetry behind the same API | [#2](https://github.com/ushineko/hotaru/issues/2) |
 | 003 | The LCD and the dashboard | **done** — [#3](https://github.com/ushineko/hotaru/issues/3) |
-| 004 | Scenes, preview and leases | [#4](https://github.com/ushineko/hotaru/issues/4) |
+| 004 | Scenes, preview and leases | **done** — [#4](https://github.com/ushineko/hotaru/issues/4) |
 | 005 | The GUI on [fynedesygn](https://github.com/ushineko/fynedesygn) | [#5](https://github.com/ushineko/hotaru/issues/5) |
 | 006 | Hotkeys and the cutover | [#6](https://github.com/ushineko/hotaru/issues/6) |
 | 007 | Packaging and release | [#7](https://github.com/ushineko/hotaru/issues/7) |
@@ -218,6 +218,23 @@ MIT. See [LICENSE](LICENSE).
 ## Changelog
 
 ### Unreleased
+
+- Scenes: `hotaru scene set`, `apply`, `preview`, `save`, `list`, `show` and
+  `delete`. A scene is colours addressed at whatever depth you meant them, an
+  effect per device, and what the cooler's screen shows — applied as a unit and
+  kept, so it survives a reboot and hardware that forgets. A scene that says
+  nothing about the screen leaves it alone (spec 015, #4).
+
+- `hotaru scene preview` shows a scene without keeping it, and hotaru stops
+  re-asserting colours to the devices it covers so the draft is not corrected
+  underneath you. The preview ends when the command does — including when it is
+  killed — and the lights go back to what was last applied. `hotaru preview`
+  says who is holding one; `hotaru preview release` ends it (spec 015, #4).
+
+- A re-assert now restores the mode as well as the colours. Invisible while
+  every scene was a solid colour; wrong as soon as one carries an effect, since
+  a keyboard rippling under typing came back from a re-assert sitting in Direct
+  (spec 015).
 
 - The README, the architecture diagram and the hardware page no longer say the
   cooler is reached through liquidctl, or that the CPU temperature comes from

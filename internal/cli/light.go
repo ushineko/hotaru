@@ -24,7 +24,7 @@ import (
 // Commands are the client-side commands, for a root command to add.
 func Commands() []*cobra.Command {
 	return []*cobra.Command{
-		lightCommand(), statusCommand(), coolingCommand(), screenCommand(),
+		lightCommand(), sceneCommand(), previewCommand(), statusCommand(), coolingCommand(), screenCommand(),
 		reconcileCommand(), reloadCommand(),
 	}
 }
@@ -63,15 +63,27 @@ func listCommand() *cobra.Command {
 
 			w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 			_, _ = fmt.Fprintln(w, "DEVICE\tLEDS\tACTIVE\tSCOPE\tMODES")
+			previewing := false
 			for _, device := range list {
 				scope := "-"
-				if device.InScope {
+				switch {
+				case device.Preview != nil:
+					// A device whose re-assertion is suspended looks exactly
+					// like one that is simply behaving, so it says so.
+					scope, previewing = "preview", true
+				case device.InScope:
 					scope = "yes"
 				}
 				_, _ = fmt.Fprintf(w, "%s\t%d\t%s\t%s\t%s\n",
 					device.Name, device.LEDs, device.ActiveMode, scope, strings.Join(device.Modes, ", "))
 			}
-			return w.Flush()
+			if err := w.Flush(); err != nil {
+				return fmt.Errorf("write the listing: %w", err)
+			}
+			if previewing {
+				cmd.Println("\nSome devices are showing a draft. `hotaru preview` says who is holding it.")
+			}
+			return nil
 		},
 	}
 	withJSON(cmd)

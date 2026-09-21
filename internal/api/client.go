@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"time"
 )
 
@@ -188,4 +189,120 @@ detail of this transport and not something a command should have to know.
 */
 func (c *Client) Screen(ctx context.Context, what ScreenRequest) error {
 	return c.do(ctx, http.MethodPost, "/"+Version+"/screen", what, nil)
+}
+
+// Scenes is every saved scene.
+func (c *Client) Scenes(ctx context.Context) ([]Scene, error) {
+	var out ScenesResponse
+	err := c.do(ctx, http.MethodGet, "/"+Version+"/scenes", nil, &out)
+	return out.Scenes, err
+}
+
+// SaveScene writes a scene under a name, replacing one already there.
+func (c *Client) SaveScene(ctx context.Context, scene Scene) error {
+	return c.do(ctx, http.MethodPut, "/"+Version+"/scenes/"+url.PathEscape(scene.Name), scene, nil)
+}
+
+// DeleteScene removes one.
+func (c *Client) DeleteScene(ctx context.Context, name string) error {
+	return c.do(ctx, http.MethodDelete, "/"+Version+"/scenes/"+url.PathEscape(name), nil, nil)
+}
+
+/*
+CaptureScene saves what the lights are showing now, under a name.
+
+The shortcut somebody reaches for after fiddling until it looks right: the
+scene is built from desired state rather than from anything the caller has to
+describe.
+*/
+func (c *Client) CaptureScene(ctx context.Context, name, screen string) (Scene, error) {
+	var out Scene
+	err := c.do(ctx, http.MethodPost,
+		"/"+Version+"/scenes/"+url.PathEscape(name)+"/capture", CaptureRequest{Screen: screen}, &out)
+	return out, err
+}
+
+// ApplyScene lights a scene and records it as what the machine should show.
+func (c *Client) ApplyScene(ctx context.Context, name string, req SceneRequest) (SceneResponse, error) {
+	var out SceneResponse
+	err := c.do(ctx, http.MethodPost,
+		"/"+Version+"/scenes/"+url.PathEscape(name)+"/apply", req, &out)
+	return out, err
+}
+
+/*
+HoldScene previews a scene and keeps it up until the context ends.
+
+The lease is this connection: the handler answers, then waits on the socket, so
+letting go of the context -- or dying -- is what puts the lights back. The
+response comes back as soon as the draft is up; the returned function blocks
+until the preview is over, which is what a caller with a terminal waits on.
+
+The alternative for a client that cannot sit on a connection is Preview plus
+Renew, and it exists for exactly the clients that cannot do this.
+*/
+func (c *Client) HoldScene(ctx context.Context, name string, req SceneRequest) (SceneResponse, func(), error) {
+	req.Preview, req.Hold = true, true
+	encoded, err := json.Marshal(req)
+	if err != nil {
+		return SceneResponse{}, nil, fmt.Errorf("encode the request: %w", err)
+	}
+
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		"http://hotaru/"+Version+"/scenes/"+url.PathEscape(name)+"/apply", bytes.NewReader(encoded))
+	if err != nil {
+		return SceneResponse{}, nil, fmt.Errorf("build the preview request: %w", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.http.Do(request)
+	if err != nil {
+		var opErr *net.OpError
+		if errors.As(err, &opErr) || errors.Is(err, context.DeadlineExceeded) {
+			return SceneResponse{}, nil, &NotRunning{Socket: c.socket, Err: err}
+		}
+		return SceneResponse{}, nil, fmt.Errorf("ask hotaru to preview %s: %w", name, err)
+	}
+
+	if resp.StatusCode >= http.StatusBadRequest {
+		defer func() { _ = resp.Body.Close() }()
+		var failure Error
+		if err := json.NewDecoder(resp.Body).Decode(&failure); err != nil || failure.Error == "" {
+			return SceneResponse{}, nil, fmt.Errorf("hotaru answered %s", resp.Status)
+		}
+		if failure.Detail != "" {
+			return SceneResponse{}, nil, fmt.Errorf("%s: %s", failure.Error, failure.Detail)
+		}
+		return SceneResponse{}, nil, errors.New(failure.Error)
+	}
+
+	var out SceneResponse
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		_ = resp.Body.Close()
+		return SceneResponse{}, nil, fmt.Errorf("read hotaru's answer: %w", err)
+	}
+	// Closing the body closes the connection, which is what ends the lease.
+	return out, func() { _ = resp.Body.Close() }, nil
+}
+
+// PreviewScene shows a scene under a lease the caller renews. For clients that
+// cannot hold a connection open; those that can should use HoldScene.
+func (c *Client) PreviewScene(ctx context.Context, name string, req SceneRequest) (SceneResponse, error) {
+	req.Preview, req.Hold = true, false
+	var out SceneResponse
+	err := c.do(ctx, http.MethodPost,
+		"/"+Version+"/scenes/"+url.PathEscape(name)+"/apply", req, &out)
+	return out, err
+}
+
+// RenewPreview pushes a lease's expiry out.
+func (c *Client) RenewPreview(ctx context.Context, token string) error {
+	return c.do(ctx, http.MethodPost, "/"+Version+"/preview/renew", PreviewRequest{Token: token}, nil)
+}
+
+// ReleasePreview ends a preview and puts the lights back to what was asked for.
+func (c *Client) ReleasePreview(ctx context.Context, token string) (RestoreResponse, error) {
+	var out RestoreResponse
+	err := c.do(ctx, http.MethodPost, "/"+Version+"/preview/release", PreviewRequest{Token: token}, &out)
+	return out, err
 }

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -11,6 +12,7 @@ import (
 	"github.com/ushineko/hotaru/internal/colour"
 	"github.com/ushineko/hotaru/internal/cooler"
 	"github.com/ushineko/hotaru/internal/devices"
+	"github.com/ushineko/hotaru/internal/scenes"
 	"github.com/ushineko/hotaru/internal/service"
 	"github.com/ushineko/hotaru/internal/version"
 )
@@ -32,6 +34,13 @@ func Routes() []string {
 		"POST /" + Version + "/screen",
 		"POST /" + Version + "/lighting/apply",
 		"POST /" + Version + "/lighting/probe",
+		"GET /" + Version + "/scenes",
+		"PUT /" + Version + "/scenes/{name}",
+		"DELETE /" + Version + "/scenes/{name}",
+		"POST /" + Version + "/scenes/{name}/apply",
+		"POST /" + Version + "/scenes/{name}/capture",
+		"POST /" + Version + "/preview/renew",
+		"POST /" + Version + "/preview/release",
 		"POST /" + Version + "/reconcile",
 		"POST /" + Version + "/reload",
 	}
@@ -187,6 +196,126 @@ func Handler(svc *service.Service) http.Handler {
 		w.WriteHeader(http.StatusNoContent)
 	})
 
+	mux.HandleFunc("GET /"+Version+"/scenes", func(w http.ResponseWriter, _ *http.Request) {
+		saved, err := svc.Scenes()
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		out := ScenesResponse{Scenes: make([]Scene, 0, len(saved))}
+		for _, scene := range saved {
+			out.Scenes = append(out.Scenes, asScene(scene))
+		}
+		write(w, http.StatusOK, out)
+	})
+
+	mux.HandleFunc("PUT /"+Version+"/scenes/{name}", func(w http.ResponseWriter, r *http.Request) {
+		var in Scene
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			write(w, http.StatusBadRequest, Error{Error: "that request does not decode", Detail: err.Error()})
+			return
+		}
+		in.Name = r.PathValue("name")
+		if err := svc.SaveScene(fromScene(in)); err != nil {
+			fail(w, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	mux.HandleFunc("DELETE /"+Version+"/scenes/{name}", func(w http.ResponseWriter, r *http.Request) {
+		if err := svc.DeleteScene(r.PathValue("name")); err != nil {
+			fail(w, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	mux.HandleFunc("POST /"+Version+"/scenes/{name}/capture", func(w http.ResponseWriter, r *http.Request) {
+		var in CaptureRequest
+		if r.Body != nil {
+			_ = json.NewDecoder(r.Body).Decode(&in)
+		}
+		scene, err := svc.SceneFrom(r.PathValue("name"), in.Screen)
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		if err := svc.SaveScene(scene); err != nil {
+			fail(w, err)
+			return
+		}
+		write(w, http.StatusOK, asScene(scene))
+	})
+
+	mux.HandleFunc("POST /"+Version+"/scenes/{name}/apply", func(w http.ResponseWriter, r *http.Request) {
+		var in SceneRequest
+		if r.Body != nil {
+			// An empty body is an ordinary apply: a caller with nothing to
+			// say should not have to send "{}".
+			_ = json.NewDecoder(r.Body).Decode(&in)
+		}
+		name := r.PathValue("name")
+
+		if !in.Preview {
+			outcome, err := svc.ApplyScene(r.Context(), name)
+			if err != nil {
+				fail(w, err)
+				return
+			}
+			write(w, http.StatusOK, asOutcome(outcome))
+			return
+		}
+
+		outcome, err := svc.PreviewScene(r.Context(), name, holderOf(in, r), in.Hold)
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		if !in.Hold || outcome.Lease == nil {
+			write(w, http.StatusOK, asOutcome(outcome))
+			return
+		}
+
+		/*
+			The caller said it would sit on this request, so the lease is the
+			connection. The response goes out now -- the client wants to know
+			the draft is up -- and the handler then waits, doing nothing, until
+			the socket closes. That close is the client going away, reported by
+			the kernel, with no clock and no heartbeat involved.
+		*/
+		hold(w, r, svc, outcome)
+	})
+
+	mux.HandleFunc("POST /"+Version+"/preview/renew", func(w http.ResponseWriter, r *http.Request) {
+		var in PreviewRequest
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			write(w, http.StatusBadRequest, Error{Error: "that request does not decode", Detail: err.Error()})
+			return
+		}
+		if err := svc.Renew(in.Token); err != nil {
+			fail(w, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	mux.HandleFunc("POST /"+Version+"/preview/release", func(w http.ResponseWriter, r *http.Request) {
+		var in PreviewRequest
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			write(w, http.StatusBadRequest, Error{Error: "that request does not decode", Detail: err.Error()})
+			return
+		}
+		restore, err := svc.Release(r.Context(), in.Token)
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		write(w, http.StatusOK, RestoreResponse{
+			Applied: restore.Applied, Missing: restore.Missing, Complete: restore.Complete(),
+		})
+	})
+
 	mux.HandleFunc("POST /"+Version+"/reconcile", func(w http.ResponseWriter, r *http.Request) {
 		restore, err := svc.Reconcile(r.Context(), nil)
 		if err != nil {
@@ -301,6 +430,7 @@ func describe(view service.View) Device {
 	for _, col := range view.Device.Colours {
 		device.Colours = append(device.Colours, col.String())
 	}
+	device.Preview = asPreview(view.Preview)
 	if view.Rule.Reassert > 0 {
 		device.Reassert = view.Rule.Reassert.String()
 	}
@@ -374,3 +504,98 @@ const (
 	ReadHeaderTimeout = 5 * time.Second
 	IdleTimeout       = 60 * time.Second
 )
+
+// asScene is a saved scene on the wire.
+func asScene(scene scenes.Scene) Scene {
+	out := Scene{Name: scene.Name, Effects: scene.Effects, Screen: scene.Screen}
+	for _, a := range scene.Assignments {
+		out.Assignments = append(out.Assignments, SceneAssignment{Target: a.Target, Colour: a.Colour})
+	}
+	return out
+}
+
+// fromScene is the reverse, for a client saving one.
+func fromScene(in Scene) scenes.Scene {
+	out := scenes.Scene{Name: in.Name, Effects: in.Effects, Screen: in.Screen}
+	for _, a := range in.Assignments {
+		out.Assignments = append(out.Assignments, scenes.Assignment{Target: a.Target, Colour: a.Colour})
+	}
+	return out
+}
+
+// asOutcome is what a scene did, on the wire.
+func asOutcome(outcome service.SceneOutcome) SceneResponse {
+	out := SceneResponse{Scene: outcome.Scene, Problems: outcome.Problems, Screen: outcome.Screen}
+	for _, got := range outcome.Results {
+		out.Results = append(out.Results, result(got))
+	}
+	out.Preview = asPreview(outcome.Lease)
+	return out
+}
+
+// asPreview is a lease on the wire.
+func asPreview(lease *service.Lease) *Preview {
+	if lease == nil {
+		return nil
+	}
+	out := &Preview{
+		Token: lease.Token, Scene: lease.Scene,
+		Holder: lease.Holder, Devices: lease.Devices,
+	}
+	if !lease.Expires.IsZero() {
+		expires := lease.Expires
+		out.Expires = &expires
+	}
+	return out
+}
+
+/*
+holderOf names who is looking at a draft.
+
+The caller's own description where it gave one, because "hotaru-gui on this
+desktop" is more use in a listing than anything this layer can work out. A
+caller that said nothing gets the truthful minimum.
+*/
+func holderOf(in SceneRequest, r *http.Request) string {
+	if in.Holder != "" {
+		return in.Holder
+	}
+	if agent := r.UserAgent(); agent != "" {
+		return agent
+	}
+	return "an API client"
+}
+
+/*
+hold keeps a preview alive for as long as the caller keeps the request open.
+
+The response is written and flushed first: the client is waiting to hear that
+the draft is up, and a body nobody sends is a client that blocks forever. After
+that this goroutine does nothing at all until the request context ends, which
+happens when the socket closes -- deliberately, or because the process on the
+other end died.
+*/
+func hold(w http.ResponseWriter, r *http.Request, svc *service.Service, outcome service.SceneOutcome) {
+	write(w, http.StatusOK, asOutcome(outcome))
+	if flusher, ok := w.(http.Flusher); ok {
+		flusher.Flush()
+	}
+
+	<-r.Context().Done()
+
+	/*
+		The request's context is already cancelled, so the revert cannot use
+		it: every write it makes would be cancelled before it left. A fresh
+		context with a bound of its own is the difference between putting
+		somebody's lights back and merely intending to.
+	*/
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), revertWithin)
+	defer cancel()
+	if outcome.Lease != nil {
+		_, _ = svc.Release(ctx, outcome.Lease.Token)
+	}
+}
+
+// revertWithin bounds putting the lights back after a preview's holder goes
+// away. Long enough for every device, short enough not to pile up.
+const revertWithin = 30 * time.Second
