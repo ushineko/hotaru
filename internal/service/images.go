@@ -20,6 +20,7 @@ into is the one-writer question with a worse answer.
 // ImageLibrary is where converted pictures live.
 type ImageLibrary interface {
 	Add(name string, source []byte) (images.Image, error)
+	AddSlideshow(name string, sources [][]byte) (images.Image, error)
 	All() ([]images.Image, error)
 	Remove(name string) error
 	Read(name string) ([]byte, error)
@@ -71,6 +72,20 @@ func (s *Service) PreviewImage(source []byte) ([]byte, int, error) {
 		return nil, 0, err
 	}
 	return images.Convert(source)
+}
+
+/*
+AddSlideshow turns several pictures into one animation and stores it.
+
+The other answer to a stack of files: eight wallpapers, or one reel that holds
+each and crossfades between them.
+*/
+func (s *Service) AddSlideshow(name string, sources [][]byte) (images.Image, error) {
+	library, err := s.library()
+	if err != nil {
+		return images.Image{}, err
+	}
+	return library.AddSlideshow(name, sources)
 }
 
 // Images is what is stored.

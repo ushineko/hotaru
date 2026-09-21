@@ -539,6 +539,9 @@ more than it saves.
 */
 type ImageRequest struct {
 	Image string `json:"image"`
+	// Images, when there is more than one, makes a slideshow instead: each
+	// picture held and crossfaded into the next, looping back to the first.
+	Images []string `json:"images,omitempty"`
 }
 
 /*
@@ -553,6 +556,18 @@ type ConvertedImage struct {
 	Image  string `json:"image"`
 	Bytes  int    `json:"bytes"`
 	Frames int    `json:"frames"`
+}
+
+/*
+SceneFromImageRequest builds a scene whose lights match a picture.
+
+The quick way to a theme: picking six colours by hand and hoping they go
+together is the tedious half, and the picture has already answered that
+question.
+*/
+type SceneFromImageRequest struct {
+	// Scene is what to call it. An existing name is replaced.
+	Scene string `json:"scene"`
 }
 
 // ShowImageRequest puts a stored picture on the panel.

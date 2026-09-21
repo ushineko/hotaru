@@ -233,3 +233,20 @@ interrupt.
 type Busy interface {
 	Busy() bool
 }
+
+/*
+onScreen runs something on the UI thread.
+
+Fyne is single-threaded for anything that draws, and an operation started by
+Perform runs in a goroutine -- so a Flash, an Invalidate or a field the
+builders read from must be handed back rather than called where the work
+finished.
+
+It is not a warning in a log. Fyne prints one, and then the text shaper
+panicked mid-layout with an index out of range: a window that had been used for
+a minute, on somebody's desk, because a status line was written from the wrong
+goroutine.
+
+fyne.Do, never DoAndWait: the worker must not wait on the thread it is feeding.
+*/
+func onScreen(do func()) { fyne.Do(do) }

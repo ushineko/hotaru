@@ -314,7 +314,7 @@ func (s *ScenesSection) row(sh *shell.Shell, scene api.Scene, key string) fyne.C
 			if err != nil {
 				return err
 			}
-			sh.Flash(applied(done), fd.StatusGood)
+			onScreen(func() { sh.Flash(applied(done), fd.StatusGood) })
 			return nil
 		})
 	})
@@ -979,11 +979,13 @@ func (s *ScenesSection) save(sh *shell.Shell) {
 				if err := s.app.client.SaveScene(ctx, s.draft.Scene(entry.Text)); err != nil {
 					return err
 				}
-				s.app.EndPreview()
-				s.stopPicking()
-				s.draft = nil
-				s.picked.Clear()
-				sh.Flash(entry.Text+" saved.", fd.StatusGood)
+				onScreen(func() {
+					s.app.EndPreview()
+					s.stopPicking()
+					s.draft = nil
+					s.picked.Clear()
+					sh.Flash(entry.Text+" saved.", fd.StatusGood)
+				})
 				return nil
 			})
 		}, sh.Window)
