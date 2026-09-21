@@ -2,3 +2,7 @@
 /dist/
 *.png.tmp
 .aur-repo/
+
+# Release tarballs: updpkgsums downloads one into this directory to check
+# it, and it is 90 MB of what GitHub already has.
+packaging/*.tar.gz

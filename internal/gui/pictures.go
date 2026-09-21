@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -48,6 +49,21 @@ type PicturesSection struct {
 		crop -- so the rest wait here until the one in front is answered.
 	*/
 	waiting []dropped
+
+	/*
+		converting counts the conversions in flight.
+
+		A preview runs off the UI thread and comes back to it when the
+		service answers, which is right in a running window and is a loose
+		end in a test: the goroutine outlives the test that started it and
+		touches the interface while the next one is drawing. Fyne's test
+		driver runs `fyne.Do` inline on the calling goroutine, so that is two
+		goroutines shaping text at once, and its shaper panics.
+
+		Waited on by Settle, which is the test's way of saying "and then the
+		conversion finished".
+	*/
+	converting sync.WaitGroup
 }
 
 // dropped is a file waiting to be looked at.
@@ -55,6 +71,11 @@ type dropped struct {
 	name   string
 	source []byte
 }
+
+// Settle waits for the conversions this section has in flight. For tests: a
+// preview is a goroutine, and a test that asserted before it finished would
+// be asserting about a window that is still being built.
+func (p *PicturesSection) Settle() { p.converting.Wait() }
 
 // OpenPictures gives a section its app, which the shell normally does. For
 // tests, like OpenEditor.
@@ -552,7 +573,10 @@ func (p *PicturesSection) preview(sh *shell.Shell, suggestion string, source []b
 		The work still stays off the UI thread, which is what the rule is
 		about, and a conversion takes a third of a second.
 	*/
+	p.converting.Add(1)
 	go func() {
+		defer p.converting.Done()
+
 		ctx, cancel := context.WithTimeout(context.Background(), convertWithin)
 		defer cancel()
 

@@ -343,7 +343,15 @@ other alone.
 */
 func (d *DashboardsSection) letteringFields(sh *shell.Shell) fyne.CanvasObject {
 	fonts := widget.NewSelect(dashboardFonts, func(picked string) {
-		if picked == d.editing.Lettering.Font {
+		/*
+			Against the *name* of what is set, not against the field.
+
+			A dashboard that has never named a face has "" and the chooser
+			shows "sans", so comparing the two says they differ -- and
+			SetSelected below fires this, so merely opening the editor wrote
+			a font into the draft and asked the service for a frame.
+		*/
+		if picked == fontName(d.editing.Lettering.Font) {
 			return
 		}
 		d.editing.Lettering.Font = picked
@@ -419,6 +427,12 @@ should keep.
 */
 func (d *DashboardsSection) edgeField(sh *shell.Shell, name string, text *api.DashboardText) fyne.CanvasObject {
 	choose := widget.NewSelect(edges, func(picked string) {
+		// Only when it moved. SetSelected below fires this, and a form that
+		// rendered a frame every time it was built would ask the service for
+		// a picture on every keystroke that rebuilds it.
+		if picked == edgeName(text.Outline) {
+			return
+		}
 		text.Outline = edgeOf(picked)
 		d.redraw(sh)
 	})
@@ -527,7 +541,10 @@ func (d *DashboardsSection) redraw(sh *shell.Shell) {
 		name = "coolant" // a name the service can resolve; the body is what is drawn
 	}
 
+	d.drawing.Add(1)
 	go func() {
+		defer d.drawing.Done()
+
 		frame, err := d.app.client.PreviewDashboard(context.Background(), name, &draft)
 		if err != nil {
 			onScreen(func() { sh.Flash(err.Error(), fd.StatusWarn) })
