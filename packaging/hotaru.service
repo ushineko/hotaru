@@ -29,14 +29,36 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=read-only
+# The three directories are made before the sandbox is built, because they
+# cannot be made inside it.
+#
+# `+` runs this outside the namespacing above -- which is the whole point.
+# ProtectHome=read-only makes $HOME read-only to the service, and a path named
+# in ReadWritePaths is only punched through if it already exists: systemd
+# cannot bind-mount a directory that is not there. So on a fresh install
+# hotaru started with all three read-only and could not create them, and the
+# first thing anybody did failed:
+#
+#   hotaru: no image library: make the image directory:
+#   mkdir /home/.../.local/share/hotaru: read-only file system
+#
+# This machine had made them before it was ever packaged, so the fault only
+# appeared on the second one. Which is the whole argument of spec 001.
+# 0700 rather than whatever the umask says, because this is the mode hotaru
+# gives them when it makes them itself, and a picture somebody added for their
+# own screen is not a file for the rest of the machine to read.
+ExecStartPre=+/usr/bin/install -d -m 0700 %h/.config/hotaru %h/.local/state/hotaru %h/.local/share/hotaru
+
 # Three directories, and they are hotaru's own: the rules and scenes it is
 # asked to save, the state it keeps for itself, and the pictures somebody adds
 # for the cooler's screen. Everything else under $HOME stays read-only --
 # which is how the attempt to edit the desktop's own shortcut file was caught
 # (spec 016), and the property is worth more than the convenience.
-# The dash matters: systemd refuses to start a unit whose ReadWritePaths names
-# a directory that is not there, and on a fresh install none of these are --
-# hotaru makes them when it first has something to put in them.
+#
+# The dashes stay: a home directory that cannot be written to at all -- an
+# account whose $HOME is not there yet, a read-only network mount -- is a
+# machine where hotaru should still drive the lights rather than refuse to
+# start.
 ReadWritePaths=-%h/.config/hotaru -%h/.local/state/hotaru -%h/.local/share/hotaru
 
 # The socket lives in the runtime directory, and ProtectSystem=strict makes
