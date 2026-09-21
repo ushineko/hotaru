@@ -67,6 +67,40 @@ because the AUR reads it rather than the PKGBUILD and a stale one is the
 commonest way a package breaks. It is deliberately **not** kept here: it
 carries a checksum for a tarball that does not exist until the tag does.
 
+### The first machine found it in an hour
+
+The package installed, the service started, and the first thing anybody did
+on the second machine failed:
+
+	hotaru: no image library: make the image directory:
+	mkdir /home/.../.local/share/hotaru: read-only file system
+
+`ProtectHome=read-only` makes `$HOME` read-only to the service, and a path
+named in `ReadWritePaths` is only punched through **if it already exists** --
+systemd cannot bind-mount a directory that is not there. The dashes in front
+of those three paths stop the unit failing to start when they are missing,
+which is what they were for; what nobody noticed is that they also leave the
+service unable to create them.
+
+So on a fresh install hotaru could not make its own directories: no pictures,
+and on a machine that had never run it before, no saved rules or scenes
+either. The development machine had made all three long before it was ever
+packaged, which is why the unit had been right here for weeks.
+
+The fix is `ExecStartPre=+/usr/bin/install -d -m 0700 ...`: `+` runs a command
+outside the namespacing, which is the one place a directory the sandbox needs
+can still be made. 0700 rather than the umask, because that is the mode hotaru
+gives them itself.
+
+**This is spec 001's argument, arriving on schedule.** The packaging could not
+be verified on the machine that wrote it, and the first machine that had never
+run hotaru found the fault within an hour of installing.
+
+The service also keeps *why* there is no library now, rather than logging it
+at startup and answering "the image library is unavailable on this machine"
+for the rest of the day. The reason is the half that tells somebody what to
+do.
+
 ## Requirements
 
 **R1. One PKGBUILD, two packages**, the window's dependencies confined to the
@@ -86,7 +120,10 @@ under `/usr/share/doc`, never as active configuration.
 **R6. `check()` runs the suite**, which needs no hardware, no OpenRGB, no
 display and no root.
 
-**R7. The release flow is the ushineko one**: changelog heading dated, README
+**R7. The service can make its own directories**, on a machine where none of
+them exist yet.
+
+**R8. The release flow is the ushineko one**: changelog heading dated, README
 **Version** line matched, `govulncheck` clean, the README commit on `main`
 before the tag, and a GitHub Release for every tag whose notes are that
 version's changelog entry verbatim.
@@ -105,8 +142,15 @@ version's changelog entry verbatim.
       `check()` runs.
 - [x] AC7. The README has an Install section: the AUR packages, `go install`,
       and the first-run steps.
-- [ ] AC8. Verified by building the package from a pushed tag and installing
-      it on a machine that has never had liquidctl.
+- [x] AC8. Verified by building the package from a pushed tag and installing
+      it on a second machine: the service runs from the unit, drives nine
+      devices, and a picture added there makes a scene. **It found a bug in
+      an hour** -- see "The first machine found it in an hour".
+- [x] AC9. A fresh install creates `~/.config/hotaru`,
+      `~/.local/state/hotaru` and `~/.local/share/hotaru` at 0700, and a
+      service that cannot says why rather than only that it cannot.
+- [ ] AC10. The udev rule verified on a machine with a supported cooler and
+      no liquidctl. Neither machine here is both.
 
 ## Risks & Assumptions
 

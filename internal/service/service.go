@@ -56,6 +56,10 @@ type Service struct {
 	// preview: see preview.go.
 	leases map[string]*Lease
 
+	// imagesWhy is why there is no library, when there is not: see
+	// images.go.
+	imagesWhy error
+
 	// dashboards is what the panel can be asked to draw: see dashboards.go.
 	dashboards *dashboard.Store
 

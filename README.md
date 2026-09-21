@@ -316,6 +316,20 @@ MIT. See [LICENSE](LICENSE).
 
 ## Changelog
 
+### Unreleased
+
+- The service makes its own directories. `ProtectHome=read-only` with
+  `ReadWritePaths=-…` punches a path through only if it already exists, so on
+  a fresh install hotaru could not create `~/.local/share/hotaru` and the
+  first picture anybody added failed with "read-only file system" — and on a
+  machine that had never run it, rules and scenes would not have saved either.
+  Found within an hour of installing 0.1.0 on a second machine, which is the
+  argument of spec 001 arriving on schedule (spec 007).
+
+- A service with no image library says why. "The image library is unavailable
+  on this machine" is true and useless; the reason was in the startup log and
+  nowhere somebody adding a picture would look.
+
 ### 0.1.0 (2026-09-21)
 
 The first tagged release, and so the whole program: lighting through OpenRGB
