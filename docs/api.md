@@ -297,6 +297,59 @@ is not revived -- the devices may belong to somebody else by now.
 Ends a preview and puts the lights back to what was last applied, answering
 with the same shape as `/v1/reconcile`. `{"token": "…"}`.
 
+## GET /v1/keys
+
+The shortcuts, what they apply, and what is in the way. The third part is why
+this is one call rather than three: a key bound to a scene that no longer
+exists, and a key another program still claims, both look exactly like a
+working binding from anywhere else.
+
+```console
+$ curl -s --unix-socket … http://hotaru/v1/keys
+{
+  "bindings": [
+    { "key": "Ctrl+Alt+Num+1", "scene": "red" },
+    { "key": "Ctrl+Alt+Num+9", "scene": "off" }
+  ],
+  "reserved": ["Ctrl+Alt+Shift+Num+1", "…", "Ctrl+Alt+Shift+Num+9"],
+  "claimed": ["AIOScene11 holds Ctrl+Alt+Shift+Num+1 (in kwin)"]
+}
+```
+
+`claimed` is read out of `~/.config/kglobalshortcutsrc`, read-only. KDE keeps an
+entry per registered shortcut and **those entries outlive the program that made
+them**: while one is there, hotaru's own registration succeeds and the key does
+nothing at all. `reserved` sequences are checked as well as bound ones, because
+they are exactly where somebody's own scenes will go next.
+
+`desktop`, when present, says why the KWin integration is not running -- no
+session bus, no KWin yet, or another hotaru holding the bus name.
+
+## POST /v1/keys/bind
+
+`{"key": "Ctrl+Alt+Shift+Num+1", "scene": "evening"}`. An empty scene name
+unbinds the key, including one of the nine shipped ones.
+
+## POST /v1/keys/release
+
+Removes another program's stale entries for hotaru's sequences from
+kglobalshortcutsrc, and nothing else in that file. It answers `{"removed": 9}`.
+
+**Never called on hotaru's own initiative.** It edits a file that belongs to the
+desktop, so it happens because a person was shown what is in the way and said
+yes.
+
+## The hotkey door
+
+Not HTTP. A KWin script can reach the outside world only through `callDBus`, so
+there is a D-Bus object with exactly one method on the session bus:
+
+	org.ushineko.hotaru  /Scenes  org.ushineko.hotaru.Scenes.Apply(scene)
+
+It hands the name to the same service call `POST /v1/scenes/{name}/apply`
+makes. One flow, two doors, and the narrow one exists because KWin gives no
+other.
+
 ## POST /v1/reconcile
 
 Puts the lights back to what was last asked for. Not an apply: nothing here is

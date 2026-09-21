@@ -306,3 +306,27 @@ func (c *Client) ReleasePreview(ctx context.Context, token string) (RestoreRespo
 	err := c.do(ctx, http.MethodPost, "/"+Version+"/preview/release", PreviewRequest{Token: token}, &out)
 	return out, err
 }
+
+// Keys are the shortcuts, what they apply, and what is in their way.
+func (c *Client) Keys(ctx context.Context) (KeysResponse, error) {
+	var out KeysResponse
+	err := c.do(ctx, http.MethodGet, "/"+Version+"/keys", nil, &out)
+	return out, err
+}
+
+// Bind points a key at a scene. An empty scene name unbinds it.
+func (c *Client) Bind(ctx context.Context, key, scene string) error {
+	return c.do(ctx, http.MethodPost, "/"+Version+"/keys/bind", BindRequest{Key: key, Scene: scene}, nil)
+}
+
+/*
+ReleaseKeys removes another program's claim on hotaru's sequences.
+
+Editing somebody else's configuration file, so it is never called on hotaru's
+own initiative: a person is shown what is in the way and says yes.
+*/
+func (c *Client) ReleaseKeys(ctx context.Context) (int, error) {
+	var out ReleasedResponse
+	err := c.do(ctx, http.MethodPost, "/"+Version+"/keys/release", struct{}{}, &out)
+	return out.Removed, err
+}

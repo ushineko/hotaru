@@ -10,11 +10,11 @@ cooler itself, over `/dev/hidraw` and usbfs: set colours down to individual
 fans, define scenes, put a live dashboard on the cooler's screen, and bind it
 all to keys.
 
-> **Status**: lighting, the cooler, its screen and scenes work. The service, its
-> API, the CLI and the mapping wizard are built and tested on two machines with
-> nothing in common — the second one mapped end to end by its owner, who had
-> never run it, with no configuration written by hand. The GUI and the hotkeys
-> are specified and not yet built; see [Roadmap](#roadmap).
+> **Status**: lighting, the cooler, its screen, scenes and the hotkeys work.
+> The service, its API, the CLI and the mapping wizard are built and tested on
+> two machines with nothing in common — the second one mapped end to end by its owner, who had
+> never run it, with no configuration written by hand. The GUI is specified and
+> not yet built; see [Roadmap](#roadmap).
 
 ## Contents
 
@@ -35,7 +35,7 @@ all to keys.
 | **Scenes** | A named set of colour assignments, an effect per device and what the screen shows, applied as a unit — with a preview you can hold while you decide |
 | **The cooler** | Coolant and CPU temperature, pump and fan speeds, read where the kernel has no driver for the device |
 | **The screen** | The cooler's LCD: its own readout, an image, an animation, or a live dashboard rendered from the telemetry |
-| **Hotkeys** | Scenes on global shortcuts. On Plasma through a KWin script; on any other desktop by binding the CLI in that desktop's own shortcut editor |
+| **Hotkeys** | Scenes on global shortcuts: nine shipped on `Ctrl+Alt+Num1`–`Num9`, the shifted row left free for your own. On Plasma through a KWin script installed on every KWin start; on any other desktop by binding the CLI in that desktop's own shortcut editor |
 | **A GUI** | Manage the service, see the machine's devices and zones drawn as a picture, stage a scene, preview it on the hardware, name the segments you just worked out, save it |
 
 ## Architecture
@@ -161,7 +161,7 @@ installing and using hotaru must take no extra steps.
 | 003 | The LCD and the dashboard | **done** — [#3](https://github.com/ushineko/hotaru/issues/3) |
 | 004 | Scenes, preview and leases | **done** — [#4](https://github.com/ushineko/hotaru/issues/4) |
 | 005 | The GUI on [fynedesygn](https://github.com/ushineko/fynedesygn) | [#5](https://github.com/ushineko/hotaru/issues/5) |
-| 006 | Hotkeys and the cutover | [#6](https://github.com/ushineko/hotaru/issues/6) |
+| 006 | Hotkeys and the cutover | **done** — [#6](https://github.com/ushineko/hotaru/issues/6) |
 | 007 | Packaging and release | [#7](https://github.com/ushineko/hotaru/issues/7) |
 
 ## Where it comes from
@@ -219,7 +219,33 @@ MIT. See [LICENSE](LICENSE).
 
 ### Unreleased
 
-- Scenes: `hotaru scene set`, `apply`, `preview`, `save`, `list`, `show` and
+- Scenes on hotkeys. Nine shipped scenes — red, green, blue, purple, cyan,
+  orange, white, magenta and off — on `Ctrl+Alt+Num1` to `Num9`, which is the
+  bank `peripheral-battery-monitor` has had on this hardware for two years, read
+  out of its own configuration rather than reinvented.
+  `Ctrl+Alt+Shift+Num1..9` are left free for scenes you write yourself
+  (spec 016, #6).
+
+- `hotaru keys` says what is bound, what is reserved, and **what else is
+  holding those sequences** — the fault that makes a shortcut register
+  successfully and then do nothing. `hotaru keys release` removes another
+  program's stale entries from `kglobalshortcutsrc` after showing you them, and
+  touches no other line in the file. `hotaru keys bind` and `unbind` change what
+  a key does (spec 016, #6).
+
+- The KWin script is installed on **every** appearance of KWin, not once at
+  start-up: the shortcuts live exactly as long as the loaded script, so a KWin
+  restart used to take them silently (spec 016, #6).
+
+- A scene can turn the lights off. "Off" is not a colour — it resolves the
+  device's own Off mode and honours the keyboard that treats black as a dead
+  backlight — which is what the ninth key has always done (spec 016, #6).
+
+- A machine with no cooler no longer reports a problem when a scene names a
+  screen state. Absence is an ordinary answer, and the nine shipped scenes name
+  one (spec 016).
+
+- Scenes: `hotaru scene write`, `apply`, `preview`, `save`, `list`, `show` and
   `delete`. A scene is colours addressed at whatever depth you meant them, an
   effect per device, and what the cooler's screen shows — applied as a unit and
   kept, so it survives a reboot and hardware that forgets. A scene that says

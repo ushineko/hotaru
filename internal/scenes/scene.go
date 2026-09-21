@@ -32,6 +32,29 @@ type Scene struct {
 	// Name is how somebody refers to it, and how a binding will.
 	Name string `json:"-"`
 
+	/*
+		Colour is one colour across every device in scope, applied before any
+		assignments below.
+
+		What the nine shipped scenes are, and what somebody means by "make the
+		machine blue": the same thing `hotaru light set blue` does. Exceptions
+		go in Assignments, so "everything blue except the top fan" stays two
+		lines rather than an enumeration.
+	*/
+	Colour string `json:"colour,omitempty"`
+
+	/*
+		Off turns lighting off instead of colouring it.
+
+		Off is not a colour. It resolves the device's own Off mode, falls back
+		to black in Direct, and honours the correction for a keyboard that
+		treats black as a dead backlight rather than as off -- none of which a
+		colour assignment can ask for. A scene that is Off ignores its
+		colours; the ninth key on this desk has turned the lights off for two
+		years and it is not a shade of black.
+	*/
+	Off bool `json:"off,omitempty"`
+
 	// Assignments are targets and colours, in order: a later one wins where
 	// two cover the same LEDs, which is what makes "everything blue except the
 	// top fan" two lines rather than an enumeration.
@@ -62,6 +85,10 @@ type Scene struct {
 		about the panel must not take the dashboard away at midday.
 	*/
 	Screen string `json:"screen,omitempty"`
+
+	// Shipped marks one of the nine hotaru carries in code rather than in
+	// anybody's file. Set when it is read, never stored.
+	Shipped bool `json:"-"`
 }
 
 // Assignment is one colour on one target, in the spelling somebody would type.
@@ -113,6 +140,11 @@ where every other device name is matched, and a scene naming something absent
 takes a lease on nothing rather than failing.
 */
 func (s Scene) Devices() []string {
+	if s.Colour != "" || s.Off {
+		// Everything in scope. Naming nothing is how the rest of hotaru says
+		// "every device", and a lease over a scene like this covers them all.
+		return nil
+	}
 	seen := map[string]bool{}
 	for _, a := range s.Assignments {
 		if target, err := devices.ParseTarget(a.Target); err == nil {

@@ -37,6 +37,25 @@ Before cutover the monitor still writes the dashboard, so the working rule while
 building specs 002 and 003 is: **stop the monitor before exercising hotaru's
 LCD or lighting writes.**
 
+## What has happened so far
+
+**hotaru has the keys.** Spec 016 landed and the nine unshifted numpad
+shortcuts are hotaru's, applying the nine scenes read out of the monitor's own
+configuration. Two things had to be cleared first, and both are worth recording
+because neither was a bounce away:
+
+- The nine stale `AIOScene1..9` entries were removed with `hotaru keys
+  release`, which showed them first and left `AIOScene11..19` and every other
+  program's shortcuts untouched.
+- **`aio-scenes` was still loaded in KWin with its program not running** --
+  `isScriptLoaded` returned true for a script whose process had exited, and its
+  shortcuts were still grabbed. Unloading it by name and stopping its object is
+  what actually freed the keys.
+
+What remains of the cutover is the monitor's own removal commit: its write
+paths, its D-Bus object and its KWin script. Its keys no longer fire because
+hotaru holds those sequences, but the code is still there to be taken out.
+
 ## The order, and the verification
 
 1. hotaru reaches parity and is installed, with no key bindings at all.
@@ -58,6 +77,8 @@ reporting success while holding on, so confirm all five:
 - **The keys are inert**, and `kwin_wayland`'s journal shows no `aio-scenes`
   registration line on monitor start.
 - **The stale entries are gone.** See below; the bounce does not do this one.
+  `hotaru keys` reports exactly this, including for the reserved row, and
+  `hotaru keys release` is the clearing step.
 
 ## The stale key entries
 

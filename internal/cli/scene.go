@@ -23,7 +23,7 @@ func sceneCommand() *cobra.Command {
 		Use:   "scene",
 		Short: "Named lighting",
 	}
-	cmd.AddCommand(sceneListCommand(), sceneShowCommand(), sceneSetCommand(),
+	cmd.AddCommand(sceneListCommand(), sceneShowCommand(), sceneWriteCommand(),
 		sceneApplyCommand(), scenePreviewCommand(), sceneSaveCommand(),
 		sceneDeleteCommand())
 	return cmd
@@ -99,20 +99,23 @@ func sceneShowCommand() *cobra.Command {
 	}
 }
 
-func sceneSetCommand() *cobra.Command {
+func sceneWriteCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "set <name> <target>=<colour>...",
+		Use:   "write <name> <target>=<colour>...",
 		Short: "Write a scene out, rather than capturing one",
 		Long: `Write a scene out, rather than capturing one.
 
-	hotaru scene set evening kraken=#201040 keychron=black 	    --effect keychron="Solid Splash" --screen dashboard
+	hotaru scene write evening kraken=#201040 keychron=#100820 \
+	    --effect keychron="Solid Splash" --screen dashboard
 
 The same targets as ` + "`hotaru light set`" + `: a device, a zone, an LED range,
 or a segment named in the rules file. An effect is a mode the device
 advertises, by any part of the device's name; one it does not have costs the
 effect rather than the scene, and is reported when the scene is applied.
 
-Saving a scene does not light it. ` + "`hotaru scene apply`" + ` does that.`,
+Writing a scene does not light it. ` + "`hotaru scene apply`" + ` does that,
+and ` + "`hotaru scene save`" + ` is the other way to make one: it keeps what
+the lights are showing now.`,
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client, err := client(cmd)
