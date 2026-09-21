@@ -16,7 +16,7 @@ GOLANGCI           := $(HOME)/go/bin/golangci-lint-$(LINT_VERSION)
 # panic on files it thinks are from the future.
 LINT_GO_TOOLCHAIN  ?= go1.26.0
 
-.PHONY: all test race lint vuln build gui tidy clean
+.PHONY: all test race lint vuln build gui generate tidy clean
 
 all: test build
 
@@ -42,6 +42,14 @@ build:
 # runs everything above without any of this.
 gui:
 	go build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/hotaru-gui ./cmd/hotaru-gui
+
+# The README's mermaid diagrams, rendered to the PNGs the window embeds.
+# Build-time only: a program that drew a diagram at runtime would need node,
+# a browser and the network to draw a box with an arrow in it. Needs mmdc
+# (mermaid-cli) on PATH; the test suite fails when a diagram and its image
+# have drifted apart.
+generate:
+	go generate ./...
 
 tidy:
 	go mod tidy
