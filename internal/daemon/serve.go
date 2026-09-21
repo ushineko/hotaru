@@ -313,6 +313,15 @@ func keys(ctx context.Context, cmd *cobra.Command, svc *service.Service, report 
 		Bindings: func() map[string]string { return bindings(svc) },
 		Report:   report,
 	}
+	/*
+		The installer is also how a rebinding reaches the desktop.
+
+		KWin's script carries the scene name in the call it makes rather than
+		the key, so changing a binding in the file changes nothing until the
+		script is written again. The service says when the file changed; this
+		is what it calls.
+	*/
+	svc.SetShortcuts(install, report)
 	svc.SetDesktop("waiting for the desktop")
 
 	go desktop.Attach(ctx, &desktop.BusWatcher{Conn: conn, Name: desktop.KWinName},

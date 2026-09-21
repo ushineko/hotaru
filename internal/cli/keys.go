@@ -119,8 +119,17 @@ free by default, which is where your own scenes go.`,
 			if err := client.Bind(cmd.Context(), args[0], args[1]); err != nil {
 				return quiet(err)
 			}
-			cmd.Printf("%s applies %s. It takes effect the next time the desktop starts hotaru's script; "+
-				"`hotaru keys` says whether it is installed.\n", args[0], args[1])
+			/*
+				It takes effect now, where it did not.
+
+				The message said to wait for the desktop to start hotaru's
+				script, which was true and was the bug: the script carries
+				the scene name, so a binding did nothing until something
+				rewrote it. `hotaru keys` still says whether the script is
+				installed at all, which is the other thing that can be wrong.
+			*/
+			cmd.Printf("%s applies %s. `hotaru keys` says whether the desktop has it.\n",
+				args[0], args[1])
 			return nil
 		},
 	}
