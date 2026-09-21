@@ -105,3 +105,34 @@ func handsBack(call *ast.CallExpr) bool {
 	}
 	return false
 }
+
+/*
+The window is built without Fyne's thread-safety check, and this is the other
+half of that bargain.
+
+Fyne calls EnsureMain on every canvas refresh, and to learn which goroutine it
+is on it calls runtime.Stack -- which formats a whole traceback and keeps the
+first thirty bytes. A CPU profile of a 25-second window drag put that at 82%
+of all samples.
+
+The `migrated_fynedo` tag turns it off, and it is only safe to turn off
+because the test above walks the AST and fails when anything inside a Perform
+callback touches the interface unwrapped. So the Makefile is read here: the
+two belong together, and the day somebody drops the tag or the guard, one of
+them should notice.
+*/
+func TestTheWindowIsBuiltWithoutTheThreadCheck(t *testing.T) {
+	body, err := os.ReadFile(filepath.Join("..", "..", "Makefile"))
+	require.NoError(t, err)
+
+	require.Contains(t, string(body), "-tags migrated_fynedo",
+		"the window's build lost the tag; see the profile in spec 024")
+	for _, line := range strings.Split(string(body), "\n") {
+		if !strings.Contains(line, "hotaru-gui") || !strings.Contains(line, "go build") &&
+			!strings.Contains(line, "go install") {
+			continue
+		}
+		require.Contains(t, line, "$(GUITAGS)",
+			"a way of building the window that does not carry the tag: %s", line)
+	}
+}
