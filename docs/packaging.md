@@ -212,11 +212,18 @@ hotaru offers it rather than a post-install script performing it.
 
 The name is free — the AUR has no `hotaru` (checked).
 
-| Package | Source | For |
-|---|---|---|
-| `hotaru` | The release tarball, built from source | The default |
-| `hotaru-bin` | The release binaries | People who do not want a Go toolchain |
-| `hotaru-git` | `main` | Testing before a release |
+| Package | Source | For | |
+|---|---|---|---|
+| `hotaru` | The release tarball, built from source | The default | **published** at 0.1.0, and building `hotaru-gui` as a split package |
+| `hotaru-bin` | The release binaries | People who do not want a Go toolchain | not yet |
+| `hotaru-git` | `main` | Testing before a release | not yet |
+
+`scripts/update_aur.sh` publishes the first of them: the version comes from
+`.tag`, it refuses to run before that tag is pushed, and `.SRCINFO` is
+regenerated rather than copied. The other two follow the same shape when they
+are worth having -- `-bin` when the release carries binaries for more than one
+architecture, `-git` when somebody other than the author wants to track
+`main`.
 
 Each is its own `aur.archlinux.org` git repository, and `.SRCINFO` is
 regenerated with `makepkg --printsrcinfo > .SRCINFO` in the same commit as any
