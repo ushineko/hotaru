@@ -1095,3 +1095,66 @@ func TestTheAboutSectionIsTheReadme(t *testing.T) {
 	require.False(t, fynetest.ScrollableIn(tree),
 		"the document brought a scroller of its own")
 }
+
+func TestShowingADashboardAsksTheService(t *testing.T) {
+	/*
+		Reported: "Show it" does nothing. The route works from the terminal,
+		so the question is whether the window asks at all.
+	*/
+	a := test.NewApp()
+	t.Cleanup(a.Quit)
+
+	routes := healthy()
+	routes["GET /"+api.Version+"/dashboards"] = api.DashboardsResponse{
+		Active: "coolant",
+		Dashboards: []api.Dashboard{
+			{Name: "coolant", Arrangement: "ring", Shipped: true},
+			{Name: "mine", Arrangement: "big"},
+		},
+		Arrangements: []api.Arrangement{{Name: "ring", Slots: 3, Rings: 2}},
+		Themes:       []string{"midnight"},
+	}
+	routes["POST /"+api.Version+"/dashboards/mine/use"] = api.Dashboard{Name: "mine"}
+
+	client, asked := watching(t, routes)
+	app := gui.New(client)
+	opts := app.Options("s")
+	opts.SettingsPath = filepath.Join(t.TempDir(), "gui.yml")
+	sh := shell.Headless(a, opts)
+
+	window := test.NewWindow(widget.NewLabel("behind"))
+	t.Cleanup(window.Close)
+	sh.Window = window
+	app.Refresh(context.Background())
+
+	section := &gui.DashboardsSection{}
+	gui.OpenDashboards(section, app)
+	built := section.Build(sh)
+
+	/*
+		The second one. The first belongs to the dashboard already showing,
+		which is disabled on purpose -- and a test that tapped it would prove
+		nothing while looking as though it had.
+	*/
+	var shows []*widget.Button
+	fynetest.Walk(built, func(o fyne.CanvasObject) bool {
+		if b, ok := o.(*widget.Button); ok && b.Text == "Show it" {
+			shows = append(shows, b)
+		}
+		return false
+	})
+	require.Len(t, shows, 2, "one Show it per dashboard")
+	require.True(t, shows[0].Disabled(), "the dashboard already showing offers to show itself")
+	require.False(t, shows[1].Disabled())
+	test.Tap(shows[1])
+
+	want := "POST /" + api.Version + "/dashboards/mine/use"
+	require.Eventually(t, func() bool {
+		select {
+		case route := <-asked:
+			return route == want
+		default:
+			return false
+		}
+	}, 3*time.Second, 10*time.Millisecond, "tapping Show it never reached the service")
+}
