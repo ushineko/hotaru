@@ -34,7 +34,12 @@ fi
 
 if [ -d "$clone" ]; then
 	git -C "$clone" fetch origin
-	git -C "$clone" reset --hard origin/master
+	# An AUR repository that has never been pushed to is a valid clone with
+	# no branches in it, which is what the first publication of a package
+	# looks like.
+	if git -C "$clone" rev-parse --verify origin/master >/dev/null 2>&1; then
+		git -C "$clone" reset --hard origin/master
+	fi
 else
 	git clone "$AUR_URL" "$clone"
 fi
