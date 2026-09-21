@@ -247,6 +247,14 @@ MIT. See [LICENSE](LICENSE).
 
 ### Unreleased
 
+- Pictures are a grid of tiles rather than a column of cards. A card gave the
+  picture a square an inch across and the rest of the line to its size and the
+  directory every picture is in, so eighteen pictures were eighteen screens of
+  mostly nothing. The grid reflows to the window's width, and the thumbnails
+  are drawn from the shared cache and decoded off the drawing thread — the
+  first visit read eighteen 640x640 GIFs inline, which is the few seconds the
+  section took to appear (spec 034, #77).
+
 - System says which display was found: the panel the cooler model has, "none"
   for one without, or the panel and the reason when it cannot be reached.
   `hotaru cooling` says the same. Asking the device would mean claiming the
