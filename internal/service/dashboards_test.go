@@ -8,6 +8,7 @@ import (
 	"github.com/ushineko/hotaru/internal/dashboard"
 	"github.com/ushineko/hotaru/internal/readings"
 	"github.com/ushineko/hotaru/internal/scenes"
+	"github.com/ushineko/hotaru/internal/service"
 )
 
 // withScreens gives a service somewhere to keep dashboards.
@@ -72,4 +73,44 @@ func TestARenderedDashboardIsAFrameThePanelWouldTake(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, frame)
 	require.Equal(t, []byte("GIF"), frame[:3])
+}
+
+func TestChoosingADashboardTakesTheScreenBack(t *testing.T) {
+	/*
+		Reported as "Show it does nothing", and it was not the window: every
+		scene that names a picture holds the dashboard, and only asking for
+		the dashboard gives it up. Choosing one changed the store, the panel
+		kept showing the picture, and nothing said why.
+	*/
+	svc, _ := lit(t)
+	board := &screenAuthor{}
+	svc.SetCooler(&panel{})
+	svc.SetDashboard(board)
+	withScreens(t, svc)
+
+	// A picture on the screen, which is what a scene with an image does.
+	require.NoError(t, svc.Draw(t.Context(), service.Screen{Image: []byte("GIF89a")}))
+	require.True(t, board.held, "a picture did not take the panel from the dashboard")
+
+	require.NoError(t, svc.UseDashboard("quiet"))
+	require.False(t, board.held, "choosing a dashboard did not take the panel back")
+}
+
+func TestSavingADashboardDoesNotStealTheScreen(t *testing.T) {
+	// The other half: editing a dashboard while a picture is up is not a
+	// request for the picture to go away.
+	svc, _ := lit(t)
+	board := &screenAuthor{}
+	svc.SetCooler(&panel{})
+	svc.SetDashboard(board)
+	withScreens(t, svc)
+
+	require.NoError(t, svc.Draw(t.Context(), service.Screen{Image: []byte("GIF89a")}))
+	require.NoError(t, svc.SaveDashboard(dashboard.Dashboard{
+		Name: "mine", Arrangement: dashboard.Big,
+		Headline: dashboard.Slot{Source: readings.Coolant},
+	}))
+
+	require.True(t, board.held, "saving a dashboard took the screen from a picture")
+	require.Positive(t, board.redrawn, "saving a dashboard did not redraw it")
 }

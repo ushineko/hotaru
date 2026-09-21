@@ -96,7 +96,20 @@ func (s *Service) DeleteDashboard(name string) error {
 	return nil
 }
 
-// UseDashboard makes one the dashboard the panel draws.
+/*
+UseDashboard makes one the dashboard the panel draws, and takes the panel
+back to do it.
+
+The taking back is the part that was missing. Anything that puts a picture on
+the screen holds the dashboard -- `hotaru screen show`, the readout, and every
+scene that names an image -- and only asking for the dashboard gives it up.
+Choosing a dashboard *is* asking for the dashboard, so it releases as well as
+redraws.
+
+Without this, somebody who had applied a scene with a picture in it could
+choose dashboards all day and watch the picture: the store changed, the panel
+did not, and nothing said why.
+*/
 func (s *Service) UseDashboard(name string) error {
 	store, err := s.boards()
 	if err != nil {
@@ -105,12 +118,22 @@ func (s *Service) UseDashboard(name string) error {
 	if err := store.Use(name); err != nil {
 		return err
 	}
-	s.redrawPanel()
+
+	s.mu.RLock()
+	panel := s.panel
+	s.mu.RUnlock()
+	if panel != nil {
+		panel.Release() // Release redraws; see Dashboard.
+	}
 	return nil
 }
 
 /*
 redrawPanel tells the dashboard loop that what it is drawing has changed.
+
+It does not take the panel back. Saving a dashboard is not the same as asking
+to see it: somebody editing one while a picture is on the screen has not asked
+for the picture to go away.
 
 Without it, editing the dashboard on screen shows nothing until a reading
 moves: the push gate compares what the frame *says*, and a new arrangement of
