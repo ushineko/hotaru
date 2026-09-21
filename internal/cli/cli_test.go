@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"go/build"
+	"image"
+	"image/png"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,7 +20,9 @@ import (
 	"github.com/ushineko/hotaru/internal/colour"
 	"github.com/ushineko/hotaru/internal/config"
 	"github.com/ushineko/hotaru/internal/devices"
+	"github.com/ushineko/hotaru/internal/images"
 	"github.com/ushineko/hotaru/internal/openrgb"
+	"github.com/ushineko/hotaru/internal/scenes"
 	"github.com/ushineko/hotaru/internal/service"
 	"github.com/ushineko/hotaru/internal/state"
 )
@@ -119,6 +123,15 @@ func serving(t *testing.T, cfg *config.Config, server openrgb.Client) string {
 	// reload is a no-op, and the wizard's "in use now" would be a lie.
 	if rules, err := config.RulesPath(); err == nil {
 		svc.SetRulesPath(rules)
+	}
+	// And a picture library and somewhere to keep scenes, as the daemon also
+	// gives it: under the test's own directory, so nothing this writes is
+	// kept on the machine running it.
+	if library, err := images.Open(filepath.Join(dir, "images")); err == nil {
+		svc.SetImages(library)
+	}
+	if saved, err := scenes.Open(filepath.Join(dir, "scenes.yml")); err == nil {
+		svc.SetScenes(saved)
 	}
 
 	ctx, cancel := context.WithCancel(t.Context())
@@ -343,4 +356,49 @@ func TestAColourSetWithoutPreviewIsRemembered(t *testing.T) {
 	out, err := run(t, socket, "reconcile")
 	require.NoError(t, err)
 	require.Contains(t, out, "restored 1")
+}
+
+func TestAdoptTakesAScenesOwnPictureIntoTheLibrary(t *testing.T) {
+	/*
+		A scene written before hotaru kept pictures names a file wherever it
+		happened to be. It works until the file moves -- and the window
+		cannot offer it, because the chooser lists what hotaru keeps rather
+		than every GIF on the machine, so a scene made by hand could not be
+		edited in the same place as one made in the window.
+	*/
+	socket := serving(t, &config.Config{}, openrgb.NewFake(board()))
+
+	elsewhere := filepath.Join(t.TempDir(), "rain.gif")
+	require.NoError(t, os.WriteFile(elsewhere, gif(t), 0o600))
+
+	_, err := run(t, socket, "scene", "write", "storm", "--colour", "blue", "--screen", elsewhere)
+	require.NoError(t, err)
+
+	said, err := run(t, socket, "scene", "adopt")
+	require.NoError(t, err)
+	require.Contains(t, said, "storm")
+	require.Contains(t, said, `"rain"`, "it did not say what the picture is called now")
+
+	// The scene points at the library's copy, and the original is untouched.
+	listed, err := run(t, socket, "scene", "list")
+	require.NoError(t, err)
+	require.NotContains(t, listed, elsewhere, "the scene still points outside the library")
+	require.FileExists(t, elsewhere, "it moved somebody's file instead of copying it")
+
+	kept, err := run(t, socket, "image", "list")
+	require.NoError(t, err)
+	require.Contains(t, kept, "rain")
+
+	// And running it again adopts nothing: the scene is already inside.
+	again, err := run(t, socket, "scene", "adopt")
+	require.NoError(t, err)
+	require.Contains(t, again, "already points at a picture hotaru keeps")
+}
+
+// gif is the smallest picture the library will take.
+func gif(t *testing.T) []byte {
+	t.Helper()
+	var out bytes.Buffer
+	require.NoError(t, png.Encode(&out, image.NewRGBA(image.Rect(0, 0, 8, 8))))
+	return out.Bytes()
 }
