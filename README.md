@@ -318,6 +318,22 @@ MIT. See [LICENSE](LICENSE).
 
 ### Unreleased
 
+- A key that is not on the numpad can be bound from the window. Every key
+  hotaru ships is a numpad key, because that is what this desk has had for
+  years, and the chooser offered exactly those eighteen — so a machine without
+  a numpad inherited nine shortcuts it could not press and no way to choose
+  others. `hotaru keys bind` took any sequence all along; the binder was the
+  only place that did not (spec 035, #83).
+
+- A picture dropped on the window lands on the part that takes it. "Pictures"
+  stopped being a section when it was grouped under Create, and asking for it
+  by that name sent the window to the service page on every drop — the picture
+  arrived, the window did not (spec 036, #84).
+
+- On fynedesygn v0.1.38, whose `Shell.Select` now ignores a title no section
+  has instead of navigating to the first one, which is the other half of that
+  fix.
+
 - The service makes its own directories. `ProtectHome=read-only` with
   `ReadWritePaths=-…` punches a path through only if it already exists, so on
   a fresh install hotaru could not create `~/.local/share/hotaru` and the
