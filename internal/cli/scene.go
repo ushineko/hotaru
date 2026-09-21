@@ -2,6 +2,9 @@ package cli
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"text/tabwriter"
@@ -25,7 +28,7 @@ func sceneCommand() *cobra.Command {
 	}
 	cmd.AddCommand(sceneListCommand(), sceneShowCommand(), sceneWriteCommand(),
 		sceneApplyCommand(), scenePreviewCommand(), sceneSaveCommand(),
-		sceneRecolourCommand(), sceneDeleteCommand())
+		sceneRecolourCommand(), sceneAdoptCommand(), sceneDeleteCommand())
 	return cmd
 }
 
@@ -341,6 +344,118 @@ func sceneRecolourCommand() *cobra.Command {
 	}
 	distanceFlag(cmd)
 	return cmd
+}
+
+/*
+sceneAdoptCommand takes the pictures scenes point at into the library.
+
+A scene written before hotaru had a library names a file wherever it happened
+to be -- under Pictures, on another disk, in a directory that is about to be
+tidied up. It works, until the file moves; and the window cannot offer it,
+because the chooser lists what hotaru keeps rather than every GIF on the
+machine. Adopting copies the file in and points the scene at the copy, which
+is what a scene made today would have.
+
+The original is left alone. Nothing is adopted twice: a scene already pointing
+into the library is skipped, and so is one naming a file that is no longer
+there -- that is a picture to go and find, not one to copy.
+*/
+func sceneAdoptCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "adopt [name...]",
+		Short: "Copy the pictures scenes point at into the library",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, err := client(cmd)
+			if err != nil {
+				return err
+			}
+			saved, err := client.Scenes(cmd.Context())
+			if err != nil {
+				return quiet(err)
+			}
+			stored, err := client.Images(cmd.Context())
+			if err != nil {
+				return quiet(err)
+			}
+
+			kept := map[string]bool{}
+			taken := map[string]bool{}
+			for _, one := range stored {
+				kept[one.Path] = true
+				taken[one.Name] = true
+			}
+
+			adopted := 0
+			for _, scene := range saved {
+				if len(args) > 0 && !slices.Contains(args, scene.Name) {
+					continue
+				}
+				if !outside(scene.Screen, kept) {
+					continue
+				}
+				source, err := os.ReadFile(scene.Screen) //nolint:gosec // a path a scene named
+				if err != nil {
+					cmd.PrintErrf("%s: %v\n", scene.Name, err)
+					continue
+				}
+
+				name := free(suggested(scene.Screen), taken)
+				picture, err := client.AddImage(cmd.Context(), name, source)
+				if err != nil {
+					return quiet(err)
+				}
+				taken[name] = true
+
+				was := scene.Screen
+				scene.Screen = picture.Path
+				if err := client.SaveScene(cmd.Context(), scene); err != nil {
+					return quiet(err)
+				}
+				adopted++
+				cmd.Printf("%s: %s is now the picture %q.\n", scene.Name, was, name)
+			}
+
+			if adopted == 0 {
+				cmd.Println("Every scene already points at a picture hotaru keeps.")
+			}
+			return nil
+		},
+	}
+}
+
+// outside says whether a scene's screen is a file hotaru does not keep. The
+// other screen states -- a dashboard, the readout, nothing at all -- are not
+// files and are left alone.
+func outside(screen string, kept map[string]bool) bool {
+	switch {
+	case screen == "", kept[screen]:
+		return false
+	case screen == api.ScreenDashboard, screen == api.ScreenReadout:
+		return false
+	case strings.HasPrefix(screen, api.ScreenDashboardPrefix):
+		return false
+	}
+	return filepath.IsAbs(screen)
+}
+
+// suggested is what to call a picture, from the file it came out of: the name
+// somebody gave it, without the extension.
+func suggested(path string) string {
+	return strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+}
+
+// free is a name nothing else in the library has, because adopting must not
+// write over a picture somebody already kept under the same name.
+func free(name string, taken map[string]bool) string {
+	if !taken[name] {
+		return name
+	}
+	for n := 2; ; n++ {
+		next := fmt.Sprintf("%s-%d", name, n)
+		if !taken[next] {
+			return next
+		}
+	}
 }
 
 func sceneDeleteCommand() *cobra.Command {
