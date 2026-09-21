@@ -58,6 +58,14 @@ type Service struct {
 
 	// dashboards is what the panel can be asked to draw: see dashboards.go.
 	dashboards *dashboard.Store
+
+	/*
+		shortcuts is the desktop's copy of the key bindings, and report is
+		where a failure to update it goes. Both optional: a machine with no
+		session bus has neither, and binds into the file alone.
+	*/
+	shortcuts Shortcuts
+	report    func(format string, args ...any)
 }
 
 /*

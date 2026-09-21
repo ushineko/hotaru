@@ -253,7 +253,10 @@ MIT. See [LICENSE](LICENSE).
   each one holds — rearranging a bank means moving keys between scenes, so
   hiding the taken ones would hide the rearrangement. Moving one is an unbind
   and a bind, because the service binds a key to a scene and does not know a
-  scene should have at most one (#66).
+  scene should have at most one. Binding also reinstalls the desktop's script,
+  which carries the scene name rather than the key — without that a rebinding
+  was right in the file and the old scene kept firing until the service
+  restarted, in the window and from `hotaru keys bind` alike (#66).
 
 - Dialogs that hold a list open at most of the window, through fynedesygn's
   `dialogs.Roomy` rather than a copy of it here. The shortcut chooser was
