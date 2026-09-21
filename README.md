@@ -188,6 +188,9 @@ necessary is an artefact of where it used to live.
 - [specs/009-writes-that-mean-what-they-say.md](specs/009-writes-that-mean-what-they-say.md):
   why a write that lands in the buffer is not always a write, and what hotaru
   checks instead.
+- [specs/027-a-thumbnail-is-not-an-animation.md](specs/027-a-thumbnail-is-not-an-animation.md):
+  what the window's memory was doing, and the measurement that was read wrong
+  the first time.
 - [specs/026-a-scene-is-a-list-not-a-column.md](specs/026-a-scene-is-a-list-not-a-column.md):
   what 225 lines in a column cost, and what a list costs instead.
 - [specs/025-the-editor-is-mostly-blocks.md](specs/025-the-editor-is-mostly-blocks.md):
@@ -243,6 +246,15 @@ MIT. See [LICENSE](LICENSE).
 ## Changelog
 
 ### Unreleased
+
+- Thumbnails are decoded once, small, and shared. The Pictures section cached
+  each picture's file bytes and handed them to Fyne, which decodes a GIF in
+  full — `berserk-slide` is sixty frames at 640x640 — to draw a square ninety
+  six pixels across. A minute of switching sections held 128 MB of decoded
+  diagram and 73 MB of paletted frames; the same minute now peaks at 271 MB of
+  live heap against 444 MB, with the images down to 21 MB (spec 027, #60).
+
+- Ctrl+1 to Ctrl+9 switch sections, from fynedesygn's shell.
 
 - A scene's lines are a list rather than a column. A scene that names lights
   individually has 225 of them, and each was seven objects that Fyne measured
