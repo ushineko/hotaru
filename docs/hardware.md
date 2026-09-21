@@ -39,7 +39,59 @@ borrowed one. See [spec 012](../specs/012-the-cooler-without-liquidctl.md).
 
 | Machine | Status |
 |---|---|
-| CachyOS, unrelated hardware, OpenRGB already running in service mode | **Pending.** The acceptance test: installing hotaru there and using it must take no extra steps, with no configuration written by hand. Results recorded here |
+| CachyOS, unrelated hardware, OpenRGB already running in service mode, keyboard shared from another machine over [deskflow](https://github.com/deskflow/deskflow) | **Done**, at 0.1.0 and again at 0.1.1. Nine devices found and driven with nothing written by hand. Three faults, all of them things this desk could not have shown: see below |
+
+What installing it there found, in the order it was found:
+
+1. **The service could not make its own directories.** `ProtectHome=read-only`
+   punches a `ReadWritePaths` entry through only if it already exists, so on a
+   machine that had never run hotaru the first picture failed with "read-only
+   file system" -- and rules and scenes would not have saved either. Fixed in
+   0.1.1; the unit makes them before the sandbox is built.
+2. **The window jumped to the service page** when a picture was dropped on it,
+   because the handler asked for a section that had been folded into a group.
+   Half of that fix is in fynedesygn.
+3. **The numpad shortcuts do not fire**, and everything else about them works.
+
+### The numpad, over a shared keyboard
+
+The nine shipped shortcuts are `Ctrl+Alt+Num+1`..`9`, which is what the desk
+hotaru was written on has always used. On the test system they do nothing, and
+every other link checks out:
+
+- KWin has the script loaded (`isScriptLoaded hotaru-scenes` is true).
+- The ten actions are in `kglobalshortcutsrc` with the right sequences.
+- `kglobalaccel` lists them for the `kwin` component.
+- Invoking one through `Component.invokeShortcut` applies the scene, so the
+  script, the D-Bus door and the scene all work.
+
+What is different is the keyboard. It is not attached to that machine: it is
+shared from another over deskflow, and arrives as a virtual device
+(`Vendor=beef Product=dead`, `/devices/virtual/input/input34`). The device
+*claims* every numpad keycode, so nothing about it can be detected -- and
+**non-numpad bindings on the same machine work**, which is the measurement
+that says where the fault is not.
+
+So: on a machine whose keys arrive over the network, bind something other than
+the numpad. The window offers that from the scene's own row since 0.1.1 (spec
+035), and `hotaru keys bind "Meta+Shift+L" evening` has always taken any
+sequence KDE spells.
+
+Not chased further than that, because the remedy is one binding and the cause
+is in somebody else's key forwarding.
+
+**And it is a common class rather than one tool's bug.** Anything that carries
+a keyboard from one machine to another -- deskflow, the synergy and barrier
+lineage it comes from, a hardware or software KVM, a VM's console -- has to
+reconstruct modifier and lock state at the far end, and that is the part that
+most often does not survive the trip. Modifiers, NumLock and the keypad are
+where it shows, which is exactly the shape of a shortcut like
+`Ctrl+Alt+Num+1`.
+
+So the rule for a machine whose keys arrive over a wire is: **bind the
+simplest sequence that works there**, and do not assume a shortcut that works
+on the machine with the keyboard attached works on the machine receiving it.
+A laptop with no numpad at all is the same advice with a simpler reason.
 
 Every quirk in the first table is a correction hotaru applies by *discovering*
 it — reading back what a write actually did — rather than by matching a device

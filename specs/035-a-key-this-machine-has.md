@@ -43,6 +43,10 @@ never had them.
 - [x] AC4. Reopening the chooser on a scene bound to a key outside the bank
       selects "something else" with the key in the box.
 - [x] AC5. An empty box says so rather than binding nothing.
+- [x] AC6. Verified on the machine that needed it: a non-numpad shortcut
+      bound from the window fires there, and the numpad ones still do not,
+      which says the fault is the numpad over that keyboard and nothing else
+      in the chain.
 
 ## Risks & Assumptions
 
