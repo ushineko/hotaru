@@ -313,7 +313,13 @@ MIT. See [LICENSE](LICENSE).
 
 ## Changelog
 
-### Unreleased
+### 0.1.0 (2026-09-21)
+
+The first tagged release, and so the whole program: lighting through OpenRGB
+addressed down to a single LED, a liquid cooler read and driven directly, its
+screen showing a picture or a live dashboard, scenes on global shortcuts, a
+mapping wizard that names a machine's lights by lighting them and asking, and
+a window for all of it. Everything below is in it.
 
 - The window's hold on the hardware has a test, against a real service rather
   than fixed JSON: the lease is taken once and kept across colours, and
