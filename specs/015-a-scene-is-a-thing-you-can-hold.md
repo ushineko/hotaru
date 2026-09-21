@@ -2,7 +2,7 @@
 
 **Issue**: [#4](https://github.com/ushineko/hotaru/issues/4)
 
-## Status: INCOMPLETE
+## Status: COMPLETE
 
 ## Context
 
@@ -179,38 +179,76 @@ rewritten.
 
 ## Acceptance Criteria
 
-- [ ] AC1. A scene applies assignments down to an LED range, composing one
+- [x] AC1. A scene applies assignments down to an LED range, composing one
       frame per device, with later assignments winning.
-- [ ] AC2. A scene names an effect per device, and a device whose named effect
+- [x] AC2. A scene names an effect per device, and a device whose named effect
       cannot carry the frame falls through as it does today.
-- [ ] AC2a. A scene naming an effect that does not exist applies its colours,
+- [x] AC2a. A scene naming an effect that does not exist applies its colours,
       reports the name, and does not fail -- the case a rendered effect will
       arrive into.
-- [ ] AC3. Applying a scene records desired state; the reconciler re-asserts it
+- [x] AC3. Applying a scene records desired state; the reconciler re-asserts it
       on a device that forgets.
-- [ ] AC4. A scene naming a GIF or the readout takes the screen from the
+- [x] AC4. A scene naming a GIF or the readout takes the screen from the
       dashboard; one naming the dashboard gives it back; one saying nothing
       leaves the screen as it was.
-- [ ] AC5. A preview writes nothing to desired state, and re-assertion does not
+- [x] AC5. A preview writes nothing to desired state, and re-assertion does not
       run against a device while its preview is held.
-- [ ] AC6. A preview bound to a held connection ends when that connection
+- [x] AC6. A preview bound to a held connection ends when that connection
       closes, and the hardware returns to desired state.
-- [ ] AC7. A preview held by a client with no stream expires without renewal,
+- [x] AC7. A preview held by a client with no stream expires without renewal,
       and the hardware returns to desired state. A test kills the holder rather
       than asking it politely.
-- [ ] AC8. Two callers cannot preview the same device at once, and the second
+- [x] AC8. Two callers cannot preview the same device at once, and the second
       is told who holds it.
-- [ ] AC9. `hotaru light list` marks a device showing a preview.
-- [ ] AC10. A scene whose GIF is missing applies its colours, reports the file,
+- [x] AC9. `hotaru light list` marks a device showing a preview.
+- [x] AC10. A scene whose GIF is missing applies its colours, reports the file,
       and leaves the screen alone.
-- [ ] AC11. Scenes round-trip through `scenes.yml`: written by the service,
+- [x] AC11. Scenes round-trip through `scenes.yml`: written by the service,
       read back identically, and a hand-edited file that is malformed is
       reported rather than overwritten.
-- [ ] AC12. Verified on the development machine: a scene held across a G502
+- [x] AC12. Verified on the development machine: a scene held across a G502
       wake, a preview that survives the re-assert timer, and a preview that
       reverts when its holder is killed.
 
+## Verified on hardware
+
+Development machine, six devices, with somebody watching the room.
+
+A scene written out, saved, shown and applied:
+
+	$ hotaru scene set evening kraken=#201040 keychron=#100820 \
+	      --effect keychron="Solid Splash" --screen dashboard
+	$ hotaru scene apply evening
+	evening: 2 of 2 device(s) lit.
+	The screen is showing dashboard.
+
+The Keychron took `Solid Splash` from the scene's effect while the cooler took
+Direct, which is the per-device effect doing what `Request.Mode` could not.
+
+**The lease was tested by killing its holder**, not by asking it to stop.
+`hotaru scene preview loud` turned the cooler and keyboard red; `hotaru
+preview` named the holder and the devices; `hotaru light list` marked both as
+`preview`. A `kill -9` on that process put both back to the evening scene
+within a second, with no release call made and no clock involved -- the socket
+closing was the whole signal.
+
+The unheld form was watched lapsing on its own: a preview taken at 18:39:10
+with nothing renewing it was gone by 18:39:20, and the devices came back to
+`#201040` and `#100820`.
+
+**The Keychron came back in `Solid Splash`, not Direct**, which is the
+reconcile fix this spec needed. Desired state had always recorded the mode and
+reconciling discarded it -- invisible while every scene was a solid colour, and
+wrong the moment one carries an effect.
+
 ## Risks & Assumptions
+
+- **A lapsed lease stops being reported before it stops being shown.** The
+  listing hides a lease the moment it expires; the write that puts the hardware
+  back happens on the reconciler's next tick, up to five seconds later. So
+  there is a short window where a device is showing a draft and nothing says
+  so. Closing it properly means the expiry itself doing the write, which is a
+  timer per lease.
 
 - **A suspended reconciler is a suspended safety net.** For the devices a
   preview covers, hotaru stops correcting drift. That is the point, and it is

@@ -41,6 +41,14 @@ func TestEveryRouteTheServiceServesIsReachableFromTheCommandLine(t *testing.T) {
 		{"status"},
 		{"cooling"},
 		{"screen", "readout"},
+		{"scene", "list"},
+		{"scene", "set", "parity", "kraken=red"},
+		{"scene", "save", "parity"},
+		{"scene", "apply", "parity"},
+		{"scene", "delete", "parity"},
+		{"preview"},
+		{"preview", "renew", "nosuchtoken"},
+		{"preview", "release", "nosuchtoken"},
 		{"reconcile"},
 		{"reload"},
 	} {
@@ -73,12 +81,42 @@ func (r *recorder) missing(routes []string) []string {
 	defer r.mu.Unlock()
 	var out []string
 	for _, route := range routes {
-		if !r.paths[route] {
+		if !r.reached(route) {
 			out = append(out, route)
 		}
 	}
 	sort.Strings(out)
 	return out
+}
+
+// reached matches a route against what was asked for, allowing for the
+// wildcard segments in a pattern: "PUT /v1/scenes/{name}" is reached by a
+// request to "PUT /v1/scenes/evening".
+func (r *recorder) reached(route string) bool {
+	if r.paths[route] {
+		return true
+	}
+	want := strings.Split(route, "/")
+	for asked := range r.paths {
+		got := strings.Split(asked, "/")
+		if len(got) != len(want) {
+			continue
+		}
+		match := true
+		for i := range want {
+			if strings.HasPrefix(want[i], "{") && strings.HasSuffix(want[i], "}") {
+				continue
+			}
+			if want[i] != got[i] {
+				match = false
+				break
+			}
+		}
+		if match {
+			return true
+		}
+	}
+	return false
 }
 
 // recording serves the API behind a handler that notes what was asked for.
