@@ -188,6 +188,8 @@ necessary is an artefact of where it used to live.
 - [specs/009-writes-that-mean-what-they-say.md](specs/009-writes-that-mean-what-they-say.md):
   why a write that lands in the buffer is not always a write, and what hotaru
   checks instead.
+- [specs/025-the-editor-is-mostly-blocks.md](specs/025-the-editor-is-mostly-blocks.md):
+  why the scene editor was slow to resize, and what a colour block costs.
 - [specs/024-the-check-that-cost-four-fifths.md](specs/024-the-check-that-cost-four-fifths.md):
   the first profile of the window, and the debug check that was most of it.
 - [specs/023-a-dashboard-you-can-change.md](specs/023-a-dashboard-you-can-change.md):
@@ -239,6 +241,13 @@ MIT. See [LICENSE](LICENSE).
 ## Changelog
 
 ### Unreleased
+
+- Resizing the scene editor costs half what it did. Each light block was a
+  rectangle with an invisible button stacked over it — five objects, hundreds
+  of blocks, and a scroller lays out everything it holds rather than what is
+  visible. They are `widgets.Swatch` now: one widget whose minimum size is the
+  number it was given. A 25-second drag went from 18.84 s of samples to 9.16 s
+  (spec 025, #57).
 
 - The window is built without Fyne's thread-safety check, which was 82% of the
   CPU of a window drag: Fyne calls `runtime.Stack` on every canvas refresh to
