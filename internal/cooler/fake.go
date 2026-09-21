@@ -37,6 +37,17 @@ type Fake struct {
 	// on the same node does when it takes a report hotaru was waiting for.
 	LoseFirst int
 
+	/*
+		Queued is how many reports are already waiting to be read.
+
+		This cooler broadcasts about once a second whether or not anybody
+		asked, and the kernel holds those per open handle -- so a service that
+		has been idle for a minute has sixty stale reports ahead of its next
+		reply. A reader that does not clear them finds twelve broadcasts and
+		concludes the device did not answer, which is what happened.
+	*/
+	Queued int
+
 	// Told is every command sent, in order, for a test to assert against.
 	Told [][]byte
 
@@ -61,6 +72,11 @@ func (f *Fake) tell(data ...byte) error {
 }
 
 func (f *Fake) ask(ctx context.Context, data ...byte) ([]byte, error) {
+	// Clear what was waiting before the question, as the real transport does.
+	f.mu.Lock()
+	f.Queued = 0
+	f.mu.Unlock()
+
 	if err := f.tell(data...); err != nil {
 		return nil, err
 	}
@@ -77,6 +93,19 @@ test fails where the machine would merely have misled it.
 func (f *Fake) await(ctx context.Context, a, b byte) ([]byte, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+
+	// Whatever was queued is read before anything else, and counts against
+	// the same budget a real reader has.
+	read := 0
+	for ; read < f.Queued && read < attempts; read++ {
+		if err := ctx.Err(); err != nil {
+			return nil, fmt.Errorf("gave up waiting for the cooler: %w", err)
+		}
+		_ = f.broadcast()
+	}
+	if read >= attempts {
+		return nil, fmt.Errorf("no %02x%02x reply in %d reports", a, b, attempts)
+	}
 
 	for range f.Chatter {
 		if err := ctx.Err(); err != nil {
