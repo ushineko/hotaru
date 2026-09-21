@@ -2,7 +2,7 @@
 
 *lights, cooler, action!*
 
-**Version**: unreleased — specified, not yet built
+**Version**: 0.1.0
 
 RGB lighting and AIO cooler control for Linux, as a CLI, a user service and a
 desktop GUI. 蛍 — fireflies, small lights that pulse.
@@ -12,15 +12,16 @@ cooler itself, over `/dev/hidraw` and usbfs: set colours down to individual
 fans, define scenes, put a live dashboard on the cooler's screen, and bind it
 all to keys.
 
-> **Status**: lighting, the cooler, its screen, scenes and the hotkeys work.
-> The service, its API, the CLI and the mapping wizard are built and tested on
-> two machines with nothing in common — the second one mapped end to end by its owner, who had
-> never run it, with no configuration written by hand. The GUI is specified and
-> not yet built; see [Roadmap](#roadmap).
+> **Status**: all of it works — lighting, the cooler, its screen, scenes, the
+> hotkeys, the CLI, the service and its API, the mapping wizard and the
+> window. Tested on two machines with nothing in common; the second was mapped
+> end to end by its owner, who had never run it, with no configuration written
+> by hand. What is not done is listed in the [Roadmap](#roadmap).
 
 ## Contents
 
 - [What it does](#what-it-does)
+- [Install](#install)
 - [Architecture](#architecture)
 - [What it runs on](#what-it-runs-on)
 - [Roadmap](#roadmap)
@@ -38,7 +39,61 @@ all to keys.
 | **The cooler** | Coolant and CPU temperature, pump and fan speeds, read where the kernel has no driver for the device |
 | **The screen** | The cooler's LCD: its own readout, an image, an animation, or a live dashboard rendered from the telemetry |
 | **Hotkeys** | Scenes on global shortcuts: nine shipped on `Ctrl+Alt+Num1`–`Num9`, the shifted row left free for your own. On Plasma through a KWin script installed on every KWin start; on any other desktop by binding the CLI in that desktop's own shortcut editor |
-| **A GUI** | `hotaru-gui`: manage the service, and see the machine's devices and zones drawn as a picture with what each is showing. The scene editor and the hotkey binder are next |
+| **A window** | `hotaru-gui`: the machine's devices and zones drawn as a picture of what each is showing, a scene editor you point at a fan, a screen editor, a picture library, and the hotkey binder on the row that shows the key |
+
+## Install
+
+### Arch, and anything using the AUR
+
+```console
+$ paru -S hotaru hotaru-gui     # or hotaru alone, on a machine with no desktop
+```
+
+`hotaru` is the CLI and the service and needs no graphics stack, so it
+installs on a headless box; `hotaru-gui` is the window. Installing pulls in
+OpenRGB, because hotaru contains no lighting drivers of its own — see
+[docs/packaging.md](docs/packaging.md) for why the backends are hard
+dependencies rather than a list of suggestions.
+
+### Anywhere else
+
+```console
+$ go install github.com/ushineko/hotaru/cmd/hotaru@latest
+$ go install github.com/ushineko/hotaru/cmd/hotaru-gui@latest   # needs cgo and OpenGL
+```
+
+The service unit, the desktop entry and the udev rule are in
+[`packaging/`](packaging/) to copy into place. A release also carries built
+binaries.
+
+### Then, once
+
+```console
+$ systemctl --user enable --now hotaru
+$ loginctl enable-linger $USER    # so lighting comes back at boot, not at login
+```
+
+Neither is run for you by the package: starting a daemon and turning on a user
+manager at boot are your decisions. `hotaru light health` says which one is
+missing when something is.
+
+The cooler needs no root — logind puts an ACL on a device the package's udev
+rule tags — but the rule only applies to a device plugged in after it lands,
+so the first run after installing may want a reboot or
+`udevadm trigger`. `hotaru light health` reports a device it can see and
+cannot open as exactly that.
+
+### And then
+
+```console
+$ hotaru light list        # what it found
+$ hotaru light set red     # it works
+$ hotaru wizard            # name this machine's lights by looking at them
+```
+
+The wizard is optional. With no configuration at all, every device OpenRGB
+reports is in scope and every decision comes from what the hardware says about
+itself; rules narrow and correct, and never enable.
 
 ## Architecture
 
@@ -159,12 +214,18 @@ installing and using hotaru must take no extra steps.
 |---|---|---|
 | 001 | Scope, migration contract, and the baseline: the service, its API, and lighting | **done** — [#1](https://github.com/ushineko/hotaru/issues/1) |
 | 008 | The mapping wizard: naming a machine's lights by looking at them | **done** — [#10](https://github.com/ushineko/hotaru/issues/10) |
-| 002 | Cooler telemetry behind the same API | [#2](https://github.com/ushineko/hotaru/issues/2) |
+| 002 | Cooler telemetry behind the same API | **done** — [#2](https://github.com/ushineko/hotaru/issues/2), and replaced by [spec 012](specs/012-the-cooler-without-liquidctl.md): hotaru reads the cooler itself |
 | 003 | The LCD and the dashboard | **done** — [#3](https://github.com/ushineko/hotaru/issues/3) |
 | 004 | Scenes, preview and leases | **done** — [#4](https://github.com/ushineko/hotaru/issues/4) |
-| 005 | The GUI on [fynedesygn](https://github.com/ushineko/fynedesygn) | **in progress** — [#5](https://github.com/ushineko/hotaru/issues/5) |
+| 005 | The GUI on [fynedesygn](https://github.com/ushineko/fynedesygn) | **done** — [#5](https://github.com/ushineko/hotaru/issues/5), built out over specs 017 to 034 |
 | 006 | Hotkeys and the cutover | **done** — [#6](https://github.com/ushineko/hotaru/issues/6) |
-| 007 | Packaging and release | [#7](https://github.com/ushineko/hotaru/issues/7) |
+| 007 | Packaging and release | **done** — [#7](https://github.com/ushineko/hotaru/issues/7) |
+
+Still open, and named rather than quietly missing: a resizable zone with no
+length set is not asked about by the wizard ([spec 008](specs/008-the-mapping-wizard.md)
+AC14), and the package has not yet been built from a pushed tag and installed
+on a machine that never had liquidctl ([spec 007](specs/007-packaging-and-release.md)
+AC8).
 
 ## Where it comes from
 
@@ -188,6 +249,13 @@ necessary is an artefact of where it used to live.
 - [specs/009-writes-that-mean-what-they-say.md](specs/009-writes-that-mean-what-they-say.md):
   why a write that lands in the buffer is not always a write, and what hotaru
   checks instead.
+- [specs/007-packaging-and-release.md](specs/007-packaging-and-release.md):
+  what the package installs, and the udev rule whose absence is invisible.
+- [specs/034-a-picture-is-a-picture.md](specs/034-a-picture-is-a-picture.md):
+  the library as a grid, and the frame count that decoded 414 MB to produce a
+  number.
+- [specs/032-the-display-and-a-machine-without-one.md](specs/032-the-display-and-a-machine-without-one.md):
+  saying which screen was found, and working when there is not one.
 - [specs/027-a-thumbnail-is-not-an-animation.md](specs/027-a-thumbnail-is-not-an-animation.md):
   what the window's memory was doing, and the measurement that was read wrong
   the first time.
@@ -246,6 +314,19 @@ MIT. See [LICENSE](LICENSE).
 ## Changelog
 
 ### Unreleased
+
+- The window's hold on the hardware has a test, against a real service rather
+  than fixed JSON: the lease is taken once and kept across colours, and
+  letting go puts the lights back. Spec 018 described both halves and had
+  nothing between the service's lease tests and the editor that uses them,
+  which is the gap a preview is worst to have.
+
+- The AUR package, the udev rule that lets the service open the cooler without
+  root, and an Install section in this README. The rule is the part that is
+  easy to leave out and impossible to notice: without it hotaru finds the
+  cooler and cannot open it, so lighting works while telemetry and the screen
+  do not. It came from `liquidctl` on the machine this was written on, and
+  hotaru stopped depending on that in spec 012 (spec 007, #7).
 
 - Pictures are a grid of tiles rather than a column of cards. A card gave the
   picture a square an inch across and the rest of the line to its size and the
