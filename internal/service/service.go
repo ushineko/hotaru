@@ -42,6 +42,29 @@ type Service struct {
 	queue    *queue.Set
 	env      Environment
 	cooler   Cooler
+	panel    Dashboard
+}
+
+/*
+Dashboard is the thing drawing the cooler's screen, if anything is.
+
+The screen has one picture on it, so it has one author at a time. hotaru's own
+dashboard is the default author and steps aside when somebody asks for
+something else: a picture that is replaced two seconds later was not shown.
+*/
+type Dashboard interface {
+	// Hold stops the dashboard drawing. Somebody else has the panel.
+	Hold()
+	// Release gives it back, and the dashboard redraws at once.
+	Release()
+}
+
+// SetDashboard gives the service the dashboard to stand down, where there is
+// one. A machine with no cooler, or a build that never started one, has none.
+func (s *Service) SetDashboard(d Dashboard) {
+	s.mu.Lock()
+	s.panel = d
+	s.mu.Unlock()
 }
 
 /*
@@ -791,6 +814,9 @@ type Screen struct {
 	Image []byte
 	// Readout hands the panel back to the cooler's own display.
 	Readout bool
+	// Dashboard gives the screen back to hotaru's own dashboard, after
+	// something else has had it.
+	Dashboard bool
 	// Brightness and Orientation are the panel's own settings, which the
 	// device keeps across restarts.
 	Brightness  *int
@@ -805,13 +831,28 @@ panel, and that is an ordinary answer rather than a failure.
 */
 func (s *Service) Draw(ctx context.Context, what Screen) error {
 	s.mu.RLock()
-	c := s.cooler
+	c, panel := s.cooler, s.panel
 	s.mu.RUnlock()
 
 	if c == nil {
 		return cooler.ErrNoCooler
 	}
+	/*
+		Anything that puts a picture on the panel takes it from the dashboard
+		first, and only asking for the dashboard back gives it up. Appearance
+		is not a picture -- brightness and orientation apply to whatever is
+		showing -- so it leaves the authorship alone.
+	*/
+	if panel != nil && (what.Readout || len(what.Image) > 0) {
+		panel.Hold()
+	}
 	switch {
+	case what.Dashboard:
+		if panel == nil {
+			return errors.New("there is no dashboard on this machine")
+		}
+		panel.Release()
+		return nil
 	case what.Readout:
 		return c.Readout(ctx)
 	case len(what.Image) > 0:
@@ -826,5 +867,5 @@ func (s *Service) Draw(ctx context.Context, what Screen) error {
 		}
 		return c.Appearance(ctx, brightness, orientation)
 	}
-	return errors.New("nothing to do: give an image, a brightness, an orientation, or ask for the readout")
+	return errors.New("nothing to do: give an image, a brightness, an orientation, or ask for the readout or the dashboard")
 }

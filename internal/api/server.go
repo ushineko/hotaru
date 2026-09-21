@@ -177,7 +177,7 @@ func Handler(svc *service.Service) http.Handler {
 			return
 		}
 		err = svc.Draw(r.Context(), service.Screen{
-			Image: gif, Readout: in.Readout,
+			Image: gif, Readout: in.Readout, Dashboard: in.Dashboard,
 			Brightness: in.Brightness, Orientation: in.Orientation,
 		})
 		if err != nil {

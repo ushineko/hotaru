@@ -22,7 +22,7 @@ reboot rather than failing.
 */
 type Sensor struct {
 	Chip  string // the hwmon name, e.g. "coretemp"
-	Label string // e.g. "Package id 0"
+	Label string // e.g. "Package id 0"; empty means the chip's first temperature
 }
 
 // CPUPackage is the reading the dashboard shows and the Python got from a
@@ -41,6 +41,14 @@ func (s Sensor) read(root string) (int, error) {
 		name, err := os.ReadFile(filepath.Join(chip, "name")) //nolint:gosec // sysfs
 		if err != nil || strings.TrimSpace(string(name)) != s.Chip {
 			continue
+		}
+		/*
+			A chip with one temperature need not label it: nouveau exposes
+			temp1_input and nothing else. Naming the sensor is still how it
+			is found -- the chip is the name here rather than the index.
+		*/
+		if s.Label == "" {
+			return milli(filepath.Join(chip, "temp1_input"))
 		}
 		labels, err := filepath.Glob(filepath.Join(chip, "temp*_label"))
 		if err != nil {

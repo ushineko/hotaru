@@ -73,16 +73,16 @@ flowchart TB
     CORE --> STATE --> RECON --> MBOX
     CORE --> MBOX
     MBOX -->|"mode + frame"| ORGB["OpenRGB server"]
-    MBOX -->|"set screen"| LQC["liquidctl"]
-    CORE -->|"telemetry"| LQC
+    MBOX -->|"dashboard frames"| HID["cooler · hidraw + usbfs"]
+    CORE -->|"telemetry"| HID
     ORGB --> LIT["lit devices"]
-    LQC --> COOL["cooler + LCD"]
+    HID --> COOL["cooler + LCD"]
 
     classDef s fill:#292c30,stroke:#3daee9,color:#fcfcfc
     classDef b fill:#1d1f22,stroke:#3c4045,color:#fcfcfc
     classDef h fill:#141618,stroke:#3c4045,color:#a1a9b1
     class API,DOOR,CORE,STATE,RECON,MBOX s
-    class ORGB,LQC b
+    class ORGB,HID b
     class LIT,COOL h
 ```
 
@@ -156,7 +156,7 @@ installing and using hotaru must take no extra steps.
 | 001 | Scope, migration contract, and the baseline: the service, its API, and lighting | **done** — [#1](https://github.com/ushineko/hotaru/issues/1) |
 | 008 | The mapping wizard: naming a machine's lights by looking at them | **done** — [#10](https://github.com/ushineko/hotaru/issues/10) |
 | 002 | Cooler telemetry behind the same API | [#2](https://github.com/ushineko/hotaru/issues/2) |
-| 003 | The LCD and the dashboard | [#3](https://github.com/ushineko/hotaru/issues/3) |
+| 003 | The LCD and the dashboard | **done** — [#3](https://github.com/ushineko/hotaru/issues/3) |
 | 004 | Scenes, preview and leases | [#4](https://github.com/ushineko/hotaru/issues/4) |
 | 005 | The GUI on [fynedesygn](https://github.com/ushineko/fynedesygn) | [#5](https://github.com/ushineko/hotaru/issues/5) |
 | 006 | Hotkeys and the cutover | [#6](https://github.com/ushineko/hotaru/issues/6) |
@@ -216,6 +216,18 @@ MIT. See [LICENSE](LICENSE).
 ## Changelog
 
 ### Unreleased
+
+- The cooler's screen shows a live dashboard: coolant temperature with a
+  severity-coloured ring, the processor, the graphics card and the pump, over a
+  starfield. `peripheral-battery-monitor`'s design, ported constant for
+  constant. hotaru pushes only when the picture would look different and never
+  faster than the panel will settle, which is a floor set by the size of the
+  encoded frame — 0.6% of one core, measured (spec 013, #3).
+
+- `hotaru screen dashboard` puts it back after `hotaru screen show` or
+  `hotaru screen readout` has taken the panel. The screen holds one picture, so
+  it has one author at a time: a picture replaced two seconds later was not
+  shown (spec 013, #3).
 
 - `hotaru screen` puts a picture on the cooler's panel, sets its brightness and
   orientation, and hands it back. hotaru hands it back on the way out too, so a

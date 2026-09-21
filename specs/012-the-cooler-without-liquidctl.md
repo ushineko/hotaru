@@ -100,6 +100,11 @@ payload is now padded to the declared length.
 - A transfer the device fully accepts can still display nothing, because a
   bucket is not shown until it is selected. That one survived the rewrite: it
   is the reason bug 2 was invisible.
+- **The bucket on screen is not free, whatever the slot report says about it.**
+  The panel keeps displaying its current bucket throughout a transfer, so
+  writing into that bucket blanks it for about a second. A program pushing
+  repeatedly must double buffer: write elsewhere, switch, then release the old
+  one. Found by spec 013's dashboard, which blanked at random until it did.
 
 ### How this went wrong, since it will happen again
 

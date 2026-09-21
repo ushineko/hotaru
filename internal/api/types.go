@@ -327,6 +327,8 @@ type ScreenRequest struct {
 	Image string `json:"image,omitempty"`
 	// Readout hands the panel back to the cooler's own display.
 	Readout bool `json:"readout,omitempty"`
+	// Dashboard gives the screen back to hotaru's dashboard.
+	Dashboard bool `json:"dashboard,omitempty"`
 	// Brightness is 0-100, Orientation one of 0, 90, 180, 270. The device
 	// keeps both across restarts.
 	Brightness  *int `json:"brightness,omitempty"`
