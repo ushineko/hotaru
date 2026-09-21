@@ -1,0 +1,28 @@
+# An example, not a default: /etc/systemd/system/openrgb.service.d/ or the
+# user equivalent.
+#
+# OpenRGB detects devices once, when it starts. A cold boot on the machine
+# this was written on reached "started" with two devices of six enumerated,
+# because USB enumeration had not finished -- so anything that starts after
+# OpenRGB can still find half a machine.
+#
+# hotaru does not need this. It connects with retry and judges readiness by
+# the device list rather than by a unit's state, which is why **Partial** is a
+# state it reports rather than a restore that quietly did less than it said.
+#
+# This drop-in is here for the other half: OpenRGB itself, told to wait until
+# the devices are there before it looks. It is one desk's boot ordering, which
+# is why hotaru's package ships it as an example under /usr/share/doc and not
+# as configuration.
+
+[Unit]
+# systemd-udev-settle is deprecated and is the honest tool here anyway: the
+# thing being waited for is "USB enumeration has finished", which is what it
+# waits for.
+After=systemd-udev-settle.service
+Wants=systemd-udev-settle.service
+
+[Service]
+# Or, without the settle unit: give enumeration a moment and let hotaru's own
+# retry cover the rest.
+ExecStartPre=/usr/bin/sleep 5

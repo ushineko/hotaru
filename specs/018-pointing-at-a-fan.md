@@ -2,7 +2,7 @@
 
 **Issue**: [#5](https://github.com/ushineko/hotaru/issues/5)
 
-## Status: INCOMPLETE
+## Status: COMPLETE
 
 ## Context
 
@@ -88,25 +88,25 @@ nothing else.
 
 ## Acceptance Criteria
 
-- [ ] AC1. The Scenes section lists every scene, marks the shipped ones, and
+- [x] AC1. The Scenes section lists every scene, marks the shipped ones, and
       applies one.
-- [ ] AC2. A device or zone is selected by clicking it in the editor, and the
+- [x] AC2. A device or zone is selected by clicking it in the editor, and the
       selection is visible.
-- [ ] AC3. Setting a colour changes the draft and writes nothing.
-- [ ] AC4. Previewing sends the draft and holds a lease; the devices it covers
+- [x] AC3. Setting a colour changes the draft and writes nothing.
+- [x] AC4. Previewing sends the draft and holds a lease; the devices it covers
       report the preview through the API.
-- [ ] AC5. Closing the window ends the preview and the lights go back, with no
+- [x] AC5. Closing the window ends the preview and the lights go back, with no
       release call made.
-- [ ] AC6. The editor shows that a preview is up and offers to end it.
-- [ ] AC7. Saving a draft creates a scene the CLI can apply.
-- [ ] AC8. Editing a scene that carries an effect and a screen state and saving
+- [x] AC6. The editor shows that a preview is up and offers to end it.
+- [x] AC7. Saving a draft creates a scene the CLI can apply.
+- [x] AC8. Editing a scene that carries an effect and a screen state and saving
       it preserves both.
-- [ ] AC9. `POST /v1/preview` takes a scene and returns a lease, with a test
+- [x] AC9. `POST /v1/preview` takes a scene and returns a lease, with a test
       that a draft never saved can be previewed and reverted.
-- [ ] AC10. The CLI can preview an unsaved scene, so the route is not
+- [x] AC10. The CLI can preview an unsaved scene, so the route is not
       GUI-only.
-- [ ] AC11. Tests run headless, with no display and no hardware.
-- [ ] AC12. Verified on the development machine: a fan clicked, a colour
+- [x] AC11. Tests run headless, with no display and no hardware.
+- [x] AC12. Verified on the development machine: a fan clicked, a colour
       chosen, the hardware showing it, the scene saved, and `hotaru scene
       apply` lighting it afterwards.
 
@@ -133,3 +133,29 @@ Considered making the colour picker write continuously and relying on
 coalescing; rejected for the reason staging exists -- the hardware would be
 written sixty times a second, and the last frame of a drag would be recorded as
 an intention.
+
+## Reconciled
+
+Closed at the release pass before v0.1.0, having been left open while the
+window it describes was built over specs 021 to 034.
+
+Each criterion, and what says so:
+
+- **AC1** `TestScenesAreOrderedByTheKeysTheySitOn`,
+  `TestAScenesKeyIsShownBesideIt`, and the shipped marker in
+  `ScenesSection.row`.
+- **AC2** `TestASceneLineSelectsWhatItNames`, `TestASingleLightIsAddressable`.
+- **AC3** `TestADraftHoldsColoursUntilItIsAsked`.
+- **AC4**, **AC5**, **AC6** `TestTheWindowsPreviewIsALeaseTakenOnceAndGivenBack`
+  and `TestEndingAPreviewThatIsNotThereIsFine`, written *at* this pass: the
+  window's hold on the hardware had no test between the service's lease tests
+  and the editor that uses it, which is the gap a preview is worst to have.
+  They run against a real service rather than fixed JSON, because a fake that
+  answers 200 to everything passes whether or not a lease was ever taken.
+- **AC7**, **AC8** `TestEditingASceneKeepsWhatTheEditorDoesNotEdit`,
+  `TestASceneKeepsAScreenTheEditorDidNotTouch`.
+- **AC9** `TestADraftThatWasNeverSavedCanBePreviewed`,
+  `TestADraftPreviewCanBeHeldByTokenToo`.
+- **AC10** `hotaru scene preview --detach`, exercised by the parity test.
+- **AC11** the whole suite: no display, no hardware, no root.
+- **AC12** the development machine, repeatedly, over the weeks since.

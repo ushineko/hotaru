@@ -53,6 +53,10 @@ const AppID = "io.github.ushineko.hotaru"
 // still looking at the window.
 const Poll = 2 * time.Second
 
+// Client is the service this window talks to. For tests, which ask the same
+// service what the window's actions did to it.
+func (a *App) Client() *api.Client { return a.client }
+
 // New builds the app around a client.
 func New(client *api.Client) *App {
 	return &App{client: client, machine: &Machine{}, every: Poll}
