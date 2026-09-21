@@ -1,0 +1,23 @@
+# The cooler's two nodes, tagged so the logged-in user may open them.
+#
+# hotaru needs no root: systemd-logind puts an ACL on a device tagged
+# "uaccess" for whoever is logged in at the seat. Without a rule that applies
+# the tag, hotaru finds the cooler and cannot open it -- lighting works,
+# telemetry and the screen do not, and the reason is invisible.
+#
+# On the machine this was written on that rule came from the liquidctl
+# package, which hotaru no longer depends on (spec 012). A machine that never
+# had liquidctl installed has no such rule, which is exactly the "someone
+# else's machine" failure spec 001 exists to prevent.
+#
+# Two rules because the two interfaces surface differently: the status and
+# control channel as a hidraw character device, the screen's bulk endpoint as
+# the USB device node itself.
+#
+# 1e71 is NZXT. The products hotaru drives are in internal/cooler/discover.go;
+# the vendor is matched here rather than the product because a rule that
+# listed products would have to be edited in step with that table, and a
+# uaccess tag on a device hotaru does not drive costs nothing.
+
+KERNEL=="hidraw*", SUBSYSTEMS=="usb", ATTRS{idVendor}=="1e71", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="1e71", TAG+="uaccess"

@@ -246,10 +246,18 @@ planned: a program whose job is to reach the user's own hardware and session bus
 is a poor fit for a sandbox, and saying so once is better than half-supporting
 it.
 
-## Open
+## Settled
 
-- Whether `hotaru-gui` is worth a separate AUR package or is better as a split
-  package of the same PKGBUILD only. The latter is simpler and is the current
-  assumption.
-- Whether to ship a `sysusers`/`udev` note for OpenRGB's device permissions, or
-  leave that entirely to the `openrgb` package, which already handles it.
+Both of the questions this document left open were answered when the package
+was built; see [spec 007](../specs/007-packaging-and-release.md).
+
+- **`hotaru-gui` is a split package** of the same PKGBUILD, as assumed here. A
+  second AUR repository would duplicate a PKGBUILD for a binary built from the
+  same tree in the same run, and the two would drift.
+- **OpenRGB's device permissions stay with the `openrgb` package.** A second
+  package with opinions about another package's devices is how two udev rules
+  end up disagreeing. hotaru ships a rule for the cooler it drives itself, and
+  nothing else.
+
+The PKGBUILD is in [`packaging/`](../packaging/), versioned with what it
+packages.
