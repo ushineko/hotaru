@@ -32,6 +32,17 @@ type Owner struct {
 
 	last Status
 	at   time.Time
+
+	/*
+		screen is opened on first use and kept.
+
+		Every screen command travels the same control channel as a status
+		reading -- only the pixels go over the bulk endpoint -- so the two
+		cannot interleave and the owner holds both. Opening it lazily means a
+		machine that never draws anything never claims the interface, leaving
+		it to liquidctl or anything else that wants it.
+	*/
+	screen *Screen
 }
 
 /*
@@ -72,9 +83,82 @@ func (o *Owner) Status(ctx context.Context) (Status, error) {
 // Device is what is being read, for reporting.
 func (o *Owner) Device() Device { return o.c.Device() }
 
-// Close releases the cooler. Anything in flight finishes first.
+/*
+Close releases the cooler, handing the screen back first.
+
+A machine that is no longer running hotaru should not keep showing whatever
+hotaru last drew: the panel is somebody's cooler, and leaving a stale dashboard
+on it is the same discourtesy as leaving their lights on a colour they did not
+choose.
+*/
 func (o *Owner) Close() error {
 	o.mu.Lock()
 	defer o.mu.Unlock()
+
+	if o.screen != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), returnScreen)
+		_ = o.screen.Liquid(ctx)
+		cancel()
+		_ = o.screen.Close()
+	}
 	return o.c.Close()
+}
+
+// returnScreen bounds handing the panel back while the service is stopping.
+// A shutdown that hangs on a screen is worse than one that leaves a picture.
+const returnScreen = 2 * time.Second
+
+/*
+Show puts a GIF on the screen.
+
+A GIF, not a still image: the firmware does not retain a static picture, and
+one frame is enough to get the retention that a GIF has. See spec 012.
+*/
+func (o *Owner) Show(ctx context.Context, gif []byte) error {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+
+	screen, err := o.panel()
+	if err != nil {
+		return err
+	}
+	return screen.Image(ctx, gif)
+}
+
+// Readout hands the screen back to the cooler's own display.
+func (o *Owner) Readout(ctx context.Context) error {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+
+	screen, err := o.panel()
+	if err != nil {
+		return err
+	}
+	return screen.Liquid(ctx)
+}
+
+// Appearance sets the screen's brightness and orientation, which the device
+// keeps across restarts.
+func (o *Owner) Appearance(ctx context.Context, brightness, degrees int) error {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+
+	screen, err := o.panel()
+	if err != nil {
+		return err
+	}
+	return screen.Appearance(ctx, brightness, degrees)
+}
+
+// panel opens the screen once, on first use. The caller holds the lock.
+func (o *Owner) panel() (*Screen, error) {
+	if o.screen != nil {
+		return o.screen, nil
+	}
+	screen, err := o.c.Screen()
+	if err != nil {
+		return nil, err
+	}
+	o.screen = screen
+	return screen, nil
 }

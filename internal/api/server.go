@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -28,6 +29,7 @@ func Routes() []string {
 		"GET /" + Version + "/devices",
 		"GET /" + Version + "/status",
 		"GET /" + Version + "/cooling",
+		"POST /" + Version + "/screen",
 		"POST /" + Version + "/lighting/apply",
 		"POST /" + Version + "/lighting/probe",
 		"POST /" + Version + "/reconcile",
@@ -161,6 +163,28 @@ func Handler(svc *service.Service) http.Handler {
 				Taken:    status.Taken,
 			})
 		}
+	})
+
+	mux.HandleFunc("POST /"+Version+"/screen", func(w http.ResponseWriter, r *http.Request) {
+		var in ScreenRequest
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			fail(w, fmt.Errorf("read the request: %w", err))
+			return
+		}
+		gif, err := base64.StdEncoding.DecodeString(in.Image)
+		if err != nil {
+			fail(w, fmt.Errorf("the image is not base64: %w", err))
+			return
+		}
+		err = svc.Draw(r.Context(), service.Screen{
+			Image: gif, Readout: in.Readout,
+			Brightness: in.Brightness, Orientation: in.Orientation,
+		})
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 	})
 
 	mux.HandleFunc("POST /"+Version+"/reconcile", func(w http.ResponseWriter, r *http.Request) {

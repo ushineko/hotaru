@@ -179,3 +179,13 @@ func (c *Client) Cooling(ctx context.Context) (Cooling, error) {
 	err := c.do(ctx, http.MethodGet, "/"+Version+"/cooling", nil, &out)
 	return out, err
 }
+
+/*
+Screen puts something on the cooler's panel, or hands it back.
+
+The GIF is encoded here rather than by the caller, because "base64" is a
+detail of this transport and not something a command should have to know.
+*/
+func (c *Client) Screen(ctx context.Context, what ScreenRequest) error {
+	return c.do(ctx, http.MethodPost, "/"+Version+"/screen", what, nil)
+}

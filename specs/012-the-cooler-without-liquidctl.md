@@ -2,7 +2,7 @@
 
 **Issue**: [#2](https://github.com/ushineko/hotaru/issues/2)
 
-## Status: INCOMPLETE
+## Status: COMPLETE
 
 ## Context
 
@@ -148,6 +148,24 @@ So the rule is about interfaces rather than about speed: **use the integration
 point where one exists, and only write the protocol where none does.** A native
 lighting backend is an interesting experiment for another day, and is
 deliberately not this.
+
+## What it looks like
+
+	$ hotaru cooling
+	NZXT Kraken Elite V2
+	  coolant   37.2 C
+	  pump      2606 rpm (81%)
+	  fan       1244 rpm (51%)
+
+	$ hotaru screen show dashboard.gif
+	$ hotaru screen set --brightness 60
+	$ hotaru screen readout
+
+The screen and the telemetry share one control channel, so one owner
+serialises both: a picture can go up while a reading is being taken, and
+neither interleaves with the other. The panel is claimed on first use, so a
+machine that never draws anything leaves the interface to whatever else wants
+it, and it is handed back when the service stops.
 
 ## The protocol, as read off the device
 
@@ -352,11 +370,11 @@ running hotaru does not keep a stale dashboard.
       the machine with a value that changes on every tick.
 - [x] AC12. CPU, board and PSU temperatures are read from hwmon by label
       rather than by hwmon index, which is not stable across boots.
-- [ ] AC13. Every capability degrades alone: unplugging the cooler leaves
+- [x] AC13. Every capability degrades alone: unplugging the cooler leaves
       lighting, telemetry and the API working.
 - [x] AC14. The fake cooler models the device's unsolicited status reports, so
       reply matching is exercised without hardware.
-- [ ] AC15. Verified on the development machine with somebody watching the
+- [x] AC15. Verified on the development machine with somebody watching the
       screen: status, a still image, an animation, brightness, orientation,
       and the return to the firmware readout.
 

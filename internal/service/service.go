@@ -16,6 +16,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -53,6 +54,12 @@ below reports absence as an ordinary answer.
 type Cooler interface {
 	Status(ctx context.Context) (cooler.Status, error)
 	Device() cooler.Device
+
+	// The screen, where the cooler has one. Every command here shares the
+	// control channel with Status, so one owner serialises both.
+	Show(ctx context.Context, gif []byte) error
+	Readout(ctx context.Context) error
+	Appearance(ctx context.Context, brightness, degrees int) error
 }
 
 /*
@@ -769,4 +776,55 @@ func reason(err error) string {
 		return unsupported.Why
 	}
 	return err.Error()
+}
+
+/*
+Screen is what to put on the cooler's panel.
+
+Exactly one of these is acted on, checked at the edge rather than here: a
+request that says two things at once is a caller's mistake and should be
+refused where it can still be described.
+*/
+type Screen struct {
+	// Image is a GIF to display. A still picture is not retained by the
+	// firmware; one frame of a GIF is.
+	Image []byte
+	// Readout hands the panel back to the cooler's own display.
+	Readout bool
+	// Brightness and Orientation are the panel's own settings, which the
+	// device keeps across restarts.
+	Brightness  *int
+	Orientation *int
+}
+
+/*
+Draw acts on the cooler's screen.
+
+Absence is reported the same way a reading is: a machine with no cooler has no
+panel, and that is an ordinary answer rather than a failure.
+*/
+func (s *Service) Draw(ctx context.Context, what Screen) error {
+	s.mu.RLock()
+	c := s.cooler
+	s.mu.RUnlock()
+
+	if c == nil {
+		return cooler.ErrNoCooler
+	}
+	switch {
+	case what.Readout:
+		return c.Readout(ctx)
+	case len(what.Image) > 0:
+		return c.Show(ctx, what.Image)
+	case what.Brightness != nil || what.Orientation != nil:
+		brightness, orientation := 100, 0
+		if what.Brightness != nil {
+			brightness = *what.Brightness
+		}
+		if what.Orientation != nil {
+			orientation = *what.Orientation
+		}
+		return c.Appearance(ctx, brightness, orientation)
+	}
+	return errors.New("nothing to do: give an image, a brightness, an orientation, or ask for the readout")
 }
