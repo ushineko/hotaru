@@ -131,3 +131,13 @@ func (c *Cooler) exchange(ctx context.Context, data ...byte) ([]byte, error) {
 	}
 	return nil, last
 }
+
+/*
+tell sends a command the device does not answer.
+
+Most of this protocol is question and answer, and a few commands are not:
+brightness and orientation are written and acknowledged by nothing. Waiting for
+a reply to one of those times out after the full deadline, which reads as a
+device that has stopped talking.
+*/
+func (c *Cooler) tell(data ...byte) error { return c.t.tell(data...) }

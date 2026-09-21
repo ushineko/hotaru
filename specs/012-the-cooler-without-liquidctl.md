@@ -149,6 +149,108 @@ point where one exists, and only write the protocol where none does.** A native
 lighting backend is an interesting experiment for another day, and is
 deliberately not this.
 
+## The protocol, as read off the device
+
+Written down because it cost a day, and because every mistake below presented
+as the same two symptoms -- a `0x04` refusal or a timeout -- so the wrong
+diagnosis is always available. Offsets are into the report as hidraw delivers
+it, report number included, matching liquidctl's indices so the two can be
+compared directly.
+
+### Talking
+
+A reply carries the command's prefix with the **first byte incremented**:
+`0x32 0x01` is answered by `0x33 0x01`. Matching only the first byte finds the
+wrong report.
+
+The cooler **broadcasts `0x75 0x02` about once a second**, unasked, and the
+kernel queues those per open handle up to 64. A long-lived handle therefore has
+a queue as deep as it has been idle, so **clear it before every question**
+(liquidctl calls this `clear_enqueued_reports`). Skipping that is a reader that
+finds twelve stale broadcasts and concludes the device is silent -- which
+happens only after idleness, so a loop of calls never sees it.
+
+A few commands are **written and not answered**. Waiting for a reply to one of
+those times out after the full deadline and reads as a dead device.
+
+### Commands
+
+| command | reply | what it is |
+|---|---|---|
+| `74 01` | `75 01` | ask for status |
+| `30 04 <slot>` | `31 04` | what is in a slot |
+| `32 02 <slot>` | `33 02` | clear a slot |
+| `32 01 <slot> <slot+1> <addr:2> <size:2> 01` | `33 01` | reserve a slot for a transfer |
+| `36 03` | `37 03` | open the exchange |
+| `36 01 <slot>` | `37 01` | begin the data transfer |
+| `36 02` | `37 02` | end the data transfer |
+| `38 01 <mode> <slot>` | `39 01` | show a slot (`04`) or the firmware readout (`02`) |
+| `30 02 01 <brightness> 00 00 01 <orientation/90>` | **none** | brightness and orientation |
+
+### Results, at byte 14
+
+| value | meaning |
+|---|---|
+| `01` | done |
+| `04` | refused: out of sequence, or the slot is occupied, or the address is not one the device chose |
+| `09` | that slot would not clear -- **try the next one** |
+
+`0x04` is the trap. It is returned for at least three unrelated mistakes, so it
+says "you did something wrong" and nothing about what.
+
+### Status reply, `75 01`
+
+| bytes | meaning |
+|---|---|
+| 15, 16 | coolant temperature, whole and tenths |
+| 17, 18 | pump rpm, little endian |
+| 19 | pump duty, percent |
+| 23, 24 | fan rpm, little endian |
+| 25 | fan duty, percent |
+
+`FF FF` at 15 and 16 is a firmware fault, not 255.5 degrees (liquidctl#172).
+
+### Slot reply, `31 04`
+
+| bytes | meaning |
+|---|---|
+| 14 | slot index |
+| 15 | asset index, slot + 1 -- **zero means the slot is empty** |
+| 17, 18 | address, little endian |
+| 19, 20 | size in packets, little endian |
+
+A slot is vacant when everything from byte 15 onward is zero.
+
+	slot 0:  index=00 asset=01 addr=0000 size=0007 used=01
+	slot 1:  index=01 asset=02 addr=0016 size=0016 used=01
+
+### Sending an image
+
+Order is load-bearing and not guessable:
+
+1. `36 03` **first**, before asking which slots are free. Choosing a slot and
+   opening the exchange afterwards is refused with `04`.
+2. Ask about all sixteen slots and keep the replies: the addresses are needed
+   below and **move between writes**, so they are read every time.
+3. Clear a slot, and **read the result**. `09` means try the next slot; a setup
+   on a slot that did not clear is refused with `04`. A slot that held data is
+   cleared twice.
+4. Work out the address from the replies in 2 -- reuse the slot's own space if
+   the image fits, else after everything, else the room at the start, else
+   clear the whole screen. **The device refuses an address it did not arrive at
+   itself.**
+5. `32 01` to reserve, `36 01` to begin, then the bulk writes, then `36 02`.
+6. **Pad the payload to the packet count declared.** The transfer is described
+   in whole 1024-byte packets and an image rarely divides evenly; sending only
+   the image leaves the tail of the last packet holding whatever was there,
+   which the panel draws as noise along the bottom.
+7. `38 01 04 <slot>` to show it. Without this every step reports success and
+   the screen does not change.
+
+An image must be a **GIF**. The firmware does not retain a static picture --
+measured reverting to the built-in display in five to ten seconds with nothing
+touching the device -- while a GIF plays indefinitely. One frame is enough.
+
 ## Requirements
 
 **R1. No process is spawned to reach the cooler.** Status and screen writes go
@@ -235,17 +337,17 @@ running hotaru does not keep a stale dashboard.
       fails if a process is spawned on the status path.
 - [x] AC3. The cooler is located by USB ids through sysfs; no device path is
       written down anywhere in the source or the rules file.
-- [ ] AC4. The bulk interface is claimed while hidraw stays open, in one
+- [x] AC4. The bulk interface is claimed while hidraw stays open, in one
       process, and released on shutdown.
-- [ ] AC5. A single-frame GIF reaches the screen and is displayed.
-- [ ] AC6. An animated GIF reaches the screen and plays.
-- [ ] AC7. Brightness and orientation are settable.
-- [ ] AC8. The screen returns to the firmware readout on request and on
+- [x] AC5. A single-frame GIF reaches the screen and is displayed.
+- [x] AC6. An animated GIF reaches the screen and plays.
+- [x] AC7. Brightness and orientation are settable.
+- [x] AC8. The screen returns to the firmware readout on request and on
       service shutdown.
 - [x] AC9. Every command's reply is matched by prefix, and a test feeds an
       interleaved status report through the fake to prove a mismatched reply is
       never read as a result.
-- [ ] AC10. The bytes delivered equal the packet count declared, with a test.
+- [x] AC10. The bytes delivered equal the packet count declared, with a test.
 - [ ] AC11. A dashboard pushed once a second lands every update, verified on
       the machine with a value that changes on every tick.
 - [x] AC12. CPU, board and PSU temperatures are read from hwmon by label
@@ -302,6 +404,23 @@ them raises an alarm about an ordinary desktop.
 A cooler that is present and will not answer is the same shape with its name
 attached, because present-and-silent is a different problem from absent and the
 name is the first thing somebody needs in order to chase it.
+
+### On not faking this device
+
+There is no fake screen, deliberately.
+
+A fake encodes whoever wrote it's understanding of the device, and that
+understanding was wrong three times in the hour this was built: a fake written
+then would have accepted a setup before `36 03`, ignored delete results, and
+taken any address. Every one of the day's bugs would have passed against it,
+which is worse than no test at all -- it is a test that certifies a
+misunderstanding.
+
+What is tested without hardware is the part that is not protocol: slot
+selection and the placement arithmetic are pure functions over the bytes the
+device returns, and they have real edge cases. The protocol itself is verified
+the only way it can be, by somebody looking at the panel, and is written down
+above so the next person does not re-derive it.
 
 ## Risks & Assumptions
 
