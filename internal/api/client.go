@@ -318,15 +318,3 @@ func (c *Client) Keys(ctx context.Context) (KeysResponse, error) {
 func (c *Client) Bind(ctx context.Context, key, scene string) error {
 	return c.do(ctx, http.MethodPost, "/"+Version+"/keys/bind", BindRequest{Key: key, Scene: scene}, nil)
 }
-
-/*
-ReleaseKeys removes another program's claim on hotaru's sequences.
-
-Editing somebody else's configuration file, so it is never called on hotaru's
-own initiative: a person is shown what is in the way and says yes.
-*/
-func (c *Client) ReleaseKeys(ctx context.Context) (int, error) {
-	var out ReleasedResponse
-	err := c.do(ctx, http.MethodPost, "/"+Version+"/keys/release", struct{}{}, &out)
-	return out.Removed, err
-}

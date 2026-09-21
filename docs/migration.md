@@ -44,9 +44,9 @@ shortcuts are hotaru's, applying the nine scenes read out of the monitor's own
 configuration. Two things had to be cleared first, and both are worth recording
 because neither was a bounce away:
 
-- The nine stale `AIOScene1..9` entries were removed with `hotaru keys
-  release`, which showed them first and left `AIOScene11..19` and every other
-  program's shortcuts untouched.
+- The eighteen stale `AIOScene*` entries were removed with `hotaru keys
+  release`, which shows them first and asks KDE to forget them one at a time.
+  Every other program's shortcuts were left alone.
 - **`aio-scenes` was still loaded in KWin with its program not running** --
   `isScriptLoaded` returned true for a script whose process had exited, and its
   shortcuts were still grabbed. Unloading it by name and stopping its object is
@@ -88,9 +88,22 @@ its shortcuts, and they **outlive the script** — unloading it does not remove
 them, and neither does restarting KWin. They are not stow-managed, so this is
 machine state cleared by hand-editing that file.
 
-They must go before hotaru registers anything, because they hold a claim on
-exactly the sequences hotaru wants, and a claimed key is how this class of bug
-presents: the registration reports success and the key does nothing.
+They were believed to block hotaru's own registration. **They do not, and both
+halves of that sentence were measured during the cutover.**
+
+hotaru registered its nine keys with all eighteen entries present and every key
+worked: the grab belongs to the loaded script, and KDE refuses a sequence only
+to a *different* component. They are leftovers rather than locks -- worth
+clearing, and the first place to look when a key does nothing while everything
+reports success.
+
+**And hand-editing the file does not clear them.** The nine were deleted,
+hotaru registered its shortcuts, and all eighteen were back in the file a
+second later: `kglobalaccel` keeps the table in memory and writes it out
+whenever anything registers. The supported route is
+`org.kde.KGlobalAccel.unregister(component, action)`, which is what `hotaru
+keys release` calls; it clears the daemon and the file together, and needs no
+logout.
 
 ## KDE hotkey rules (spec 006 is bound by these)
 

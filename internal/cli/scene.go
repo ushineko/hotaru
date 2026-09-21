@@ -51,8 +51,8 @@ func sceneListCommand() *cobra.Command {
 			out := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 			_, _ = fmt.Fprintln(out, "NAME\tLIGHTS\tEFFECTS\tSCREEN")
 			for _, scene := range saved {
-				_, _ = fmt.Fprintf(out, "%s\t%d\t%s\t%s\n",
-					scene.Name, len(scene.Assignments), effects(scene), scene.Screen)
+				_, _ = fmt.Fprintf(out, "%s\t%s\t%s\t%s\n",
+					scene.Name, lights(scene), effects(scene), scene.Screen)
 			}
 			if err := out.Flush(); err != nil {
 				return fmt.Errorf("write the listing: %w", err)
@@ -78,6 +78,12 @@ func sceneShowCommand() *cobra.Command {
 			}
 
 			cmd.Println(scene.Name)
+			switch {
+			case scene.Off:
+				cmd.Println("  the lights go off")
+			case scene.Colour != "":
+				cmd.Printf("  everything is %s\n", scene.Colour)
+			}
 			for _, a := range scene.Assignments {
 				cmd.Printf("  %s is %s\n", a.Target, a.Colour)
 			}
@@ -105,8 +111,13 @@ func sceneWriteCommand() *cobra.Command {
 		Short: "Write a scene out, rather than capturing one",
 		Long: `Write a scene out, rather than capturing one.
 
+	hotaru scene write evening --colour #201040
 	hotaru scene write evening kraken=#201040 keychron=#100820 \
 	    --effect keychron="Solid Splash" --screen dashboard
+
+--colour is one colour across every device in scope, which is what most scenes
+are; targets after it are the exceptions, so "everything blue except the top
+fan" stays two words rather than an enumeration.
 
 The same targets as ` + "`hotaru light set`" + `: a device, a zone, an LED range,
 or a segment named in the rules file. An effect is a mode the device
@@ -142,6 +153,13 @@ the lights are showing now.`,
 				scene.Effects[device] = mode
 			}
 			scene.Screen, _ = cmd.Flags().GetString("screen")
+			scene.Colour, _ = cmd.Flags().GetString("colour")
+			scene.Off, _ = cmd.Flags().GetBool("off")
+			if scene.Off && (scene.Colour != "" || len(scene.Assignments) > 0) {
+				// Off is not a dark colour, and a scene that says both has
+				// not decided what it wants.
+				return fmt.Errorf("a scene is either off or a colour, not both")
+			}
 
 			if err := client.SaveScene(cmd.Context(), scene); err != nil {
 				return quiet(err)
@@ -150,6 +168,8 @@ the lights are showing now.`,
 			return nil
 		},
 	}
+	cmd.Flags().String("colour", "", "one colour across every device in scope")
+	cmd.Flags().Bool("off", false, "turn lighting off rather than colouring it")
 	cmd.Flags().StringSlice("effect", nil, `what a device should be doing: device="Mode Name"`)
 	cmd.Flags().String("screen", "",
 		`what the cooler's screen shows: "dashboard", "readout", or a path to a GIF`)
@@ -320,6 +340,22 @@ func report(cmd *cobra.Command, done api.SceneResponse) {
 	for _, problem := range done.Problems {
 		cmd.Printf("Not done: %s\n", problem)
 	}
+}
+
+// lights is the LIGHTS column: what a scene does to the lighting, in as few
+// words as it takes to tell two scenes apart in a listing.
+func lights(scene api.Scene) string {
+	switch {
+	case scene.Off:
+		return "off"
+	case scene.Colour != "" && len(scene.Assignments) > 0:
+		return fmt.Sprintf("%s +%d", scene.Colour, len(scene.Assignments))
+	case scene.Colour != "":
+		return scene.Colour
+	case len(scene.Assignments) > 0:
+		return fmt.Sprintf("%d target(s)", len(scene.Assignments))
+	}
+	return "-"
 }
 
 func effects(scene api.Scene) string {

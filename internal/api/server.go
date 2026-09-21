@@ -41,7 +41,6 @@ func Routes() []string {
 		"POST /" + Version + "/scenes/{name}/capture",
 		"GET /" + Version + "/keys",
 		"POST /" + Version + "/keys/bind",
-		"POST /" + Version + "/keys/release",
 		"POST /" + Version + "/preview/renew",
 		"POST /" + Version + "/preview/release",
 		"POST /" + Version + "/reconcile",
@@ -320,22 +319,6 @@ func Handler(svc *service.Service) http.Handler {
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
-	})
-
-	/*
-		Releasing another program's claim on the keys.
-
-		A POST with no body and a deliberate one: it edits a file that is not
-		hotaru's, so it happens because somebody asked and never because
-		hotaru noticed.
-	*/
-	mux.HandleFunc("POST /"+Version+"/keys/release", func(w http.ResponseWriter, _ *http.Request) {
-		removed, err := svc.ReleaseKeys()
-		if err != nil {
-			fail(w, err)
-			return
-		}
-		write(w, http.StatusOK, ReleasedResponse{Removed: removed})
 	})
 
 	mux.HandleFunc("POST /"+Version+"/preview/renew", func(w http.ResponseWriter, r *http.Request) {
