@@ -13,8 +13,11 @@ import (
 	_ "github.com/ushineko/fynedesygn/settings/yamlcodec" // .yml is YAML
 )
 
-// sectionKey is the one top-level key this file uses.
-const sectionKey = "scenes"
+// The top-level keys this file uses.
+const (
+	sectionKey  = "scenes"
+	bindingsKey = "bindings"
+)
 
 /*
 Store is scenes.yml.
@@ -34,6 +37,15 @@ type Store struct {
 	file  *settings.Store
 	path  string
 	cache map[string]Scene
+	/*
+		bound is what somebody has changed about the keys, not the keys.
+
+		Shipped bindings are code and are merged in on read, so a file that
+		says nothing about the keys gets the bank this desk has always had,
+		and one that rebinds Num4 says only that. An empty scene name unbinds
+		a shipped key, which is a thing somebody has to be able to express.
+	*/
+	bound map[string]string
 }
 
 // Open reads the scenes file, creating nothing until something is saved.
@@ -52,7 +64,10 @@ func Open(path string) (*Store, error) {
 		return nil, fmt.Errorf("read %s: %w", path, err)
 	}
 
-	store := &Store{file: file, path: path, cache: map[string]Scene{}}
+	store := &Store{
+		file: file, path: path,
+		cache: map[string]Scene{}, bound: map[string]string{},
+	}
 	var loaded map[string]Scene
 	if file.Get(sectionKey, &loaded) {
 		for name, scene := range loaded {
@@ -60,19 +75,82 @@ func Open(path string) (*Store, error) {
 			store.cache[name] = scene
 		}
 	}
+	var bound map[string]string
+	if file.Get(bindingsKey, &bound) {
+		store.bound = bound
+	}
 	return store, nil
+}
+
+/*
+Bindings are the keys, shipped ones included.
+
+Merged rather than replaced: a file that mentions one key changes that key and
+leaves the other eight as they were. A binding to an empty name is a shipped
+key somebody has deliberately unbound, and is dropped here rather than being
+reported as a binding to nothing.
+*/
+func (s *Store) Bindings() map[string]string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	out := DefaultBindings()
+	for key, scene := range s.bound {
+		if scene == "" {
+			delete(out, key)
+			continue
+		}
+		out[key] = scene
+	}
+	return out
+}
+
+// Bind points a key at a scene. An empty name unbinds it, including a shipped
+// one -- which is why this records the unbinding rather than forgetting it.
+func (s *Store) Bind(key, scene string) error {
+	if strings.TrimSpace(key) == "" {
+		return errors.New("a binding needs a key")
+	}
+	s.mu.Lock()
+	s.bound[key] = scene
+	snapshot := make(map[string]string, len(s.bound))
+	for k, v := range s.bound {
+		snapshot[k] = v
+	}
+	s.mu.Unlock()
+
+	if err := s.file.Set(bindingsKey, snapshot); err != nil {
+		return fmt.Errorf("bind %s: %w", key, err)
+	}
+	return s.Flush()
 }
 
 // Path is the file this store reads and writes.
 func (s *Store) Path() string { return s.path }
 
-// All is every scene, by name, in the order a listing shows them.
+/*
+All is every scene, shipped ones included, in the order a listing shows them.
+
+Shipped scenes are code and are never written to the file: a fresh install has
+the nine and has written nothing, which is the inert rule holding for scenes as
+well as for hardware. Saving one under a shipped name replaces it for as long
+as the saved one exists, and deleting that override brings the shipped one
+back.
+*/
 func (s *Store) All() []Scene {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	out := make([]Scene, 0, len(s.cache))
-	for _, scene := range s.cache {
+	merged := map[string]Scene{}
+	for _, scene := range Shipped() {
+		scene.Shipped = true
+		merged[scene.Name] = scene
+	}
+	for name, scene := range s.cache {
+		merged[name] = scene
+	}
+	out := make([]Scene, 0, len(merged))
+	for _, scene := range merged {
 		out = append(out, scene)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
@@ -88,15 +166,15 @@ kind of pedantry that makes a program unpleasant. Two matches is a real
 ambiguity and says so.
 */
 func (s *Store) Get(name string) (Scene, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if scene, ok := s.cache[name]; ok {
-		return scene, nil
+	all := s.All()
+	for _, scene := range all {
+		if scene.Name == name {
+			return scene, nil
+		}
 	}
 	var matches []Scene
-	for stored, scene := range s.cache {
-		if strings.HasPrefix(strings.ToLower(stored), strings.ToLower(name)) {
+	for _, scene := range all {
+		if strings.HasPrefix(strings.ToLower(scene.Name), strings.ToLower(name)) {
 			matches = append(matches, scene)
 		}
 	}

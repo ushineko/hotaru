@@ -39,6 +39,9 @@ func Routes() []string {
 		"DELETE /" + Version + "/scenes/{name}",
 		"POST /" + Version + "/scenes/{name}/apply",
 		"POST /" + Version + "/scenes/{name}/capture",
+		"GET /" + Version + "/keys",
+		"POST /" + Version + "/keys/bind",
+		"POST /" + Version + "/keys/release",
 		"POST /" + Version + "/preview/renew",
 		"POST /" + Version + "/preview/release",
 		"POST /" + Version + "/reconcile",
@@ -287,6 +290,54 @@ func Handler(svc *service.Service) http.Handler {
 		hold(w, r, svc, outcome)
 	})
 
+	mux.HandleFunc("GET /"+Version+"/keys", func(w http.ResponseWriter, _ *http.Request) {
+		keys, err := svc.Keys()
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		out := KeysResponse{Reserved: keys.Reserved, Desktop: keys.Desktop}
+		for _, binding := range keys.Bindings {
+			out.Bindings = append(out.Bindings, Binding{
+				Key: binding.Key, Scene: binding.Scene, Missing: binding.Missing,
+			})
+		}
+		for _, claim := range keys.Claimed {
+			out.Claimed = append(out.Claimed,
+				fmt.Sprintf("%s holds %s (in %s)", claim.Entry, claim.Key, claim.Component))
+		}
+		write(w, http.StatusOK, out)
+	})
+
+	mux.HandleFunc("POST /"+Version+"/keys/bind", func(w http.ResponseWriter, r *http.Request) {
+		var in BindRequest
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			write(w, http.StatusBadRequest, Error{Error: "that request does not decode", Detail: err.Error()})
+			return
+		}
+		if err := svc.Bind(in.Key, in.Scene); err != nil {
+			fail(w, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	/*
+		Releasing another program's claim on the keys.
+
+		A POST with no body and a deliberate one: it edits a file that is not
+		hotaru's, so it happens because somebody asked and never because
+		hotaru noticed.
+	*/
+	mux.HandleFunc("POST /"+Version+"/keys/release", func(w http.ResponseWriter, _ *http.Request) {
+		removed, err := svc.ReleaseKeys()
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		write(w, http.StatusOK, ReleasedResponse{Removed: removed})
+	})
+
 	mux.HandleFunc("POST /"+Version+"/preview/renew", func(w http.ResponseWriter, r *http.Request) {
 		var in PreviewRequest
 		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
@@ -507,7 +558,10 @@ const (
 
 // asScene is a saved scene on the wire.
 func asScene(scene scenes.Scene) Scene {
-	out := Scene{Name: scene.Name, Effects: scene.Effects, Screen: scene.Screen}
+	out := Scene{
+		Name: scene.Name, Colour: scene.Colour, Off: scene.Off,
+		Shipped: scene.Shipped, Effects: scene.Effects, Screen: scene.Screen,
+	}
 	for _, a := range scene.Assignments {
 		out.Assignments = append(out.Assignments, SceneAssignment{Target: a.Target, Colour: a.Colour})
 	}
@@ -516,7 +570,10 @@ func asScene(scene scenes.Scene) Scene {
 
 // fromScene is the reverse, for a client saving one.
 func fromScene(in Scene) scenes.Scene {
-	out := scenes.Scene{Name: in.Name, Effects: in.Effects, Screen: in.Screen}
+	out := scenes.Scene{
+		Name: in.Name, Colour: in.Colour, Off: in.Off,
+		Effects: in.Effects, Screen: in.Screen,
+	}
 	for _, a := range in.Assignments {
 		out.Assignments = append(out.Assignments, scenes.Assignment{Target: a.Target, Colour: a.Colour})
 	}
