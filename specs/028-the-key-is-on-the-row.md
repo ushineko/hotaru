@@ -44,6 +44,31 @@ So moving a scene's shortcut is unbinding the old key and binding the new one,
 and the window is the only place that knows both halves. A test asserts it
 makes exactly two calls.
 
+### And the binding did not reach the desktop
+
+Reported the moment it was usable: the chooser worked, the file changed, and
+pressing the key applied the old scene.
+
+KWin's script carries the **scene name** in the call it makes rather than the
+key:
+
+	registerShortcut("hotaru-ctrl-alt-shift-num-1", ..., function() {
+	    callDBus(..., "Apply", "corgis");
+	});
+
+so the binding a keypress acts on is the one written into the script when it
+was installed -- and the installer only ran when KWin *appeared*. A rebinding
+was correct in the file and invisible to the desktop until the service or KWin
+restarted.
+
+`hotaru keys bind` had it too, which is why the fix is in the service: the
+store knows when the bindings changed and the daemon knows how to install, and
+`Service.Shortcuts` is the seam between them.
+
+The old message said so, and that is the part worth remembering. "It takes
+effect the next time the desktop starts hotaru's script" was accurate, written
+by somebody who knew, and describes a thing that should never have been true.
+
 ### The dialog was unusable, and had been before
 
 It opened showing one and a half of the eighteen keys, clipped at both ends.
@@ -64,6 +89,10 @@ programs a week apart.
 
 **R3. Moving a shortcut leaves the old key free.**
 
+**R3a. A rebinding reaches the desktop at once**, because the script carries
+the scene name rather than the key. A machine whose desktop is not there still
+records the binding.
+
 **R4. The chooser is readable** -- shown at most of the window rather than at
 the size of its buttons.
 
@@ -75,6 +104,8 @@ the size of its buttons.
       the new one bound.
 - [x] AC3. Choosing "no shortcut" unbinds and binds nothing.
 - [x] AC4. The chooser opens roomy.
+- [x] AC4a. Binding a key reinstalls the desktop's script, and a bind that
+      cannot reach the desktop is still written to the file.
 - [x] AC5. Verified on the development machine, by somebody rebinding a scene
       and pressing the key.
 

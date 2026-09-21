@@ -38,6 +38,60 @@ type Binding struct {
 	Missing bool
 }
 
+/*
+Shortcuts is the desktop's copy of the bindings, where the desktop keeps one.
+
+KWin's script carries the scene name in the call it makes, not the key -- so
+the binding a keypress acts on is the one that was written into the script
+when it was installed, and changing the store changes nothing until the script
+is written again. The service knows when the store changed; the daemon knows
+how to install. This is the seam.
+*/
+type Shortcuts interface {
+	// Install writes the script and registers what it holds, returning how
+	// many shortcuts it registered.
+	Install() (int, error)
+}
+
+/*
+SetShortcuts gives the service a way to put the bindings on the desktop, and
+somewhere to say when it could not.
+
+A machine with no session bus, or a build with no desktop integration, has
+neither and binds into the file alone.
+*/
+func (s *Service) SetShortcuts(k Shortcuts, report func(string, ...any)) {
+	s.mu.Lock()
+	s.shortcuts, s.report = k, report
+	s.mu.Unlock()
+}
+
+/*
+reinstall puts the changed bindings on the desktop, and does not fail a bind
+when it cannot.
+
+The store is the record and the script is a copy of it. A machine whose KWin
+is not running has a correct file and no shortcuts, which is the state it is
+already in and the one the installer resolves when KWin next appears -- so a
+bind that could not reach the desktop is still a bind.
+*/
+func (s *Service) reinstall() {
+	s.mu.RLock()
+	keys, report := s.shortcuts, s.report
+	s.mu.RUnlock()
+
+	if keys == nil {
+		return
+	}
+	count, err := keys.Install()
+	switch {
+	case err != nil && report != nil:
+		report("hotaru: keys: %v", err)
+	case report != nil:
+		report("hotaru: keys: %d shortcuts registered", count)
+	}
+}
+
 // SetDesktop records what the hotkey integration is doing, for reporting. An
 // empty reason means it is installed and working.
 func (s *Service) SetDesktop(state string) {
@@ -114,7 +168,18 @@ func (s *Service) Bind(key, scene string) error {
 			return err
 		}
 	}
-	return store.Bind(key, scene)
+	if err := store.Bind(key, scene); err != nil {
+		return err
+	}
+	/*
+		And on the desktop, because the script carries the scene name rather
+		than the key. Without this a rebinding was written to the file and
+		the old scene kept firing until the service or KWin restarted --
+		which is how it was reported: "changing the hotkey didn't take
+		effect".
+	*/
+	s.reinstall()
+	return nil
 }
 
 /*
