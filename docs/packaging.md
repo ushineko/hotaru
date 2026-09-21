@@ -46,6 +46,30 @@ on one side, a binary that runs on a headless box on the other.
 The split falls out of the architecture: the GUI is a client, so it is genuinely
 separable, and the heavy dependencies are all on the client side.
 
+### The window's icon takes three things, not one
+
+A Fyne window on KDE under Wayland shows its icon only when all of these agree,
+and getting two right shows nothing:
+
+1. **The icon compiled in** (`shell.Options.Icon`) -- the in-app icon, and the
+   X11 window icon.
+2. **A desktop entry named for the app_id**:
+   `io.github.ushineko.hotaru.desktop`, because the compositor resolves the
+   *titlebar* icon by matching the app_id to a desktop file of that name. Its
+   `Icon=hotaru` then resolves through the icon theme, which is why the SVG
+   installs to `hicolor/scalable/apps/hotaru.svg`.
+3. **`StartupWMClass=io.github.ushineko.hotaru`** in that entry, which is what
+   the *task manager* matches on.
+
+**Then the trap.** With all three right the taskbar can still be blank:
+plasmashell caches "no icon" for an app_id it has already failed to resolve, so
+every run made while the entry was missing poisons it. `kbuildsycoca6` does not
+clear that cache. `systemctl --user restart plasma-plasmashell` does, and so
+does the next login.
+
+Learned on a sibling project, at the cost of an afternoon spent concluding the
+configuration was wrong when it was correct and cached.
+
 ## Dependencies, named
 
 Verified against this machine's repositories:
@@ -151,6 +175,8 @@ much as a testing one.
 ## What gets installed
 
 - `/usr/bin/hotaru`, `/usr/bin/hotaru-gui`
+- `/usr/share/applications/io.github.ushineko.hotaru.desktop`
+- `/usr/share/icons/hicolor/scalable/apps/hotaru.svg`
 - `/usr/lib/udev/rules.d/60-hotaru.rules` — the `uaccess` tags that let the
   service open the cooler without root. Without it hotaru sees the device and
   cannot talk to it; see "Device permissions are part of the package" above.

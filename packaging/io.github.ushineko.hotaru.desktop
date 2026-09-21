@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=hotaru
+GenericName=RGB lighting and cooling
+Comment=Control the machine's lighting and its liquid cooler
+Exec=hotaru-gui
+Icon=hotaru
+Terminal=false
+Categories=Settings;HardwareSettings;
+Keywords=RGB;LED;lighting;OpenRGB;cooler;AIO;
+# The task manager matches a window to this entry on its app_id, which Fyne
+# takes from the application's unique ID. Without this line the titlebar gets
+# the icon and the taskbar does not.
+StartupWMClass=io.github.ushineko.hotaru
