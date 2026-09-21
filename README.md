@@ -229,6 +229,11 @@ MIT. See [LICENSE](LICENSE).
 
 ### Unreleased
 
+- A scene can be deleted from the window. It could only be done from the
+  terminal, and nothing flagged it: the parity test runs one way, proving the
+  CLI reaches every route the service serves rather than that the window does.
+  Not on a shipped scene, which the store keeps whatever is asked of it.
+
 - A scene from a picture. `hotaru image scene <picture> <name>`, and the same
   in the window, lights every zone on the machine with the picture's own
   colours — read across the image rather than averaged, so a twenty-four light

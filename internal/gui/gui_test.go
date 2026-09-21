@@ -16,6 +16,7 @@ import (
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/storage"
 	"fyne.io/fyne/v2/test"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	"github.com/stretchr/testify/require"
 	"github.com/ushineko/fynedesygn/fynetest"
@@ -988,4 +989,73 @@ func TestOneDroppedFileIsNotAQuestion(t *testing.T) {
 			return false
 		}
 	}, 3*time.Second, 10*time.Millisecond, "the one picture went nowhere")
+}
+
+// built returns a section's widget tree, for the tests that need more than
+// the text it draws.
+func built(t *testing.T, client *api.Client, section string) fyne.CanvasObject {
+	t.Helper()
+
+	a := test.NewApp()
+	t.Cleanup(a.Quit)
+
+	app := gui.New(client)
+	opts := app.Options("/run/nowhere/hotaru.sock")
+	opts.SettingsPath = filepath.Join(t.TempDir(), "gui.yml")
+
+	sh := shell.Headless(a, opts)
+	app.Refresh(context.Background())
+
+	for _, s := range sh.Sections() {
+		if s.Title() == section {
+			return s.Build(sh)
+		}
+	}
+	t.Fatalf("no section called %q", section)
+	return nil
+}
+
+// deletes counts the delete buttons in a tree. An icon-only button says
+// nothing that reading the text would find, and the rows sit inside a
+// scroller, so this walks widgets as well as containers.
+func deletes(t *testing.T, object fyne.CanvasObject) int {
+	t.Helper()
+
+	switch it := object.(type) {
+	case *widget.Button:
+		if it.Icon != nil && it.Icon.Name() == theme.DeleteIcon().Name() {
+			return 1
+		}
+		return 0
+	case *fyne.Container:
+		var found int
+		for _, child := range it.Objects {
+			found += deletes(t, child)
+		}
+		return found
+	case fyne.Widget:
+		var found int
+		for _, child := range test.TempWidgetRenderer(t, it).Objects() {
+			found += deletes(t, child)
+		}
+		return found
+	}
+	return 0
+}
+
+func TestASceneCanBeDeletedFromTheWindow(t *testing.T) {
+	/*
+		The window had no way to remove a scene, and the parity test only runs
+		one way: it proves the CLI reaches every route the service serves, not
+		that the window does.
+
+		Not on a shipped row, because the store takes that request and the
+		scene is still there afterwards -- a button that does nothing is the
+		silent no-op this project keeps paying for. Saving over a shipped
+		scene is how it changes, and deleting that replacement is how hotaru's
+		comes back.
+	*/
+	tree := built(t, service(t, healthy()), "Scenes")
+	require.Equal(t, 1, deletes(t, tree),
+		"healthy() has one shipped scene and one saved one, so one delete button")
 }
