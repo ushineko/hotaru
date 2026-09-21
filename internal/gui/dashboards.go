@@ -11,6 +11,7 @@ import (
 	"image"
 	"image/draw"
 	"image/gif"
+	"sync"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -64,6 +65,9 @@ type DashboardsSection struct {
 	*/
 	picture   *canvas.Image
 	costLabel *widget.Label
+
+	// drawing counts the previews in flight. See Settle.
+	drawing sync.WaitGroup
 	// drawn counts the frames, which is what gives each one a name of its
 	// own for Fyne's image cache.
 	drawn int
@@ -72,6 +76,18 @@ type DashboardsSection struct {
 // OpenDashboards gives a section its app, which the shell normally does. For
 // tests, like OpenEditor.
 func OpenDashboards(d *DashboardsSection, app *App) { d.app = app }
+
+/*
+Settle waits for the previews this section has in flight.
+
+For tests. A preview is rendered by the service and drawn when it answers,
+which is right in a running window and a loose end in a test: the goroutine
+outlives the test that started it and touches the interface while the next
+one is drawing. Fyne's test driver runs `fyne.Do` inline on the calling
+goroutine, so that is two goroutines shaping text at once, and its shaper
+panics.
+*/
+func (d *DashboardsSection) Settle() { d.drawing.Wait() }
 
 // EditDashboard puts a section into its editing state, and DraftDashboard is
 // what it is editing. For tests: the editor is reached by a button on a row,

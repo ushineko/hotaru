@@ -316,6 +316,21 @@ MIT. See [LICENSE](LICENSE).
 
 ## Changelog
 
+### Unreleased
+
+- Opening the screen editor no longer edits the screen. A chooser's
+  `SetSelected` fires its handler, and two of the new ones did not check
+  whether anything had moved — so merely drawing the form wrote a face into
+  the dashboard and asked the service for a frame, once per rebuild, which is
+  once per keystroke on a form that rebuilds (spec 037).
+
+- The window's tests wait for the work they start. A preview and a frame are
+  goroutines that come back to the interface, and Fyne's test driver runs
+  `fyne.Do` inline on the calling goroutine — so a goroutine outliving its
+  test shaped text while the next test drew, and the shaper panicked. It
+  failed one build of the package in four, which is a package that randomly
+  fails to build for whoever installs it.
+
 ### 0.1.2 (2026-09-21)
 
 - The screen builder sets the lettering: the face, and a size, a colour and an
