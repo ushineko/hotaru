@@ -20,6 +20,7 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	fd "github.com/ushineko/fynedesygn"
+	"github.com/ushineko/fynedesygn/dialogs"
 	"github.com/ushineko/fynedesygn/imagecache"
 	"github.com/ushineko/fynedesygn/shell"
 	"github.com/ushineko/fynedesygn/widgets"
@@ -557,43 +558,20 @@ func size(bytes int64) string {
 }
 
 /*
-roomy shows a dialog at most of the window's size.
+roomy shows a dialog at most of the window.
 
-Fyne opens one at a size that suits a confirmation, and a file browser is not
-one: the default shows about four names, so a directory of wallpapers is read
-through a slot.
-
-**Shown first, then resized.** A FileDialog builds its window in Show and its
-Resize dereferences it, so sizing one before showing it is a nil pointer --
-which is a crash rather than a small dialog, and I put it in front of somebody.
+fynedesygn's, since its spec 026: the same fault was found there in a file
+browser and here in a chooser of shortcuts, and two programs had two copies
+of the workaround. Kept as a name of this package's own because every call
+site already reads `roomy(d, sh)`, and because a shell is what this window
+has to hand where the library takes a window.
 */
-func roomy(d dialog.Dialog, sh *shell.Shell) { Roomy(d, sh) }
+func roomy(d dialog.Dialog, sh *shell.Shell) { dialogs.Roomy(d, sh.Window) }
 
 // Roomy is roomy, exported so a test can call it on a real dialog: the bug it
 // exists to prevent is a nil dereference inside Fyne, which nothing short of
 // the real type reproduces.
-func Roomy(d dialog.Dialog, sh *shell.Shell) {
-	d.Show()
-
-	size := sh.Window.Canvas().Size()
-	d.Resize(fyne.NewSize(
-		max32(size.Width*0.85, minDialogWidth),
-		max32(size.Height*0.85, minDialogHeight),
-	))
-}
-
-// The floor, for a dialog opened over a window somebody has made small.
-const (
-	minDialogWidth  = 720
-	minDialogHeight = 520
-)
-
-func max32(a, b float32) float32 {
-	if a > b {
-		return a
-	}
-	return b
-}
+func Roomy(d dialog.Dialog, sh *shell.Shell) { roomy(d, sh) }
 
 /*
 say puts a line on stderr.
