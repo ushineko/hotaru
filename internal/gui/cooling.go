@@ -23,6 +23,13 @@ func (c *CoolingSection) Title() string { return "Cooling" }
 // Icon is the navigation's icon for this section.
 func (c *CoolingSection) Icon() fyne.Resource { return theme.MediaRecordIcon() }
 
+// Changed says this section draws the cooler and nothing else, so it redraws
+// when a number it shows moves and not when a light changes colour.
+func (c *CoolingSection) Changed(before, after Snapshot) bool {
+	return !sameCooling(before.Cooling, after.Cooling) ||
+		(before.Err == nil) != (after.Err == nil)
+}
+
 // Build draws the section from the last snapshot. Stateless, as the shell
 // wants: every change rebuilds it, so only this has to know every reason
 // something is or is not shown.

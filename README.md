@@ -186,6 +186,11 @@ necessary is an artefact of where it used to live.
 - [specs/009-writes-that-mean-what-they-say.md](specs/009-writes-that-mean-what-they-say.md):
   why a write that lands in the buffer is not always a write, and what hotaru
   checks instead.
+- [specs/019-a-wallpaper-on-the-cooler.md](specs/019-a-wallpaper-on-the-cooler.md):
+  converting a picture for a panel that refuses everything else by showing
+  nothing.
+- [specs/018-pointing-at-a-fan.md](specs/018-pointing-at-a-fan.md): the scene
+  editor, and why a draft is not a preview and a preview is not a scene.
 - [specs/017-the-window-and-what-it-shows.md](specs/017-the-window-and-what-it-shows.md):
   the GUI's first window, what it draws, and why it has no glance panel.
 - [specs/013-the-dashboard.md](specs/013-the-dashboard.md): the monitor's LCD
@@ -220,6 +225,36 @@ MIT. See [LICENSE](LICENSE).
 ## Changelog
 
 ### Unreleased
+
+- Pictures for the cooler's screen. `hotaru image add <name> <file>` converts
+  any JPEG, PNG or GIF to the 640x640 GIF the panel takes — cropped to the
+  middle rather than letterboxed — and keeps it under `$XDG_DATA_HOME`. The
+  window has the same, with a file chooser, drag and drop from a file manager,
+  and a preview of the conversion before anything is kept: the crop is the
+  decision, and it is shown rather than described (spec 019, #5).
+
+- The palette is chosen from the picture rather than fixed. A photograph
+  through Plan 9's 256 colours spends half of them on greens it does not
+  contain and speckles everywhere it does; a histogram of the image spends
+  every entry on a colour that is in it (spec 019).
+
+- A scene can name a stored picture for the screen, chosen in the editor
+  alongside the dashboard and the cooler's own display (spec 019, #5).
+
+- The GUI has a scene editor: click a device or a zone in the picture, give it
+  a colour, show the draft on the hardware, save it with a name. Three states
+  rather than two — a draft lives in the window, a preview is on the hardware
+  and is still not what anybody wants, and saving is what makes it a scene
+  (spec 018, #5).
+
+- Editing a scene keeps what the editor does not edit. A scene's effect per
+  device and its screen state come through untouched, because an editor that
+  understands part of a format and rewrites the whole thing drops the rest
+  quietly (spec 018).
+
+- `POST /v1/preview` previews a scene that was never saved, and `hotaru scene
+  preview kraken=red keychron=black` does the same from a terminal —
+  `--detach` leaves it up under a token instead of holding it (spec 018, #5).
 
 - `hotaru-gui` has an icon: a lit bulb, flat and geometric because it is drawn
   at 22 pixels in a panel far more often than at 128 in a launcher. It ships as

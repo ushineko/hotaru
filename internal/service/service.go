@@ -44,6 +44,7 @@ type Service struct {
 	cooler   Cooler
 	panel    Dashboard
 	scenes   SceneStore
+	images   ImageLibrary
 	desktop  string
 
 	// leases maps a device to the preview held over it. One device, one
