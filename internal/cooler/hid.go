@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"time"
 )
 
 // reportLen is every report this device sends or takes, in either direction.
@@ -17,6 +18,15 @@ them rather than instead of them. Twelve is liquidctl's number and is generous:
 the reply is usually the first or second report to arrive.
 */
 const attempts = 12
+
+/*
+defaultWait bounds a read whose caller set no deadline.
+
+Generous: a reading arrives in about two milliseconds, and this is the limit
+before a device that has stopped talking is reported as such rather than
+waited on.
+*/
+const defaultWait = 2 * time.Second
 
 /*
 hid is the control channel: a character device, and the rules for talking on it.
@@ -75,8 +85,23 @@ func (h *hid) ask(ctx context.Context, data ...byte) ([]byte, error) {
 	return h.await(ctx, data[0]+1, data[1])
 }
 
-// await returns the next report with this prefix.
+/*
+await returns the next report with this prefix.
+
+The deadline is the caller's, pushed down to the file. Checking the context
+between reads is not enough on its own: the wrong hidraw node of a device never
+answers, and a read that blocks forever is a service that hangs at startup
+rather than one that reports no cooler.
+*/
 func (h *hid) await(ctx context.Context, a, b byte) ([]byte, error) {
+	when, ok := ctx.Deadline()
+	if !ok {
+		when = time.Now().Add(defaultWait)
+	}
+	if err := h.f.SetReadDeadline(when); err != nil {
+		return nil, fmt.Errorf("bound the wait on %s: %w", h.f.Name(), err)
+	}
+
 	buf := make([]byte, reportLen)
 	for range attempts {
 		if err := ctx.Err(); err != nil {

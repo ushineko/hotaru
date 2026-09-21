@@ -49,11 +49,12 @@ func TestACoolerIsFoundByItsIdsRatherThanItsPath(t *testing.T) {
 	*/
 	sysRoot, devRoot := sysfs(t, "0003:00001E71:00003012", 1, 13)
 
-	device, err := find(sysRoot, devRoot)
+	found, err := find(sysRoot, devRoot)
 	require.NoError(t, err)
-	require.Equal(t, "NZXT Kraken Elite V2", device.Name)
-	require.Equal(t, filepath.Join(devRoot, "hidraw7"), device.HID)
-	require.Equal(t, filepath.Join(devRoot, "bus", "usb", "001", "013"), device.USB)
+	require.Len(t, found, 1)
+	require.Equal(t, "NZXT Kraken Elite V2", found[0].Name)
+	require.Equal(t, filepath.Join(devRoot, "hidraw7"), found[0].HID)
+	require.Equal(t, filepath.Join(devRoot, "bus", "usb", "001", "013"), found[0].USB)
 }
 
 func TestACoolerNobodyHasWrittenDownIsDeclined(t *testing.T) {
