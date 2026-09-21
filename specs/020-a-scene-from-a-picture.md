@@ -124,6 +124,10 @@ next to the case. Weighted by chroma the same picture gives `#a06250` at the
 start of the ring, through `#c0ceb2`, to `#728c83` at the end -- the planet's
 rust sweeping into its teal -- and the panel shows the picture it came from.
 
+**The slideshow, on the panel.** A stack dropped on the window, answered with
+"One slideshow", plays as one reel: each picture held and faded into the next,
+looping without a jump at the end.
+
 A note for the next person: the conversion runs in the service, so a rebuilt
 binary changes nothing until `systemctl --user restart hotaru`. Two runs were
 compared before that was noticed, and they were identical because they were the
