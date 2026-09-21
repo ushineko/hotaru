@@ -118,31 +118,6 @@ func (s *Service) Bind(key, scene string) error {
 }
 
 /*
-ReleaseKeys removes another program's claim on hotaru's sequences.
-
-Never on hotaru's own initiative. It is somebody else's configuration file and
-this only happens because a person was shown what is in it and said yes.
-*/
-func (s *Service) ReleaseKeys() (int, error) {
-	keys, err := s.Keys()
-	if err != nil {
-		return 0, err
-	}
-	if len(keys.Claimed) == 0 {
-		return 0, nil
-	}
-	path, err := desktop.ShortcutsFile()
-	if err != nil {
-		return 0, err
-	}
-	removed, err := desktop.Release(path, keys.Claimed)
-	if err != nil {
-		return 0, err
-	}
-	return removed, nil
-}
-
-/*
 ApplyByName is the door's entry point, and is deliberately the same call the
 HTTP route makes.
 

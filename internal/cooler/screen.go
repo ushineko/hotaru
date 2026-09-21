@@ -129,7 +129,19 @@ GIF plays indefinitely. One frame is enough to get that; animation is the same
 call with more frames.
 */
 func (s *Screen) Image(ctx context.Context, gif []byte) error {
-	bucket, err := s.send(ctx, gif)
+	/*
+		The panel's size is not negotiable, and it says so by showing nothing.
+
+		An image of the wrong size transfers successfully, switches buckets
+		successfully, and leaves the screen blank -- so it is fitted here,
+		where every path that puts a picture on the panel goes through.
+	*/
+	fitted, err := fit(gif, PanelSize)
+	if err != nil {
+		return err
+	}
+
+	bucket, err := s.send(ctx, fitted)
 	if err != nil {
 		return err
 	}
