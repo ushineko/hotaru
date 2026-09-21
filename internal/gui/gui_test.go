@@ -169,7 +169,7 @@ func TestTheWindowHasItsSections(t *testing.T) {
 	for _, s := range sh.Sections() {
 		titles = append(titles, s.Title())
 	}
-	require.Equal(t, []string{"Service", "System", "Scenes", "Pictures", "Cooling"}, titles)
+	require.Equal(t, []string{"Service", "System", "Scenes", "Pictures", "Cooling", "About"}, titles)
 }
 
 func TestAServiceThatIsNotRunningSaysWhatToType(t *testing.T) {
@@ -1058,4 +1058,27 @@ func TestASceneCanBeDeletedFromTheWindow(t *testing.T) {
 	tree := built(t, service(t, healthy()), "Scenes")
 	require.Equal(t, 1, deletes(t, tree),
 		"healthy() has one shipped scene and one saved one, so one delete button")
+}
+
+func TestTheAboutSectionIsTheReadme(t *testing.T) {
+	/*
+		Embedded rather than restated. A program that describes itself twice
+		has one description somebody maintains and another they forget, and
+		the one in the window is the one that goes stale.
+	*/
+	tree := built(t, service(t, healthy()), "About")
+	text := fynetest.Text(tree)
+
+	require.Contains(t, text, "github.com/ushineko/hotaru", "the project link is missing")
+	require.Contains(t, text, "hotaru")
+
+	/*
+		And one scrollbar for the section.
+
+		The document pane is not scrollable itself: it follows the shell's
+		content scroller, because a document that scrolls inside a page that
+		also scrolls takes the wheel and stops the page.
+	*/
+	require.False(t, fynetest.ScrollableIn(tree),
+		"the document brought a scroller of its own")
 }

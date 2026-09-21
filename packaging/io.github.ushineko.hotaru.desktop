@@ -2,7 +2,7 @@
 Type=Application
 Name=hotaru
 GenericName=RGB lighting and cooling
-Comment=Control the machine's lighting and its liquid cooler
+Comment=lights, cooler, action!
 Exec=hotaru-gui
 Icon=hotaru
 Terminal=false
