@@ -25,7 +25,7 @@ func sceneCommand() *cobra.Command {
 	}
 	cmd.AddCommand(sceneListCommand(), sceneShowCommand(), sceneWriteCommand(),
 		sceneApplyCommand(), scenePreviewCommand(), sceneSaveCommand(),
-		sceneDeleteCommand())
+		sceneRecolourCommand(), sceneDeleteCommand())
 	return cmd
 }
 
@@ -308,6 +308,38 @@ line, and is reported rather than guessed at.`,
 	}
 	cmd.Flags().String("screen", "",
 		`what the cooler's screen shows: "dashboard", "readout", or a path to a GIF`)
+	return cmd
+}
+
+/*
+sceneRecolourCommand builds a scene's lights again from whatever it shows.
+
+For the knob that has no right answer. Somebody sets a separation, looks at
+the case, and wants the colours further apart -- and what they are adjusting
+is not visible anywhere except the machine itself, so it has to be adjustable
+after the fact rather than only at the moment the scene is made.
+*/
+func sceneRecolourCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "recolour <name>",
+		Short: "Build a scene's lights again from the picture or dashboard it shows",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, err := client(cmd)
+			if err != nil {
+				return err
+			}
+			distance, _ := cmd.Flags().GetFloat64("distance")
+			scene, err := client.Recolour(cmd.Context(), args[0], distance)
+			if err != nil {
+				return quiet(err)
+			}
+			cmd.Printf("%s: %d assignment(s), separation %.1f.\n",
+				scene.Name, len(scene.Assignments), distance)
+			return nil
+		},
+	}
+	distanceFlag(cmd)
 	return cmd
 }
 

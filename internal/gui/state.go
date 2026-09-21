@@ -33,6 +33,7 @@ type Machine struct {
 	mu sync.RWMutex
 
 	health  api.Health
+	status  api.Status
 	devices []api.Device
 	cooling api.Cooling
 	keys    api.KeysResponse
@@ -47,7 +48,10 @@ type Machine struct {
 
 // Snapshot is everything the window draws from, copied out under the lock.
 type Snapshot struct {
-	Health  api.Health
+	Health api.Health
+	// Status carries the last scene applied and what the panel is showing,
+	// which the System section names.
+	Status  api.Status
 	Devices []api.Device
 	Cooling api.Cooling
 	Keys    api.KeysResponse
@@ -131,7 +135,7 @@ func (m *Machine) Read() Snapshot {
 	scenes := make([]api.Scene, len(m.scenes))
 	copy(scenes, m.scenes)
 	return Snapshot{
-		Health: m.health, Devices: devices, Cooling: m.cooling,
+		Health: m.health, Status: m.status, Devices: devices, Cooling: m.cooling,
 		Keys: m.keys, Scenes: scenes, Err: m.err, At: m.at,
 	}
 }
@@ -145,10 +149,12 @@ telling two stories at once, and the stale half looks current.
 */
 func (m *Machine) Refresh(ctx context.Context, client *api.Client) {
 	health, err := client.Health(ctx)
+	status, _ := client.Status(ctx)
 	if err != nil {
 		m.mu.Lock()
 		m.err, m.at = err, time.Now()
 		m.devices, m.cooling, m.keys, m.scenes = nil, api.Cooling{}, api.KeysResponse{}, nil
+		m.status = api.Status{}
 		m.mu.Unlock()
 		return
 	}
@@ -165,7 +171,7 @@ func (m *Machine) Refresh(ctx context.Context, client *api.Client) {
 	scenes, _ := client.Scenes(ctx)
 
 	m.mu.Lock()
-	m.health, m.devices, m.cooling, m.keys, m.scenes = health, devices, cooling, keys, scenes
+	m.health, m.status, m.devices, m.cooling, m.keys, m.scenes = health, status, devices, cooling, keys, scenes
 	m.err, m.at = nil, time.Now()
 	m.mu.Unlock()
 }

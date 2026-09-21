@@ -115,7 +115,11 @@ func (s *Service) UseDashboard(name string) error {
 	if err != nil {
 		return err
 	}
-	if err := store.Use(name); err != nil {
+	one, err := store.Get(name)
+	if err != nil {
+		return err
+	}
+	if err := store.Use(one.Name); err != nil {
 		return err
 	}
 
@@ -125,6 +129,7 @@ func (s *Service) UseDashboard(name string) error {
 	if panel != nil {
 		panel.Release() // Release redraws; see Dashboard.
 	}
+	s.drawing("dashboard: " + one.Name)
 	return nil
 }
 

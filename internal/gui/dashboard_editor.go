@@ -44,7 +44,7 @@ func (d *DashboardsSection) editor(sh *shell.Shell, got api.DashboardsResponse) 
 	)
 
 	return container.NewBorder(
-		container.NewVBox(title("Screen"), d.actions(sh)), nil, nil, nil,
+		container.NewVBox(d.actions(sh)), nil, nil, nil,
 		container.NewHSplit(
 			container.NewVScroll(form),
 			container.NewVScroll(d.preview(sh)),

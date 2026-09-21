@@ -86,6 +86,17 @@ type Scene struct {
 	*/
 	Screen string `json:"screen,omitempty"`
 
+	/*
+		Distance is how far apart this scene's colours were pushed when it
+		was built from a picture or a dashboard.
+
+		Kept so it can be adjusted rather than re-guessed: what a person
+		picks and what an LED shows are not the same thing, and the right
+		number is whatever looks right on their machine. Zero and one both
+		mean "as measured"; a scene nobody built this way has none.
+	*/
+	Distance float64 `yaml:"distance,omitempty" json:"distance,omitempty"`
+
 	// Shipped marks one of the nine hotaru carries in code rather than in
 	// anybody's file. Set when it is read, never stored.
 	Shipped bool `json:"-"`
