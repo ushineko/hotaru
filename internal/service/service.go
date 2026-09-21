@@ -44,6 +44,7 @@ type Service struct {
 	cooler   Cooler
 	panel    Dashboard
 	scenes   SceneStore
+	desktop  string
 
 	// leases maps a device to the preview held over it. One device, one
 	// preview: see preview.go.

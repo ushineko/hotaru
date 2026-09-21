@@ -363,7 +363,17 @@ type Preview struct {
 
 // Scene is a named lighting state, as a client sees it.
 type Scene struct {
-	Name        string            `json:"name"`
+	Name string `json:"name"`
+	// Colour is one colour across every device in scope, applied before any
+	// assignments. What the nine shipped scenes are.
+	Colour string `json:"colour,omitempty"`
+	// Off turns lighting off rather than colouring it. Off is not a colour:
+	// it resolves the device's own Off mode and honours the correction for a
+	// keyboard that treats black as a dead backlight.
+	Off bool `json:"off,omitempty"`
+	// Shipped marks one of the nine hotaru carries in code. Saving a scene
+	// under the same name replaces it; deleting that one brings it back.
+	Shipped     bool              `json:"shipped,omitempty"`
 	Assignments []SceneAssignment `json:"assignments,omitempty"`
 	// Effects name what each device should be doing, by any part of its name.
 	Effects map[string]string `json:"effects,omitempty"`
@@ -391,9 +401,49 @@ type SceneAssignment struct {
 	Colour string `json:"colour"`
 }
 
-// ScenesResponse is every saved scene.
+// ScenesResponse is every scene, shipped ones included.
 type ScenesResponse struct {
 	Scenes []Scene `json:"scenes"`
+}
+
+/*
+Binding is a key and the scene it applies.
+
+The key is KDE's own spelling, as it appears in kglobalshortcutsrc, because
+that string is what gets registered: translating it here would be one more
+place for a key to be claimed and then do nothing.
+*/
+type Binding struct {
+	Key   string `json:"key"`
+	Scene string `json:"scene"`
+	// Missing marks a binding whose scene is not there, which is a key that
+	// will report rather than light something when it is pressed.
+	Missing bool `json:"missing,omitempty"`
+}
+
+// KeysResponse is the shortcuts, what they do, and what is in the way.
+type KeysResponse struct {
+	Bindings []Binding `json:"bindings"`
+	// Reserved are sequences hotaru deliberately leaves free, for scenes
+	// somebody writes themselves.
+	Reserved []string `json:"reserved,omitempty"`
+	// Desktop says whether the KWin integration is installed, and why not.
+	Desktop string `json:"desktop,omitempty"`
+	// Claimed are shortcuts another program still holds, which is how this
+	// class of bug presents: the registration succeeds and the key does
+	// nothing.
+	Claimed []string `json:"claimed,omitempty"`
+}
+
+// ReleasedResponse says how many stale claims were removed.
+type ReleasedResponse struct {
+	Removed int `json:"removed"`
+}
+
+// BindRequest points a key at a scene. An empty scene unbinds it.
+type BindRequest struct {
+	Key   string `json:"key"`
+	Scene string `json:"scene,omitempty"`
 }
 
 /*

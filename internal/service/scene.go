@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/ushineko/hotaru/internal/colour"
+	"github.com/ushineko/hotaru/internal/cooler"
 	"github.com/ushineko/hotaru/internal/scenes"
 )
 
@@ -19,6 +21,11 @@ type SceneStore interface {
 	Get(name string) (scenes.Scene, error)
 	Save(scene scenes.Scene) error
 	Delete(name string) error
+	// Bindings are the keys, shipped ones merged with anything somebody has
+	// changed. They live with the scenes because they are edited by the same
+	// hands and belong to the same file.
+	Bindings() map[string]string
+	Bind(key, scene string) error
 }
 
 // SetScenes gives the service somewhere to keep named lighting.
@@ -160,7 +167,27 @@ func (s *Service) light(ctx context.Context, scene scenes.Scene, req Request) (S
 		outcome.Problems = append(outcome.Problems, problem.Error())
 	}
 
-	if len(assignments) > 0 || len(scene.Effects) > 0 {
+	/*
+		Off is not a colour, so it is not an assignment.
+
+		It resolves the device's own Off mode, falls back to black in Direct,
+		and honours the correction for a keyboard where black is a dead
+		backlight rather than darkness -- none of which a colour can ask for.
+		A scene that is off ignores whatever colours it also carries.
+	*/
+	switch {
+	case scene.Off:
+		req.Off = true
+	case scene.Colour != "":
+		c, err := colour.Parse(scene.Colour)
+		if err != nil {
+			outcome.Problems = append(outcome.Problems, err.Error())
+			break
+		}
+		req.Colour = &c
+	}
+
+	if req.Off || req.Colour != nil || len(assignments) > 0 || len(scene.Effects) > 0 {
 		req.Assignments = assignments
 		req.Effects = scene.Effects
 		results, err := s.Apply(ctx, req)
@@ -173,6 +200,7 @@ func (s *Service) light(ctx context.Context, scene scenes.Scene, req Request) (S
 	screen, problem := s.screen(ctx, scene)
 	outcome.Screen = screen
 	if problem != "" {
+		outcome.Screen = ""
 		outcome.Problems = append(outcome.Problems, problem)
 	}
 	return outcome, nil
@@ -196,25 +224,35 @@ func (s *Service) screen(ctx context.Context, scene scenes.Scene) (string, strin
 	case "":
 		return "", ""
 	case scenes.ScreenDashboard:
-		if err := s.Draw(ctx, Screen{Dashboard: true}); err != nil {
-			return "", fmt.Sprintf("the screen: %v", err)
-		}
-		return scenes.ScreenDashboard, ""
+		return scene.Screen, s.draw(ctx, Screen{Dashboard: true})
 	case scenes.ScreenReadout:
-		if err := s.Draw(ctx, Screen{Readout: true}); err != nil {
-			return "", fmt.Sprintf("the screen: %v", err)
-		}
-		return scenes.ScreenReadout, ""
+		return scene.Screen, s.draw(ctx, Screen{Readout: true})
 	}
 
 	gif, err := os.ReadFile(scene.Screen) //nolint:gosec // a path the user saved
 	if err != nil {
 		return "", fmt.Sprintf("the screen: %v", err)
 	}
-	if err := s.Draw(ctx, Screen{Image: gif}); err != nil {
-		return "", fmt.Sprintf("the screen: %v", err)
+	return scene.Screen, s.draw(ctx, Screen{Image: gif})
+}
+
+/*
+draw sets the screen and says what went wrong, if anything did.
+
+**A machine with no cooler is not a failed scene.** The nine shipped scenes
+name a screen state because this desk has one, and most machines do not: absence
+is an ordinary answer here as it is everywhere else in hotaru, and reporting it
+would put a permanent complaint on every scene on every machine without a
+panel. Found by a keypress reporting failure on a machine whose lights had just
+done exactly what was asked.
+*/
+func (s *Service) draw(ctx context.Context, what Screen) string {
+	err := s.Draw(ctx, what)
+	switch {
+	case err == nil, errors.Is(err, cooler.ErrNoCooler):
+		return ""
 	}
-	return scene.Screen, ""
+	return fmt.Sprintf("the screen: %v", err)
 }
 
 /*

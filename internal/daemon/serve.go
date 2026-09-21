@@ -10,6 +10,7 @@ package daemon
 
 import (
 	"context"
+	"path/filepath"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -17,6 +18,7 @@ import (
 	"github.com/ushineko/hotaru/internal/config"
 	"github.com/ushineko/hotaru/internal/cooler"
 	"github.com/ushineko/hotaru/internal/dashboard"
+	"github.com/ushineko/hotaru/internal/desktop"
 	"github.com/ushineko/hotaru/internal/openrgb"
 	"github.com/ushineko/hotaru/internal/queue"
 	"github.com/ushineko/hotaru/internal/scenes"
@@ -156,6 +158,21 @@ func run(cmd *cobra.Command) error {
 		defer func() { <-drawn; _ = owner.Close() }()
 	}
 
+	/*
+		The desktop, if this machine has one.
+
+		An attachment, never a dependency. hotaru starts with the machine and
+		a session arrives later or not at all, so the D-Bus door goes up when
+		there is a bus to put it on and the KWin script is installed on every
+		appearance of KWin -- at login, and again whenever it restarts, because
+		the shortcuts live exactly as long as the loaded script.
+
+		Everything here failing is a machine without hotkeys and with
+		everything else working, which is what a desktop that is not Plasma
+		gets as well.
+	*/
+	keys(ctx, cmd, svc, report)
+
 	listener, err := api.Listen(ctx, socket)
 	if err != nil {
 		return err
@@ -246,4 +263,83 @@ func readings(c *cooler.Owner) func(context.Context) dashboard.Reading {
 		}
 		return r
 	}
+}
+
+/*
+keys puts hotaru's scenes on the desktop's shortcuts.
+
+Two halves, and each fails on its own terms. The **door** is a D-Bus object
+with one method, and it exists because a KWin script can reach the outside
+world through `callDBus` and nothing else. The **script** is installed on every
+appearance of KWin rather than once at start-up: the shortcuts live exactly as
+long as the loaded script, so a KWin restart takes them, and the implementation
+this replaces spent the rest of each session believing it still had them.
+
+A machine with no session bus, no KWin, or another hotaru already holding the
+name gets no hotkeys and everything else. The reason is recorded so that
+`hotaru keys` can say it rather than showing an empty table.
+*/
+func keys(ctx context.Context, cmd *cobra.Command, svc *service.Service, report func(string, ...any)) {
+	conn, err := desktop.Session()
+	if err != nil {
+		svc.SetDesktop(err.Error())
+		cmd.Printf("no hotkeys: %v\n", err)
+		return
+	}
+	go func() {
+		<-ctx.Done()
+		_ = conn.Close()
+	}()
+
+	if err := desktop.Export(ctx, conn, applier{svc}, report); err != nil {
+		svc.SetDesktop(err.Error())
+		cmd.Printf("no hotkeys: %v\n", err)
+		return
+	}
+
+	runtime, err := config.RuntimeDir()
+	if err != nil {
+		svc.SetDesktop(err.Error())
+		return
+	}
+	install := &desktop.Installer{
+		KWin:     desktop.NewKWin(conn),
+		Dir:      filepath.Join(runtime, "keys"),
+		Bindings: func() map[string]string { return bindings(svc) },
+		Report:   report,
+	}
+	svc.SetDesktop("waiting for the desktop")
+
+	go desktop.Attach(ctx, &desktop.BusWatcher{Conn: conn, Name: desktop.KWinName},
+		func() (int, error) {
+			count, err := install.Install()
+			if err != nil {
+				svc.SetDesktop(err.Error())
+				return 0, err
+			}
+			svc.SetDesktop("")
+			return count, nil
+		}, report)
+}
+
+// bindings are the keys as the service has them, or none if scenes are
+// unavailable -- in which case there is nothing to bind them to anyway.
+func bindings(svc *service.Service) map[string]string {
+	keys, err := svc.Keys()
+	if err != nil {
+		return nil
+	}
+	out := make(map[string]string, len(keys.Bindings))
+	for _, binding := range keys.Bindings {
+		out[binding.Key] = binding.Scene
+	}
+	return out
+}
+
+// applier narrows the service to the one method a keypress needs, so the
+// D-Bus door cannot grow into a second API by accident.
+type applier struct{ svc *service.Service }
+
+func (a applier) ApplyScene(ctx context.Context, name string) (string, error) {
+	return a.svc.ApplyByName(ctx, name)
 }

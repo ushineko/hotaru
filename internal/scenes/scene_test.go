@@ -133,9 +133,87 @@ func TestASceneNeedsAName(t *testing.T) {
 func TestListingIsSorted(t *testing.T) {
 	s := store(t)
 	require.NoError(t, s.Save(scenes.Scene{Name: "work"}))
-	require.NoError(t, s.Save(scenes.Scene{Name: "evening"}))
+	require.NoError(t, s.Save(scenes.Scene{Name: "aardvark"}))
 
 	all := s.All()
-	require.Len(t, all, 2)
-	require.Equal(t, "evening", all[0].Name)
+	require.Equal(t, "aardvark", all[0].Name)
+	require.Equal(t, "work", all[len(all)-1].Name)
+}
+
+func TestTheShippedBankIsThereBeforeAnybodySavesAnything(t *testing.T) {
+	/*
+		Nine scenes and no file. They are what this desk's numpad has meant
+		for two years, read out of the program being replaced rather than
+		invented, and a machine that has never run hotaru has them without
+		hotaru having written anything.
+	*/
+	names := map[string]bool{}
+	for _, scene := range store(t).All() {
+		require.True(t, scene.Shipped)
+		names[scene.Name] = true
+	}
+	require.Len(t, names, 9)
+	require.True(t, names["red"])
+	require.True(t, names["off"])
+}
+
+func TestSavingOverAShippedNameReplacesItUntilItIsDeleted(t *testing.T) {
+	// Somebody who wants a different red should get their red, and should be
+	// able to change their mind without hotaru having lost the original.
+	s := store(t)
+	require.NoError(t, s.Save(scenes.Scene{Name: "red", Colour: "#400000"}))
+
+	mine, err := s.Get("red")
+	require.NoError(t, err)
+	require.Equal(t, "#400000", mine.Colour)
+	require.False(t, mine.Shipped)
+
+	require.NoError(t, s.Delete("red"))
+	back, err := s.Get("red")
+	require.NoError(t, err)
+	require.Equal(t, "red", back.Colour)
+	require.True(t, back.Shipped)
+}
+
+func TestTheShippedKeysAreTheMonitorsKeys(t *testing.T) {
+	// The bank somebody's hands already know. Changing what Ctrl+Alt+Num4
+	// does is breaking something no test would otherwise catch.
+	keys := store(t).Bindings()
+	require.Len(t, keys, 9)
+	require.Equal(t, "red", keys["Ctrl+Alt+Num+1"])
+	require.Equal(t, "purple", keys["Ctrl+Alt+Num+4"])
+	require.Equal(t, "off", keys["Ctrl+Alt+Num+9"])
+
+	for _, reserved := range scenes.Reserved() {
+		require.NotContains(t, keys, reserved,
+			"hotaru bound a key it reserves for somebody else's scenes")
+	}
+}
+
+func TestRebindingOneKeyLeavesTheOthersAlone(t *testing.T) {
+	s := store(t)
+	require.NoError(t, s.Bind("Ctrl+Alt+Num+4", "evening"))
+
+	keys := s.Bindings()
+	require.Equal(t, "evening", keys["Ctrl+Alt+Num+4"])
+	require.Equal(t, "red", keys["Ctrl+Alt+Num+1"])
+}
+
+func TestAShippedKeyCanBeUnbound(t *testing.T) {
+	/*
+		Recorded rather than forgotten: an unbinding has to survive a restart,
+		and the shipped bank is merged in on every read, so "this key is
+		deliberately nothing" is a thing the file must be able to say.
+	*/
+	s := store(t)
+	require.NoError(t, s.Bind("Ctrl+Alt+Num+9", ""))
+	require.NotContains(t, s.Bindings(), "Ctrl+Alt+Num+9")
+
+	again, err := scenes.Open(s.Path())
+	require.NoError(t, err)
+	require.NotContains(t, again.Bindings(), "Ctrl+Alt+Num+9")
+}
+
+func TestABindingNeedsAKey(t *testing.T) {
+	require.ErrorContains(t, store(t).Bind("", "red"), "needs a key")
 }
