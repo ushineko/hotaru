@@ -247,6 +247,18 @@ MIT. See [LICENSE](LICENSE).
 
 ### Unreleased
 
+- A scene's shortcut is changed from the row that shows it. The key was
+  already the first thing on the line and the one thing on it the window could
+  not change; it is a button now, and the chooser offers every key with what
+  each one holds — rearranging a bank means moving keys between scenes, so
+  hiding the taken ones would hide the rearrangement. Moving one is an unbind
+  and a bind, because the service binds a key to a scene and does not know a
+  scene should have at most one (#66).
+
+- Dialogs that hold a list open at most of the window, through fynedesygn's
+  `dialogs.Roomy` rather than a copy of it here. The shortcut chooser was
+  offering eighteen keys through a slot showing one and a half.
+
 - Choosing a dashboard takes the screen back. Anything that puts a picture on
   the panel holds the dashboard — `hotaru screen show`, the readout, and every
   scene that names an image — and only asking for the dashboard gives it up.
