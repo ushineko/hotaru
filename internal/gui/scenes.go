@@ -467,8 +467,19 @@ func (s *ScenesSection) editor(sh *shell.Shell, got Snapshot) fyne.CanvasObject 
 		right. The left pane scrolls on its own for the scene that grows a
 		line every time a colour is chosen.
 	*/
-	left := container.NewScroll(container.NewVBox(
-		s.assignments(sh), s.colours(sh), s.screen()))
+	/*
+		The scene's own lines scroll; the controls under them do not.
+
+		A list rather than a column of rows. A scene with a light named
+		individually has 225 lines, each of them a label, a swatch, a colour
+		and two buttons -- about 1,575 objects, every one of which Fyne
+		measures on every layout, and a wrapping label re-measures at every
+		width. A 25-second drag of this pane cost 9.16s of CPU with
+		Container.MinSize at 31% of it. A list builds the rows that are on
+		screen and recycles them. See spec 026.
+	*/
+	left := container.NewBorder(nil, container.NewVBox(s.colours(sh), s.screen()), nil, nil,
+		s.assignments(sh))
 	right := s.scrolling("editor", []fyne.CanvasObject{
 		widgets.Dim("Pick a device, a zone, or a light:"),
 		s.picture(sh, got),
@@ -584,27 +595,36 @@ func (s *ScenesSection) led(sh *shell.Shell, device api.Device, zone api.Zone,
 ) fyne.CanvasObject {
 	spot := Lights(device.Name, zone.Name, first, last)
 
-	block := canvas.NewRectangle(sample(colours, zone.First+first, device.InScope))
+	/*
+		A swatch rather than a rectangle under an invisible button.
+
+		This is the widget the editor has most of -- one per run of lights,
+		across every device -- and a scroller lays out everything it holds
+		rather than what is visible. A resize profile put
+		`buttonRenderer.MinSize` at 14% of all samples: a theme lookup, a
+		padding calculation and a RichText.MinSize per block, for blocks
+		whose label is the empty string. See spec 025.
+	*/
+	block := widgets.NewSwatch(fyne.NewSize(blockSize, blockSize))
+	block.Fill = sample(colours, zone.First+first, device.InScope)
 	if colour, has := s.draft.Colour(spot.Target()); has {
 		// What the draft will do to it, which is the point of drawing it here
 		// rather than in the read-only view.
-		block.FillColor = parse(colour)
+		block.Fill = parse(colour)
 	}
 	block.StrokeWidth = 1
-	block.StrokeColor = theme.Color(theme.ColorNameSeparator)
+	block.Stroke = theme.Color(theme.ColorNameSeparator)
 	if s.picked.Has(spot) {
 		block.StrokeWidth = 3
-		block.StrokeColor = theme.Color(theme.ColorNamePrimary)
+		block.Stroke = theme.Color(theme.ColorNamePrimary)
 	}
-
-	button := widget.NewButton("", func() {
+	block.OnTapped = func() {
 		s.stopPicking()
 		s.picked.Toggle(spot)
 		sh.Invalidate()
-	})
-	button.Importance = widget.LowImportance
+	}
 
-	return widgets.WithTip(container.NewStack(block, button), spot.Describe())
+	return widgets.WithTip(block, spot.Describe())
 }
 
 // pick is one selectable spot, carrying the draft's colour for it.
@@ -907,63 +927,122 @@ entries were listed exactly where somebody would reach to change one, and
 changing one meant scrolling down to find the device it named and starting
 again. What looks like the thing you click has to be the thing you click.
 */
+/*
+assignments is what the draft says, one line each.
+
+A widget.List rather than a column of rows, because a scene that names lights
+individually has hundreds of lines and Fyne measures every widget in a
+container on every layout. The list builds what is on screen and recycles it,
+which is what makes the pane resize without pausing.
+*/
 func (s *ScenesSection) assignments(sh *shell.Shell) fyne.CanvasObject {
 	if s.draft.Empty() {
 		return widgets.Note("Pick a device or a zone below, then choose a colour.", fd.StatusInfo)
 	}
 
-	rows := make([]fyne.CanvasObject, 0, len(s.draft.Targets())+1)
+	lines := s.lines()
+	list := widget.NewList(
+		func() int { return len(lines) },
+		func() fyne.CanvasObject { return s.entry() },
+		func(i widget.ListItemID, row fyne.CanvasObject) {
+			if i < len(lines) {
+				fill(sh, s, row, lines[i])
+			}
+		},
+	)
+	return container.NewBorder(widgets.Heading("This scene", ""), nil, nil, nil, list)
+}
+
+// line is one assignment as the list draws it.
+type line struct{ target, colour string }
+
+// lines is the draft in the order it is shown: everything first, because it
+// is what the rest are exceptions to.
+func (s *ScenesSection) lines() []line {
+	out := make([]line, 0, len(s.draft.Targets())+1)
 	if colour := s.draft.Everything(); colour != "" {
-		rows = append(rows, s.entry(sh, everything, colour))
+		out = append(out, line{everything, colour})
 	}
 	for _, target := range s.draft.Targets() {
 		colour, _ := s.draft.Colour(target)
-		rows = append(rows, s.entry(sh, target, colour))
+		out = append(out, line{target, colour})
 	}
-	return widgets.Card("This scene", rows...)
+	return out
 }
 
 // entry is one line of the scene: what it says, and the two things worth
 // doing to it.
-func (s *ScenesSection) entry(sh *shell.Shell, target, colour string) fyne.CanvasObject {
-	swatch := canvas.NewRectangle(parse(colour))
+/*
+entry is the shape of one line, built once and filled many times.
+
+A list makes one of these per visible row and hands it back with a different
+index, so nothing here knows which assignment it is drawing. `fill` is what
+says.
+
+The name truncates rather than wraps. A wrapping label measures itself against
+whatever width it is given, which in a list of a fixed row height is a
+measurement taken on every layout to produce a height that cannot change --
+and a device on this desk is called "NZXT Kraken 2024 ELITE Series RGB/Hue 2
+Channel 1[12:23]", which no pane fits anyway. The tip carries the whole of it.
+*/
+func (s *ScenesSection) entry() fyne.CanvasObject {
+	swatch := canvas.NewRectangle(color.Transparent)
 	swatch.SetMinSize(fyne.NewSize(zoneHeight, zoneHeight))
 
-	change := widget.NewButtonWithIcon("Change", theme.ColorChromaticIcon(), func() {
-		// Editing one line is a selection of one: whatever was picked in the
-		// picture is set aside so the colour lands where it was asked to.
-		s.picked.Clear()
-		s.picked.Toggle(spotOf(target))
-		s.pickColour(sh, colour)
-	})
-	remove := widget.NewButtonWithIcon("", theme.ContentRemoveIcon(), func() {
-		if target == everything {
-			s.draft.SetEverything("")
-		} else {
-			s.draft.Set(target, "")
-		}
-		sh.Invalidate()
-	})
+	name := widget.NewLabel("")
+	name.Truncation = fyne.TextTruncateEllipsis
 
-	name := target
-	if target == everything {
-		name = "Everything in scope"
+	// Labelled, not a bare icon. Only the rows on screen exist now, so the
+	// dozen RichText measurements a label costs are affordable where 225 of
+	// them were not -- and "Change" says what a colour wheel icon does not.
+	change := widget.NewButtonWithIcon("Change", theme.ColorChromaticIcon(), func() {})
+	remove := widget.NewButtonWithIcon("", theme.ContentRemoveIcon(), func() {})
+
+	return container.NewBorder(nil, nil,
+		swatch, container.NewHBox(change, remove), name)
+}
+
+// fill points a recycled row at one assignment.
+func fill(sh *shell.Shell, s *ScenesSection, row fyne.CanvasObject, at line) {
+	box, ok := row.(*fyne.Container)
+	if !ok || len(box.Objects) < 3 {
+		return
+	}
+	name, _ := box.Objects[0].(*widget.Label)
+	swatch, _ := box.Objects[1].(*canvas.Rectangle)
+	buttons, _ := box.Objects[2].(*fyne.Container)
+	if name == nil || swatch == nil || buttons == nil || len(buttons.Objects) < 2 {
+		return
 	}
 
-	/*
-		Stacked, not spread.
+	shown := at.target
+	if at.target == everything {
+		shown = "Everything in scope"
+	}
+	name.SetText(shown + "  " + at.colour)
+	swatch.FillColor = parse(at.colour)
+	swatch.Refresh()
 
-		A name, a swatch, a colour and two buttons in one row needs more width
-		than a pane has, and what a row does when it runs out is cut its own
-		end off. Two short lines fit anything.
-	*/
-	label := widget.NewLabel(name)
-	label.Wrapping = fyne.TextWrapWord
-
-	return container.NewVBox(
-		label,
-		container.NewHBox(swatch, widgets.Dim(colour), change, remove),
-	)
+	if change, ok := buttons.Objects[0].(*widget.Button); ok {
+		change.OnTapped = func() {
+			// Editing one line is a selection of one: whatever was picked in
+			// the picture is set aside so the colour lands where it was asked
+			// to.
+			s.picked.Clear()
+			s.picked.Toggle(spotOf(at.target))
+			s.pickColour(sh, at.colour)
+		}
+	}
+	if drop, ok := buttons.Objects[1].(*widget.Button); ok {
+		drop.OnTapped = func() {
+			if at.target == everything {
+				s.draft.SetEverything("")
+			} else {
+				s.draft.Set(at.target, "")
+			}
+			sh.Invalidate()
+		}
+	}
 }
 
 // actions are the three things that can happen to a draft.
