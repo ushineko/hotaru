@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/ushineko/hotaru/internal/api"
 	"github.com/ushineko/hotaru/internal/config"
+	"github.com/ushineko/hotaru/internal/cooler"
 	"github.com/ushineko/hotaru/internal/openrgb"
 	"github.com/ushineko/hotaru/internal/queue"
 	"github.com/ushineko/hotaru/internal/service"
@@ -96,6 +97,24 @@ func run(cmd *cobra.Command) error {
 	defer writes.Close()
 	svc.SetQueue(writes)
 	svc.SetEnvironment(environment{})
+
+	/*
+		The cooler, if this machine has one.
+
+		Opened once and owned for the life of the service: it is a handle on a
+		HID endpoint, and two callers on one endpoint interleave control
+		transfers. Absence is ordinary -- most machines have no liquid cooler,
+		and a machine that does may have one hotaru does not recognise -- so
+		it is reported once and everything else carries on.
+	*/
+	if found, err := cooler.Open(ctx); err != nil {
+		cmd.Printf("no cooler telemetry: %v\n", err)
+	} else {
+		owner := cooler.Own(found)
+		svc.SetCooler(owner)
+		defer func() { _ = owner.Close() }()
+		cmd.Printf("reading %s at %s\n", found.Device().Name, found.Device().HID)
+	}
 
 	listener, err := api.Listen(ctx, socket)
 	if err != nil {

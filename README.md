@@ -217,6 +217,11 @@ MIT. See [LICENSE](LICENSE).
 
 ### Unreleased
 
+- `hotaru cooling` reads the liquid cooler without liquidctl: coolant
+  temperature, pump and fan, over `/dev/hidraw` at about two milliseconds
+  against a hundred and five through a Python interpreter. A machine with no
+  cooler says so and everything else is unaffected (spec 012, #2).
+
 - The wizard ends by offering to light the machine with what it just learned.
   A device named for the first time has no remembered state, so a first run
   used to finish with a written file, a dark keyboard, and an instruction to go

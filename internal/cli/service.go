@@ -188,3 +188,51 @@ either way. For that, look at the machine.`,
 	withJSON(cmd)
 	return cmd
 }
+
+/*
+coolingCommand reports what the liquid cooler says about itself.
+
+A command of its own rather than a line in `status`, because `status` answers
+"what is this service doing" and this answers "what is my machine doing" --
+and because a number somebody wants to watch should be cheap to watch.
+*/
+func coolingCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "cooling",
+		Short: "What the liquid cooler reports",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			client, err := client(cmd)
+			if err != nil {
+				return err
+			}
+			cooling, err := client.Cooling(cmd.Context())
+			if err != nil {
+				return quiet(err)
+			}
+			if asJSON(cmd) {
+				return emit(cmd, cooling)
+			}
+
+			// No cooler is an ordinary answer, not a failure: a machine
+			// without one still has working lighting, and saying so plainly
+			// is better than an error somebody has to interpret.
+			if cooling.Absent {
+				if cooling.Device != "" {
+					cmd.Printf("%s: %s\n", cooling.Device, cooling.Detail)
+					return nil
+				}
+				cmd.Println("No liquid cooler on this machine.")
+				return nil
+			}
+
+			cmd.Printf("%s\n", cooling.Device)
+			cmd.Printf("  coolant   %.1f C\n", cooling.Coolant)
+			cmd.Printf("  pump      %d rpm (%d%%)\n", cooling.PumpRPM, cooling.PumpDuty)
+			cmd.Printf("  fan       %d rpm (%d%%)\n", cooling.FanRPM, cooling.FanDuty)
+			return nil
+		},
+	}
+	withJSON(cmd)
+	return cmd
+}
