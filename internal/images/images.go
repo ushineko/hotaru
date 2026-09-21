@@ -75,12 +75,27 @@ wants the same thing: something the panel will display. A name that exists is
 replaced -- somebody adding "wallpaper" twice means the second one.
 */
 func (l *Library) Add(name string, source []byte) (Image, error) {
+	return l.keep(name, func() ([]byte, int, error) { return Convert(source) })
+}
+
+/*
+AddSlideshow turns several pictures into one animation and stores it.
+
+Dropping a stack of photographs on a program that shows one picture is asking a
+question -- eight wallpapers, or one reel? -- and this is the second answer.
+*/
+func (l *Library) AddSlideshow(name string, sources [][]byte) (Image, error) {
+	return l.keep(name, func() ([]byte, int, error) { return Slideshow(sources) })
+}
+
+// keep stores whatever a conversion produced, under a cleaned name.
+func (l *Library) keep(name string, convert func() ([]byte, int, error)) (Image, error) {
 	name = clean(name)
 	if name == "" {
 		return Image{}, fmt.Errorf("an image needs a name")
 	}
 
-	converted, frames, err := Convert(source)
+	converted, frames, err := convert()
 	if err != nil {
 		return Image{}, err
 	}
@@ -262,23 +277,36 @@ Black is always present, so an image with a dark border keeps it clean rather
 than dithering it into the nearest thing available.
 */
 func chosen(source image.Image) color.Palette {
-	const step = 8 // 32 levels per channel
 	counts := map[color.RGBA]int{}
+	tally(source, counts)
+	return popular(counts)
+}
 
+// step is the histogram's coarseness: 32 levels per channel, which is crude
+// and enough. What this has to beat is a palette chosen without looking at the
+// image at all.
+const step = 8
+
+// tally counts a picture's colours into a shared histogram, so several
+// pictures can share one palette -- which is what a slideshow needs.
+func tally(source image.Image, counts map[color.RGBA]int) {
 	bounds := source.Bounds()
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
 			r, g, b, _ := source.At(x, y).RGBA()
-			key := color.RGBA{
+			counts[color.RGBA{
 				R: uint8(r>>8) / step * step, //nolint:gosec // a byte by construction
 				G: uint8(g>>8) / step * step, //nolint:gosec // as above
 				B: uint8(b>>8) / step * step, //nolint:gosec // as above
 				A: 255,
-			}
-			counts[key]++
+			}]++
 		}
 	}
+}
 
+// popular is the fullest 256 cells, black first: an image with a dark border
+// keeps it clean rather than dithering it into the nearest thing available.
+func popular(counts map[color.RGBA]int) color.Palette {
 	type cell struct {
 		colour color.RGBA
 		count  int

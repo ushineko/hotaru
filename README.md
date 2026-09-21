@@ -186,6 +186,9 @@ necessary is an artefact of where it used to live.
 - [specs/009-writes-that-mean-what-they-say.md](specs/009-writes-that-mean-what-they-say.md):
   why a write that lands in the buffer is not always a write, and what hotaru
   checks instead.
+- [specs/020-a-scene-from-a-picture.md](specs/020-a-scene-from-a-picture.md):
+  reading a picture as lighting, and why a slice of a photograph is not its
+  average either.
 - [specs/019-a-wallpaper-on-the-cooler.md](specs/019-a-wallpaper-on-the-cooler.md):
   converting a picture for a panel that refuses everything else by showing
   nothing.
@@ -225,6 +228,19 @@ MIT. See [LICENSE](LICENSE).
 ## Changelog
 
 ### Unreleased
+
+- A scene from a picture. `hotaru image scene <picture> <name>`, and the same
+  in the window, lights every zone on the machine with the picture's own
+  colours — read across the image rather than averaged, so a twenty-four light
+  ring carries the sweep the picture has, and the panel shows the picture it
+  came from. Each slice is weighted by how much colour it carries: half of
+  every vertical slice through a photograph is background, and averaging that
+  in reads a rust planet as grey-brown (spec 020, #47).
+
+- A dropped stack of files all arrives, and is asked about. Dropping four
+  photographs processed the first and discarded the rest; they now queue, and
+  more than one is a question — four pictures, or one slideshow that holds
+  each in turn and fades between them (spec 020, #47).
 
 - Pictures for the cooler's screen. `hotaru image add <name> <file>` converts
   any JPEG, PNG or GIF to the 640x640 GIF the panel takes — cropped to the

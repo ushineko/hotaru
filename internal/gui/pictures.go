@@ -36,11 +36,32 @@ type PicturesSection struct {
 	// between rebuilds: re-reading and re-decoding a megabyte of GIFs on
 	// every poll would make the section cost more than it shows.
 	thumbs map[string]fyne.Resource
+
+	/*
+		waiting is the rest of a dropped stack.
+
+		Somebody dragging four wallpapers in at once means four, and the first
+		version took the first and dropped the others on the floor. They are
+		asked about one at a time -- each one is a name and a decision about a
+		crop -- so the rest wait here until the one in front is answered.
+	*/
+	waiting []dropped
+}
+
+// dropped is a file waiting to be looked at.
+type dropped struct {
+	name   string
+	source []byte
 }
 
 // OpenPictures gives a section its app, which the shell normally does. For
 // tests, like OpenEditor.
 func OpenPictures(p *PicturesSection, app *App) { p.app = app }
+
+// Waiting is how many dropped files have not been dealt with yet. For tests:
+// a drop handler that quietly discarded the rest of a stack would pass any
+// test that only looked at the first one.
+func (p *PicturesSection) Waiting() int { return len(p.waiting) }
 
 // Title is the name in the navigation.
 func (p *PicturesSection) Title() string { return "Pictures" }
@@ -98,13 +119,18 @@ func (p *PicturesSection) card(sh *shell.Shell, image api.Image) fyne.CanvasObje
 	show := widget.NewButtonWithIcon("Show it", theme.VisibilityIcon(), func() {
 		p.show(sh, image)
 	})
+	lights := widget.NewButtonWithIcon("Make a scene", theme.ColorPaletteIcon(), func() {
+		p.scene(sh, image)
+	})
 	forget := widget.NewButtonWithIcon("", theme.DeleteIcon(), func() {
 		sh.Perform("removing "+image.Name, func(ctx context.Context) error {
 			if err := p.app.client.RemoveImage(ctx, image.Name); err != nil {
 				return err
 			}
-			delete(p.thumbs, image.Name)
-			sh.Invalidate()
+			onScreen(func() {
+				delete(p.thumbs, image.Name)
+				sh.Invalidate()
+			})
 			return nil
 		})
 	})
@@ -114,7 +140,7 @@ func (p *PicturesSection) card(sh *shell.Shell, image api.Image) fyne.CanvasObje
 			container.NewVBox(
 				widgets.Dim(strings.Join(facts, " · ")),
 				widgets.Dim(image.Path),
-				container.NewHBox(show, forget),
+				container.NewHBox(show, lights, forget),
 			),
 		),
 	)
@@ -148,6 +174,39 @@ func (p *PicturesSection) thumbnail(image api.Image) fyne.CanvasObject {
 	picture.FillMode = canvas.ImageFillContain
 	picture.SetMinSize(fyne.NewSize(thumbSize, thumbSize))
 	return picture
+}
+
+/*
+scene builds a scene whose lights match the picture.
+
+The quick way to a theme, and the reason the library is worth having beyond
+the panel: somebody chose a wallpaper because they liked how its colours sit
+beside each other, and that judgement is the tedious half of making a scene by
+hand.
+*/
+func (p *PicturesSection) scene(sh *shell.Shell, image api.Image) {
+	entry := widget.NewEntry()
+	entry.SetText(image.Name)
+
+	dialog.ShowForm("Make a scene from "+image.Name, "Make it", "Cancel",
+		[]*widget.FormItem{widget.NewFormItem("Name", entry)},
+		func(ok bool) {
+			if !ok || entry.Text == "" {
+				return
+			}
+			sh.Perform("reading "+image.Name, func(ctx context.Context) error {
+				made, err := p.app.client.SceneFromImage(ctx, image.Name, entry.Text)
+				if err != nil {
+					return err
+				}
+				onScreen(func() {
+					sh.Flash(fmt.Sprintf("%s: %d assignment(s). It is in Scenes.",
+						made.Name, len(made.Assignments)), fd.StatusGood)
+					sh.Invalidate()
+				})
+				return nil
+			})
+		}, sh.Window)
 }
 
 /*
@@ -196,12 +255,100 @@ func (p *PicturesSection) Dropped(sh *shell.Shell, uris []fyne.URI) {
 			sh.Flash("Cannot read "+filepath.Base(path)+": "+err.Error(), fd.StatusBad)
 			continue
 		}
-		// One at a time: each one is a decision -- a name, and whether the
-		// crop kept the picture -- and a stack of dialogs is not a queue
-		// anybody can work through.
-		p.preview(sh, suggested(uri.Name()), source)
+		p.waiting = append(p.waiting, dropped{name: suggested(uri.Name()), source: source})
+	}
+
+	/*
+		A stack is a question, so it is asked.
+
+		Eight wallpapers dropped at once might be eight pictures or one reel,
+		and the program cannot tell which from the files. Guessing either way
+		is wrong half the time and silently: eight entries somebody has to
+		delete, or one animation they did not want.
+	*/
+	if len(p.waiting) > 1 {
+		p.stack(sh)
 		return
 	}
+	p.next(sh)
+}
+
+// stack asks what a dropped pile of pictures is.
+func (p *PicturesSection) stack(sh *shell.Shell) {
+	count := len(p.waiting)
+	body := container.NewVBox(
+		widget.NewLabel(fmt.Sprintf("%d pictures.", count)),
+		widgets.DimWrapped("A slideshow holds each one in turn and fades between them, "+
+			"as one picture the panel plays. Separately keeps them as "+
+			"themselves, one question each."),
+	)
+
+	dialog.ShowCustomConfirm("What are these?", "One slideshow", "Keep them separately",
+		body,
+		func(reel bool) {
+			if reel {
+				p.slideshow(sh)
+				return
+			}
+			p.next(sh)
+		}, sh.Window)
+}
+
+/*
+slideshow builds one animation out of everything waiting.
+
+The pictures are already read, so the work is the encoding -- and a reel of
+eight photographs with a crossfade between each is most of the panel's memory,
+which is why it happens in the service where the budget is known.
+*/
+func (p *PicturesSection) slideshow(sh *shell.Shell) {
+	sources := make([][]byte, 0, len(p.waiting))
+	for _, file := range p.waiting {
+		sources = append(sources, file.source)
+	}
+	suggestion := p.waiting[0].name
+	p.waiting = nil
+
+	entry := widget.NewEntry()
+	entry.SetText(suggestion)
+
+	dialog.ShowForm(fmt.Sprintf("A slideshow of %d pictures", len(sources)), "Make it", "Cancel",
+		[]*widget.FormItem{widget.NewFormItem("Name", entry)},
+		func(ok bool) {
+			if !ok || entry.Text == "" {
+				return
+			}
+			say("slideshow: %d pictures as %s", len(sources), entry.Text)
+			sh.Perform("building the slideshow", func(ctx context.Context) error {
+				stored, err := p.app.client.AddSlideshow(ctx, entry.Text, sources)
+				if err != nil {
+					return err
+				}
+				onScreen(func() {
+					delete(p.thumbs, stored.Name)
+					sh.Flash(fmt.Sprintf("%s is %s, %d frames.",
+						stored.Name, size(stored.Bytes), stored.Frames), fd.StatusGood)
+					sh.Invalidate()
+				})
+				return nil
+			})
+		}, sh.Window)
+}
+
+/*
+next takes the first file still waiting and shows it.
+
+A queue rather than a stack of dialogs. Each picture is two decisions -- what
+to call it, and whether the crop kept it -- so they are asked one at a time,
+and answering one brings up the next.
+*/
+func (p *PicturesSection) next(sh *shell.Shell) {
+	if len(p.waiting) == 0 {
+		return
+	}
+	first := p.waiting[0]
+	p.waiting = p.waiting[1:]
+	p.preview(sh, first.name, first.source)
 }
 
 /*
@@ -269,11 +416,11 @@ func (p *PicturesSection) preview(sh *shell.Shell, suggestion string, source []b
 		converted, frames, err := p.app.client.ConvertImage(ctx, source)
 		if err != nil {
 			say("preview: conversion failed: %v", err)
-			fyne.Do(func() { sh.Flash("Converting failed: "+err.Error(), fd.StatusBad) })
+			onScreen(func() { sh.Flash("Converting failed: "+err.Error(), fd.StatusBad) })
 			return
 		}
 		say("preview: converted to %d bytes, %d frame(s)", len(converted), frames)
-		fyne.Do(func() { p.keep(sh, suggestion, source, converted, frames) })
+		onScreen(func() { p.keep(sh, suggestion, source, converted, frames) })
 	}()
 }
 
@@ -303,24 +450,40 @@ func (p *PicturesSection) keep(sh *shell.Shell, suggestion string, source, conve
 		container.NewBorder(nil, nil, widget.NewLabel("Name"), nil, entry),
 	)
 
-	confirm := dialog.NewCustomConfirm("This is what the panel will show", "Keep it", "Cancel",
+	title := "This is what the panel will show"
+	if left := len(p.waiting); left > 0 {
+		// Said, because somebody who dropped four wants to know how many
+		// questions they have agreed to answer.
+		title = fmt.Sprintf("%s (%d more waiting)", title, left)
+	}
+
+	confirm := dialog.NewCustomConfirm(title, "Keep it", "Cancel",
 		body,
 		func(ok bool) {
-			if !ok || entry.Text == "" {
-				return
+			if ok && entry.Text != "" {
+				p.store(sh, entry.Text, source)
 			}
-			sh.Perform("keeping "+entry.Text, func(ctx context.Context) error {
-				stored, err := p.app.client.AddImage(ctx, entry.Text, source)
-				if err != nil {
-					return err
-				}
-				delete(p.thumbs, stored.Name)
-				sh.Flash(fmt.Sprintf("%s is %s.", stored.Name, size(stored.Bytes)), fd.StatusGood)
-				sh.Invalidate()
-				return nil
-			})
+			// Either answer moves the queue on. A cancelled picture is
+			// answered as much as a kept one.
+			p.next(sh)
 		}, sh.Window)
 	roomy(confirm, sh)
+}
+
+// store keeps a converted picture under a name.
+func (p *PicturesSection) store(sh *shell.Shell, name string, source []byte) {
+	sh.Perform("keeping "+name, func(ctx context.Context) error {
+		stored, err := p.app.client.AddImage(ctx, name, source)
+		if err != nil {
+			return err
+		}
+		onScreen(func() {
+			delete(p.thumbs, stored.Name)
+			sh.Flash(fmt.Sprintf("%s is %s.", stored.Name, size(stored.Bytes)), fd.StatusGood)
+			sh.Invalidate()
+		})
+		return nil
+	})
 }
 
 // previewSize is how big the conversion is shown. Large enough to judge a

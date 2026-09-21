@@ -389,9 +389,39 @@ func (c *Client) AddImage(ctx context.Context, name string, source []byte) (Imag
 	return out, err
 }
 
+/*
+AddSlideshow turns several pictures into one animation and stores it under a
+name.
+*/
+func (c *Client) AddSlideshow(ctx context.Context, name string, sources [][]byte) (Image, error) {
+	encoded := make([]string, 0, len(sources))
+	for _, source := range sources {
+		encoded = append(encoded, base64.StdEncoding.EncodeToString(source))
+	}
+
+	var out Image
+	err := c.do(ctx, http.MethodPut, "/"+Version+"/images/"+url.PathEscape(name),
+		ImageRequest{Images: encoded}, &out)
+	return out, err
+}
+
 // RemoveImage forgets one.
 func (c *Client) RemoveImage(ctx context.Context, name string) error {
 	return c.do(ctx, http.MethodDelete, "/"+Version+"/images/"+url.PathEscape(name), nil, nil)
+}
+
+/*
+SceneFromImage builds a scene whose lights match a picture and saves it.
+
+Every light gets the part of the image at its own position in its zone, so a
+run of lights carries the picture's own sweep rather than one averaged colour.
+*/
+func (c *Client) SceneFromImage(ctx context.Context, picture, scene string) (Scene, error) {
+	var out Scene
+	err := c.do(ctx, http.MethodPost,
+		"/"+Version+"/images/"+url.PathEscape(picture)+"/scene",
+		SceneFromImageRequest{Scene: scene}, &out)
+	return out, err
 }
 
 // ShowImage puts a stored picture on the panel, taking it from the dashboard.
