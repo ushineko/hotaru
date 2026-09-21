@@ -1729,3 +1729,144 @@ func animation(t *testing.T) []byte {
 	require.NoError(t, gif.EncodeAll(&out, frames))
 	return out.Bytes()
 }
+
+func TestADroppedPictureGoesToThePartThatTakesIt(t *testing.T) {
+	/*
+		"Pictures" stopped being a section when it became one of three parts
+		of Create, and the drop handler still asked for it by that name. The
+		shell answered with the first section, so every picture dragged onto
+		the window was converted, kept, and followed by the window jumping to
+		the service page -- which is what was reported.
+
+		Fixed in fynedesygn too (its spec 028): an unknown title is ignored
+		now, which turns this from the wrong section into no movement at all.
+		Asking for the two things that do exist is this half.
+	*/
+	a := test.NewApp()
+	t.Cleanup(a.Quit)
+
+	app := gui.New(service(t, screenful()))
+	opts := app.Options("s")
+	opts.SettingsPath = filepath.Join(t.TempDir(), "gui.yml")
+	sh := shell.Headless(a, opts)
+	require.NotNil(t, opts.OnCreate, "the window does not keep its own parts")
+	opts.OnCreate(sh)
+	app.Refresh(context.Background())
+
+	window := test.NewWindow(widget.NewLabel("behind"))
+	t.Cleanup(window.Close)
+	sh.Window = window
+
+	// Somewhere else first, so landing on the library is a move rather than
+	// a coincidence.
+	sh.Select("About")
+	require.Equal(t, "About", sh.Current().Title())
+
+	dropped := filepath.Join(t.TempDir(), "rain.gif")
+	require.NoError(t, os.WriteFile(dropped, animation(t), 0o600))
+	gui.Drop(app, sh, []fyne.URI{storage.NewFileURI(dropped)})
+
+	require.Equal(t, "Create", sh.Current().Title(),
+		"a dropped picture moved the window to %q", sh.Current().Title())
+
+	var group *gui.Create
+	for _, section := range sh.Sections() {
+		if found, ok := section.(*gui.Create); ok {
+			group = found
+		}
+	}
+	require.NotNil(t, group)
+	require.Equal(t, "Pictures", group.Showing(),
+		"the window is on Create but not on the part that takes pictures")
+}
+
+// bound is a service that records what it was asked to bind.
+func bound(t *testing.T, routes map[string]any) (*api.Client, func() []api.BindRequest) {
+	t.Helper()
+
+	var mu sync.Mutex
+	var asked []api.BindRequest
+
+	socket := filepath.Join(t.TempDir(), "s")
+	listener, err := api.Listen(t.Context(), socket)
+	require.NoError(t, err)
+
+	mux := http.NewServeMux()
+	for path, body := range routes {
+		mux.HandleFunc(path, func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(body))
+		})
+	}
+	mux.HandleFunc("POST /"+api.Version+"/keys/bind", func(w http.ResponseWriter, r *http.Request) {
+		var in api.BindRequest
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&in))
+		mu.Lock()
+		asked = append(asked, in)
+		mu.Unlock()
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	server := &http.Server{Handler: mux, ReadHeaderTimeout: api.ReadHeaderTimeout}
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(func() { _ = server.Close() })
+
+	return api.NewClient(socket), func() []api.BindRequest {
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]api.BindRequest{}, asked...)
+	}
+}
+
+func TestAKeyOutsideTheBankCanBeBoundFromTheWindow(t *testing.T) {
+	/*
+		Every key hotaru ships is on the numpad, because that is what this
+		desk has had for years. A machine without one -- a laptop, a keyboard
+		with no numeric pad, a desk whose keys arrive over the network --
+		inherits nine shortcuts it cannot press, and the chooser offered
+		eighteen more of the same. The service has always taken any sequence
+		KDE spells; it was the window that only offered its own list.
+	*/
+	a := test.NewApp()
+	t.Cleanup(a.Quit)
+
+	client, asked := bound(t, healthy())
+	app := gui.New(client)
+	opts := app.Options("s")
+	opts.SettingsPath = filepath.Join(t.TempDir(), "gui.yml")
+	sh := shell.Headless(a, opts)
+	app.Refresh(context.Background())
+
+	window := test.NewWindow(widget.NewLabel("behind"))
+	t.Cleanup(window.Close)
+	window.Resize(fyne.NewSize(900, 700))
+	sh.Window = window
+
+	section := &gui.ScenesSection{}
+	gui.OpenScenes(section, app)
+	gui.BindKey(section, sh, api.Scene{Name: "evening"}, "")
+
+	shown := window.Canvas().Overlays().Top()
+	require.NotNil(t, shown, "the chooser did not open")
+
+	chooser := fynetest.Find[*widget.RadioGroup](shown)
+	require.NotNil(t, chooser)
+	require.Contains(t, chooser.Options, "something else",
+		"the chooser offers only the keys this desk happens to have")
+
+	entry := fynetest.FindEntry(shown)
+	require.NotNil(t, entry, "there is nowhere to type a key")
+	require.True(t, entry.Disabled(), "the key box is live before it is asked for")
+
+	chooser.SetSelected("something else")
+	require.False(t, entry.Disabled(), "choosing it left the box disabled")
+	entry.SetText("Meta+Shift+L")
+
+	bind := fynetest.FindButton(shown, "Bind")
+	require.NotNil(t, bind)
+	test.Tap(bind)
+
+	require.Eventually(t, func() bool { return len(asked()) > 0 },
+		3*time.Second, 20*time.Millisecond, "nothing was bound")
+	require.Equal(t, api.BindRequest{Key: "Meta+Shift+L", Scene: "evening"}, asked()[0])
+}
