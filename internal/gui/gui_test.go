@@ -1584,3 +1584,51 @@ func TestTheTabStripSaysThePartsNameAndTheBodyDoesNot(t *testing.T) {
 			part.Title(), said)
 	}
 }
+
+func TestSystemNamesTheDisplayItFound(t *testing.T) {
+	/*
+		Everything this window does with the panel -- a dashboard, a picture,
+		a scene that sets one -- is drawn on a screen it has to have found
+		first. A machine whose cooler has none, or one hotaru cannot claim,
+		otherwise learns that by watching nothing happen.
+	*/
+	routes := healthy()
+	routes["GET /"+api.Version+"/cooling"] = api.Cooling{
+		Device: "NZXT Kraken", Coolant: 37.5, PumpRPM: 2608, Screen: "640x640 LCD",
+	}
+	require.Contains(t, screen(t, service(t, routes), "System"), "640x640 LCD")
+
+	// And the same card says so when the screen is there and will not open.
+	routes["GET /"+api.Version+"/cooling"] = api.Cooling{
+		Device: "NZXT Kraken", Coolant: 37.5, PumpRPM: 2608, Screen: "640x640 LCD",
+		ScreenDetail: "no screen on this cooler: claim interface 0: permission denied",
+	}
+	said := screen(t, service(t, routes), "System")
+	require.Contains(t, said, "not reachable")
+	require.Contains(t, said, "permission denied", "it did not say why")
+
+	// A cooler with no panel at all is an ordinary machine, not a fault.
+	routes["GET /"+api.Version+"/cooling"] = api.Cooling{
+		Device: "NZXT Kraken", Coolant: 37.5, PumpRPM: 2608,
+	}
+	require.Contains(t, screen(t, service(t, routes), "System"), "none")
+}
+
+func TestScreensCanBeMadeOnAMachineWithNowhereToDrawThem(t *testing.T) {
+	/*
+		A screen is a file. It travels to a machine that has a panel, and
+		editing one previews it here, so a cooler without a display is a
+		reason to say so once rather than a reason to close the section --
+		and the alternative is pressing "Show it" and watching nothing
+		happen.
+	*/
+	routes := screenful()
+	routes["GET /"+api.Version+"/cooling"] = api.Cooling{
+		Absent: true, Detail: "no supported liquid cooler",
+	}
+
+	said := screen(t, service(t, routes), "Screen")
+	require.Contains(t, said, "No cooler on this machine")
+	require.Contains(t, said, "cooling", "the screens themselves are not listed")
+	require.Contains(t, said, "New screen", "there is no way to make one")
+}

@@ -114,6 +114,10 @@ type Cooler interface {
 	Show(ctx context.Context, gif []byte) error
 	Readout(ctx context.Context) error
 	Appearance(ctx context.Context, brightness, degrees int) error
+
+	// Panel is what screen this cooler has, and why it cannot be drawn on.
+	// Both empty is a panel nothing has needed yet.
+	Panel() (string, error)
 }
 
 /*
@@ -149,6 +153,23 @@ func (s *Service) Cooling(ctx context.Context) (cooler.Status, cooler.Device, er
 		return cooler.Status{}, c.Device(), err
 	}
 	return status, c.Device(), nil
+}
+
+/*
+Panel is the cooler's screen, for anything that reports what was found.
+
+A machine with no cooler has no panel and says so as ErrNoCooler, which is the
+same absence the rest of this file reports and not a failure.
+*/
+func (s *Service) Panel() (string, error) {
+	s.mu.RLock()
+	c := s.cooler
+	s.mu.RUnlock()
+
+	if c == nil {
+		return "", cooler.ErrNoCooler
+	}
+	return c.Panel()
 }
 
 /*

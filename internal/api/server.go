@@ -185,7 +185,10 @@ func Handler(svc *service.Service) http.Handler {
 		case err != nil:
 			write(w, http.StatusOK, Cooling{Device: device.Name, Absent: true, Detail: err.Error()})
 		default:
-			write(w, http.StatusOK, Cooling{
+			// The panel travels with the reading: what somebody wants to know
+			// about a cooler includes whether hotaru can draw on it.
+			screen, wrong := svc.Panel()
+			out := Cooling{
 				Device:   device.Name,
 				Coolant:  status.Coolant,
 				PumpRPM:  status.PumpRPM,
@@ -193,7 +196,12 @@ func Handler(svc *service.Service) http.Handler {
 				FanRPM:   status.FanRPM,
 				FanDuty:  status.FanDuty,
 				Taken:    status.Taken,
-			})
+				Screen:   screen,
+			}
+			if wrong != nil {
+				out.ScreenDetail = wrong.Error()
+			}
+			write(w, http.StatusOK, out)
 		}
 	})
 

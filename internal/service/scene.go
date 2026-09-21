@@ -287,7 +287,7 @@ func pictureName(path string) string {
 /*
 draw sets the screen and says what went wrong, if anything did.
 
-**A machine with no cooler is not a failed scene.** The nine shipped scenes
+**A machine with no cooler, or no screen on it, is not a failed scene.** The nine shipped scenes
 name a screen state because this desk has one, and most machines do not: absence
 is an ordinary answer here as it is everywhere else in hotaru, and reporting it
 would put a permanent complaint on every scene on every machine without a
@@ -297,7 +297,7 @@ done exactly what was asked.
 func (s *Service) draw(ctx context.Context, what Screen) string {
 	err := s.Draw(ctx, what)
 	switch {
-	case err == nil, errors.Is(err, cooler.ErrNoCooler):
+	case err == nil, errors.Is(err, cooler.ErrNoCooler), errors.Is(err, cooler.ErrNoScreen):
 		return ""
 	}
 	return fmt.Sprintf("the screen: %v", err)

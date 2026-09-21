@@ -2,11 +2,13 @@ package dashboard
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"github.com/ushineko/hotaru/internal/cooler"
 	"github.com/ushineko/hotaru/internal/readings"
 )
 
@@ -159,4 +161,45 @@ func TestRenderingDoesNotGrowPerFrame(t *testing.T) {
 
 	require.LessOrEqual(t, later, first*1.05,
 		"allocation per frame grew between the first frames and the later ones")
+}
+
+// refusing is a panel that will not take a picture, the way one held by
+// another program or one this user may not open will not.
+type refusing struct{ tries int }
+
+func (r *refusing) Show(context.Context, []byte) error {
+	r.tries++
+	return fmt.Errorf("%w: claim interface 0: permission denied", cooler.ErrNoScreen)
+}
+
+func TestAPanelThatCannotBeDrawnOnIsTriedOnce(t *testing.T) {
+	/*
+		Not a transient. The interface is held by something else, or this
+		user may not open the usbfs node, and neither changes while hotaru
+		runs -- so retrying every two seconds writes the same line to the
+		journal forty thousand times a day and draws nothing either way.
+	*/
+	ctx, stop := context.WithCancel(context.Background())
+	defer stop()
+
+	panel := &refusing{}
+	pusher := NewPusher(panel, func(context.Context) Reading {
+		var got Reading
+		got.Set(readings.Coolant, 30)
+		return got
+	})
+
+	said := 0
+	pusher.Report = func(string, ...any) { said++ }
+
+	done := make(chan struct{})
+	go func() { defer close(done); pusher.Run(ctx) }()
+
+	require.Eventually(t, func() bool { return panel.tries > 0 }, time.Second, 10*time.Millisecond)
+	time.Sleep(50 * time.Millisecond)
+	stop()
+	<-done
+
+	require.Equal(t, 1, panel.tries, "it kept trying a panel that said no")
+	require.Equal(t, 1, said, "it kept saying so")
 }

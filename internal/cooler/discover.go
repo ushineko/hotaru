@@ -25,8 +25,23 @@ protocol here was read off an Elite V2 on firmware 1.2.0, and a cooler that
 merely shares a vendor id is not the same device. hotaru declines what it does
 not recognise rather than guessing at somebody's pump.
 */
-var Known = map[uint16]string{
-	0x3012: "NZXT Kraken Elite V2",
+var Known = map[uint16]Model{
+	0x3012: {Name: "NZXT Kraken Elite V2", Screen: "640x640 LCD"},
+}
+
+/*
+Model is a cooler hotaru recognises.
+
+The screen is part of the model rather than something asked of the device,
+because claiming the panel is what opening it means -- and a program that
+claimed somebody's screen to find out whether they had one would take it away
+from liquidctl to answer a question nobody asked.
+*/
+type Model struct {
+	Name string
+	// Screen says what panel the model has, in the words the window shows.
+	// Empty for a cooler with none.
+	Screen string
 }
 
 // nzxt is the vendor every id above belongs to.
@@ -47,6 +62,9 @@ type Device struct {
 	HID string
 	// USB is the usbfs node whose bulk endpoint carries screen data.
 	USB string
+
+	// Screen is the panel this model has, empty for one with none.
+	Screen string
 
 	// UsagePage is what the HID report descriptor declares this interface is
 	// for. Vendor-defined pages carry control protocols; a device's other
@@ -79,7 +97,7 @@ func find(sysRoot, devRoot string) ([]Device, error) {
 		if !ok || vendor != nzxt {
 			continue
 		}
-		name, supported := Known[product]
+		model, supported := Known[product]
 		if !supported {
 			continue
 		}
@@ -92,7 +110,8 @@ func find(sysRoot, devRoot string) ([]Device, error) {
 		}
 		found = append(found, Device{
 			Product:   product,
-			Name:      name,
+			Name:      model.Name,
+			Screen:    model.Screen,
 			HID:       filepath.Join(devRoot, filepath.Base(node)),
 			USB:       usb,
 			UsagePage: usagePage(filepath.Join(node, "device", "report_descriptor")),
@@ -149,6 +168,17 @@ func usagePage(path string) uint16 {
 // ErrNoCooler is a machine with no cooler this package knows how to drive,
 // which is an ordinary state and not a failure: everything else still works.
 var ErrNoCooler = fmt.Errorf("no supported liquid cooler")
+
+/*
+ErrNoScreen is a cooler that is here and whose panel cannot be driven.
+
+Wrapped around whatever the kernel said, because the cause is somebody's
+machine -- a model with no panel, a usbfs node this user may not open, another
+program holding the interface -- and the caller's question is the same in all
+three: there is no screen to draw on, and the lights still work. Callers treat
+it the way they treat ErrNoCooler.
+*/
+var ErrNoScreen = fmt.Errorf("no screen on this cooler")
 
 // hidID reads HID_ID=0003:00001E71:00003012 from a uevent.
 func hidID(path string) (vendor, product uint16, ok bool) {
