@@ -4,14 +4,19 @@ Two things, and they are different claims:
 
 1. **What has actually been tested** — hardware someone ran hotaru against and
    watched. That list is short and it is below.
-2. **What is expected to work** — everything OpenRGB and liquidctl support,
-   because hotaru contains no device drivers of its own. That list belongs to
-   those projects and is linked rather than copied.
+2. **What is expected to work** — every lit device OpenRGB supports, because
+   hotaru contains no lighting drivers of its own. That list belongs to OpenRGB
+   and is linked rather than copied.
 
-hotaru does not maintain a device list. If OpenRGB can set your keyboard's
-colour, so can hotaru; if liquidctl cannot see your cooler, neither can hotaru,
-and no configuration will change it. This is also the answer to why installing
-hotaru installs those packages: they are where the hardware support lives.
+hotaru does not maintain a lighting device list. If OpenRGB can set your
+keyboard's colour, so can hotaru; if it cannot see the device, neither can
+hotaru, and no configuration will change it. This is also the answer to why
+installing hotaru installs OpenRGB: that is where the lighting support lives.
+
+The cooler is the exception, and the only place hotaru carries a driver of its
+own. It speaks NZXT's protocol directly over `/dev/hidraw` and usbfs — no
+Python, no subprocess, no cgo — which is a short device list rather than a
+borrowed one. See [spec 012](../specs/012-the-cooler-without-liquidctl.md).
 
 ## Tested
 
@@ -21,13 +26,14 @@ hotaru installs those packages: they are where the hardware support lives.
 
 | Device | Through | Notes |
 |---|---|---|
-| NZXT Kraken 2024 Elite (`1e71:3012`) | both | Lighting via OpenRGB — the radiator fans' RGB daisy-chains into it. Telemetry and the 640x640 LCD via liquidctl. liquidctl exposes **no** colour channels for this model |
+| NZXT Kraken 2024 Elite (`1e71:3012`) | both | Lighting via OpenRGB — the radiator fans' RGB daisy-chains into it, and OpenRGB exposes **only** the colour channels. Telemetry and the 640x640 LCD are hotaru's own, over `/dev/hidraw` and usbfs. The two Hue 2 channels are separate controllers and are written separately (spec 011); the bucket being displayed is never written into, or the panel blanks for the length of the transfer (spec 013) |
 | MSI GeForce RTX 4090 Suprim Liquid X | OpenRGB | Accepts `direct/breathing/flashing/off`; **rejects `static`** and goes dark if sent it |
 | ASUS ROG Maximus Z790 Hero | OpenRGB | Onboard LEDs plus four addressable headers. Static drives only the onboard LED — the headers need Direct |
-| Corsair MM700 | OpenRGB | Also managed by OpenLinkHub; exclude it there so one controller owns it |
+| Corsair MM700 | OpenRGB | Its logo has no blue channel, so a request for purple shows as dim red. Not a failed write, and nothing in the protocol says so — OpenRGB's own command line does the same (spec 009) |
 | Logitech G502 X PLUS | OpenRGB | Wireless: restores onboard state on wake, so its colour is re-asserted on a timer. Solaar cannot set its colour at all — its CLI silently drops the colour argument |
 | Keychron K4 HE | OpenRGB | Advertises no Off mode, so `off` would resolve to Direct with black and kill the backlight. Coloured, never blanked |
-| Corsair HX1000i | OpenLinkHub | Visible, but its "Probe" temperature channels are **not** coolant and must not be read as such |
+| Intel Core i9-14900K | kernel | CPU package temperature from `coretemp`, read by label. Never by hwmon index: the numbers are assigned in probe order and move between boots |
+| MSI GeForce RTX 4090 | `nvidia-smi` | NVIDIA's driver registers no hwmon, so the dashboard's GPU reading comes from the tool — 18 ms, once per update. AMD and nouveau are read from `/sys/class/hwmon` like anything else |
 
 ### Test systems
 
@@ -42,21 +48,22 @@ requires.
 
 ## Everything else
 
-Support comes from three upstream projects. Their device lists are the
-authoritative answer for hardware not tested above:
+Lighting comes from one upstream project. Its device list is the authoritative
+answer for hardware not tested above:
 
 | Package | Version developed against | What it provides | Its device list |
 |---|---|---|---|
 | `openrgb` | 1.0 | Every lit device: GPUs, motherboards, RAM, keyboards, mice, mousepads, cases, coolers, strips | [openrgb.org/devices](https://openrgb.org/devices_1.0rc3.html) |
-| `liquidctl` | 1.16.0 | Liquid coolers, some PSUs and fan controllers — coolant temperature, pump speed, and the LCD | [liquidctl supported devices](https://github.com/liquidctl/liquidctl#supported-devices) |
-| `openlinkhub` | 0.9.1 | Corsair iCUE Link and Commander hardware. hotaru uses it for the CPU package temperature, and as a cooler fallback | [OpenLinkHub](https://github.com/jurkovic-nikola/OpenLinkHub) |
+| `nvidia-utils` | — | Optional. The GPU temperature on the dashboard, where the kernel exposes none | — |
+
+`liquidctl` and `openlinkhub` were dependencies and are not any more, which
+took Python off machines that may have no liquid cooler at all. Either can
+still be installed alongside hotaru; nothing in hotaru calls them.
 
 Minimum versions are not pinned artificially. hotaru speaks OpenRGB's SDK
-protocol, negotiated at connect and reported by `hotaru light health`, and calls
-liquidctl through its documented JSON output. A backend too old for your device
-is a reason to upgrade that backend, not hotaru — and a device missing from
-`openrgb --list-devices` or `liquidctl list` is an upstream matter, not a hotaru
-one.
+protocol, negotiated at connect and reported by `hotaru light health`. A server
+too old for your device is a reason to upgrade it, not hotaru — and a device
+missing from `openrgb --list-devices` is an upstream matter, not a hotaru one.
 
 ### What each contributes
 
@@ -67,37 +74,50 @@ and hotaru reports that rather than approximating it. hotaru talks to the
 running OpenRGB *server*, so lighting needs `openrgb` installed **and** its
 server running.
 
-**Cooler telemetry — liquidctl.** For devices where the kernel has no hwmon
-driver, which is the common case on recent NZXT coolers: `nzxt-kraken3` matches
-2007/2014/3008/300C/300E, so a Kraken Elite V2 has no hwmon node and `sensors`
-reports nothing at all.
+**Cooler telemetry — hotaru itself.** The kernel has no driver for recent NZXT
+coolers: `nzxt-kraken3` matches 2007/2014/3008/300C/300E, so a Kraken Elite V2
+has no hwmon node and `sensors` reports nothing at all. hotaru asks the device
+over `/dev/hidraw`, which costs about two milliseconds and no processes.
 
-**The LCD — liquidctl, on coolers that have a screen.** The Kraken Z and Elite
-families expose `set screen`; most coolers expose nothing of the kind. The
-panel's resolution is read from the device rather than assumed.
+**The LCD — hotaru itself, on coolers that have a screen.** The Kraken Z and
+Elite families take images into sixteen buckets of their own memory; most
+coolers have nothing of the kind. A still picture is not retained by the
+firmware, so hotaru sends one-frame GIFs.
 
-**CPU package temperature — OpenLinkHub.** One field. It is a hard dependency
-because a user cannot be expected to know which field comes from which daemon,
-not because it does much.
+**Temperatures — the kernel.** CPU package from `coretemp` by label, and the
+graphics card from `amdgpu` or `nouveau` where they are there. NVIDIA's own
+driver registers no hwmon, so that one card's number comes from `nvidia-smi`,
+which is why `nvidia-utils` is an `optdepends` rather than a dependency: a
+machine without it shows a placeholder, not an error.
+
+**Permissions.** Both cooler nodes — the `/dev/hidraw*` and the
+`/dev/bus/usb/BBB/DDD` the screen's bulk endpoint lives behind — need a udev
+rule tagging the device `uaccess`, or `systemd-logind` puts no ACL on them and
+hotaru finds the cooler it cannot open. The package ships that rule; see
+[docs/packaging.md](packaging.md).
 
 ## Not supported, deliberately
 
 - **Fan and pump duty control.** The Commander ST firmware silently discards
-  duty writes from both liquidctl and OpenLinkHub — a control would report
-  success and change nothing, so there is none.
+  duty writes — it did so from liquidctl and from OpenLinkHub alike, which is
+  where this was learned. A control would report success and change nothing, so
+  there is none.
 - **Device lighting persistence.** OpenRGB sets volatile state. Devices that
   restore onboard colour on wake are handled by re-asserting on a timer, not by
   writing device profiles.
-- **Anything needing a vendor's own daemon** beyond the three above.
+- **Coolers other than the NZXT models above.** The protocol hotaru speaks is
+  NZXT's. Another vendor's cooler is not a configuration away; it is a driver,
+  and the honest answer is that it is absent.
+- **Anything needing a vendor's own daemon.**
 
 ## Checking your own machine
 
 ```bash
 openrgb --list-devices        # what OpenRGB sees
-liquidctl list                # what liquidctl sees
 hotaru light list             # what hotaru sees, with modes and scope
 hotaru light health           # why, if it sees nothing
 hotaru light probe            # what each device can actually do
+hotaru cooling                # the cooler, or the fact that there is not one
 ```
 
 `hotaru light list` showing nothing while `openrgb --list-devices` shows devices
