@@ -945,6 +945,7 @@ func TestADroppedFileIsConverted(t *testing.T) {
 	section := &gui.PicturesSection{}
 	gui.OpenPictures(section, app)
 	section.Dropped(sh, []fyne.URI{storage.NewFileURI(picture)})
+	section.Settle()
 
 	// The window polls, so its own reads are in this channel too; what
 	// matters is that the conversion is among them.
@@ -975,6 +976,7 @@ func TestADroppedFileThatCannotBeReadSaysSo(t *testing.T) {
 
 	require.NotPanics(t, func() {
 		section.Dropped(sh, []fyne.URI{storage.NewFileURI("/nothing/here.jpg")})
+		section.Settle()
 	})
 }
 
@@ -1009,6 +1011,7 @@ func TestEveryFileInADroppedStackArrives(t *testing.T) {
 	section := &gui.PicturesSection{}
 	gui.OpenPictures(section, app)
 	section.Dropped(sh, uris)
+	section.Settle()
 
 	require.Equal(t, len(uris), section.Waiting(), "part of the stack was dropped on the floor")
 
@@ -1046,6 +1049,7 @@ func TestOneDroppedFileIsNotAQuestion(t *testing.T) {
 	section := &gui.PicturesSection{}
 	gui.OpenPictures(section, app)
 	section.Dropped(sh, []fyne.URI{storage.NewFileURI(picture)})
+	section.Settle()
 
 	require.Zero(t, section.Waiting(), "a single picture was queued behind a question")
 
@@ -1765,6 +1769,7 @@ func TestADroppedPictureGoesToThePartThatTakesIt(t *testing.T) {
 	dropped := filepath.Join(t.TempDir(), "rain.gif")
 	require.NoError(t, os.WriteFile(dropped, animation(t), 0o600))
 	gui.Drop(app, sh, []fyne.URI{storage.NewFileURI(dropped)})
+	gui.Library(app).Settle()
 
 	require.Equal(t, "Create", sh.Current().Title(),
 		"a dropped picture moved the window to %q", sh.Current().Title())
@@ -1894,6 +1899,11 @@ func TestTheScreenEditorOffersTheLettering(t *testing.T) {
 	gui.EditDashboard(section, api.Dashboard{Name: "quiet", Arrangement: "ring"})
 
 	built := section.Build(sh)
+	// The editor renders a preview as soon as it is built with no frame, and
+	// that comes back on a goroutine: waited for here so the window is not
+	// being drawn from two places at once.
+	section.Settle()
+
 	window := test.NewWindow(built)
 	t.Cleanup(window.Close)
 	window.Resize(fyne.NewSize(1200, 900))
@@ -1917,6 +1927,48 @@ func TestTheScreenEditorOffersTheLettering(t *testing.T) {
 
 	sizes[0].Value = 140
 	sizes[0].OnChangeEnded(140)
+	section.Settle()
 	require.Equal(t, 140, gui.DraftDashboard(section).Lettering.Labels.Size,
 		"moving the label size changed nothing")
+}
+
+func TestOpeningTheScreenEditorAsksForOneFrameAndChangesNothing(t *testing.T) {
+	/*
+		A chooser's SetSelected fires its handler, so a form built from a
+		dashboard can write to the draft and ask the service for a picture
+		merely by being drawn -- which is a render per keystroke on a form
+		that rebuilds, and a dashboard that has been "edited" by being looked
+		at.
+
+		Both happened: the face chooser compared what it shows ("sans") with
+		what the dashboard says (""), and the outline chooser compared
+		nothing at all.
+	*/
+	a := test.NewApp()
+	t.Cleanup(a.Quit)
+
+	routes := screenful()
+	routes["POST /"+api.Version+"/dashboards/preview"] = api.PreviewedDashboard{}
+
+	client, times := counting(t, routes)
+	app := gui.New(client)
+	opts := app.Options("s")
+	opts.SettingsPath = filepath.Join(t.TempDir(), "gui.yml")
+	sh := shell.Headless(a, opts)
+	app.Refresh(context.Background())
+
+	section := &gui.DashboardsSection{}
+	gui.OpenDashboards(section, app)
+	gui.EditDashboard(section, api.Dashboard{Name: "quiet", Arrangement: "ring"})
+
+	section.Build(sh)
+	section.Settle()
+	section.Build(sh)
+	section.Settle()
+
+	preview := "/" + api.Version + "/dashboards/preview"
+	require.LessOrEqual(t, times(preview), 1,
+		"building the form twice asked for %d frames", times(preview))
+	require.Empty(t, gui.DraftDashboard(section).Lettering.Font,
+		"the form wrote a face into a dashboard nobody edited")
 }
