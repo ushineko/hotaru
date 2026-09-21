@@ -16,6 +16,7 @@ import (
 	"github.com/ushineko/hotaru/internal/api"
 	"github.com/ushineko/hotaru/internal/config"
 	"github.com/ushineko/hotaru/internal/cooler"
+	"github.com/ushineko/hotaru/internal/dashboard"
 	"github.com/ushineko/hotaru/internal/openrgb"
 	"github.com/ushineko/hotaru/internal/queue"
 	"github.com/ushineko/hotaru/internal/service"
@@ -107,13 +108,32 @@ func run(cmd *cobra.Command) error {
 		and a machine that does may have one hotaru does not recognise -- so
 		it is reported once and everything else carries on.
 	*/
+	report := func(format string, args ...any) { cmd.PrintErrf(format+"\n", args...) }
+
 	if found, err := cooler.Open(ctx); err != nil {
 		cmd.Printf("no cooler telemetry: %v\n", err)
 	} else {
 		owner := cooler.Own(found)
 		svc.SetCooler(owner)
-		defer func() { _ = owner.Close() }()
 		cmd.Printf("reading %s at %s\n", found.Device().Name, found.Device().HID)
+
+		/*
+			The dashboard, if the cooler has a screen.
+
+			Stopped before the cooler is closed, and deliberately in that
+			order: closing hands the panel back to the firmware's own
+			readout, and a push that arrived afterwards would leave hotaru's
+			last frame on somebody's cooler for as long as the machine stayed
+			off. The defers run bottom-up, so this one is registered after
+			the close it must precede.
+		*/
+		panel := dashboard.NewPusher(owner, readings(owner))
+		panel.Report = report
+		svc.SetDashboard(panel)
+
+		drawn := make(chan struct{})
+		go func() { defer close(drawn); panel.Run(ctx) }()
+		defer func() { <-drawn; _ = owner.Close() }()
 	}
 
 	listener, err := api.Listen(ctx, socket)
@@ -125,7 +145,6 @@ func run(cmd *cobra.Command) error {
 	// The OpenRGB server is a resource that appears, not a dependency that is
 	// satisfied: it may start after this does, or never. Connecting happens in
 	// the background and keeps trying, so the API is up either way.
-	report := func(format string, args ...any) { cmd.PrintErrf(format+"\n", args...) }
 	go func() {
 		connect(ctx, svc, address, report)
 		// Restoring waits for a server rather than being ordered after one:
@@ -180,5 +199,31 @@ func connect(ctx context.Context, svc *service.Service, address string, report f
 			return
 		case <-time.After(wait):
 		}
+	}
+}
+
+/*
+readings composes what the screen shows from what the machine will say.
+
+Four numbers from three places: the cooler answers for coolant and pump, the
+kernel for the processor, and the graphics card by whichever route it has. Each
+is taken independently and each can be absent -- a sensor that has gone away
+draws a placeholder rather than stopping the panel, because the screen is
+decorative and the other three numbers are still true.
+*/
+func readings(c *cooler.Owner) func(context.Context) dashboard.Reading {
+	return func(ctx context.Context) dashboard.Reading {
+		var r dashboard.Reading
+		if status, err := c.Status(ctx); err == nil {
+			r.Coolant, r.CoolantOK = status.Coolant, true
+			r.PumpRPM, r.PumpOK = status.PumpRPM, true
+		}
+		if t, err := cooler.CPUPackage.Temperature(); err == nil {
+			r.CPU, r.CPUOK = t, true
+		}
+		if t, err := cooler.GPUTemperature(ctx); err == nil {
+			r.GPU, r.GPUOK = t, true
+		}
+		return r
 	}
 }

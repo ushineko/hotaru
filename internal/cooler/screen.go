@@ -57,6 +57,17 @@ the same device: the HID one answers questions, this one takes pixels.
 type Screen struct {
 	c *Cooler
 	u *usb
+
+	/*
+		showing is the slot the panel is displaying, or -1 for the firmware's
+		own readout.
+
+		Tracked because deleting the slot that is on screen blanks the panel
+		until the next image arrives -- about a second, and unmistakable on a
+		dashboard that updates every two. The device does not report which
+		slot it is showing, so hotaru remembers what it last asked for.
+	*/
+	showing int
 }
 
 // Screen claims the panel's interface, so images can be sent to it.
@@ -65,7 +76,7 @@ func (c *Cooler) Screen() (*Screen, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Screen{c: c, u: u}, nil
+	return &Screen{c: c, u: u, showing: -1}, nil
 }
 
 // Close releases the panel's interface. The control channel is unaffected.
@@ -79,7 +90,12 @@ longer running hotaru should not keep showing a dashboard from whenever the
 service died.
 */
 func (s *Screen) Liquid(ctx context.Context) error {
-	return s.show(ctx, 0, modeLiquid)
+	if err := s.show(ctx, 0, modeLiquid); err != nil {
+		return err
+	}
+	// Nothing of hotaru's is on screen any more, so every slot is reusable.
+	s.showing = -1
+	return nil
 }
 
 /*
@@ -117,7 +133,30 @@ func (s *Screen) Image(ctx context.Context, gif []byte) error {
 	if err != nil {
 		return err
 	}
-	return s.show(ctx, bucket, modeBucket)
+	if err := s.show(ctx, bucket, modeBucket); err != nil {
+		return err
+	}
+
+	/*
+		The old picture is released only once the new one is up.
+
+		This is double buffering, and on this panel it is not an optimisation.
+		The transfer takes about a second, during which the device keeps
+		showing whatever slot it was pointed at; write over that slot and the
+		screen is blank for the duration. Left to itself the placement walks
+		through all sixteen slots, fills them, and then starts deleting the
+		one on screen on every update -- which looks like a panel blanking at
+		random, because whether it does depends on which slots happened to
+		refuse to clear.
+
+		A failed delete is not an error. The slot stays occupied, placement
+		skips it, and the only cost is memory the next wrap reclaims.
+	*/
+	if previous := s.showing; previous >= 0 && previous != bucket {
+		_, _ = s.empty(ctx, previous)
+	}
+	s.showing = bucket
+	return nil
 }
 
 /*
@@ -152,10 +191,15 @@ func vacant(reply []byte) bool {
 	return true
 }
 
-// free is the first bucket holding nothing, or -1 when they are all taken.
-func free(slots [][]byte) int {
+/*
+free is the first bucket holding nothing, or -1 when they are all taken.
+
+The slot on screen is never free, whatever it holds: writing into it is what
+blanks the panel. Pass -1 when nothing of hotaru's is displayed.
+*/
+func free(slots [][]byte, showing int) int {
 	for i, reply := range slots {
-		if vacant(reply) {
+		if i != showing && vacant(reply) {
 			return i
 		}
 	}
@@ -252,6 +296,10 @@ func (s *Screen) prepare(ctx context.Context, bucket int, filled bool) (int, err
 	if bucket >= buckets {
 		return 0, fmt.Errorf("every slot on the screen refused to clear")
 	}
+	if bucket == s.showing {
+		// Clearing it would blank the panel for the length of the transfer.
+		return s.prepare(ctx, bucket+1, filled)
+	}
 	ok, err := s.empty(ctx, bucket)
 	if err != nil {
 		return 0, err
@@ -296,9 +344,14 @@ func (s *Screen) send(ctx context.Context, image []byte) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	start, filled := free(slots), false
+	start, filled := free(slots, s.showing), false
 	if start < 0 {
+		// Every slot is taken, so one has to be reused -- any of them except
+		// the one being displayed.
 		start, filled = 0, true
+		if start == s.showing {
+			start = 1
+		}
 	}
 	bucket, err := s.prepare(ctx, start, filled)
 	if err != nil {
