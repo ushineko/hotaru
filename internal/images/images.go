@@ -14,6 +14,7 @@ spec 019.
 package images
 
 import (
+	"bufio"
 	"bytes"
 	"fmt"
 	"image"
@@ -22,6 +23,7 @@ import (
 	"image/gif"
 	_ "image/jpeg" // the formats a wallpaper arrives in
 	_ "image/png"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -349,17 +351,135 @@ func encode(frames []*image.Paletted, delays []int) ([]byte, error) {
 	return out.Bytes(), nil
 }
 
-// frames counts a stored image's frames, for a listing that says whether it
-// moves. A file that will not parse counts as one rather than failing a
-// listing over a single bad entry.
+/*
+frames counts a stored image's frames, for a listing that says whether it
+moves.
+
+By walking the file's blocks rather than decoding it. `gif.DecodeAll` has to
+undo the LZW compression of every frame to tell you how many there are, and
+this library holds a hundred and ten megabytes of animation on the machine
+this was written on -- so listing the pictures decoded all of it, took 1.3
+seconds, and did it again for every listing. The window asks for that list
+whenever the section is drawn.
+
+A frame is an image descriptor, which is a byte. The rest of the format is
+skipped: fixed-size headers, colour tables whose size is in the byte before
+them, and chains of length-prefixed sub-blocks.
+
+A file that will not parse counts as one, rather than failing a listing over
+a single bad entry.
+*/
 func frames(path string) int {
-	body, err := os.ReadFile(path) //nolint:gosec // a path this package built
+	file, err := os.Open(path) //nolint:gosec // a path this package built
 	if err != nil {
 		return 1
 	}
-	animation, err := gif.DecodeAll(bytes.NewReader(body))
-	if err != nil {
+	defer func() { _ = file.Close() }()
+
+	count, ok := countFrames(bufio.NewReaderSize(file, 1<<16))
+	if !ok || count == 0 {
 		return 1
 	}
-	return len(animation.Image)
+	return count
+}
+
+/*
+countFrames walks a GIF's blocks and counts its image descriptors.
+
+It reports whether the file was a GIF at all; a file that stops early counts
+what it had, because half an animation is still an animation and a listing is
+not the place to report a bad file.
+*/
+func countFrames(in *bufio.Reader) (int, bool) {
+	header := make([]byte, 13)
+	if _, err := io.ReadFull(in, header); err != nil {
+		return 0, false
+	}
+	if !bytes.HasPrefix(header, []byte("GIF")) {
+		return 0, false
+	}
+	// The last byte of the screen descriptor says whether a global colour
+	// table follows, and how big it is.
+	if !skipTable(in, header[10]) {
+		return 0, false
+	}
+
+	count := 0
+	for {
+		kind, err := in.ReadByte()
+		if err != nil {
+			return count, true
+		}
+		switch kind {
+		case trailer:
+			return count, true
+		case extension: // a label, then sub-blocks
+			if _, err := in.ReadByte(); err != nil {
+				return count, true
+			}
+			if !skipBlocks(in) {
+				return count, true
+			}
+		case descriptor: // an image descriptor, which is a frame
+			count++
+			if !skipFrame(in) {
+				return count, true
+			}
+		default:
+			// Not a block this format has. Reading on would be guessing.
+			return count, true
+		}
+	}
+}
+
+// The three block kinds a GIF is made of, at the top level.
+const (
+	extension  = 0x21
+	descriptor = 0x2C
+	trailer    = 0x3B
+)
+
+// skipFrame steps over an image descriptor and the compressed pixels after
+// it, and says whether it got to the end of them.
+func skipFrame(in *bufio.Reader) bool {
+	fields := make([]byte, 9)
+	if _, err := io.ReadFull(in, fields); err != nil {
+		return false
+	}
+	if !skipTable(in, fields[8]) {
+		return false
+	}
+	if _, err := in.ReadByte(); err != nil { // LZW minimum code size
+		return false
+	}
+	return skipBlocks(in)
+}
+
+// skipTable steps over a colour table, whose presence and size are in the
+// packed byte before it, and says whether it got past it.
+func skipTable(in *bufio.Reader, packed byte) bool {
+	if packed&0x80 == 0 {
+		return true
+	}
+	size := 3 << ((packed & 0x07) + 1)
+	_, err := in.Discard(size)
+	return err == nil
+}
+
+// skipBlocks steps over a chain of length-prefixed sub-blocks, which is how
+// the format carries anything of unknown length, and says whether it reached
+// the end of the chain.
+func skipBlocks(in *bufio.Reader) bool {
+	for {
+		size, err := in.ReadByte()
+		if err != nil {
+			return false
+		}
+		if size == 0 {
+			return true
+		}
+		if _, err := in.Discard(int(size)); err != nil {
+			return false
+		}
+	}
 }
