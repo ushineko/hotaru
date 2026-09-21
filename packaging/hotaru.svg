@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  hotaru's icon: a lit bulb.
+
+  Flat and geometric on purpose. It is drawn at 22 pixels in a panel far more
+  often than at 128 in a launcher, so there are no gradients, no shadows and no
+  detail that survives only at size: two shapes, one accent, and strokes heavy
+  enough to hold together when the whole thing is the height of a line of text.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!-- The glass. Filled warm so the icon reads as lit rather than as a diagram
+       of a bulb, which is the one thing it has to say at 22 pixels. -->
+  <path d="M32 6c-9.4 0-17 7.4-17 16.5 0 6 3 10.3 5.8 13.4 1.9 2.1 3.2 4 3.2 6.1v1h16v-1c0-2.1 1.3-4 3.2-6.1C46 32.8 49 28.5 49 22.5 49 13.4 41.4 6 32 6z"
+        fill="#ffd166" stroke="#1d1f22" stroke-width="3" stroke-linejoin="round"/>
+
+  <!-- The filament, as one continuous line. Fewer, longer strokes survive the
+       downscale; a coiled filament becomes a smudge. -->
+  <path d="M26 30l4-8 4 8 4-8" fill="none" stroke="#1d1f22" stroke-width="3"
+        stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- The cap, in one piece and touching the glass. Drawn apart, the two read
+       as separate objects at small sizes rather than as one bulb. -->
+  <path d="M24 44h16v6a3 3 0 0 1-3 3h-10a3 3 0 0 1-3-3z" fill="#8d99ae"
+        stroke="#1d1f22" stroke-width="3" stroke-linejoin="round"/>
+</svg>
