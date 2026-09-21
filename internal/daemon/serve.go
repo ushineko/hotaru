@@ -136,8 +136,13 @@ func run(cmd *cobra.Command) error {
 	*/
 	if dir, err := config.DataDir(); err != nil {
 		cmd.PrintErrf("hotaru: no image library: %v\n", err)
+		svc.NoImages(err)
 	} else if library, err := images.Open(filepath.Join(dir, "images")); err != nil {
+		// Told to the service as well as to the log. Somebody adding a
+		// picture an hour later is not reading the startup output, and
+		// "unavailable on this machine" without the reason is a dead end.
 		cmd.PrintErrf("hotaru: no image library: %v\n", err)
+		svc.NoImages(err)
 	} else {
 		svc.SetImages(library)
 	}

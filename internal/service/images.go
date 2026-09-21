@@ -29,7 +29,22 @@ type ImageLibrary interface {
 // SetImages gives the service somewhere to keep pictures.
 func (s *Service) SetImages(library ImageLibrary) {
 	s.mu.Lock()
-	s.images = library
+	s.images, s.imagesWhy = library, nil
+	s.mu.Unlock()
+}
+
+/*
+NoImages says the library could not be opened, and why.
+
+The reason is kept rather than logged and dropped. "The image library is
+unavailable on this machine" is true and useless: the first machine to hit it
+had a service sandboxed out of the directory it was trying to create, and the
+sentence that solves that is "read-only file system" -- which was in the
+service's log at startup and nowhere a person adding a picture would look.
+*/
+func (s *Service) NoImages(why error) {
+	s.mu.Lock()
+	s.images, s.imagesWhy = nil, why
 	s.mu.Unlock()
 }
 
@@ -38,12 +53,16 @@ var ErrNoImages = errors.New("the image library is unavailable on this machine")
 
 func (s *Service) library() (ImageLibrary, error) {
 	s.mu.RLock()
-	library := s.images
+	library, why := s.images, s.imagesWhy
 	s.mu.RUnlock()
-	if library == nil {
-		return nil, ErrNoImages
+
+	switch {
+	case library != nil:
+		return library, nil
+	case why != nil:
+		return nil, fmt.Errorf("%w: %w", ErrNoImages, why)
 	}
-	return library, nil
+	return nil, ErrNoImages
 }
 
 // AddImage converts a picture and stores it under a name.
