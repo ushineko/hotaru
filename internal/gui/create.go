@@ -78,6 +78,14 @@ func (c *Create) Show(title string) bool {
 	return false
 }
 
+// Showing is the part in front, by title.
+func (c *Create) Showing() string {
+	if part := c.current(); part != nil {
+		return part.Title()
+	}
+	return ""
+}
+
 // Title is the name in the navigation.
 func (c *Create) Title() string { return "Create" }
 
