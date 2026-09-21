@@ -39,7 +39,9 @@ Wayland, so it installs on a headless box, in a container, or on a server whose
 only lighting is a fan someone forgot about.
 
 `hotaru-gui` — the Fyne program, which needs the graphics stack. It depends on
-`hotaru` for the service and the shared docs.
+`hotaru` for the service and the shared docs. Built with `make gui`, separately
+from the service for the same reason it is packaged separately: cgo and OpenGL
+on one side, a binary that runs on a headless box on the other.
 
 The split falls out of the architecture: the GUI is a client, so it is genuinely
 separable, and the heavy dependencies are all on the client side.
