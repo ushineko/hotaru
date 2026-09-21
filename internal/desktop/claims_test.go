@@ -65,42 +65,20 @@ func TestNoShortcutsFileIsNotAFault(t *testing.T) {
 	require.Empty(t, found)
 }
 
-func TestReleasingRemovesOnlyTheNamedEntries(t *testing.T) {
+func TestAClaimCarriesWhatKDENeedsToForgetIt(t *testing.T) {
 	/*
-		It is not hotaru's file. Every line it does not understand -- other
-		programs' shortcuts, section headers, the friendly names KDE keeps --
-		has to come out exactly as it went in.
+		Releasing goes through kglobalaccel rather than the file, so a claim
+		has to carry the pair that call takes: the component and the action.
+
+		Editing the file was tried and does not work. The lines were deleted,
+		hotaru registered its eighteen shortcuts, and all eighteen of the old
+		ones were back a second later -- the daemon holds the table in memory
+		and writes it out whenever anything registers.
 	*/
-	path := shortcuts(t)
-	claims, err := desktop.Claimed(path, []string{"Ctrl+Alt+Num+1", "Ctrl+Alt+Num+4"})
+	found, err := desktop.Claimed(shortcuts(t), []string{"Ctrl+Alt+Num+4"})
 	require.NoError(t, err)
-
-	removed, err := desktop.Release(path, claims)
-	require.NoError(t, err)
-	require.Equal(t, 2, removed)
-
-	after, err := os.ReadFile(path) //nolint:gosec // the test's own file
-	require.NoError(t, err)
-	body := string(after)
-
-	require.NotContains(t, body, "AIOScene1=")
-	require.NotContains(t, body, "AIOScene4=")
-	require.Contains(t, body, "AIOScene11=", "an entry on a key hotaru does not want was removed")
-	require.Contains(t, body, "Switch One Desktop Down=")
-	require.Contains(t, body, "[org.kde.spectacle.desktop]")
-	require.Contains(t, body, "_k_friendly_name=KWin")
-}
-
-func TestReleasingNothingChangesNothing(t *testing.T) {
-	path := shortcuts(t)
-	before, err := os.ReadFile(path) //nolint:gosec // the test's own file
-	require.NoError(t, err)
-
-	removed, err := desktop.Release(path, nil)
-	require.NoError(t, err)
-	require.Zero(t, removed)
-
-	after, err := os.ReadFile(path) //nolint:gosec // the test's own file
-	require.NoError(t, err)
-	require.Equal(t, before, after)
+	require.Len(t, found, 1)
+	require.Equal(t, "AIOScene4", found[0].Entry)
+	require.Equal(t, "kwin", found[0].Component,
+		"a claim without its component cannot be unregistered")
 }

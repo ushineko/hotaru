@@ -45,6 +45,13 @@ func TestTheClientCommandsCannotReachADevice(t *testing.T) {
 		"internal/service", // the thing that drives it
 		"internal/devices", // and the knowledge of how
 	}
+	/*
+		internal/desktop is deliberately not on that list. The rule is about
+		devices: no command may write a light. Editing the desktop's own
+		shortcut file is not a device write, and it happens here precisely
+		because the service must not be able to do it -- its unit gives it
+		write access to its own two directories and nothing else.
+	*/
 	for _, imported := range append(pkg.Imports, pkg.TestImports...) {
 		for _, banned := range forbidden {
 			require.NotContains(t, imported, banned,

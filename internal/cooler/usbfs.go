@@ -26,13 +26,22 @@ const (
 )
 
 /*
-maxTransfer bounds one bulk write.
+chunk is how much of an image goes in one bulk transfer.
 
-The panel is 640x640 and the largest thing sent to it is a frame's worth of
-pixels; anything beyond this is a bug in the caller rather than a transfer to
-attempt.
+Not a limit on what can be sent -- the panel holds about 24 MB and an animation
+happily fills it -- but on what one ioctl is asked to carry. usbfs allocates a
+single contiguous buffer per transfer, so a 19 MB write is a 19 MB kernel
+allocation; splitting it costs nothing on a stream endpoint and the device has
+already been told how many packets to expect.
+
+A multiple of the 1024-byte packet the protocol counts in, so a chunk boundary
+is never inside a packet.
+
+Found by a scene: four of this desk's nine animations are between 9 and 20 MB,
+and every one of them failed on a cap that only ever saw a 22 KB dashboard
+frame.
 */
-const maxTransfer = 4 << 20
+const chunk = 1 << 20
 
 // bulk is struct usbdevfs_bulktransfer, laid out as the kernel expects.
 type bulk struct {
@@ -90,14 +99,24 @@ means the device received part of an image and will draw whatever was already
 in that memory for the rest, which looks like a corrupted panel and reports as
 a success.
 */
-//nolint:gosec // unsafe is the ioctl calling convention; the length is bounded
-// by the caller's slice, which cannot exceed a frame.
 func (u *usb) write(endpoint uint8, data []byte, timeoutMS uint32) error {
+	for len(data) > chunk {
+		if err := u.transfer(endpoint, data[:chunk], timeoutMS); err != nil {
+			return err
+		}
+		data = data[chunk:]
+	}
+	return u.transfer(endpoint, data, timeoutMS)
+}
+
+// transfer is one bulk write, which the kernel does in one allocation.
+//
+// by the chunk above.
+//
+//nolint:gosec // unsafe is the ioctl calling convention; the length is bounded
+func (u *usb) transfer(endpoint uint8, data []byte, timeoutMS uint32) error {
 	if len(data) == 0 {
 		return nil
-	}
-	if len(data) > maxTransfer {
-		return fmt.Errorf("transfer of %d bytes is larger than %d", len(data), maxTransfer)
 	}
 	transfer := bulk{
 		endpoint: uint32(endpoint),

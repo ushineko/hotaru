@@ -330,14 +330,10 @@ session bus, no KWin yet, or another hotaru holding the bus name.
 `{"key": "Ctrl+Alt+Shift+Num+1", "scene": "evening"}`. An empty scene name
 unbinds the key, including one of the nine shipped ones.
 
-## POST /v1/keys/release
-
-Removes another program's stale entries for hotaru's sequences from
-kglobalshortcutsrc, and nothing else in that file. It answers `{"removed": 9}`.
-
-**Never called on hotaru's own initiative.** It edits a file that belongs to the
-desktop, so it happens because a person was shown what is in the way and said
-yes.
+There is no route that clears a claim. The service reads the desktop's file and
+cannot write it -- its unit gives it write access to its own two directories
+and nothing else -- so `hotaru keys release` does the editing in the caller's
+own process, after showing them what is in the way. A GUI does the same.
 
 ## The hotkey door
 
