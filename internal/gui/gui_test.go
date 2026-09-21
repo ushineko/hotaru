@@ -1,10 +1,14 @@
 package gui_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"go/build"
+	"image"
+	"image/color/palette"
+	"image/gif"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -1631,4 +1635,97 @@ func TestScreensCanBeMadeOnAMachineWithNowhereToDrawThem(t *testing.T) {
 	require.Contains(t, said, "No cooler on this machine")
 	require.Contains(t, said, "cooling", "the screens themselves are not listed")
 	require.Contains(t, said, "New screen", "there is no way to make one")
+}
+
+func TestThePictureGridPutsTilesSideBySideAndDecodesOffTheDrawingThread(t *testing.T) {
+	/*
+		Two faults in one section, both about what it costs to look at.
+
+		A column of cards gave a picture a hundred pixels and the rest of the
+		line to a size and the directory every one of them is in, so eighteen
+		pictures were eighteen screens of mostly nothing. And the thumbnails
+		were decoded inline: eighteen 640x640 GIFs read from disk on the
+		thread drawing the window, every time the section was opened.
+	*/
+	a := test.NewApp()
+	t.Cleanup(a.Quit)
+
+	dir := t.TempDir()
+	pictures := make([]api.Image, 0, 2)
+	for _, name := range []string{"rain", "snow"} {
+		path := filepath.Join(dir, name+".gif")
+		require.NoError(t, os.WriteFile(path, animation(t), 0o600))
+		pictures = append(pictures, api.Image{
+			Name: name, Path: path, Bytes: 1024, Added: time.Now(),
+		})
+	}
+
+	routes := healthy()
+	routes["GET /"+api.Version+"/images"] = api.ImagesResponse{Images: pictures}
+
+	app := gui.New(service(t, routes))
+	opts := app.Options("s")
+	opts.SettingsPath = filepath.Join(t.TempDir(), "gui.yml")
+	sh := shell.Headless(a, opts)
+	app.Refresh(context.Background())
+
+	section := &gui.PicturesSection{}
+	gui.OpenPictures(section, app)
+	built := section.Build(sh)
+
+	window := test.NewWindow(built)
+	t.Cleanup(window.Close)
+	window.Resize(fyne.NewSize(1000, 700))
+
+	// Nothing was decoded to build it: the pictures arrive afterwards.
+	var shots []*canvas.Image
+	fynetest.WalkRendered(built, func(o fyne.CanvasObject) bool {
+		// The thumbnails, not the icons on the buttons beside them.
+		if shot, ok := o.(*canvas.Image); ok && shot.MinSize().Width >= 96 {
+			shots = append(shots, shot)
+		}
+		return false
+	})
+	require.Len(t, shots, 2, "the grid did not draw both pictures")
+
+	// Side by side, because a picture is what somebody is choosing between.
+	at := func(o fyne.CanvasObject) fyne.Position {
+		return fyne.CurrentApp().Driver().AbsolutePositionForObject(o)
+	}
+	require.Equal(t, at(shots[0]).Y, at(shots[1]).Y, "the tiles are in a column")
+	require.Less(t, at(shots[0]).X, at(shots[1]).X)
+
+	// And they fill in, from the shared cache rather than from the disk on
+	// the thread that drew them: once the section has warmed, a build hands
+	// back a picture that already has its image.
+	section.Arrive()
+	require.Eventually(t, func() bool {
+		warm := false
+		fyne.Do(func() {
+			fynetest.WalkRendered(section.Build(sh), func(o fyne.CanvasObject) bool {
+				shot, ok := o.(*canvas.Image)
+				if ok && shot.MinSize().Width >= 96 && shot.Image != nil {
+					warm = true
+					return true
+				}
+				return false
+			})
+		})
+		return warm
+	}, 3*time.Second, 20*time.Millisecond, "the thumbnail never arrived")
+}
+
+// animation is a two-frame GIF, which is what the library keeps.
+func animation(t *testing.T) []byte {
+	t.Helper()
+
+	frames := &gif.GIF{}
+	for range 2 {
+		frame := image.NewPaletted(image.Rect(0, 0, 8, 8), palette.Plan9)
+		frames.Image = append(frames.Image, frame)
+		frames.Delay = append(frames.Delay, 10)
+	}
+	var out bytes.Buffer
+	require.NoError(t, gif.EncodeAll(&out, frames))
+	return out.Bytes()
 }

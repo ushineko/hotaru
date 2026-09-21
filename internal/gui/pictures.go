@@ -65,6 +65,10 @@ func OpenPictures(p *PicturesSection, app *App) { p.app = app }
 // test that only looked at the first one.
 func (p *PicturesSection) Waiting() int { return len(p.waiting) }
 
+// Arrive is the navigation reaching this section, which is the moment its
+// thumbnails are about to be drawn.
+func (p *PicturesSection) Arrive() { go p.warm() }
+
 // Title is the name in the navigation.
 func (p *PicturesSection) Title() string { return "Pictures" }
 
@@ -94,58 +98,108 @@ func (p *PicturesSection) Build(sh *shell.Shell) fyne.CanvasObject {
 		return container.NewVBox(add, widgets.Note(err.Error(), fd.StatusWarn))
 	}
 
-	var body []fyne.CanvasObject
 	if len(stored) == 0 {
-		body = append(body, widgets.Note(
-			"Any JPEG, PNG or GIF. It is scaled to the panel and cropped to the middle.",
-			fd.StatusInfo))
+		return container.NewBorder(
+			container.NewVBox(add), nil, nil, nil,
+			container.NewVBox(widgets.Note(
+				"Any JPEG, PNG or GIF. It is scaled to the panel and cropped to the middle.",
+				fd.StatusInfo)),
+		)
 	}
+
+	/*
+		A grid of tiles rather than a column of cards.
+
+		A picture is a picture: what tells two of them apart is what they look
+		like, and a card gave that a hundred pixels and the rest of the line
+		to a size, a frame count and the directory every one of them is in.
+		Eighteen pictures were eighteen screens of mostly nothing.
+
+		GridWrap reflows to the width it is given, so a wide window shows a
+		row of six and a narrow one a row of two, which is what somebody
+		resizing a window full of pictures expects.
+	*/
+	tiles := make([]fyne.CanvasObject, 0, len(stored))
 	for _, image := range stored {
-		body = append(body, p.card(sh, image))
+		tiles = append(tiles, p.tile(sh, image))
 	}
 
 	return container.NewBorder(
 		container.NewVBox(add), nil, nil, nil,
-		container.NewVScroll(container.NewVBox(body...)),
+		container.NewVScroll(container.NewGridWrap(fyne.NewSize(tileWide, tileTall), tiles...)),
 	)
 }
 
-// card is one stored picture: what it looks like, what it costs, and the two
-// things worth doing with it.
-func (p *PicturesSection) card(sh *shell.Shell, image api.Image) fyne.CanvasObject {
+// The tile, and what it holds: the picture, its name, and the three things
+// worth doing with it.
+const (
+	tileWide = 150
+	tileTall = 215
+)
+
+/*
+tile is one stored picture in the grid.
+
+The name under the picture rather than beside it, because the picture is the
+thing being chosen between and a name is how somebody says which one they
+chose. What it costs is a tooltip: it matters when the panel will not take it,
+and never otherwise.
+*/
+func (p *PicturesSection) tile(sh *shell.Shell, image api.Image) fyne.CanvasObject {
+	name := widget.NewLabel(image.Name)
+	name.Alignment = fyne.TextAlignCenter
+	name.Truncation = fyne.TextTruncateEllipsis
+
+	// What it costs, in one line: it matters when the panel will not take it,
+	// and the frame count is the difference between a picture and an
+	// animation, which the still thumbnail cannot show.
 	facts := []string{size(image.Bytes)}
 	if image.Frames > 1 {
 		facts = append(facts, fmt.Sprintf("%d frames", image.Frames))
 	}
+	said := widgets.Dim(strings.Join(facts, " · "))
+	if label, ok := said.(*widget.Label); ok {
+		label.Alignment = fyne.TextAlignCenter
+		label.Truncation = fyne.TextTruncateEllipsis
+	}
 
-	show := widget.NewButtonWithIcon("Show it", theme.VisibilityIcon(), func() {
-		p.show(sh, image)
-	})
-	lights := widget.NewButtonWithIcon("Make a scene", theme.ColorPaletteIcon(), func() {
-		p.scene(sh, image)
-	})
-	forget := widget.NewButtonWithIcon("", theme.DeleteIcon(), func() {
-		sh.Perform("removing "+image.Name, func(ctx context.Context) error {
-			if err := p.app.client.RemoveImage(ctx, image.Name); err != nil {
-				return err
-			}
-			onScreen(func() {
-				imagecache.Shared.Forget(thumbKey(image))
-				sh.Invalidate()
-			})
-			return nil
-		})
-	})
+	/*
+		Icons, with what each one does on hover.
 
-	return widgets.Card(image.Name,
-		container.NewBorder(nil, nil, p.thumbnail(image), nil,
-			container.NewVBox(
-				widgets.Dim(strings.Join(facts, " · ")),
-				widgets.Dim(image.Path),
-				container.NewHBox(show, lights, forget),
-			),
-		),
+		Three buttons with words on them do not fit a tile this size, and the
+		tile is the size it is because the picture is what somebody is
+		choosing between. The tip is the only thing that says what an icon
+		alone is, which is why it is a tip and not a decoration.
+	*/
+	show := widget.NewButtonWithIcon("", theme.VisibilityIcon(), func() { p.show(sh, image) })
+	lights := widget.NewButtonWithIcon("", theme.ColorPaletteIcon(), func() { p.scene(sh, image) })
+	forget := widget.NewButtonWithIcon("", theme.DeleteIcon(), func() { p.forget(sh, image) })
+	for _, button := range []*widget.Button{show, lights, forget} {
+		button.Importance = widget.LowImportance
+	}
+	actions := container.NewHBox(
+		widgets.WithTip(show, "Show it on the panel"),
+		widgets.WithTip(lights, "Make a scene from it"),
+		widgets.WithTip(forget, "Remove it"),
 	)
+
+	return container.NewBorder(nil,
+		container.NewVBox(name, said, container.NewCenter(actions)),
+		nil, nil, container.NewCenter(p.thumbnail(image)))
+}
+
+// forget removes a picture from the library, and the thumbnail with it.
+func (p *PicturesSection) forget(sh *shell.Shell, image api.Image) {
+	sh.Perform("removing "+image.Name, func(ctx context.Context) error {
+		if err := p.app.client.RemoveImage(ctx, image.Name); err != nil {
+			return err
+		}
+		onScreen(func() {
+			imagecache.Shared.Forget(thumbKey(image))
+			sh.Invalidate()
+		})
+		return nil
+	})
 }
 
 // thumbSize is how big a stored picture is drawn in the listing. Small enough
@@ -165,24 +219,75 @@ func (p *PicturesSection) thumbnail(stored api.Image) fyne.CanvasObject {
 // pictureShot is a stored picture at thumbnail size, for any section that
 // wants one: the library, and the scene editor's screen chooser.
 func pictureShot(stored api.Image) fyne.CanvasObject {
-	/*
-		Through the shared cache, so the thumbnails survive this section
-		being rebuilt and are bounded when they do not.
+	return pictureShotAt(stored, thumbSize)
+}
 
-		The key carries the size and the time it was added, because a
-		picture replaced under the same name is a different picture and a
-		key that did not change would serve the old one.
-	*/
-	small, err := imagecache.Shared.Get(thumbKey(stored),
-		func() (image.Image, error) { return shrink(stored.Path) })
-	if err != nil {
-		return widgets.Dim("(cannot read it)")
+/*
+pictureShotAt is a stored picture at a size, drawn when it is ready.
+
+Through the shared cache, so a thumbnail survives the section being rebuilt
+and is bounded when it does not -- and *off the thread drawing the window*
+when the cache does not have it yet. Decoding eighteen GIFs inline is the few
+seconds this section took to appear every time somebody opened it, and each
+one of them is a 640x640 frame read from disk to draw a square an inch across.
+
+The key carries the size and the time it was added, because a picture replaced
+under the same name is a different picture and a key that did not change would
+serve the old one.
+*/
+func pictureShotAt(stored api.Image, side float32) fyne.CanvasObject {
+	picture := canvas.NewImageFromImage(nil)
+	picture.FillMode = canvas.ImageFillContain
+	picture.SetMinSize(fyne.NewSize(side, side))
+	slot := container.NewStack(picture)
+
+	if held, err := imagecache.Shared.Get(thumbKey(stored), notYet); err == nil && held != nil {
+		picture.Image = held
+		return slot
 	}
 
-	picture := canvas.NewImageFromImage(small)
-	picture.FillMode = canvas.ImageFillContain
-	picture.SetMinSize(fyne.NewSize(thumbSize, thumbSize))
-	return picture
+	go func() {
+		small, err := imagecache.Shared.Get(thumbKey(stored),
+			func() (image.Image, error) { return shrink(stored.Path) })
+		onScreen(func() {
+			if err != nil {
+				// A picture the library lists and the disk does not have.
+				// Said in the tile rather than left as a blank square.
+				slot.Objects = []fyne.CanvasObject{widgets.Dim("(cannot read it)")}
+				slot.Refresh()
+				return
+			}
+			// In place. Invalidating here would rebuild the section under
+			// whoever is reading it, once per picture.
+			picture.Image = small
+			picture.Refresh()
+		})
+	}()
+	return slot
+}
+
+// notYet asks the cache whether it already has a picture without drawing one:
+// a decode that fails caches nothing.
+func notYet() (image.Image, error) { return nil, errNoShotYet }
+
+/*
+warm decodes the thumbnails for a library off the UI thread.
+
+Arriving at the section is the moment they are about to be drawn, and a
+picture decoded now is one the grid does not stop to decode.
+*/
+func (p *PicturesSection) warm() {
+	if p.app == nil {
+		return
+	}
+	stored, err := p.app.client.Images(context.Background())
+	if err != nil {
+		return
+	}
+	for _, one := range stored {
+		_, _ = imagecache.Shared.Get(thumbKey(one),
+			func() (image.Image, error) { return shrink(one.Path) })
+	}
 }
 
 /*

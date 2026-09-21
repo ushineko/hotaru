@@ -2,8 +2,10 @@ package images_test
 
 import (
 	"bytes"
+	"fmt"
 	"image"
 	"image/color"
+	"image/color/palette"
 	"image/gif"
 	"image/jpeg"
 	"image/png"
@@ -294,5 +296,63 @@ func noise(t *testing.T, seed int) []byte {
 	}
 	var out bytes.Buffer
 	require.NoError(t, png.Encode(&out, picture))
+	return out.Bytes()
+}
+
+func TestCountingFramesAgreesWithDecodingThem(t *testing.T) {
+	/*
+		The count is read off the file's blocks rather than decoded, because
+		decoding is what made listing the library cost a second and a third
+		of it: `gif.DecodeAll` undoes the LZW compression of every frame to
+		tell you how many there are, and the window asks for that list
+		whenever the section is drawn.
+
+		So the cheap count has to agree with the expensive one. This is the
+		test that says it does.
+	*/
+	dir := t.TempDir()
+	library, err := images.Open(dir)
+	require.NoError(t, err)
+
+	want := map[string]int{}
+	for _, count := range []int{1, 2, 17} {
+		name := fmt.Sprintf("animation%d", count)
+		kept, err := library.Add(name, moving(t, count))
+		require.NoError(t, err)
+
+		// What the format actually holds, which is what the listing must say.
+		body, err := os.ReadFile(kept.Path)
+		require.NoError(t, err)
+		decoded, err := gif.DecodeAll(bytes.NewReader(body))
+		require.NoError(t, err)
+		want[name] = len(decoded.Image)
+	}
+
+	// And a file that is not a GIF at all, which must not fail the listing.
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "broken.gif"),
+		[]byte("not a picture"), 0o600))
+	want["broken"] = 1
+
+	listed, err := library.All()
+	require.NoError(t, err)
+	require.Len(t, listed, len(want))
+	for _, one := range listed {
+		require.Equal(t, want[one.Name], one.Frames, "%s", one.Name)
+	}
+}
+
+// moving is a GIF of a given number of frames, as a source to convert.
+func moving(t *testing.T, count int) []byte {
+	t.Helper()
+
+	animation := &gif.GIF{}
+	for i := range count {
+		frame := image.NewPaletted(image.Rect(0, 0, 32, 32), palette.Plan9)
+		frame.Set(i%32, 0, color.RGBA{R: 255, A: 255})
+		animation.Image = append(animation.Image, frame)
+		animation.Delay = append(animation.Delay, 10)
+	}
+	var out bytes.Buffer
+	require.NoError(t, gif.EncodeAll(&out, animation))
 	return out.Bytes()
 }
