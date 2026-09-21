@@ -344,6 +344,11 @@ Converts a picture and keeps it. `{"image": "<base64>"}`, any JPEG, PNG or GIF.
 It is cropped to the middle, scaled to 640x640, and reduced to 256 colours
 chosen from the picture itself. Adding a name that exists replaces it.
 
+`{"images": ["<base64>", …]}` instead makes a slideshow out of several: each
+picture held, crossfaded into the next, and the last fading back into the
+first. The fade is shortened until the reel fits the panel's memory, because a
+slideshow missing a photograph is not the one that was asked for.
+
 ## POST /v1/images/preview
 
 The same conversion, returned rather than kept:
@@ -357,6 +362,19 @@ answer, in front of the answer.
 ## DELETE /v1/images/{name}
 
 Forgets one.
+
+## POST /v1/images/{name}/scene
+
+Builds a scene whose lights match a stored picture, and keeps it.
+`{"scene": "jovian"}`; the scene comes back in the reply.
+
+Every zone gets a run across the picture rather than one colour for the
+machine: light *i* of *n* takes the *i*th vertical slice, so a ring carries the
+image's own left-to-right sweep. The slice is weighted by how much colour each
+pixel carries -- half of every slice through a photograph is background, and
+averaging it in reads a rust planet as grey-brown -- and the value is lifted to
+something a light can show, because a photograph is mostly shadow. The scene
+names the picture as its screen, so applying it makes the whole machine agree.
 
 ## POST /v1/images/{name}/show
 

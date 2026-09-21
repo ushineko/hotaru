@@ -7,6 +7,7 @@ import (
 	"image/gif"
 	"image/jpeg"
 	"image/png"
+	"math/rand/v2"
 	"os"
 	"path/filepath"
 	"testing"
@@ -163,4 +164,135 @@ func TestTheLibraryListsAndForgets(t *testing.T) {
 	all, err = l.All()
 	require.NoError(t, err)
 	require.Len(t, all, 1)
+}
+
+func TestASlideshowIsOneAnimation(t *testing.T) {
+	/*
+		A stack of wallpapers dropped on the program is a question, and this
+		is the second answer: each picture held, crossfaded into the next, and
+		the last fading back to the first so the loop has no jump in it.
+	*/
+	sources := [][]byte{
+		wallpaper(t, 800, 600),
+		wallpaper(t, 1024, 768),
+		wallpaper(t, 640, 640),
+	}
+
+	stored, err := library(t).AddSlideshow("reel", sources)
+	require.NoError(t, err)
+	require.True(t, stored.Moves())
+	require.Greater(t, stored.Frames, len(sources),
+		"a slideshow with no crossfade is a slide sorter")
+
+	body, err := os.ReadFile(stored.Path)
+	require.NoError(t, err)
+	decoded, err := gif.DecodeAll(bytes.NewReader(body))
+	require.NoError(t, err)
+	require.Equal(t, images.Panel, decoded.Config.Width)
+}
+
+func TestAHeldPictureIsOneFrameNotMany(t *testing.T) {
+	/*
+		The monitor's finding, carried over: a held photograph is one frame
+		carrying the whole hold, and only the fade steps carry the fade's
+		short delay. Giving every frame the same duration means a smoother
+		fade can only be bought by making it slower.
+	*/
+	converted, _, err := images.Slideshow([][]byte{
+		wallpaper(t, 400, 400), wallpaper(t, 400, 400),
+	})
+	require.NoError(t, err)
+
+	decoded, err := gif.DecodeAll(bytes.NewReader(converted))
+	require.NoError(t, err)
+
+	var holds int
+	for _, delay := range decoded.Delay {
+		if delay >= images.Hold {
+			holds++
+		}
+	}
+	require.Equal(t, 2, holds, "the two photographs are two held frames")
+}
+
+func TestASlideshowSharesOnePalette(t *testing.T) {
+	/*
+		The other half of the same finding. Frames that share a colour table
+		delta-encode against each other and frames that do not are each a
+		fresh image -- which is what made the monitor's crossfades five steps
+		long instead of twenty-four.
+	*/
+	converted, _, err := images.Slideshow([][]byte{
+		wallpaper(t, 500, 500), wallpaper(t, 500, 500), wallpaper(t, 500, 500),
+	})
+	require.NoError(t, err)
+
+	decoded, err := gif.DecodeAll(bytes.NewReader(converted))
+	require.NoError(t, err)
+
+	first := decoded.Image[0].Palette
+	for i, frame := range decoded.Image {
+		require.Equal(t, len(first), len(frame.Palette),
+			"frame %d carries a palette of its own", i)
+	}
+}
+
+func TestOnePictureIsNotASlideshow(t *testing.T) {
+	// Asking for a reel of one is asking for a picture, and answering with a
+	// crossfade from a photograph to itself would be a program being clever.
+	converted, frames, err := images.Slideshow([][]byte{wallpaper(t, 300, 300)})
+	require.NoError(t, err)
+	require.Equal(t, 1, frames)
+	require.NotEmpty(t, converted)
+}
+
+func TestAReelTooSmoothToFitLosesSmoothnessNotPictures(t *testing.T) {
+	/*
+		The panel holds about 24 MB and says nothing when handed more: spec
+		013's finding, which is why there is a budget here at all. What gives
+		when a reel overruns is the fade, because a slideshow missing a
+		photograph is not the slideshow somebody asked for.
+	*/
+	var sources [][]byte
+	for i := range 8 {
+		sources = append(sources, noise(t, i))
+	}
+
+	converted, _, err := images.Slideshow(sources)
+	require.NoError(t, err)
+	require.LessOrEqual(t, len(converted), images.Budget, "the reel will not fit the panel")
+
+	decoded, err := gif.DecodeAll(bytes.NewReader(converted))
+	require.NoError(t, err)
+
+	var holds int
+	for _, delay := range decoded.Delay {
+		if delay >= images.Hold {
+			holds++
+		}
+	}
+	require.Equal(t, len(sources), holds, "a picture was dropped to make the reel fit")
+	require.Less(t, len(decoded.Image), len(sources)*(images.MostSteps+1),
+		"the fade was never shortened, so nothing about fitting was tested")
+}
+
+// noise is a photograph that will not compress: every pixel unrelated to its
+// neighbours, which is the worst case a reel can be handed and the only way to
+// make one overrun the panel on purpose.
+func noise(t *testing.T, seed int) []byte {
+	t.Helper()
+
+	random := rand.New(rand.NewPCG(uint64(seed), 7)) //nolint:gosec // a fixture, not a secret
+	picture := image.NewRGBA(image.Rect(0, 0, 700, 700))
+	for y := range 700 {
+		for x := range 700 {
+			picture.Set(x, y, color.RGBA{
+				R: uint8(random.UintN(256)), G: uint8(random.UintN(256)),
+				B: uint8(random.UintN(256)), A: 255,
+			})
+		}
+	}
+	var out bytes.Buffer
+	require.NoError(t, png.Encode(&out, picture))
+	return out.Bytes()
 }

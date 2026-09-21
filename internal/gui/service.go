@@ -68,11 +68,15 @@ func (s *ServiceSection) Build(sh *shell.Shell) fyne.CanvasObject {
 			// recorded is unfinished, not successful, and a cold boot has
 			// been seen finding two devices of six.
 			if !done.Complete {
-				sh.Flash(fmt.Sprintf("%d device(s) restored; still waiting for %v",
-					done.Applied, done.Missing), fd.StatusWarn)
+				onScreen(func() {
+					sh.Flash(fmt.Sprintf("%d device(s) restored; still waiting for %v",
+						done.Applied, done.Missing), fd.StatusWarn)
+				})
 				return nil
 			}
-			sh.Flash(fmt.Sprintf("%d device(s) restored.", done.Applied), fd.StatusGood)
+			onScreen(func() {
+				sh.Flash(fmt.Sprintf("%d device(s) restored.", done.Applied), fd.StatusGood)
+			})
 			return nil
 		})
 	})
