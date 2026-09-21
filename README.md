@@ -2,7 +2,7 @@
 
 *lights, cooler, action!*
 
-**Version**: 0.1.1
+**Version**: 0.1.2
 
 RGB lighting and AIO cooler control for Linux, as a CLI, a user service and a
 desktop GUI. 蛍 — fireflies, small lights that pulse.
@@ -316,7 +316,7 @@ MIT. See [LICENSE](LICENSE).
 
 ## Changelog
 
-### Unreleased
+### 0.1.2 (2026-09-21)
 
 - The screen builder sets the lettering: the face, and a size, a colour and an
   outline for the labels and for the readings separately. The size is a
