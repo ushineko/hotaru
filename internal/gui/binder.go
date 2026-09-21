@@ -47,10 +47,39 @@ func (s *ScenesSection) bind(sh *shell.Shell, scene api.Scene, current string) {
 		labels = append(labels, keyLabel(key, held[key], scene.Name))
 	}
 
-	chooser := widget.NewRadioGroup(labels, nil)
+	/*
+		And a key that is not in the bank at all.
+
+		Every key hotaru ships is on the numpad, because that is what this
+		desk has had for years -- so a machine without one inherits eighteen
+		shortcuts it cannot press and, until this, a chooser offering
+		eighteen more of them. A laptop, a keyboard with no numeric pad, or a
+		desktop whose keys arrive over the network are all that machine.
+
+		The service has always taken any sequence KDE spells; it was the
+		window that only offered its own list.
+	*/
+	typed := widget.NewEntry()
+	typed.SetPlaceHolder("Meta+Shift+L")
+	typed.Disable()
+
+	labels = append(labels, someKey)
+
+	chooser := widget.NewRadioGroup(labels, func(chosen string) {
+		if chosen == someKey {
+			typed.Enable()
+			return
+		}
+		typed.Disable()
+	})
 	chooser.Selected = noKey
 	if current != "" {
 		chooser.Selected = keyLabel(current, held[current], scene.Name)
+	}
+	if current != "" && !inBank(current, keys) {
+		// A key bound from the terminal, or from this dialog last time.
+		chooser.Selected, typed.Text = someKey, current
+		typed.Enable()
 	}
 	chooser.Required = true
 
@@ -59,6 +88,9 @@ func (s *ScenesSection) bind(sh *shell.Shell, scene api.Scene, current string) {
 			"are left free for scenes you write. Taking a key from another scene leaves "+
 			"that one without a key."),
 		chooser,
+		typed,
+		widgets.DimWrapped("Spelled the way KDE spells it: Ctrl, Alt, Shift, Meta and the "+
+			"key, joined with +. A numpad key is Num+1."),
 	)
 
 	/*
@@ -75,13 +107,43 @@ func (s *ScenesSection) bind(sh *shell.Shell, scene api.Scene, current string) {
 			if !ok {
 				return
 			}
-			s.rebind(sh, scene.Name, keyOf(chooser.Selected, keys, held), current)
+			key := keyOf(chooser.Selected, keys, held)
+			if chooser.Selected == someKey {
+				key = strings.TrimSpace(typed.Text)
+				if key == "" {
+					sh.Flash("That needs a key to bind.", fd.StatusWarn)
+					return
+				}
+			}
+			s.rebind(sh, scene.Name, key, current)
 		}, sh.Window)
 	roomy(ask, sh)
 }
 
+// BindKey opens the chooser, for tests: it is reached by clicking the key on
+// a scene's row, and a test that clicked it would be a test about buttons.
+func BindKey(s *ScenesSection, sh *shell.Shell, scene api.Scene, current string) {
+	s.bind(sh, scene, current)
+}
+
 // noKey is the first option, and what a scene with no shortcut shows as.
 const noKey = "no shortcut"
+
+// someKey is the last option: a sequence somebody types, for a machine whose
+// keyboard hotaru's bank does not fit.
+const someKey = "something else"
+
+// inBank says whether a key is one the chooser already lists, which is how a
+// binding made at the terminal finds its way into the entry rather than
+// looking like no shortcut at all.
+func inBank(key string, keys []string) bool {
+	for _, one := range keys {
+		if one == key {
+			return true
+		}
+	}
+	return false
+}
 
 /*
 keyBank is every key somebody may bind, in the order the numpad is laid out.
