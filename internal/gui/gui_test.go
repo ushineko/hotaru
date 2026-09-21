@@ -496,6 +496,19 @@ func TestASceneLineIsEditedWhereItIsShown(t *testing.T) {
 	gui.OpenEditor(section, app, draft)
 	built := section.Build(sh)
 
+	/*
+		Given a size, and drawn.
+
+		The scene's lines are a widget.List now -- it builds the rows that are
+		on screen and recycles them, which is what stopped a 225-line scene
+		costing 1,575 measured objects on every layout (spec 026). A list
+		with no size has no rows, so a test that reads what it says has to
+		give it one.
+	*/
+	window := test.NewWindow(built)
+	t.Cleanup(window.Close)
+	window.Resize(fyne.NewSize(900, 700))
+
 	said := fynetest.Text(built)
 	require.Contains(t, said, "NZXT Kraken")
 	require.Contains(t, said, "Everything in scope")
