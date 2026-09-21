@@ -7,6 +7,7 @@ import (
 	"math"
 	"math/rand"
 	"strconv"
+	"sync"
 
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/gofont/gobold"
@@ -19,6 +20,24 @@ import (
 // the panel, into the pixels this rasteriser wants.
 const ptToPx = 4.0 / 3.0
 
+/*
+drawing guards everything in this file that is shared between renders.
+
+Until the preview route existed, one goroutine rendered: the push loop, for
+the life of the service. Now a window asks for a frame on every change while
+that loop is still drawing, and the two met in the font cache -- an
+opentype.Face is not safe for concurrent use, and two goroutines shaping text
+through one of them panicked inside sfnt with an index out of range.
+
+One lock rather than one per map, held across the drawing and not only across
+the lookup, because the unsafe part is the Face itself and not the map that
+found it. A frame takes about 8 ms; serialising them costs nothing anybody
+can see.
+*/
+var drawing sync.Mutex
+
+// faces are the sized fonts, kept because building one parses the TTF. The
+// caller holds `drawing`.
 var faces = map[string]font.Face{}
 
 func face(pt float64, bold bool) font.Face {
@@ -52,6 +71,9 @@ The reason the Python has this helper: text is top-aligned by default, which
 lets a large glyph overrun its box and collide with the band beneath it.
 */
 func centred(dst draw.Image, s string, x, y, w, h int, pt float64, bold bool, c color.Color) {
+	drawing.Lock()
+	defer drawing.Unlock()
+
 	f := face(pt, bold)
 	advance := font.MeasureString(f, s)
 	metrics := f.Metrics()
@@ -73,7 +95,9 @@ var nebulae = []struct {
 	{0.30, 0.78, 0.34, color.RGBA{40, 90, 160, 255}},
 }
 
-var sky *image.Paletted
+// skies are the starfields drawn so far, one per theme. Cached for the reason
+// the comment below gives, and keyed because a theme changes the sky.
+var skies = map[string]*image.Paletted{}
 
 /*
 background is the starfield, drawn and quantised once.
@@ -86,14 +110,20 @@ thousand pixels per frame cost 128 ms against 7.8 ms for copying a quantised
 one, which is the difference between a renderer that could run forever and one
 that could not.
 */
-func background() *image.Paletted {
-	if sky != nil {
+func background(theme Theme) *image.Paletted {
+	drawing.Lock()
+	sky, drawn := skies[theme.Name]
+	drawing.Unlock()
+	if drawn {
 		return sky
 	}
 	rgba := image.NewRGBA(image.Rect(0, 0, Size, Size))
-	draw.Draw(rgba, rgba.Bounds(), image.NewUniform(colBG), image.Point{}, draw.Src)
+	draw.Draw(rgba, rgba.Bounds(), image.NewUniform(theme.BG), image.Point{}, draw.Src)
 
-	for _, n := range nebulae {
+	for i, n := range nebulae {
+		if len(theme.Sky) > i {
+			n.c = theme.Sky[i]
+		}
 		cx, cy, r := n.cx*Size, n.cy*Size, n.r*Size
 		for y := range Size {
 			for x := range Size {
@@ -133,8 +163,18 @@ func background() *image.Paletted {
 		}
 	}
 
-	sky = image.NewPaletted(rgba.Bounds(), palette())
+	sky = image.NewPaletted(rgba.Bounds(), palette(theme, nil))
 	draw.Draw(sky, sky.Bounds(), rgba, image.Point{}, draw.Src)
+
+	drawing.Lock()
+	defer drawing.Unlock()
+	if already, drawn := skies[theme.Name]; drawn {
+		// Two renders raced to build the same sky. Either is correct -- it is
+		// drawn from a fixed seed -- and keeping the first means the cached
+		// pointer never changes under a caller holding it.
+		return already
+	}
+	skies[theme.Name] = sky
 	return sky
 }
 

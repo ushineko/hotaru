@@ -182,6 +182,56 @@ func (c *Client) Cooling(ctx context.Context) (Cooling, error) {
 	return out, err
 }
 
+// Dashboards is everything the panel can be asked to draw, with the
+// arrangements and themes an editor offers.
+func (c *Client) Dashboards(ctx context.Context) (DashboardsResponse, error) {
+	var out DashboardsResponse
+	err := c.do(ctx, http.MethodGet, "/"+Version+"/dashboards", nil, &out)
+	return out, err
+}
+
+// SaveDashboard writes one, replacing any of the same name.
+func (c *Client) SaveDashboard(ctx context.Context, one Dashboard) error {
+	return c.do(ctx, http.MethodPut, "/"+Version+"/dashboards/"+url.PathEscape(one.Name), one, nil)
+}
+
+// DeleteDashboard forgets one.
+func (c *Client) DeleteDashboard(ctx context.Context, name string) error {
+	return c.do(ctx, http.MethodDelete, "/"+Version+"/dashboards/"+url.PathEscape(name), nil, nil)
+}
+
+// UseDashboard makes one the dashboard the panel draws.
+func (c *Client) UseDashboard(ctx context.Context, name string) (Dashboard, error) {
+	var out Dashboard
+	err := c.do(ctx, http.MethodPost, "/"+Version+"/dashboards/"+url.PathEscape(name)+"/use", nil, &out)
+	return out, err
+}
+
+/*
+PreviewDashboard renders a frame without saving anything.
+
+`edited` is an unsaved draft to draw instead of the stored one, which is what
+an editor with a preview in it needs; nil draws what is saved under that name.
+*/
+func (c *Client) PreviewDashboard(ctx context.Context, name string, edited *Dashboard) (PreviewedDashboard, error) {
+	var out PreviewedDashboard
+	var body any
+	if edited != nil {
+		body = *edited
+	}
+	err := c.do(ctx, http.MethodPost,
+		"/"+Version+"/dashboards/"+url.PathEscape(name)+"/preview", body, &out)
+	return out, err
+}
+
+// Readings is every number this machine can put on the panel, each with its
+// label, its unit, and whether the machine had it to give.
+func (c *Client) Readings(ctx context.Context) ([]ReadingValue, error) {
+	var out ReadingsResponse
+	err := c.do(ctx, http.MethodGet, "/"+Version+"/readings", nil, &out)
+	return out.Readings, err
+}
+
 /*
 Screen puts something on the cooler's panel, or hands it back.
 

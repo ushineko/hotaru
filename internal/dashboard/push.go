@@ -2,6 +2,7 @@ package dashboard
 
 import (
 	"context"
+	"image"
 	"time"
 )
 
@@ -58,6 +59,16 @@ type Pusher struct {
 	// Read takes a reading. It is called on every cycle whether or not the
 	// result is pushed, because it is the comparison.
 	Read func(ctx context.Context) Reading
+	/*
+		Look is which dashboard to draw, and the picture behind it where it
+		has one.
+
+		Asked every cycle rather than held, because somebody can change the
+		active dashboard or edit the one on screen while this loop is
+		running, and a pusher holding a copy would keep drawing the old one
+		until the service restarted.
+	*/
+	Look func(ctx context.Context) (Dashboard, image.Image)
 	// Report says what went wrong, and is optional.
 	Report func(format string, args ...any)
 
@@ -127,7 +138,11 @@ func (p *Pusher) Run(ctx context.Context) {
 // cycle renders one frame, pushes it if it would look different, and says how
 // long to wait before the next one.
 func (p *Pusher) cycle(ctx context.Context) time.Duration {
-	frame := Render(p.Read(ctx), p.tick)
+	look, behind := Shipped()[0], image.Image(nil)
+	if p.Look != nil {
+		look, behind = p.Look(ctx)
+	}
+	frame := Render(look, p.Read(ctx), p.tick, behind)
 	floor := Floor(len(frame.GIF))
 
 	if p.sent && frame.Content == p.last {
@@ -145,3 +160,13 @@ func (p *Pusher) cycle(ctx context.Context) time.Duration {
 	p.last, p.sent = frame.Content, true
 	return floor
 }
+
+/*
+Redraw says that what is being drawn has changed, rather than what it says.
+
+The gate compares the frame's content, so editing the dashboard on screen --
+a different arrangement of the same numbers, a new theme, another background
+-- would show nothing until a reading moved. Forgetting the last frame is how
+the loop is told to look again.
+*/
+func (p *Pusher) Redraw() { p.sent = false }

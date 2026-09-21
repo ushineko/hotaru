@@ -299,7 +299,7 @@ func TestASceneCanTakeTheScreen(t *testing.T) {
 	svc, _ := lit(t, scene)
 	screen := &panel{}
 	svc.SetCooler(screen)
-	svc.SetDashboard(&dashboard{})
+	svc.SetDashboard(&screenAuthor{})
 
 	done, err := svc.ApplyScene(t.Context(), "blue")
 	require.NoError(t, err)
