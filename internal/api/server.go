@@ -12,6 +12,7 @@ import (
 	"github.com/ushineko/hotaru/internal/colour"
 	"github.com/ushineko/hotaru/internal/cooler"
 	"github.com/ushineko/hotaru/internal/devices"
+	"github.com/ushineko/hotaru/internal/images"
 	"github.com/ushineko/hotaru/internal/scenes"
 	"github.com/ushineko/hotaru/internal/service"
 	"github.com/ushineko/hotaru/internal/version"
@@ -43,6 +44,7 @@ func Routes() []string {
 		"POST /" + Version + "/images/preview",
 		"PUT /" + Version + "/images/{name}",
 		"DELETE /" + Version + "/images/{name}",
+		"POST /" + Version + "/images/{name}/scene",
 		"POST /" + Version + "/images/{name}/show",
 		"GET /" + Version + "/keys",
 		"POST /" + Version + "/keys/bind",
@@ -341,13 +343,7 @@ func Handler(svc *service.Service) http.Handler {
 			write(w, http.StatusBadRequest, Error{Error: "that request does not decode", Detail: err.Error()})
 			return
 		}
-		source, err := base64.StdEncoding.DecodeString(in.Image)
-		if err != nil {
-			write(w, http.StatusBadRequest, Error{Error: "the image is not base64", Detail: err.Error()})
-			return
-		}
-
-		stored, err := svc.AddImage(r.PathValue("name"), source)
+		stored, err := kept(svc, r.PathValue("name"), in)
 		if err != nil {
 			fail(w, err)
 			return
@@ -364,6 +360,21 @@ func Handler(svc *service.Service) http.Handler {
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
+	})
+
+	mux.HandleFunc("POST /"+Version+"/images/{name}/scene", func(w http.ResponseWriter, r *http.Request) {
+		var in SceneFromImageRequest
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			write(w, http.StatusBadRequest, Error{Error: "that request does not decode", Detail: err.Error()})
+			return
+		}
+
+		scene, err := svc.SceneFromImage(r.Context(), r.PathValue("name"), in.Scene)
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		write(w, http.StatusOK, asScene(scene))
 	})
 
 	mux.HandleFunc("POST /"+Version+"/images/{name}/show", func(w http.ResponseWriter, r *http.Request) {
@@ -650,6 +661,33 @@ const (
 	ReadHeaderTimeout = 5 * time.Second
 	IdleTimeout       = 60 * time.Second
 )
+
+/*
+kept stores a picture, or several as one slideshow.
+
+One route rather than two, because the difference is how many pictures were
+sent and a client that has to choose a path for that is a client doing the
+service's arithmetic.
+*/
+func kept(svc *service.Service, name string, in ImageRequest) (images.Image, error) {
+	if len(in.Images) > 0 {
+		sources := make([][]byte, 0, len(in.Images))
+		for i, encoded := range in.Images {
+			source, err := base64.StdEncoding.DecodeString(encoded)
+			if err != nil {
+				return images.Image{}, fmt.Errorf("picture %d is not base64: %w", i+1, err)
+			}
+			sources = append(sources, source)
+		}
+		return svc.AddSlideshow(name, sources)
+	}
+
+	source, err := base64.StdEncoding.DecodeString(in.Image)
+	if err != nil {
+		return images.Image{}, fmt.Errorf("the image is not base64: %w", err)
+	}
+	return svc.AddImage(name, source)
+}
 
 // asScene is a saved scene on the wire.
 func asScene(scene scenes.Scene) Scene {

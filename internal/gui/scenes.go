@@ -314,7 +314,7 @@ func (s *ScenesSection) row(sh *shell.Shell, scene api.Scene, key string) fyne.C
 			if err != nil {
 				return err
 			}
-			sh.Flash(applied(done), fd.StatusGood)
+			onScreen(func() { sh.Flash(applied(done), fd.StatusGood) })
 			return nil
 		})
 	})
@@ -323,6 +323,37 @@ func (s *ScenesSection) row(sh *shell.Shell, scene api.Scene, key string) fyne.C
 		s.picked.Clear()
 		sh.Invalidate()
 	})
+
+	/*
+		Deleting is a button on the row, and only on a row that has something
+		to delete.
+
+		A shipped scene is hotaru's own and cannot be removed -- the store
+		takes the request and the scene is still there afterwards, which is
+		the silent no-op this project keeps paying for. Saving over it is how
+		it changes, and deleting that replacement is how it comes back.
+	*/
+	buttons := []fyne.CanvasObject{apply, edit}
+	if !scene.Shipped {
+		forget := widget.NewButtonWithIcon("", theme.DeleteIcon(), func() {
+			dialog.ShowConfirm("Delete "+scene.Name+"?", "", func(yes bool) {
+				if !yes {
+					return
+				}
+				sh.Perform("deleting "+scene.Name, func(ctx context.Context) error {
+					if err := s.app.client.DeleteScene(ctx, scene.Name); err != nil {
+						return err
+					}
+					onScreen(func() {
+						sh.Flash(scene.Name+" is gone.", fd.StatusGood)
+						sh.Invalidate()
+					})
+					return nil
+				})
+			}, sh.Window)
+		})
+		buttons = append(buttons, forget)
+	}
 
 	name := scene.Name
 	if scene.Shipped {
@@ -349,7 +380,7 @@ func (s *ScenesSection) row(sh *shell.Shell, scene api.Scene, key string) fyne.C
 
 	return container.NewBorder(nil, nil,
 		container.NewHBox(left...),
-		container.NewHBox(apply, edit),
+		container.NewHBox(buttons...),
 		widgets.Dim(join(facts)),
 	)
 }
@@ -979,11 +1010,13 @@ func (s *ScenesSection) save(sh *shell.Shell) {
 				if err := s.app.client.SaveScene(ctx, s.draft.Scene(entry.Text)); err != nil {
 					return err
 				}
-				s.app.EndPreview()
-				s.stopPicking()
-				s.draft = nil
-				s.picked.Clear()
-				sh.Flash(entry.Text+" saved.", fd.StatusGood)
+				onScreen(func() {
+					s.app.EndPreview()
+					s.stopPicking()
+					s.draft = nil
+					s.picked.Clear()
+					sh.Flash(entry.Text+" saved.", fd.StatusGood)
+				})
 				return nil
 			})
 		}, sh.Window)

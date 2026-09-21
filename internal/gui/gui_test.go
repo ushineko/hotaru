@@ -16,6 +16,7 @@ import (
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/storage"
 	"fyne.io/fyne/v2/test"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	"github.com/stretchr/testify/require"
 	"github.com/ushineko/fynedesygn/fynetest"
@@ -906,4 +907,155 @@ func TestADroppedFileThatCannotBeReadSaysSo(t *testing.T) {
 	require.NotPanics(t, func() {
 		section.Dropped(sh, []fyne.URI{storage.NewFileURI("/nothing/here.jpg")})
 	})
+}
+
+func TestEveryFileInADroppedStackArrives(t *testing.T) {
+	/*
+		Dropping four photographs processed the first and discarded the other
+		three without a word. The ones that say no by doing nothing are the
+		expensive ones, so the whole stack queues and the program asks what it
+		is before touching any of it.
+	*/
+	a := test.NewApp()
+	t.Cleanup(a.Quit)
+
+	client, asked := watching(t, healthy())
+	app := gui.New(client)
+	opts := app.Options("s")
+	opts.SettingsPath = filepath.Join(t.TempDir(), "gui.yml")
+	sh := shell.Headless(a, opts)
+
+	window := test.NewWindow(widget.NewLabel("behind"))
+	t.Cleanup(window.Close)
+	sh.Window = window
+
+	dir := t.TempDir()
+	var uris []fyne.URI
+	for _, name := range []string{"one.jpg", "two.jpg", "three.jpg", "four.jpg"} {
+		path := filepath.Join(dir, name)
+		require.NoError(t, os.WriteFile(path, []byte("not really a jpeg"), 0o600))
+		uris = append(uris, storage.NewFileURI(path))
+	}
+
+	section := &gui.PicturesSection{}
+	gui.OpenPictures(section, app)
+	section.Dropped(sh, uris)
+
+	require.Equal(t, len(uris), section.Waiting(), "part of the stack was dropped on the floor")
+
+	// And nothing was converted yet: a stack is a question, and the question
+	// comes before the work.
+	converted := "POST /" + api.Version + "/images/preview"
+	select {
+	case route := <-asked:
+		require.NotEqual(t, converted, route, "a stack was converted before it was asked about")
+	default:
+	}
+}
+
+func TestOneDroppedFileIsNotAQuestion(t *testing.T) {
+	// A single picture is unambiguous, and asking about it would be the
+	// program making somebody confirm what they already said.
+	a := test.NewApp()
+	t.Cleanup(a.Quit)
+
+	routes := healthy()
+	routes["POST /"+api.Version+"/images/preview"] = api.ConvertedImage{Frames: 1}
+	client, asked := watching(t, routes)
+	app := gui.New(client)
+	opts := app.Options("s")
+	opts.SettingsPath = filepath.Join(t.TempDir(), "gui.yml")
+	sh := shell.Headless(a, opts)
+
+	window := test.NewWindow(widget.NewLabel("behind"))
+	t.Cleanup(window.Close)
+	sh.Window = window
+
+	picture := filepath.Join(t.TempDir(), "wallpaper.jpg")
+	require.NoError(t, os.WriteFile(picture, []byte("not really a jpeg"), 0o600))
+
+	section := &gui.PicturesSection{}
+	gui.OpenPictures(section, app)
+	section.Dropped(sh, []fyne.URI{storage.NewFileURI(picture)})
+
+	require.Zero(t, section.Waiting(), "a single picture was queued behind a question")
+
+	want := "POST /" + api.Version + "/images/preview"
+	require.Eventually(t, func() bool {
+		select {
+		case route := <-asked:
+			return route == want
+		default:
+			return false
+		}
+	}, 3*time.Second, 10*time.Millisecond, "the one picture went nowhere")
+}
+
+// built returns a section's widget tree, for the tests that need more than
+// the text it draws.
+func built(t *testing.T, client *api.Client, section string) fyne.CanvasObject {
+	t.Helper()
+
+	a := test.NewApp()
+	t.Cleanup(a.Quit)
+
+	app := gui.New(client)
+	opts := app.Options("/run/nowhere/hotaru.sock")
+	opts.SettingsPath = filepath.Join(t.TempDir(), "gui.yml")
+
+	sh := shell.Headless(a, opts)
+	app.Refresh(context.Background())
+
+	for _, s := range sh.Sections() {
+		if s.Title() == section {
+			return s.Build(sh)
+		}
+	}
+	t.Fatalf("no section called %q", section)
+	return nil
+}
+
+// deletes counts the delete buttons in a tree. An icon-only button says
+// nothing that reading the text would find, and the rows sit inside a
+// scroller, so this walks widgets as well as containers.
+func deletes(t *testing.T, object fyne.CanvasObject) int {
+	t.Helper()
+
+	switch it := object.(type) {
+	case *widget.Button:
+		if it.Icon != nil && it.Icon.Name() == theme.DeleteIcon().Name() {
+			return 1
+		}
+		return 0
+	case *fyne.Container:
+		var found int
+		for _, child := range it.Objects {
+			found += deletes(t, child)
+		}
+		return found
+	case fyne.Widget:
+		var found int
+		for _, child := range test.TempWidgetRenderer(t, it).Objects() {
+			found += deletes(t, child)
+		}
+		return found
+	}
+	return 0
+}
+
+func TestASceneCanBeDeletedFromTheWindow(t *testing.T) {
+	/*
+		The window had no way to remove a scene, and the parity test only runs
+		one way: it proves the CLI reaches every route the service serves, not
+		that the window does.
+
+		Not on a shipped row, because the store takes that request and the
+		scene is still there afterwards -- a button that does nothing is the
+		silent no-op this project keeps paying for. Saving over a shipped
+		scene is how it changes, and deleting that replacement is how hotaru's
+		comes back.
+	*/
+	tree := built(t, service(t, healthy()), "Scenes")
+	require.Equal(t, 1, deletes(t, tree),
+		"healthy() has one shipped scene and one saved one, so one delete button")
 }

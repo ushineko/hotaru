@@ -21,7 +21,7 @@ func imageCommand() *cobra.Command {
 		Use:   "image",
 		Short: "Pictures for the cooler's screen",
 	}
-	cmd.AddCommand(imageListCommand(), imageAddCommand(),
+	cmd.AddCommand(imageListCommand(), imageAddCommand(), imageSceneCommand(),
 		imageShowCommand(), imageRemoveCommand())
 	return cmd
 }
@@ -116,6 +116,36 @@ in a dialog.`,
 	cmd.Flags().String("convert-to", "",
 		"write the converted picture to this file and keep nothing")
 	return cmd
+}
+
+func imageSceneCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "scene <picture> <name>",
+		Short: "Make a scene whose lights match a picture",
+		Long: `Make a scene whose lights match a picture.
+
+Every light gets the part of the image at its own position in its zone, so a
+twenty-four light ring carries the picture's left-to-right sweep rather than
+one averaged colour -- an average of a red storm on a blue sky is mud.
+
+Dark parts of a picture are lifted to a brightness a light can show: what
+somebody means by "match this picture" is its colours, not its shadows. The
+scene shows the picture on the cooler's panel as well.`,
+		Args: cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, err := client(cmd)
+			if err != nil {
+				return err
+			}
+			scene, err := client.SceneFromImage(cmd.Context(), args[0], args[1])
+			if err != nil {
+				return quiet(err)
+			}
+			cmd.Printf("%s: %d assignment(s) from %s. `hotaru scene apply %s` lights it.\n",
+				scene.Name, len(scene.Assignments), args[0], scene.Name)
+			return nil
+		},
+	}
 }
 
 func imageShowCommand() *cobra.Command {
