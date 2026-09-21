@@ -41,6 +41,8 @@ func (d *DashboardsSection) editor(sh *shell.Shell, got api.DashboardsResponse) 
 		widget.NewSeparator(),
 		d.backgroundFields(sh),
 		d.captionField(sh),
+		widget.NewSeparator(),
+		d.letteringFields(sh),
 	)
 
 	return container.NewBorder(
@@ -328,6 +330,127 @@ func (d *DashboardsSection) captionField(sh *shell.Shell) fyne.CanvasObject {
 	entry.OnChanged = func(s string) { d.editing.Caption = s }
 	entry.OnSubmitted = func(string) { d.redraw(sh) }
 	return field("Caption", entry)
+}
+
+/*
+letteringFields are the face, and a size, a colour and an edge for each of the
+two kinds of text on the panel.
+
+Two kinds because they are read differently: a label is a word somebody has
+learned the shape of and glances past, and a reading is what they are looking
+at from across the room. Making one bigger is usually a reason to leave the
+other alone.
+*/
+func (d *DashboardsSection) letteringFields(sh *shell.Shell) fyne.CanvasObject {
+	fonts := widget.NewSelect(dashboardFonts, func(picked string) {
+		if picked == d.editing.Lettering.Font {
+			return
+		}
+		d.editing.Lettering.Font = picked
+		d.redraw(sh)
+	})
+	fonts.SetSelected(fontName(d.editing.Lettering.Font))
+
+	return container.NewVBox(
+		field("Font", fonts),
+		widgets.Dim("Labels"),
+		d.sizeField(sh, "Size", &d.editing.Lettering.Labels),
+		d.colourField(sh, "Colour", &d.editing.Lettering.Labels),
+		d.edgeField(sh, "Outline", &d.editing.Lettering.Labels),
+		widgets.Dim("Readings"),
+		d.sizeField(sh, "Size", &d.editing.Lettering.Values),
+		d.colourField(sh, "Colour", &d.editing.Lettering.Values),
+		d.edgeField(sh, "Outline", &d.editing.Lettering.Values),
+		widgets.Note("A colour is #rrggbb. The coolant keeps its own green, amber "+
+			"and red: that one means something.", fd.StatusInfo),
+	)
+}
+
+// dashboardFonts are the faces the panel can draw in, and fontName is what
+// the chooser shows for what a dashboard has: both are the service's list in
+// the order it gives them.
+var dashboardFonts = []string{"sans", "mono", "smallcaps"}
+
+func fontName(font string) string {
+	for _, one := range dashboardFonts {
+		if one == font {
+			return one
+		}
+	}
+	return dashboardFonts[0]
+}
+
+// sizeField scales what the arrangement draws, as a percentage: the
+// relationships between a panel's sizes were set by looking at one in a case,
+// and this keeps them while making everything bigger or smaller.
+func (d *DashboardsSection) sizeField(sh *shell.Shell, name string, text *api.DashboardText) fyne.CanvasObject {
+	slider := widget.NewSlider(50, 150)
+	slider.Step = 5
+	slider.Value = 100
+	if text.Size != 0 {
+		slider.Value = float64(text.Size)
+	}
+	slider.OnChangeEnded = func(v float64) {
+		text.Size = int(v)
+		d.redraw(sh)
+	}
+	return field(name, slider)
+}
+
+// colourField takes a hex colour, and anything that is not one leaves the
+// theme's: a dashboard typed into a colour that does not parse draws the way
+// it did rather than in black on black.
+func (d *DashboardsSection) colourField(sh *shell.Shell, name string, text *api.DashboardText) fyne.CanvasObject {
+	entry := widget.NewEntry()
+	entry.SetPlaceHolder("the theme's")
+	entry.SetText(text.Colour)
+	entry.OnChanged = func(s string) { text.Colour = s }
+	entry.OnSubmitted = func(string) { d.redraw(sh) }
+	return field(name, entry)
+}
+
+/*
+edgeField is the dark edge the text carries.
+
+A list rather than a slider, because one of its values is not a thickness:
+"automatic" is two pixels over a picture and none over the theme's own
+colours, which is what the panel has always drawn and what most dashboards
+should keep.
+*/
+func (d *DashboardsSection) edgeField(sh *shell.Shell, name string, text *api.DashboardText) fyne.CanvasObject {
+	choose := widget.NewSelect(edges, func(picked string) {
+		text.Outline = edgeOf(picked)
+		d.redraw(sh)
+	})
+	choose.SetSelected(edgeName(text.Outline))
+	return field(name, choose)
+}
+
+var edges = []string{"automatic", "none", "1 px", "2 px", "3 px", "4 px", "6 px"}
+
+func edgeName(outline *int) string {
+	if outline == nil {
+		return edges[0]
+	}
+	if *outline <= 0 {
+		return edges[1]
+	}
+	return fmt.Sprintf("%d px", *outline)
+}
+
+func edgeOf(picked string) *int {
+	switch picked {
+	case edges[0]:
+		return nil
+	case edges[1]:
+		none := 0
+		return &none
+	}
+	var px int
+	if _, err := fmt.Sscanf(picked, "%d px", &px); err != nil {
+		return nil
+	}
+	return &px
 }
 
 /*

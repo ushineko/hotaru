@@ -343,6 +343,35 @@ type Dashboard struct {
 	Rings      []string            `json:"rings,omitempty"`
 	Slots      []DashboardSlot     `json:"slots,omitempty"`
 	Caption    string              `json:"caption,omitempty"`
+
+	// Lettering is how the text is drawn, over what the arrangement and the
+	// theme decided. Empty draws it their way.
+	Lettering DashboardLettering `json:"lettering,omitempty"`
+}
+
+// DashboardLettering is a dashboard's typography: the face, and a style for
+// the words and one for the readings.
+type DashboardLettering struct {
+	// Font is "sans", "mono" or "smallcaps". Empty and unknown draw in the
+	// default.
+	Font   string        `json:"font,omitempty"`
+	Labels DashboardText `json:"labels,omitempty"`
+	Values DashboardText `json:"values,omitempty"`
+}
+
+/*
+DashboardText is one category's lettering.
+
+Size is a percentage of what the arrangement draws, 0 meaning 100. Colour is
+"#rrggbb", empty meaning the theme's. Outline is pixels of dark edge, and is
+a pointer because "not set" and "set to none" are different answers: absent
+means the background decides, which is two pixels over a picture and none
+otherwise.
+*/
+type DashboardText struct {
+	Size    int    `json:"size,omitempty"`
+	Colour  string `json:"colour,omitempty"`
+	Outline *int   `json:"outline,omitempty"`
 }
 
 // DashboardSlot is one reading as a dashboard wants it said. An empty label

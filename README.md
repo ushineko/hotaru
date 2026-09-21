@@ -318,6 +318,23 @@ MIT. See [LICENSE](LICENSE).
 
 ### Unreleased
 
+- The screen builder sets the lettering: the face, and a size, a colour and an
+  outline for the labels and for the readings separately. The size is a
+  percentage of what the arrangement draws, so the proportions somebody
+  arrived at by looking at a panel in a case survive being made bigger. The
+  coolant keeps its own green, amber and red — that colour is the alert
+  thresholds, and a screen showing calm while a notification says critical is
+  worse than either alone (spec 037, #88).
+
+- A picture with more colours than a GIF holds no longer draws nothing. The
+  palette was the interface's 33 plus up to 236 of the picture's, which is
+  269, and the encoder's error was discarded — so a busy enough photograph
+  came back as a zero-byte frame and the panel showed nothing. Found while
+  adding the lettering, which needed two more palette entries of its own
+  (spec 037).
+
+### Unreleased
+
 - The numpad shortcuts do not fire on a machine whose keyboard is shared over
   deskflow, and everything else about them does: the script is loaded, the
   actions are registered, and invoking one applies the scene. Non-numpad
