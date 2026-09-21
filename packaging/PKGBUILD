@@ -20,7 +20,7 @@ license=('MIT')
 makedepends=('go' 'libglvnd' 'libx11' 'libxcursor' 'libxrandr' 'libxinerama'
              'libxi' 'libxxf86vm' 'libxkbcommon' 'wayland')
 source=("$pkgbase-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('SKIP')
+sha256sums=('a42c7d7f0f602a77523463086b82273712578cefd69dc2e44bdb00b8595836b8')
 
 _module='github.com/ushineko/hotaru'
 
