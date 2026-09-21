@@ -1,8 +1,12 @@
 package gui
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"image"
+	"image/draw"
+	"image/gif"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,9 +20,11 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	fd "github.com/ushineko/fynedesygn"
+	"github.com/ushineko/fynedesygn/imagecache"
 	"github.com/ushineko/fynedesygn/shell"
 	"github.com/ushineko/fynedesygn/widgets"
 	"github.com/ushineko/hotaru/internal/api"
+	xdraw "golang.org/x/image/draw"
 )
 
 /*
@@ -31,11 +37,6 @@ where somebody picks a file and looks at the result.
 */
 type PicturesSection struct {
 	app *App
-
-	// thumbs are the converted pictures, drawn from the stored files. Kept
-	// between rebuilds: re-reading and re-decoding a megabyte of GIFs on
-	// every poll would make the section cost more than it shows.
-	thumbs map[string]fyne.Resource
 
 	/*
 		waiting is the rest of a dropped stack.
@@ -128,7 +129,7 @@ func (p *PicturesSection) card(sh *shell.Shell, image api.Image) fyne.CanvasObje
 				return err
 			}
 			onScreen(func() {
-				delete(p.thumbs, image.Name)
+				imagecache.Shared.Forget(thumbKey(image))
 				sh.Invalidate()
 			})
 			return nil
@@ -156,24 +157,74 @@ thumbnail draws the converted picture itself.
 The converted one, not the original: what somebody needs to see is what the
 panel will show, which is the whole reason a conversion is worth previewing.
 */
-func (p *PicturesSection) thumbnail(image api.Image) fyne.CanvasObject {
-	if p.thumbs == nil {
-		p.thumbs = map[string]fyne.Resource{}
-	}
-	resource, drawn := p.thumbs[image.Name]
-	if !drawn {
-		body, err := os.ReadFile(image.Path) //nolint:gosec // a path the service reported
-		if err != nil {
-			return widgets.Dim("(cannot read it)")
-		}
-		resource = fyne.NewStaticResource(image.Name+".gif", body)
-		p.thumbs[image.Name] = resource
+func (p *PicturesSection) thumbnail(stored api.Image) fyne.CanvasObject {
+	/*
+		Through the shared cache, so the thumbnails survive this section
+		being rebuilt and are bounded when they do not.
+
+		The key carries the size and the time it was added, because a
+		picture replaced under the same name is a different picture and a
+		key that did not change would serve the old one.
+	*/
+	small, err := imagecache.Shared.Get(thumbKey(stored),
+		func() (image.Image, error) { return shrink(stored.Path) })
+	if err != nil {
+		return widgets.Dim("(cannot read it)")
 	}
 
-	picture := canvas.NewImageFromResource(resource)
+	picture := canvas.NewImageFromImage(small)
 	picture.FillMode = canvas.ImageFillContain
 	picture.SetMinSize(fyne.NewSize(thumbSize, thumbSize))
 	return picture
+}
+
+/*
+thumbKey names a thumbnail in the shared cache.
+
+The size and the time it was added travel with the name, because a picture
+replaced under the same name is a different picture -- and a key that did not
+change would serve the old one, which is the one way to use that cache badly.
+*/
+func thumbKey(stored api.Image) string {
+	return fmt.Sprintf("hotaru/thumb/%s/%d/%s", stored.Name, stored.Bytes, stored.Added)
+}
+
+/*
+shrink reads a stored picture and returns it at thumbnail size.
+
+The first frame, scaled down, decoded once and kept -- rather than the file's
+bytes handed to Fyne, which is what this used to do.
+
+Handing `canvas.Image` a GIF makes it decode the whole animation on every
+build, at the panel's own 640x640, to draw a square 96 pixels across:
+`berserk-slide` is sixty frames, so one visit to this section decoded about
+25 MB of paletted images. A heap profile put 73 MB in `image.NewPaletted`
+after a minute of moving between sections. See spec 027.
+
+A thumbnail at this size is 37 KB, and it does not move -- which is the other
+half of the trade. An animation is shown by the panel, not by this list, and
+`Show it` is two inches to the right.
+*/
+func shrink(path string) (image.Image, error) {
+	body, err := os.ReadFile(path) //nolint:gosec // a path the service reported
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", path, err)
+	}
+	// gif.Decode rather than DecodeAll: the first frame is the thumbnail, and
+	// decoding the rest is the cost this function exists to avoid.
+	first, err := gif.Decode(bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", path, err)
+	}
+
+	/*
+		Twice the drawn size, so it still reads on a scaled desktop, and
+		nothing like the 640 the panel wants.
+	*/
+	const side = thumbSize * 2
+	small := image.NewRGBA(image.Rect(0, 0, side, side))
+	xdraw.CatmullRom.Scale(small, small.Bounds(), first, first.Bounds(), draw.Src, nil)
+	return small, nil
 }
 
 /*
@@ -325,7 +376,6 @@ func (p *PicturesSection) slideshow(sh *shell.Shell) {
 					return err
 				}
 				onScreen(func() {
-					delete(p.thumbs, stored.Name)
 					sh.Flash(fmt.Sprintf("%s is %s, %d frames.",
 						stored.Name, size(stored.Bytes), stored.Frames), fd.StatusGood)
 					sh.Invalidate()
@@ -478,7 +528,6 @@ func (p *PicturesSection) store(sh *shell.Shell, name string, source []byte) {
 			return err
 		}
 		onScreen(func() {
-			delete(p.thumbs, stored.Name)
 			sh.Flash(fmt.Sprintf("%s is %s.", stored.Name, size(stored.Bytes)), fd.StatusGood)
 			sh.Invalidate()
 		})
