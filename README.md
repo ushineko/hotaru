@@ -49,6 +49,9 @@ all to keys.
 $ paru -S hotaru hotaru-gui     # or hotaru alone, on a machine with no desktop
 ```
 
+[`hotaru`](https://aur.archlinux.org/packages/hotaru) is one PKGBUILD building
+both, from the release tarball.
+
 `hotaru` is the CLI and the service and needs no graphics stack, so it
 installs on a headless box; `hotaru-gui` is the window. Installing pulls in
 OpenRGB, because hotaru contains no lighting drivers of its own — see
