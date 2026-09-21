@@ -98,9 +98,10 @@ func headline(p *paint, d Dashboard, r Reading, at headlineAt, ring bool) {
 		drawRings(p, d, r)
 	}
 
-	p.text(label, 0, at.labelY, Size, 36, 22, false, p.theme.Muted)
-	p.text(r.Text(d.Headline.Source), 0, at.valueY, Size, at.valueH, at.size, true, colour)
-	p.text(unit, 0, at.unitY, Size, 38, 27, false, p.theme.Muted)
+	p.label(label, 0, at.labelY, Size, 36, 22)
+	p.value(r.Text(d.Headline.Source), 0, at.valueY, Size, at.valueH, at.size,
+		colour, graded(d.Headline.Source, value, known))
+	p.label(unit, 0, at.unitY, Size, 38, 27)
 }
 
 /*
@@ -140,10 +141,10 @@ far enough to have been drawn through the word "RPM".
 func column(p *paint, slot Slot, r Reading, x, y, width int) {
 	label, unit := slot.Words()
 	value, known := r.Value(slot.Source)
-	p.text(label, x, y, width, 28, 16, false, p.theme.Muted)
-	p.text(r.Text(slot.Source), x, y+30, width, 66, 34, true,
-		gradeOf(slot.Source, value, known, p.theme))
-	p.text(unit, x, y+100, width, 26, 14, false, p.theme.Muted)
+	p.label(label, x, y, width, 28, 16)
+	p.value(r.Text(slot.Source), x, y+30, width, 66, 34,
+		gradeOf(slot.Source, value, known, p.theme), graded(slot.Source, value, known))
+	p.label(unit, x, y+100, width, 26, 14)
 }
 
 // drawGrid is the headline over four readings in two rows of two.
@@ -169,10 +170,10 @@ func drawStacked(p *paint, d Dashboard, r Reading) {
 		y := stackTop + i*rowHeight
 		label, unit := slot.Words()
 		value, known := r.Value(slot.Source)
-		p.text(label, rowInset, y, 160, 48, 22, false, p.theme.Muted)
-		p.text(r.Text(slot.Source), rowInset+160, y, 200, 48, 34, true,
-			gradeOf(slot.Source, value, known, p.theme))
-		p.text(unit, rowInset+370, y, 100, 48, 18, false, p.theme.Muted)
+		p.label(label, rowInset, y, 160, 48, 22)
+		p.value(r.Text(slot.Source), rowInset+160, y, 200, 48, 34,
+			gradeOf(slot.Source, value, known, p.theme), graded(slot.Source, value, known))
+		p.label(unit, rowInset+370, y, 100, 48, 18)
 	}
 }
 
@@ -187,7 +188,7 @@ func caption(p *paint, d Dashboard) {
 	if d.Caption == "" {
 		return
 	}
-	p.text(d.Caption, 0, captionY, Size, 36, 20, false, p.theme.Muted)
+	p.label(d.Caption, 0, captionY, Size, 36, 20)
 }
 
 /*
@@ -214,6 +215,24 @@ a chip doing its job and reddening it would cry wolf on every compile; a pump
 reading zero is the opposite -- the most alarming number this screen can show,
 whatever else is calm.
 */
+/*
+graded says whether a reading's colour carries meaning rather than style.
+
+The coolant's green, amber and red are the alert thresholds, and a pump at
+zero is the most alarming thing this screen can say. Those are the colours a
+dashboard's own choice must not paint over; everything else is the theme's
+accent, which is decoration and may be changed.
+*/
+func graded(source readings.Source, value float64, known bool) bool {
+	switch source {
+	case readings.Coolant:
+		return true
+	case readings.PumpRPM, readings.PumpDuty:
+		return known && value == 0
+	}
+	return false
+}
+
 func gradeOf(source readings.Source, value float64, known bool, theme Theme) color.RGBA {
 	switch source {
 	case readings.Coolant:

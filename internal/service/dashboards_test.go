@@ -114,3 +114,32 @@ func TestSavingADashboardDoesNotStealTheScreen(t *testing.T) {
 	require.True(t, board.held, "saving a dashboard took the screen from a picture")
 	require.Positive(t, board.redrawn, "saving a dashboard did not redraw it")
 }
+
+func TestADashboardsLetteringIsKept(t *testing.T) {
+	/*
+		Written to the file and read back from it, because the editor sends
+		what it drew the form from: a field the store drops is a setting that
+		silently reverts every time somebody saves.
+	*/
+	path := filepath.Join(t.TempDir(), "dashboards.yml")
+	store, err := dashboard.Open(path)
+	require.NoError(t, err)
+
+	none := 0
+	want := dashboard.Lettering{
+		Font:   "mono",
+		Labels: dashboard.Text{Size: 120, Colour: "#ff00ff", Outline: &none},
+		Values: dashboard.Text{Size: 90, Colour: "#00ff88"},
+	}
+	require.NoError(t, store.Save(dashboard.Dashboard{
+		Name: "lettered", Arrangement: dashboard.Ring, Lettering: want,
+	}))
+
+	again, err := dashboard.Open(path)
+	require.NoError(t, err)
+	got, err := again.Get("lettered")
+	require.NoError(t, err, "the dashboard is not in the file")
+	require.Equal(t, want, got.Lettering)
+	require.NotNil(t, got.Lettering.Labels.Outline, "an outline of none came back as not set")
+	require.Zero(t, *got.Lettering.Labels.Outline)
+}

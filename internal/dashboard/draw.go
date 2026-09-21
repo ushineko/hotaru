@@ -11,7 +11,10 @@ import (
 
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/gofont/gobold"
+	"golang.org/x/image/font/gofont/gomono"
+	"golang.org/x/image/font/gofont/gomonobold"
 	"golang.org/x/image/font/gofont/goregular"
+	"golang.org/x/image/font/gofont/gosmallcaps"
 	"golang.org/x/image/font/opentype"
 	"golang.org/x/image/math/fixed"
 )
@@ -40,12 +43,8 @@ var drawing sync.Mutex
 // caller holds `drawing`.
 var faces = map[string]font.Face{}
 
-func face(pt float64, bold bool) font.Face {
-	key := "r"
-	source := goregular.TTF
-	if bold {
-		key, source = "b", gobold.TTF
-	}
+func face(pt float64, bold bool, family string) font.Face {
+	key, source := faceSource(family, bold)
 	key += strconv.Itoa(int(pt))
 	if f, ok := faces[key]; ok {
 		return f
@@ -65,16 +64,43 @@ func face(pt float64, bold bool) font.Face {
 }
 
 /*
+faceSource is the TTF a family and weight draw from, and a key for the cache.
+
+An unknown family draws in the default rather than failing: a dashboard
+written by a later version of hotaru, or edited by hand, should still light
+up. The faces are compiled in, because a panel drawn in a font somebody
+installed would draw differently on the next machine.
+*/
+func faceSource(family string, bold bool) (key string, source []byte) {
+	switch family {
+	case "mono":
+		if bold {
+			return "mb", gomonobold.TTF
+		}
+		return "m", gomono.TTF
+	case "smallcaps":
+		// One face, so a bold smallcaps value is drawn in the same weight as
+		// its label. Smallcaps is a shape rather than a weight, and the
+		// family has no bold.
+		return "sc", gosmallcaps.TTF
+	}
+	if bold {
+		return "b", gobold.TTF
+	}
+	return "r", goregular.TTF
+}
+
+/*
 centred draws text centred in both axes within a rect.
 
 The reason the Python has this helper: text is top-aligned by default, which
 lets a large glyph overrun its box and collide with the band beneath it.
 */
-func centred(dst draw.Image, s string, x, y, w, h int, pt float64, bold bool, c color.Color) {
+func centred(dst draw.Image, s string, x, y, w, h int, pt float64, bold bool, family string, c color.Color) {
 	drawing.Lock()
 	defer drawing.Unlock()
 
-	f := face(pt, bold)
+	f := face(pt, bold, family)
 	advance := font.MeasureString(f, s)
 	metrics := f.Metrics()
 	(&font.Drawer{
