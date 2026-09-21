@@ -122,6 +122,35 @@ func (s *Service) ApplyScene(ctx context.Context, name string) (SceneOutcome, er
 }
 
 /*
+Preview lights a scene that has no name.
+
+A draft in an editor is not a saved scene and must not have to become one to be
+looked at: saving a scratch scene to preview it would put a half-finished thing
+in somebody's list and make "saved" stop meaning anything.
+
+Everything else is the named form's: the same lease, ending with its holder,
+suspending re-assertion for the devices it covers.
+*/
+func (s *Service) Preview(ctx context.Context, scene scenes.Scene, holder string, connection bool) (SceneOutcome, error) {
+	covered, err := s.covers(ctx, scene)
+	if err != nil {
+		return SceneOutcome{}, err
+	}
+	lease, err := s.Take(scene.Name, holder, covered, connection)
+	if err != nil {
+		return SceneOutcome{}, err
+	}
+
+	outcome, err := s.light(ctx, scene, Request{Preview: true})
+	if err != nil {
+		_, _ = s.Release(ctx, lease.Token)
+		return SceneOutcome{}, err
+	}
+	outcome.Lease = lease
+	return outcome, nil
+}
+
+/*
 PreviewScene lights a scene without meaning it.
 
 Not recorded, not reconciled over, and held by whoever asked for it. connection
@@ -134,23 +163,9 @@ func (s *Service) PreviewScene(ctx context.Context, name, holder string, connect
 		return SceneOutcome{}, err
 	}
 
-	covered, err := s.covers(ctx, scene)
-	if err != nil {
-		return SceneOutcome{}, err
-	}
-	lease, err := s.Take(scene.Name, holder, covered, connection)
-	if err != nil {
-		return SceneOutcome{}, err
-	}
-
-	outcome, err := s.light(ctx, scene, Request{Preview: true})
-	if err != nil {
-		// The draft never went up, so nothing is holding anything.
-		_, _ = s.Release(ctx, lease.Token)
-		return SceneOutcome{}, err
-	}
-	outcome.Lease = lease
-	return outcome, nil
+	// The draft never going up means nothing is holding anything, which
+	// Preview takes care of.
+	return s.Preview(ctx, scene, holder, connection)
 }
 
 /*

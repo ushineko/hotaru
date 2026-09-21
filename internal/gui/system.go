@@ -14,6 +14,7 @@ import (
 	"github.com/ushineko/fynedesygn/shell"
 	"github.com/ushineko/fynedesygn/widgets"
 	"github.com/ushineko/hotaru/internal/api"
+	"github.com/ushineko/hotaru/internal/colour"
 )
 
 /*
@@ -35,6 +36,20 @@ func (s *SystemSection) Title() string { return "System" }
 
 // Icon is the navigation's icon for this section.
 func (s *SystemSection) Icon() fyne.Resource { return theme.StorageIcon() }
+
+// Changed says this section draws the devices: their colours, their modes and
+// who is holding a draft on them. The cooler's numbers are not its business.
+func (s *SystemSection) Changed(before, after Snapshot) bool {
+	if len(before.Devices) != len(after.Devices) {
+		return true
+	}
+	for i := range after.Devices {
+		if !sameDevice(before.Devices[i], after.Devices[i]) {
+			return true
+		}
+	}
+	return (before.Err == nil) != (after.Err == nil)
+}
 
 // Build draws the section from the last snapshot. Stateless, as the shell
 // wants: every change rebuilds it, so only this has to know every reason
@@ -106,7 +121,7 @@ What the case physically looks like is not on the wire, and guessing at it is
 the over-fitting this project set out to avoid. So: a row, in device order.
 */
 func lights(device api.Device) fyne.CanvasObject {
-	colours := shown(device)
+	colours := shownColours(device)
 	if len(device.Zones) == 0 {
 		return swatch(colours, 0, device.LEDs, device.InScope)
 	}
@@ -180,8 +195,8 @@ func dim(c color.Color) color.Color {
 // holds. The high byte, which is the channel's own value at full range.
 func eighth(v uint32) uint8 { return uint8(v >> 8) } //nolint:gosec // a byte by construction
 
-// shown parses the colours a device reports, which arrive as "#rrggbb".
-func shown(device api.Device) []color.Color {
+// shownColours parses the colours a device reports, which arrive as "#rrggbb".
+func shownColours(device api.Device) []color.Color {
 	out := make([]color.Color, 0, len(device.Colours))
 	for _, text := range device.Colours {
 		out = append(out, parse(text))
@@ -189,12 +204,24 @@ func shown(device api.Device) []color.Color {
 	return out
 }
 
+// ParseColour reads a colour the way the service does, for a caller outside
+// this package that needs the same answer -- a test, above all.
+func ParseColour(text string) color.Color { return parse(text) }
+
+/*
+parse reads a colour the way the service does.
+
+Through hotaru's own parser rather than a local scan of "#rrggbb", because a
+scene says "red" as often as it says "#ff0000" and a swatch that renders the
+name as grey is a swatch that lies about what the scene will do. The package is
+pure -- names and arithmetic, no devices -- so the window can share it.
+*/
 func parse(text string) color.Color {
-	var r, g, b uint8
-	if _, err := fmt.Sscanf(strings.TrimPrefix(text, "#"), "%02x%02x%02x", &r, &g, &b); err != nil {
+	c, err := colour.Parse(text)
+	if err != nil {
 		return theme.Color(theme.ColorNameDisabled)
 	}
-	return color.NRGBA{R: r, G: g, B: b, A: 255}
+	return color.NRGBA{R: c.R, G: c.G, B: c.B, A: 255}
 }
 
 func holder(preview api.Preview) string {

@@ -46,29 +46,29 @@ func TestAWholeDeviceIsEveryLEDAndIsTheSameMechanism(t *testing.T) {
 	target, err := devices.ParseTarget("kraken")
 	require.NoError(t, err)
 
-	span, err := kraken().ResolveTarget(target, krakenRule())
+	spans, err := kraken().ResolveTarget(target, krakenRule())
 	require.NoError(t, err)
-	require.Equal(t, devices.Span{First: 0, Count: 40}, span)
+	require.Equal(t, []devices.Span{{First: 0, Count: 40}}, spans)
 }
 
 func TestAZoneResolvesToTheDevicesOwnRun(t *testing.T) {
 	target, _ := devices.ParseTarget("kraken/Logo")
-	span, err := kraken().ResolveTarget(target, devices.Rule{})
+	spans, err := kraken().ResolveTarget(target, devices.Rule{})
 	require.NoError(t, err)
-	require.Equal(t, devices.Span{First: 36, Count: 4}, span)
+	require.Equal(t, []devices.Span{{First: 36, Count: 4}}, spans)
 }
 
 func TestANamedSegmentIsWhatAPersonWorkedOutOnce(t *testing.T) {
 	target, _ := devices.ParseTarget("kraken/fan-mid")
-	span, err := kraken().ResolveTarget(target, krakenRule())
+	spans, err := kraken().ResolveTarget(target, krakenRule())
 	require.NoError(t, err)
-	require.Equal(t, devices.Span{First: 12, Count: 12}, span)
+	require.Equal(t, []devices.Span{{First: 12, Count: 12}}, spans)
 
 	// A segment naming a whole zone carries no range of its own.
 	pump, _ := devices.ParseTarget("kraken/pump")
-	span, err = kraken().ResolveTarget(pump, krakenRule())
+	spans, err = kraken().ResolveTarget(pump, krakenRule())
 	require.NoError(t, err)
-	require.Equal(t, devices.Span{First: 36, Count: 4}, span)
+	require.Equal(t, []devices.Span{{First: 36, Count: 4}}, spans)
 }
 
 func TestASegmentNameWinsOverAZoneOfTheSameName(t *testing.T) {
@@ -78,23 +78,23 @@ func TestASegmentNameWinsOverAZoneOfTheSameName(t *testing.T) {
 		"Logo": {Zone: "Ring", LEDs: &config.LEDs{First: 0, Last: 0}},
 	}}
 	target, _ := devices.ParseTarget("kraken/Logo")
-	span, err := kraken().ResolveTarget(target, rule)
+	spans, err := kraken().ResolveTarget(target, rule)
 	require.NoError(t, err)
-	require.Equal(t, devices.Span{First: 0, Count: 1}, span)
+	require.Equal(t, []devices.Span{{First: 0, Count: 1}}, spans)
 }
 
 func TestARangeIsRelativeToWhatItIsWrittenAgainst(t *testing.T) {
 	// ring[0:11] is the first twelve of the ring, not of the device.
 	inZone, _ := devices.ParseTarget("kraken/Logo[1:2]")
-	span, err := kraken().ResolveTarget(inZone, devices.Rule{})
+	spans, err := kraken().ResolveTarget(inZone, devices.Rule{})
 	require.NoError(t, err)
-	require.Equal(t, devices.Span{First: 37, Count: 2}, span)
+	require.Equal(t, []devices.Span{{First: 37, Count: 2}}, spans)
 
 	// And a range on a segment is relative to the segment.
 	inSegment, _ := devices.ParseTarget("kraken/fan-mid[0:1]")
-	span, err = kraken().ResolveTarget(inSegment, krakenRule())
+	spans, err = kraken().ResolveTarget(inSegment, krakenRule())
 	require.NoError(t, err)
-	require.Equal(t, devices.Span{First: 12, Count: 2}, span)
+	require.Equal(t, []devices.Span{{First: 12, Count: 2}}, spans)
 }
 
 func TestAnUnknownNameSaysWhatDoesExist(t *testing.T) {
@@ -202,4 +202,73 @@ func mustTarget(t *testing.T, s string) devices.Target {
 	target, err := devices.ParseTarget(s)
 	require.NoError(t, err)
 	return target
+}
+
+func TestLightsThatAreNotNextToEachOtherAreOneTarget(t *testing.T) {
+	/*
+		Pointing at four lights that are not adjacent is one intention, and
+		hotaru had no way to say it: every run needed its own assignment, so a
+		scene said four things where somebody meant one -- and said them in a
+		form nobody would type.
+	*/
+	target, err := devices.ParseTarget("kraken/Logo[0,2:3]")
+	require.NoError(t, err)
+	require.Equal(t, "kraken/Logo[0,2:3]", target.String(),
+		"the target did not come back the way it was written")
+
+	spans, err := kraken().ResolveTarget(target, devices.Rule{})
+	require.NoError(t, err)
+	require.Equal(t, []devices.Span{{First: 36, Count: 1}, {First: 38, Count: 2}}, spans)
+}
+
+func TestOneLightIsWrittenAsItsNumber(t *testing.T) {
+	// [7], not [7:7]. It is what somebody types, so it is what comes back.
+	target, err := devices.ParseTarget("kraken/Ring[7]")
+	require.NoError(t, err)
+	require.Equal(t, "kraken/Ring[7]", target.String())
+
+	spans, err := kraken().ResolveTarget(target, devices.Rule{})
+	require.NoError(t, err)
+	require.Equal(t, []devices.Span{{First: 7, Count: 1}}, spans)
+}
+
+func TestOneBadLightRefusesTheWholeTarget(t *testing.T) {
+	/*
+		All or nothing. Lighting two of three and reporting success would hide
+		the mistake behind something that looked like it worked, which is the
+		failure this project keeps finding in other people's code and its own.
+	*/
+	target, err := devices.ParseTarget("kraken/Logo[0,99]")
+	require.NoError(t, err)
+
+	_, err = kraken().ResolveTarget(target, devices.Rule{})
+	require.ErrorContains(t, err, "99")
+}
+
+func TestNonsenseBetweenTheBracketsSaysSo(t *testing.T) {
+	for _, target := range []string{
+		"kraken/Ring[]",
+		"kraken/Ring[1,]",
+		"kraken/Ring[a]",
+		"kraken/Ring[3:1]",
+		"kraken/Ring[1:b]",
+	} {
+		_, err := devices.ParseTarget(target)
+		require.Error(t, err, "%q parsed", target)
+	}
+}
+
+func TestAListOfLightsComposesOntoTheFrame(t *testing.T) {
+	// The end of the journey: what the picture points at, written down, and
+	// applied to the LEDs it names.
+	target, err := devices.ParseTarget("kraken/Logo[0,3]")
+	require.NoError(t, err)
+
+	frame, problems := devices.Compose(kraken(), devices.Rule{}, nil,
+		[]devices.Assignment{{Target: target, Colour: colour.MustParse("red")}})
+
+	require.Empty(t, problems)
+	require.Equal(t, colour.MustParse("red"), frame.Colours[36])
+	require.Equal(t, colour.MustParse("red"), frame.Colours[39])
+	require.Equal(t, colour.Colour{}, frame.Colours[37], "a light nobody named was lit")
 }

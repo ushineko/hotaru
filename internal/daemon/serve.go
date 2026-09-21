@@ -19,6 +19,7 @@ import (
 	"github.com/ushineko/hotaru/internal/cooler"
 	"github.com/ushineko/hotaru/internal/dashboard"
 	"github.com/ushineko/hotaru/internal/desktop"
+	"github.com/ushineko/hotaru/internal/images"
 	"github.com/ushineko/hotaru/internal/openrgb"
 	"github.com/ushineko/hotaru/internal/queue"
 	"github.com/ushineko/hotaru/internal/scenes"
@@ -110,6 +111,21 @@ func run(cmd *cobra.Command) error {
 		cmd.PrintErrf("hotaru: %v\n", err)
 	} else {
 		svc.SetScenes(saved)
+	}
+
+	/*
+		The picture library, if its directory can be made.
+
+		Under $XDG_DATA_HOME: files somebody added rather than settings they
+		chose. A machine where it cannot be opened loses pictures and nothing
+		else, which is why this is reported and not fatal.
+	*/
+	if dir, err := config.DataDir(); err != nil {
+		cmd.PrintErrf("hotaru: no image library: %v\n", err)
+	} else if library, err := images.Open(filepath.Join(dir, "images")); err != nil {
+		cmd.PrintErrf("hotaru: no image library: %v\n", err)
+	} else {
+		svc.SetImages(library)
 	}
 
 	// One goroutine per device, created on first write. A reconcile and a

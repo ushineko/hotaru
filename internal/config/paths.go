@@ -41,6 +41,18 @@ func StateDir() (string, error) {
 }
 
 /*
+DataDir is $XDG_DATA_HOME/hotaru, or ~/.local/share/hotaru.
+
+Where files somebody added live, as opposed to settings they chose or state
+hotaru keeps for itself. The distinction matters at the moment something is
+lost: configuration can be written again from memory, state is a cache, and
+this is work.
+*/
+func DataDir() (string, error) {
+	return xdgDir("XDG_DATA_HOME", filepath.Join(".local", "share"))
+}
+
+/*
 RuntimeDir is $XDG_RUNTIME_DIR/hotaru: where the socket lives.
 
 Runtime rather than config or state, because the socket is meaningless once the

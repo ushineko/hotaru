@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -243,13 +244,28 @@ Renew, and it exists for exactly the clients that cannot do this.
 */
 func (c *Client) HoldScene(ctx context.Context, name string, req SceneRequest) (SceneResponse, func(), error) {
 	req.Preview, req.Hold = true, true
-	encoded, err := json.Marshal(req)
+	return c.stream(ctx, "/"+Version+"/scenes/"+url.PathEscape(name)+"/apply", req)
+}
+
+/*
+stream makes a request the server answers and then keeps open.
+
+The lease mechanism, on the client's side: the response comes back as soon as
+the draft is up, and the connection stays until the returned function closes
+it. Closing the body is what ends the preview, which is why it is handed back
+rather than deferred here -- and why a client that simply dies ends it too.
+
+Not c.do: that reads the body to completion and closes it, which is exactly
+what must not happen.
+*/
+func (c *Client) stream(ctx context.Context, path string, body any) (SceneResponse, func(), error) {
+	encoded, err := json.Marshal(body)
 	if err != nil {
 		return SceneResponse{}, nil, fmt.Errorf("encode the request: %w", err)
 	}
 
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		"http://hotaru/"+Version+"/scenes/"+url.PathEscape(name)+"/apply", bytes.NewReader(encoded))
+		"http://hotaru"+path, bytes.NewReader(encoded))
 	if err != nil {
 		return SceneResponse{}, nil, fmt.Errorf("build the preview request: %w", err)
 	}
@@ -261,7 +277,7 @@ func (c *Client) HoldScene(ctx context.Context, name string, req SceneRequest) (
 		if errors.As(err, &opErr) || errors.Is(err, context.DeadlineExceeded) {
 			return SceneResponse{}, nil, &NotRunning{Socket: c.socket, Err: err}
 		}
-		return SceneResponse{}, nil, fmt.Errorf("ask hotaru to preview %s: %w", name, err)
+		return SceneResponse{}, nil, fmt.Errorf("ask hotaru to preview: %w", err)
 	}
 
 	if resp.StatusCode >= http.StatusBadRequest {
@@ -317,4 +333,69 @@ func (c *Client) Keys(ctx context.Context) (KeysResponse, error) {
 // Bind points a key at a scene. An empty scene name unbinds it.
 func (c *Client) Bind(ctx context.Context, key, scene string) error {
 	return c.do(ctx, http.MethodPost, "/"+Version+"/keys/bind", BindRequest{Key: key, Scene: scene}, nil)
+}
+
+/*
+HoldDraft previews a scene that has no name, keeping it up until the returned
+function is called or the process ends.
+
+The editor's call. The lease is this connection: letting go of it -- or dying --
+is what puts the lights back, with no release call and no clock.
+*/
+func (c *Client) HoldDraft(ctx context.Context, scene Scene, holder string) (SceneResponse, func(), error) {
+	return c.stream(ctx, "/"+Version+"/preview",
+		DraftRequest{Scene: scene, Hold: true, Holder: holder})
+}
+
+// PreviewDraft previews an unnamed scene under a lease the caller renews, for
+// a client that cannot hold a connection open.
+func (c *Client) PreviewDraft(ctx context.Context, scene Scene, holder string) (SceneResponse, error) {
+	var out SceneResponse
+	err := c.do(ctx, http.MethodPost, "/"+Version+"/preview",
+		DraftRequest{Scene: scene, Holder: holder}, &out)
+	return out, err
+}
+
+// Images is the stored pictures, converted to what the panel takes.
+func (c *Client) Images(ctx context.Context) ([]Image, error) {
+	var out ImagesResponse
+	err := c.do(ctx, http.MethodGet, "/"+Version+"/images", nil, &out)
+	return out.Images, err
+}
+
+/*
+ConvertImage converts a picture and does not keep it, so a caller can look at
+what the panel would show before deciding.
+*/
+func (c *Client) ConvertImage(ctx context.Context, source []byte) ([]byte, int, error) {
+	var out ConvertedImage
+	err := c.do(ctx, http.MethodPost, "/"+Version+"/images/preview",
+		ImageRequest{Image: base64.StdEncoding.EncodeToString(source)}, &out)
+	if err != nil {
+		return nil, 0, err
+	}
+	converted, err := base64.StdEncoding.DecodeString(out.Image)
+	if err != nil {
+		return nil, 0, fmt.Errorf("read the converted image: %w", err)
+	}
+	return converted, out.Frames, nil
+}
+
+// AddImage converts a picture and stores it under a name.
+func (c *Client) AddImage(ctx context.Context, name string, source []byte) (Image, error) {
+	var out Image
+	err := c.do(ctx, http.MethodPut, "/"+Version+"/images/"+url.PathEscape(name),
+		ImageRequest{Image: base64.StdEncoding.EncodeToString(source)}, &out)
+	return out, err
+}
+
+// RemoveImage forgets one.
+func (c *Client) RemoveImage(ctx context.Context, name string) error {
+	return c.do(ctx, http.MethodDelete, "/"+Version+"/images/"+url.PathEscape(name), nil, nil)
+}
+
+// ShowImage puts a stored picture on the panel, taking it from the dashboard.
+func (c *Client) ShowImage(ctx context.Context, name string) error {
+	return c.do(ctx, http.MethodPost,
+		"/"+Version+"/images/"+url.PathEscape(name)+"/show", struct{}{}, nil)
 }

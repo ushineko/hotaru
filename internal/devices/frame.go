@@ -84,13 +84,15 @@ func Compose(d *Device, rule Rule, base []colour.Colour, assignments []Assignmen
 
 	var problems []error
 	for _, a := range assignments {
-		span, err := d.ResolveTarget(a.Target, rule)
+		spans, err := d.ResolveTarget(a.Target, rule)
 		if err != nil {
 			problems = append(problems, err)
 			continue
 		}
-		for i := span.First; i <= span.Last() && i < len(frame.Colours); i++ {
-			frame.Colours[i] = a.Colour
+		for _, span := range spans {
+			for i := span.First; i <= span.Last() && i < len(frame.Colours); i++ {
+				frame.Colours[i] = a.Colour
+			}
 		}
 	}
 	return frame, problems
