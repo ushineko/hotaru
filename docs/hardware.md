@@ -78,8 +78,20 @@ the numpad. The window offers that from the scene's own row since 0.1.1 (spec
 sequence KDE spells.
 
 Not chased further than that, because the remedy is one binding and the cause
-is in somebody else's key forwarding. A laptop with no numpad at all is the
-same story with a simpler explanation.
+is in somebody else's key forwarding.
+
+**And it is a common class rather than one tool's bug.** Anything that carries
+a keyboard from one machine to another -- deskflow, the synergy and barrier
+lineage it comes from, a hardware or software KVM, a VM's console -- has to
+reconstruct modifier and lock state at the far end, and that is the part that
+most often does not survive the trip. Modifiers, NumLock and the keypad are
+where it shows, which is exactly the shape of a shortcut like
+`Ctrl+Alt+Num+1`.
+
+So the rule for a machine whose keys arrive over a wire is: **bind the
+simplest sequence that works there**, and do not assume a shortcut that works
+on the machine with the keyboard attached works on the machine receiving it.
+A laptop with no numpad at all is the same advice with a simpler reason.
 
 Every quirk in the first table is a correction hotaru applies by *discovering*
 it — reading back what a write actually did — rather than by matching a device

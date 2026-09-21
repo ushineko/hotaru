@@ -323,8 +323,9 @@ MIT. See [LICENSE](LICENSE).
   actions are registered, and invoking one applies the scene. Non-numpad
   bindings work there. Written down in
   [docs/hardware.md](docs/hardware.md#the-numpad-over-a-shared-keyboard)
-  rather than worked around, because the remedy is one binding and the cause
-  is in somebody else's key forwarding.
+  rather than worked around: the remedy is one binding, and reconstructing
+  modifier and lock state at the far end is where key forwarding most often
+  fails -- a class of problem rather than one tool's bug.
 
 ### 0.1.1 (2026-09-21)
 
