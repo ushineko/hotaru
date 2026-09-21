@@ -1,10 +1,14 @@
 package gui_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"go/build"
+	"image"
+	"image/color/palette"
+	"image/gif"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -1583,4 +1587,145 @@ func TestTheTabStripSaysThePartsNameAndTheBodyDoesNot(t *testing.T) {
 			"%q is on screen %d times: the tab and the heading say the same thing",
 			part.Title(), said)
 	}
+}
+
+func TestSystemNamesTheDisplayItFound(t *testing.T) {
+	/*
+		Everything this window does with the panel -- a dashboard, a picture,
+		a scene that sets one -- is drawn on a screen it has to have found
+		first. A machine whose cooler has none, or one hotaru cannot claim,
+		otherwise learns that by watching nothing happen.
+	*/
+	routes := healthy()
+	routes["GET /"+api.Version+"/cooling"] = api.Cooling{
+		Device: "NZXT Kraken", Coolant: 37.5, PumpRPM: 2608, Screen: "640x640 LCD",
+	}
+	require.Contains(t, screen(t, service(t, routes), "System"), "640x640 LCD")
+
+	// And the same card says so when the screen is there and will not open.
+	routes["GET /"+api.Version+"/cooling"] = api.Cooling{
+		Device: "NZXT Kraken", Coolant: 37.5, PumpRPM: 2608, Screen: "640x640 LCD",
+		ScreenDetail: "no screen on this cooler: claim interface 0: permission denied",
+	}
+	said := screen(t, service(t, routes), "System")
+	require.Contains(t, said, "not reachable")
+	require.Contains(t, said, "permission denied", "it did not say why")
+
+	// A cooler with no panel at all is an ordinary machine, not a fault.
+	routes["GET /"+api.Version+"/cooling"] = api.Cooling{
+		Device: "NZXT Kraken", Coolant: 37.5, PumpRPM: 2608,
+	}
+	require.Contains(t, screen(t, service(t, routes), "System"), "none")
+}
+
+func TestScreensCanBeMadeOnAMachineWithNowhereToDrawThem(t *testing.T) {
+	/*
+		A screen is a file. It travels to a machine that has a panel, and
+		editing one previews it here, so a cooler without a display is a
+		reason to say so once rather than a reason to close the section --
+		and the alternative is pressing "Show it" and watching nothing
+		happen.
+	*/
+	routes := screenful()
+	routes["GET /"+api.Version+"/cooling"] = api.Cooling{
+		Absent: true, Detail: "no supported liquid cooler",
+	}
+
+	said := screen(t, service(t, routes), "Screen")
+	require.Contains(t, said, "No cooler on this machine")
+	require.Contains(t, said, "cooling", "the screens themselves are not listed")
+	require.Contains(t, said, "New screen", "there is no way to make one")
+}
+
+func TestThePictureGridPutsTilesSideBySideAndDecodesOffTheDrawingThread(t *testing.T) {
+	/*
+		Two faults in one section, both about what it costs to look at.
+
+		A column of cards gave a picture a hundred pixels and the rest of the
+		line to a size and the directory every one of them is in, so eighteen
+		pictures were eighteen screens of mostly nothing. And the thumbnails
+		were decoded inline: eighteen 640x640 GIFs read from disk on the
+		thread drawing the window, every time the section was opened.
+	*/
+	a := test.NewApp()
+	t.Cleanup(a.Quit)
+
+	dir := t.TempDir()
+	pictures := make([]api.Image, 0, 2)
+	for _, name := range []string{"rain", "snow"} {
+		path := filepath.Join(dir, name+".gif")
+		require.NoError(t, os.WriteFile(path, animation(t), 0o600))
+		pictures = append(pictures, api.Image{
+			Name: name, Path: path, Bytes: 1024, Added: time.Now(),
+		})
+	}
+
+	routes := healthy()
+	routes["GET /"+api.Version+"/images"] = api.ImagesResponse{Images: pictures}
+
+	app := gui.New(service(t, routes))
+	opts := app.Options("s")
+	opts.SettingsPath = filepath.Join(t.TempDir(), "gui.yml")
+	sh := shell.Headless(a, opts)
+	app.Refresh(context.Background())
+
+	section := &gui.PicturesSection{}
+	gui.OpenPictures(section, app)
+	built := section.Build(sh)
+
+	window := test.NewWindow(built)
+	t.Cleanup(window.Close)
+	window.Resize(fyne.NewSize(1000, 700))
+
+	// Nothing was decoded to build it: the pictures arrive afterwards.
+	var shots []*canvas.Image
+	fynetest.WalkRendered(built, func(o fyne.CanvasObject) bool {
+		// The thumbnails, not the icons on the buttons beside them.
+		if shot, ok := o.(*canvas.Image); ok && shot.MinSize().Width >= 96 {
+			shots = append(shots, shot)
+		}
+		return false
+	})
+	require.Len(t, shots, 2, "the grid did not draw both pictures")
+
+	// Side by side, because a picture is what somebody is choosing between.
+	at := func(o fyne.CanvasObject) fyne.Position {
+		return fyne.CurrentApp().Driver().AbsolutePositionForObject(o)
+	}
+	require.Equal(t, at(shots[0]).Y, at(shots[1]).Y, "the tiles are in a column")
+	require.Less(t, at(shots[0]).X, at(shots[1]).X)
+
+	// And they fill in, from the shared cache rather than from the disk on
+	// the thread that drew them: once the section has warmed, a build hands
+	// back a picture that already has its image.
+	section.Arrive()
+	require.Eventually(t, func() bool {
+		warm := false
+		fyne.Do(func() {
+			fynetest.WalkRendered(section.Build(sh), func(o fyne.CanvasObject) bool {
+				shot, ok := o.(*canvas.Image)
+				if ok && shot.MinSize().Width >= 96 && shot.Image != nil {
+					warm = true
+					return true
+				}
+				return false
+			})
+		})
+		return warm
+	}, 3*time.Second, 20*time.Millisecond, "the thumbnail never arrived")
+}
+
+// animation is a two-frame GIF, which is what the library keeps.
+func animation(t *testing.T) []byte {
+	t.Helper()
+
+	frames := &gif.GIF{}
+	for range 2 {
+		frame := image.NewPaletted(image.Rect(0, 0, 8, 8), palette.Plan9)
+		frames.Image = append(frames.Image, frame)
+		frames.Delay = append(frames.Delay, 10)
+	}
+	var out bytes.Buffer
+	require.NoError(t, gif.EncodeAll(&out, frames))
+	return out.Bytes()
 }

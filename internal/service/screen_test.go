@@ -12,13 +12,20 @@ import (
 
 // panel is a cooler that only has a screen, which is the part of it this file
 // is about.
-type panel struct{ shown, readouts int }
+type panel struct {
+	shown, readouts int
+	// wrong is why the panel cannot be drawn on, and refuse is what every
+	// attempt to draw on it says, for the tests about a machine where it
+	// cannot be.
+	wrong, refuse error
+}
 
 func (p *panel) Status(context.Context) (hw.Status, error)  { return hw.Status{}, nil }
 func (p *panel) Device() hw.Device                          { return hw.Device{} }
-func (p *panel) Show(context.Context, []byte) error         { p.shown++; return nil }
-func (p *panel) Readout(context.Context) error              { p.readouts++; return nil }
+func (p *panel) Show(context.Context, []byte) error         { p.shown++; return p.refuse }
+func (p *panel) Readout(context.Context) error              { p.readouts++; return p.refuse }
 func (p *panel) Appearance(context.Context, int, int) error { return nil }
+func (p *panel) Panel() (string, error)                     { return "640x640 LCD", p.wrong }
 
 // dashboard records whether it has been asked to stand down.
 type screenAuthor struct {

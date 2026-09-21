@@ -41,12 +41,35 @@ func coolingCard(got Snapshot) fyne.CanvasObject {
 		status = fd.StatusBad
 	}
 
-	return widgets.Card(got.Cooling.Device,
+	rows := []fyne.CanvasObject{
 		widgets.FactRow("Coolant", fmt.Sprintf("%.1f °C", got.Cooling.Coolant), coolantStatus(got.Cooling.Coolant)),
 		widgets.FactRow("Pump", fmt.Sprintf("%d rpm (%d%%)", got.Cooling.PumpRPM, got.Cooling.PumpDuty), status),
 		widgets.PlainRow("Fans", fmt.Sprintf("%d rpm (%d%%)", got.Cooling.FanRPM, got.Cooling.FanDuty)),
 		widgets.PlainRow("Taken", taken(got.Cooling.Taken)),
-	)
+		display(got.Cooling),
+	}
+	if got.Cooling.ScreenDetail != "" {
+		rows = append(rows, widgets.Note(got.Cooling.ScreenDetail, fd.StatusWarn))
+	}
+	return widgets.Card(got.Cooling.Device, rows...)
+}
+
+/*
+display names the panel hotaru found on the cooler.
+
+Worth a row of its own: everything else this window does with the screen --
+dashboards, pictures, a scene that sets one -- is drawn on it, and a machine
+whose cooler has no panel, or one hotaru cannot claim, otherwise finds that
+out by watching nothing happen.
+*/
+func display(cooling api.Cooling) fyne.CanvasObject {
+	switch {
+	case cooling.Screen == "":
+		return widgets.PlainRow("Display", "none")
+	case cooling.ScreenDetail != "":
+		return widgets.FactRow("Display", cooling.Screen+", not reachable", fd.StatusWarn)
+	}
+	return widgets.FactRow("Display", cooling.Screen, fd.StatusGood)
 }
 
 /*

@@ -2,6 +2,7 @@ package cooler
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 )
@@ -43,6 +44,10 @@ type Owner struct {
 		it to liquidctl or anything else that wants it.
 	*/
 	screen *Screen
+
+	// wrong is why the panel could not be opened, kept so the window can say
+	// so once rather than every caller discovering it separately.
+	wrong error
 }
 
 /*
@@ -157,8 +162,31 @@ func (o *Owner) panel() (*Screen, error) {
 	}
 	screen, err := o.c.Screen()
 	if err != nil {
-		return nil, err
+		/*
+			Reported as an absent screen rather than as a failure.
+
+			A panel that will not open is a machine without one, from every
+			caller's side: the scene still applies, the lights still change,
+			and the only difference is that nothing is drawn. Saying it any
+			other way puts a complaint on every scene on that machine, which
+			is the thing spec 012's degradation rule exists to stop.
+		*/
+		o.wrong = fmt.Errorf("%w: %w", ErrNoScreen, err)
+		return nil, o.wrong
 	}
-	o.screen = screen
+	o.screen, o.wrong = screen, nil
 	return screen, nil
+}
+
+/*
+Panel is the screen this cooler has, and why it cannot be drawn on.
+
+The description comes from the model and is there before anything is drawn; the
+error appears the first time something tries. Both empty is a cooler with a
+panel that nothing has asked for yet.
+*/
+func (o *Owner) Panel() (string, error) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.c.Device().Screen, o.wrong
 }

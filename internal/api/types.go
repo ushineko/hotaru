@@ -423,6 +423,12 @@ type Cooling struct {
 	// state and not an error. Detail says why, when there is more to say.
 	Absent bool   `json:"absent,omitempty"`
 	Detail string `json:"detail,omitempty"`
+
+	// Screen is the display found on the cooler -- "640x640 LCD" -- and empty
+	// for a cooler with none. ScreenDetail is why it cannot be drawn on,
+	// which is an ordinary state too: the lights are unaffected.
+	Screen       string `json:"screen,omitempty"`
+	ScreenDetail string `json:"screen_detail,omitempty"`
 }
 
 /*

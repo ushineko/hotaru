@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/ushineko/hotaru/internal/colour"
+	hw "github.com/ushineko/hotaru/internal/cooler" // `cooler` is a fixture in this package
 	"github.com/ushineko/hotaru/internal/openrgb"
 	"github.com/ushineko/hotaru/internal/scenes"
 	"github.com/ushineko/hotaru/internal/service"
@@ -427,4 +428,28 @@ func TestAKeypressForASceneThatIsGoneReportsRatherThanCrashing(t *testing.T) {
 	svc, _ := lit(t)
 	_, err := svc.ApplyByName(t.Context(), "never-existed")
 	require.Error(t, err)
+}
+
+func TestASceneAppliesOnAMachineWhoseScreenCannotBeDrawnOn(t *testing.T) {
+	/*
+		A cooler whose panel will not open -- a model without one, a usbfs
+		node this user may not claim, another program holding the interface
+		-- is a machine with working lights and nothing drawn, which is the
+		degradation rule in spec 012. Reporting it as a failed scene would
+		put a permanent complaint on every scene on that machine, and the
+		shipped scenes all name a screen state.
+	*/
+	gif := filepath.Join(t.TempDir(), "rain.gif")
+	require.NoError(t, os.WriteFile(gif, []byte("GIF89a"), 0o600))
+
+	scene := blue()
+	scene.Screen = gif
+	svc, _ := lit(t, scene)
+	svc.SetCooler(&panel{wrong: hw.ErrNoScreen, refuse: hw.ErrNoScreen})
+	svc.SetDashboard(&screenAuthor{})
+
+	done, err := svc.ApplyScene(t.Context(), "blue")
+	require.NoError(t, err)
+	require.Empty(t, done.Problems, "a screen that cannot be drawn on was reported as a fault")
+	require.True(t, done.Results[0].Applied, "the lights did not change")
 }

@@ -2,8 +2,11 @@ package dashboard
 
 import (
 	"context"
+	"errors"
 	"image"
 	"time"
+
+	"github.com/ushineko/hotaru/internal/cooler"
 )
 
 /*
@@ -80,6 +83,10 @@ type Pusher struct {
 	tick int
 	last [32]byte
 	sent bool
+
+	// stopped is a panel that cannot be drawn on. Set once, and the loop
+	// stops trying.
+	stopped bool
 }
 
 // NewPusher prepares a dashboard for a panel.
@@ -120,7 +127,7 @@ func (p *Pusher) Run(ctx context.Context) {
 	held := false
 	for {
 		wait := 2 * time.Second
-		if !held {
+		if !held && !p.stopped {
 			wait = p.cycle(ctx)
 		}
 		select {
@@ -151,6 +158,19 @@ func (p *Pusher) cycle(ctx context.Context) time.Duration {
 	if err := p.Panel.Show(ctx, frame.GIF); err != nil {
 		if p.Report != nil && ctx.Err() == nil {
 			p.Report("hotaru: dashboard: %v", err)
+		}
+		/*
+			A panel that cannot be drawn on stops the loop rather than
+			failing every two seconds for the life of the service.
+
+			It is not a transient: the interface is held by something else,
+			or this user may not open the usbfs node, and neither changes
+			while hotaru runs. Retrying writes the same line to the journal
+			forty thousand times a day and draws nothing either way -- and
+			the reason is on the screen in System, once.
+		*/
+		if errors.Is(err, cooler.ErrNoScreen) {
+			p.stopped = true
 		}
 		return floor
 	}

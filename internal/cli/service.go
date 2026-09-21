@@ -190,6 +190,23 @@ either way. For that, look at the machine.`,
 }
 
 /*
+display says what screen the cooler has, in one line.
+
+The same sentence the window shows, because "which display was found" is a
+question asked at the terminal as often as in the interface -- usually while
+working out why nothing is being drawn.
+*/
+func display(cooling api.Cooling) string {
+	switch {
+	case cooling.Screen == "":
+		return "none"
+	case cooling.ScreenDetail != "":
+		return cooling.Screen + " (" + cooling.ScreenDetail + ")"
+	}
+	return cooling.Screen
+}
+
+/*
 coolingCommand reports what the liquid cooler says about itself.
 
 A command of its own rather than a line in `status`, because `status` answers
@@ -230,6 +247,7 @@ func coolingCommand() *cobra.Command {
 			cmd.Printf("  coolant   %.1f C\n", cooling.Coolant)
 			cmd.Printf("  pump      %d rpm (%d%%)\n", cooling.PumpRPM, cooling.PumpDuty)
 			cmd.Printf("  fan       %d rpm (%d%%)\n", cooling.FanRPM, cooling.FanDuty)
+			cmd.Printf("  display   %s\n", display(cooling))
 			return nil
 		},
 	}

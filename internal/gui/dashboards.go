@@ -106,7 +106,32 @@ func (d *DashboardsSection) Build(sh *shell.Shell) fyne.CanvasObject {
 		return d.editor(sh, stored)
 	}
 
-	return d.list(sh, stored)
+	/*
+		Said once, at the top, on a machine with nowhere to draw.
+
+		Screens are worth making either way -- they are a file, they travel
+		to a machine that has a panel, and editing one previews here -- so
+		this is a note rather than a closed door. What it replaces is
+		clicking "Show it" and watching nothing happen.
+	*/
+	list := d.list(sh, stored)
+	if got.Cooling.Screen == "" || got.Cooling.ScreenDetail != "" {
+		return container.NewBorder(
+			widgets.Note(nowhere(got.Cooling), fd.StatusInfo), nil, nil, nil, list)
+	}
+	return list
+}
+
+// nowhere says why nothing can be drawn, in the words the System section uses
+// for the same fact.
+func nowhere(cooling api.Cooling) string {
+	switch {
+	case cooling.Absent:
+		return "No cooler on this machine. Screens can still be made."
+	case cooling.Screen == "":
+		return "This cooler has no display. Screens can still be made."
+	}
+	return "The display cannot be reached: " + cooling.ScreenDetail
 }
 
 /*
