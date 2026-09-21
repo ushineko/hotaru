@@ -74,6 +74,20 @@ func (a *App) Options(socket string) shell.Options {
 			pictures,
 			&DashboardsSection{app: a},
 			&CoolingSection{app: a},
+			/*
+				The standard Appearance section, as every program on this
+				module has.
+
+				Fyne draws its own widgets, so the scheme, the font and the
+				text size are the whole of what makes this window look like
+				it belongs on the desktop it is running on -- which is why
+				they are a section and not a line in a preferences dialog.
+
+				The sample is a line of hotaru's own output, because what
+				somebody is choosing a monospace font for here is reading
+				that.
+			*/
+			shell.AppearanceSection("hotaru: keys: 18 shortcuts registered"),
 			about(socket),
 		},
 		SettingsPath: a.settingsPath(),

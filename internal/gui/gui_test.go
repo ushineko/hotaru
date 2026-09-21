@@ -169,7 +169,9 @@ func TestTheWindowHasItsSections(t *testing.T) {
 	for _, s := range sh.Sections() {
 		titles = append(titles, s.Title())
 	}
-	require.Equal(t, []string{"Service", "System", "Scenes", "Pictures", "Screen", "Cooling", "About"}, titles)
+	require.Equal(t, []string{
+		"Service", "System", "Scenes", "Pictures", "Screen", "Cooling", "Appearance", "About",
+	}, titles)
 }
 
 func TestAServiceThatIsNotRunningSaysWhatToType(t *testing.T) {
