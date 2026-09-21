@@ -13,10 +13,11 @@ import (
 /*
 Target is what a colour is being applied to.
 
-	kraken                  the whole device, every zone
-	kraken/ring             one zone
-	kraken/ring[0:11]       an LED range within a zone
-	kraken/fan-top          a named segment, defined once in the rules
+	kraken                      the whole device, every zone
+	kraken/ring                 one zone
+	kraken/ring[0:11]           a run of LEDs within a zone
+	kraken/ring[1,4,7:9]        LEDs 1 and 4, and 7 through 9
+	kraken/fan-top              a named segment, defined once in the rules
 
 Whole-device is the shorthand for "every zone", not a separate concept, so a
 simple scene and a granular one are the same mechanism at different depths.
@@ -27,10 +28,19 @@ type Target struct {
 	// two it is depends on the device and the rules, so it is decided at
 	// resolution rather than guessed at parse time.
 	Part string
-	LEDs *config.LEDs
+
+	/*
+		Picks are the LEDs named inside the brackets, as written.
+
+		A list rather than one range, because pointing at four lights that are
+		not next to each other is one intention and hotaru had no way to say
+		it: "kraken/ring[1,4,7:9]" is one target, one assignment, and one line
+		in a scene. Empty means the whole part.
+	*/
+	Picks []config.LEDs
 }
 
-var rangeSuffix = regexp.MustCompile(`^(.*)\[(\d+):(\d+)\]$`)
+var bracketed = regexp.MustCompile(`^(.*)\[([0-9,:\s]+)\]$`)
 
 // ParseTarget reads one of the forms above.
 func ParseTarget(s string) (Target, error) {
@@ -50,33 +60,101 @@ func ParseTarget(s string) (Target, error) {
 	}
 
 	part = strings.TrimSpace(part)
-	if m := rangeSuffix.FindStringSubmatch(part); m != nil {
-		first, _ := strconv.Atoi(m[2])
-		last, _ := strconv.Atoi(m[3])
-		if last < first {
-			return Target{}, fmt.Errorf("%q ends before it starts", s)
+	if m := bracketed.FindStringSubmatch(part); m != nil {
+		picks, err := parsePicks(m[2], s)
+		if err != nil {
+			return Target{}, err
 		}
 		t.Part = strings.TrimSpace(m[1])
-		t.LEDs = &config.LEDs{First: first, Last: last}
+		t.Picks = picks
 	} else {
+		/*
+			A part that ends in a bracket and did not parse as one is a
+			mistake about the grammar, not a zone with an unusual name.
+			"kraken/Ring[]" silently became a zone called "Ring[]" and failed
+			later with "no zone called Ring[]", which is a true sentence that
+			answers the wrong question.
+		*/
+		if strings.HasSuffix(part, "]") {
+			return Target{}, fmt.Errorf("%q: the brackets hold light numbers, like [3] or [1,4:6]", s)
+		}
 		t.Part = part
 	}
-	if t.Part == "" && t.LEDs == nil {
+	if t.Part == "" && len(t.Picks) == 0 {
 		return Target{}, fmt.Errorf("%q has nothing after the /", s)
 	}
 	return t, nil
 }
 
+/*
+parsePicks reads what is between the brackets: numbers and ranges, separated by
+commas.
+
+	[7]          one light
+	[0:11]       twelve of them
+	[1,4,7:9]    two, then three
+
+Order is kept as written rather than sorted. It costs nothing, and a target
+that comes back in a different order from the one somebody typed is a target
+they have to read twice to recognise.
+*/
+func parsePicks(inside, whole string) ([]config.LEDs, error) {
+	var out []config.LEDs
+	for _, item := range strings.Split(inside, ",") {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			return nil, fmt.Errorf("%q has an empty entry between its commas", whole)
+		}
+
+		first, last, isRange := strings.Cut(item, ":")
+		if !isRange {
+			n, err := strconv.Atoi(item)
+			if err != nil {
+				return nil, fmt.Errorf("%q: %q is not a light number", whole, item)
+			}
+			out = append(out, config.LEDs{First: n, Last: n})
+			continue
+		}
+
+		from, err := strconv.Atoi(strings.TrimSpace(first))
+		if err != nil {
+			return nil, fmt.Errorf("%q: %q is not a light number", whole, first)
+		}
+		to, err := strconv.Atoi(strings.TrimSpace(last))
+		if err != nil {
+			return nil, fmt.Errorf("%q: %q is not a light number", whole, last)
+		}
+		if to < from {
+			return nil, fmt.Errorf("%q ends before it starts", whole)
+		}
+		out = append(out, config.LEDs{First: from, Last: to})
+	}
+	return out, nil
+}
+
 // String is the form a person would type, and is what a listing shows.
 func (t Target) String() string {
 	switch {
-	case t.Part == "" && t.LEDs == nil:
+	case t.Part == "" && len(t.Picks) == 0:
 		return t.Device
-	case t.LEDs == nil:
+	case len(t.Picks) == 0:
 		return t.Device + "/" + t.Part
-	default:
-		return fmt.Sprintf("%s/%s[%d:%d]", t.Device, t.Part, t.LEDs.First, t.LEDs.Last)
 	}
+	return fmt.Sprintf("%s/%s[%s]", t.Device, t.Part, Picks(t.Picks))
+}
+
+// Picks writes a list of runs the way it is typed: a bare number for one
+// light, first:last for several, commas between.
+func Picks(picks []config.LEDs) string {
+	parts := make([]string, 0, len(picks))
+	for _, pick := range picks {
+		if pick.First == pick.Last {
+			parts = append(parts, strconv.Itoa(pick.First))
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("%d:%d", pick.First, pick.Last))
+	}
+	return strings.Join(parts, ",")
 }
 
 /*
@@ -101,16 +179,16 @@ and a zone is a name the vendor chose, and the user's should win on their own
 machine. A name that is neither is reported with the names that exist, since
 "unknown segment" without the alternatives is a puzzle rather than an error.
 */
-func (d *Device) ResolveTarget(t Target, rule Rule) (Span, error) {
+func (d *Device) ResolveTarget(t Target, rule Rule) ([]Span, error) {
 	whole := Span{First: 0, Count: d.LEDCount}
 	if t.Part == "" {
-		if t.LEDs != nil {
-			return d.clamp(whole, *t.LEDs, t.String())
+		if len(t.Picks) > 0 {
+			return d.clampAll(whole, t.Picks, t.String())
 		}
 		if d.LEDCount == 0 {
-			return Span{}, unsupported(d.Name, "reports no LEDs")
+			return nil, unsupported(d.Name, "reports no LEDs")
 		}
-		return whole, nil
+		return []Span{whole}, nil
 	}
 
 	var base Span
@@ -118,7 +196,7 @@ func (d *Device) ResolveTarget(t Target, rule Rule) (Span, error) {
 	case ok:
 		zone, found := d.Zone(segment.Zone)
 		if !found {
-			return Span{}, unsupported(d.Name,
+			return nil, unsupported(d.Name,
 				"segment %q names zone %q, which this device does not have; it has %s",
 				t.Part, segment.Zone, listOrNone(d.ZoneNames()))
 		}
@@ -126,23 +204,43 @@ func (d *Device) ResolveTarget(t Target, rule Rule) (Span, error) {
 		if segment.LEDs != nil {
 			var err error
 			if base, err = d.clamp(base, *segment.LEDs, "segment "+t.Part); err != nil {
-				return Span{}, err
+				return nil, err
 			}
 		}
 	default:
 		zone, found := d.Zone(t.Part)
 		if !found {
-			return Span{}, unsupported(d.Name,
+			return nil, unsupported(d.Name,
 				"no segment or zone called %q; segments are %s and zones are %s",
 				t.Part, listOrNone(segmentNames(rule)), listOrNone(d.ZoneNames()))
 		}
 		base = Span{First: zone.First, Count: zone.Count}
 	}
 
-	if t.LEDs != nil {
-		return d.clamp(base, *t.LEDs, t.String())
+	if len(t.Picks) > 0 {
+		return d.clampAll(base, t.Picks, t.String())
 	}
-	return base, nil
+	return []Span{base}, nil
+}
+
+/*
+clampAll resolves every run in a target, and refuses the whole target if any
+one of them runs off the end.
+
+All or nothing on purpose: "kraken/ring[1,4,99]" on a twenty-four light ring is
+a mistake about the ring, and lighting two of the three would hide it behind
+something that looked like it worked.
+*/
+func (d *Device) clampAll(base Span, picks []config.LEDs, what string) ([]Span, error) {
+	out := make([]Span, 0, len(picks))
+	for _, pick := range picks {
+		span, err := d.clamp(base, pick, what)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, span)
+	}
+	return out, nil
 }
 
 // clamp turns a range written against a zone into absolute LED indices, and

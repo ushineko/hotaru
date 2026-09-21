@@ -287,6 +287,25 @@ $ curl -s --unix-socket … http://hotaru/v1/devices
 }
 ```
 
+## POST /v1/preview
+
+Previews a scene **that has no name**: the scene travels in the body rather
+than being named.
+
+The editor's route. A draft in a window is not in anybody's scene file, and
+making it one in order to look at it would put a half-finished thing in
+somebody's list and make "saved" stop meaning anything.
+
+```console
+$ curl -s --unix-socket … -X POST http://hotaru/v1/preview \
+    -d '{"scene":{"assignments":[{"target":"kraken","colour":"#201040"}]},"holder":"an editor"}'
+```
+
+`hold` behaves as it does on the named route: with it, the request stays open
+and the lease is that connection; without it, the lease carries an expiry to
+renew. Everything else -- suspended re-assertion, the revert, one preview per
+device -- is the same machinery.
+
 ## POST /v1/preview/renew
 
 Pushes a lease's expiry out. `{"token": "…"}`. A lease that has already lapsed
@@ -296,6 +315,53 @@ is not revived -- the devices may belong to somebody else by now.
 
 Ends a preview and puts the lights back to what was last applied, answering
 with the same shape as `/v1/reconcile`. `{"token": "…"}`.
+
+## GET /v1/images
+
+The pictures stored for the cooler's screen, already converted.
+
+```console
+$ curl -s --unix-socket … http://hotaru/v1/images
+{
+  "images": [
+    {
+      "name": "wallpaper",
+      "path": "/home/you/.local/share/hotaru/images/wallpaper.gif",
+      "bytes": 202752,
+      "frames": 1,
+      "added": "2026-09-20T22:53:41-07:00"
+    }
+  ]
+}
+```
+
+`bytes` is worth reading: the panel's refresh floor scales with frame size
+rather than being a rate limit, so a large picture is a slow one.
+
+## PUT /v1/images/{name}
+
+Converts a picture and keeps it. `{"image": "<base64>"}`, any JPEG, PNG or GIF.
+It is cropped to the middle, scaled to 640x640, and reduced to 256 colours
+chosen from the picture itself. Adding a name that exists replaces it.
+
+## POST /v1/images/preview
+
+The same conversion, returned rather than kept:
+`{"image": "<base64>", "bytes": 202752, "frames": 1}`.
+
+What a client shows somebody before they decide. A wallpaper is wide and the
+panel is square, so what arrives on the cooler is the middle of the picture —
+and whether that is still the picture they wanted is a question only they can
+answer, in front of the answer.
+
+## DELETE /v1/images/{name}
+
+Forgets one.
+
+## POST /v1/images/{name}/show
+
+Puts a stored picture on the panel, taking it from the dashboard.
+`POST /v1/screen` with `{"dashboard": true}` gives it back.
 
 ## GET /v1/keys
 
