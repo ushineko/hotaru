@@ -16,6 +16,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -23,6 +24,7 @@ import (
 
 	"github.com/ushineko/hotaru/internal/colour"
 	"github.com/ushineko/hotaru/internal/config"
+	"github.com/ushineko/hotaru/internal/cooler"
 	"github.com/ushineko/hotaru/internal/devices"
 	"github.com/ushineko/hotaru/internal/openrgb"
 	"github.com/ushineko/hotaru/internal/queue"
@@ -39,6 +41,60 @@ type Service struct {
 	recorder Recorder
 	queue    *queue.Set
 	env      Environment
+	cooler   Cooler
+}
+
+/*
+Cooler is the liquid cooler, if this machine has one.
+
+An interface so the service does not depend on how one is opened, and so a
+machine with no cooler is the nil case rather than a special one: every method
+below reports absence as an ordinary answer.
+*/
+type Cooler interface {
+	Status(ctx context.Context) (cooler.Status, error)
+	Device() cooler.Device
+
+	// The screen, where the cooler has one. Every command here shares the
+	// control channel with Status, so one owner serialises both.
+	Show(ctx context.Context, gif []byte) error
+	Readout(ctx context.Context) error
+	Appearance(ctx context.Context, brightness, degrees int) error
+}
+
+/*
+SetCooler gives the service a cooler to read.
+
+Optional, always. No cooler means telemetry is absent and everything else --
+lighting, reconciliation, the API -- is unaffected, which is spec 012's
+degradation rule and the reason this is a setter rather than a constructor
+argument.
+*/
+func (s *Service) SetCooler(c Cooler) {
+	s.mu.Lock()
+	s.cooler = c
+	s.mu.Unlock()
+}
+
+/*
+Cooling is the cooler's reading, or why there is none.
+
+ErrNoCooler is the ordinary answer on a machine without one, and callers are
+expected to show that as an absence rather than a fault.
+*/
+func (s *Service) Cooling(ctx context.Context) (cooler.Status, cooler.Device, error) {
+	s.mu.RLock()
+	c := s.cooler
+	s.mu.RUnlock()
+
+	if c == nil {
+		return cooler.Status{}, cooler.Device{}, cooler.ErrNoCooler
+	}
+	status, err := c.Status(ctx)
+	if err != nil {
+		return cooler.Status{}, c.Device(), err
+	}
+	return status, c.Device(), nil
 }
 
 /*
@@ -720,4 +776,55 @@ func reason(err error) string {
 		return unsupported.Why
 	}
 	return err.Error()
+}
+
+/*
+Screen is what to put on the cooler's panel.
+
+Exactly one of these is acted on, checked at the edge rather than here: a
+request that says two things at once is a caller's mistake and should be
+refused where it can still be described.
+*/
+type Screen struct {
+	// Image is a GIF to display. A still picture is not retained by the
+	// firmware; one frame of a GIF is.
+	Image []byte
+	// Readout hands the panel back to the cooler's own display.
+	Readout bool
+	// Brightness and Orientation are the panel's own settings, which the
+	// device keeps across restarts.
+	Brightness  *int
+	Orientation *int
+}
+
+/*
+Draw acts on the cooler's screen.
+
+Absence is reported the same way a reading is: a machine with no cooler has no
+panel, and that is an ordinary answer rather than a failure.
+*/
+func (s *Service) Draw(ctx context.Context, what Screen) error {
+	s.mu.RLock()
+	c := s.cooler
+	s.mu.RUnlock()
+
+	if c == nil {
+		return cooler.ErrNoCooler
+	}
+	switch {
+	case what.Readout:
+		return c.Readout(ctx)
+	case len(what.Image) > 0:
+		return c.Show(ctx, what.Image)
+	case what.Brightness != nil || what.Orientation != nil:
+		brightness, orientation := 100, 0
+		if what.Brightness != nil {
+			brightness = *what.Brightness
+		}
+		if what.Orientation != nil {
+			orientation = *what.Orientation
+		}
+		return c.Appearance(ctx, brightness, orientation)
+	}
+	return errors.New("nothing to do: give an image, a brightness, an orientation, or ask for the readout")
 }

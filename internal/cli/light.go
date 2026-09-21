@@ -23,7 +23,10 @@ import (
 
 // Commands are the client-side commands, for a root command to add.
 func Commands() []*cobra.Command {
-	return []*cobra.Command{lightCommand(), statusCommand(), reconcileCommand(), reloadCommand()}
+	return []*cobra.Command{
+		lightCommand(), statusCommand(), coolingCommand(), screenCommand(),
+		reconcileCommand(), reloadCommand(),
+	}
 }
 
 func lightCommand() *cobra.Command {
