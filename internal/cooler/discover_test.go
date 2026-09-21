@@ -84,3 +84,56 @@ func TestAHidrawWithNothingAboveItIsSkipped(t *testing.T) {
 	_, err := find(sysRoot, t.TempDir())
 	require.ErrorIs(t, err, ErrNoCooler)
 }
+
+// descriptor writes a report descriptor whose first item is a usage page.
+func withDescriptor(t *testing.T, sysRoot, node string, bytes []byte) {
+	t.Helper()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(sysRoot, "class", "hidraw", node, "device", "report_descriptor"), bytes, 0o644))
+}
+
+func TestAVendorDefinedInterfaceIsTriedFirst(t *testing.T) {
+	/*
+		The discriminator HID actually provides. A control protocol lives on a
+		vendor-defined usage page; a device's other collections declare
+		standard ones, and sysfs offers no other way to tell them apart --
+		the glob is lexical, so hidraw10 would otherwise be tried before
+		hidraw7.
+
+		An ordering, not a filter: the page says what an interface is *for*,
+		and only the device can say which one will answer.
+	*/
+	sysRoot, devRoot := sysfs(t, "0003:00001E71:00003012", 1, 13)
+
+	// A second node on the same USB device, its own interface, declaring the
+	// generic desktop page -- which is how a device with a keyboard
+	// collection alongside a control one appears.
+	usb := filepath.Join(sysRoot, "devices", "usb1", "1-10")
+	other := filepath.Join(usb, "1-10:1.2")
+	require.NoError(t, os.MkdirAll(other, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(other, "uevent"),
+		[]byte("DRIVER=usbhid\nHID_ID=0003:00001E71:00003012\n"), 0o644))
+
+	second := filepath.Join(sysRoot, "class", "hidraw", "hidraw10")
+	require.NoError(t, os.MkdirAll(second, 0o755))
+	require.NoError(t, os.Symlink(other, filepath.Join(second, "device")))
+
+	withDescriptor(t, sysRoot, "hidraw7", []byte{0x06, 0x00, 0xFF, 0x09, 0x01}) // vendor defined
+	withDescriptor(t, sysRoot, "hidraw10", []byte{0x05, 0x01, 0x09, 0x06})      // generic desktop
+
+	found, err := find(sysRoot, devRoot)
+	require.NoError(t, err)
+	require.Len(t, found, 2)
+	require.Equal(t, filepath.Join(devRoot, "hidraw7"), found[0].HID,
+		"the vendor-defined interface was not tried first")
+	require.Equal(t, uint16(0xFF00), found[0].UsagePage)
+}
+
+func TestADescriptorThatCannotBeReadIsNotADisqualification(t *testing.T) {
+	// A device whose descriptor hotaru cannot parse may still answer, and
+	// refusing it would be preferring a guess to the device's own reply.
+	sysRoot, devRoot := sysfs(t, "0003:00001E71:00003012", 1, 13)
+	found, err := find(sysRoot, devRoot)
+	require.NoError(t, err)
+	require.Len(t, found, 1, "a node with no readable descriptor was dropped")
+}

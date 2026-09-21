@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -46,6 +47,12 @@ type Device struct {
 	HID string
 	// USB is the usbfs node whose bulk endpoint carries screen data.
 	USB string
+
+	// UsagePage is what the HID report descriptor declares this interface is
+	// for. Vendor-defined pages carry control protocols; a device's other
+	// interfaces -- a keyboard collection, a consumer-control one -- declare
+	// standard pages and are not what hotaru wants to talk to.
+	UsagePage uint16
 }
 
 /*
@@ -84,16 +91,59 @@ func find(sysRoot, devRoot string) ([]Device, error) {
 			continue
 		}
 		found = append(found, Device{
-			Product: product,
-			Name:    name,
-			HID:     filepath.Join(devRoot, filepath.Base(node)),
-			USB:     usb,
+			Product:   product,
+			Name:      name,
+			HID:       filepath.Join(devRoot, filepath.Base(node)),
+			USB:       usb,
+			UsagePage: usagePage(filepath.Join(node, "device", "report_descriptor")),
 		})
 	}
 	if len(found) == 0 {
 		return nil, ErrNoCooler
 	}
+	/*
+		Vendor-defined interfaces first.
+
+		This is the discriminator HID actually provides, and the one hidapi
+		exposes as usage_page: a control protocol lives on a vendor-defined
+		page, while a device's other collections declare standard ones. It is
+		an ordering rather than a filter, because it says what an interface is
+		*for* and not whether this particular firmware will answer on it --
+		which only the device can say.
+	*/
+	sort.SliceStable(found, func(i, j int) bool {
+		return vendorDefined(found[i].UsagePage) && !vendorDefined(found[j].UsagePage)
+	})
 	return found, nil
+}
+
+// vendorDefined is the usage page range reserved for whatever a vendor likes,
+// which is where control protocols are found.
+func vendorDefined(page uint16) bool { return page >= 0xFF00 }
+
+/*
+usagePage reads the first Usage Page item from a HID report descriptor.
+
+The descriptor is a byte stream of items: 0x06 introduces a two-byte usage
+page, 0x05 a one-byte one, and the first of them describes the collection this
+interface exposes. Anything unreadable reports zero, which sorts last rather
+than failing -- a descriptor hotaru cannot parse is not a reason to refuse a
+device that would have answered.
+*/
+func usagePage(path string) uint16 {
+	b, err := os.ReadFile(path) //nolint:gosec // a path under sysfs, built here
+	if err != nil || len(b) < 2 {
+		return 0
+	}
+	switch b[0] {
+	case 0x06:
+		if len(b) >= 3 {
+			return uint16(b[1]) | uint16(b[2])<<8
+		}
+	case 0x05:
+		return uint16(b[1])
+	}
+	return 0
 }
 
 // ErrNoCooler is a machine with no cooler this package knows how to drive,
