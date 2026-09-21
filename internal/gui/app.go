@@ -28,6 +28,15 @@ type App struct {
 	stop  chan struct{}
 }
 
+/*
+AppID is the window's application ID.
+
+One string in three places: Fyne sets it as the Wayland app_id, the desktop
+entry is named for it, and that entry's StartupWMClass repeats it. They have to
+agree or the icon appears in one place and not the others.
+*/
+const AppID = "io.github.ushineko.hotaru"
+
 // Poll is how often the window asks the service what it can see. Slow enough
 // to be free, fast enough that a device appearing shows up while somebody is
 // still looking at the window.
@@ -41,20 +50,32 @@ func New(client *api.Client) *App {
 // Options describes the window to fynedesygn's shell.
 func (a *App) Options(socket string) shell.Options {
 	return shell.Options{
-		AppID:   "io.github.ushineko.hotaru",
+		AppID:   AppID,
 		Name:    "hotaru",
 		Version: version.Version,
+		Icon:    Icon(),
 		Sections: []shell.Section{
 			&ServiceSection{app: a},
 			&SystemSection{app: a},
 			&CoolingSection{app: a},
 		},
 		SettingsPath: a.settingsPath(),
-		OnCreate:     func(s *shell.Shell) { a.shell = s },
-		OnStart:      func(*shell.Shell) { a.Start(context.Background()) },
-		OnStop:       func(*shell.Shell) { a.Stop() },
-		StatusBar:    func(*shell.Shell) []fyne.CanvasObject { return a.status(socket) },
-		OnInvalidate: func(*shell.Shell) { a.refresh(context.Background()) },
+
+		/*
+			Every shape fynedesygn offers, and the control that comes with
+			listing more than one.
+
+			Three sections is few enough that icons alone stay legible, and a
+			window somebody keeps open beside something else is a window they
+			may want the navigation out of entirely.
+		*/
+		NavModes:      []shell.NavMode{shell.NavLabels, shell.NavIcons, shell.NavHidden},
+		NavPlacements: []shell.NavPlacement{shell.NavLeft, shell.NavTop},
+		OnCreate:      func(s *shell.Shell) { a.shell = s },
+		OnStart:       func(*shell.Shell) { a.Start(context.Background()) },
+		OnStop:        func(*shell.Shell) { a.Stop() },
+		StatusBar:     func(*shell.Shell) []fyne.CanvasObject { return a.status(socket) },
+		OnInvalidate:  func(*shell.Shell) { a.refresh(context.Background()) },
 	}
 }
 

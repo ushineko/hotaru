@@ -221,6 +221,15 @@ MIT. See [LICENSE](LICENSE).
 
 ### Unreleased
 
+- `hotaru-gui` has an icon: a lit bulb, flat and geometric because it is drawn
+  at 22 pixels in a panel far more often than at 128 in a launcher. It ships as
+  a desktop entry named for the window's app_id and an SVG in the icon theme,
+  which is what KDE needs before it will draw either (spec 017, #5).
+
+- `hotaru-gui` offers every navigation shape fynedesygn has — labels, icons
+  alone, or hidden, on the left or along the top — which is a control in the
+  header rather than a setting to find (spec 017, #5).
+
 - `hotaru-gui`, the window: a Service section with health and its remedies and
   a way to reconcile, a System view that draws every device with its zones
   proportional to their LED counts and in the colours they are showing, and the
