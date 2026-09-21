@@ -2,7 +2,7 @@
 
 *lights, cooler, action!*
 
-**Version**: 0.1.2
+**Version**: 0.1.3
 
 RGB lighting and AIO cooler control for Linux, as a CLI, a user service and a
 desktop GUI. 蛍 — fireflies, small lights that pulse.
@@ -316,7 +316,10 @@ MIT. See [LICENSE](LICENSE).
 
 ## Changelog
 
-### Unreleased
+### 0.1.3 (2026-09-21)
+
+Both of these were found by building the package rather than by running the
+tests here: `check()` runs the suite, and it failed about one build in three.
 
 - Opening the screen editor no longer edits the screen. A chooser's
   `SetSelected` fires its handler, and two of the new ones did not check
