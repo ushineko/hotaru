@@ -114,6 +114,20 @@ func run(cmd *cobra.Command) error {
 	}
 
 	/*
+		The dashboards, on the same terms as the scenes: somebody's saved
+		work, reported and never rewritten when it will not parse. A machine
+		without them draws the shipped one, which is what it drew before
+		there was a file at all.
+	*/
+	if path, err := config.DashboardsPath(); err != nil {
+		cmd.PrintErrf("hotaru: no dashboards: %v\n", err)
+	} else if boards, err := dashboard.Open(path); err != nil {
+		cmd.PrintErrf("hotaru: %v\n", err)
+	} else {
+		svc.SetDashboards(boards)
+	}
+
+	/*
 		The picture library, if its directory can be made.
 
 		Under $XDG_DATA_HOME: files somebody added rather than settings they
@@ -166,6 +180,7 @@ func run(cmd *cobra.Command) error {
 			the close it must precede.
 		*/
 		panel := dashboard.NewPusher(owner, svc.Readings)
+		panel.Look = svc.Look
 		panel.Report = report
 		svc.SetDashboard(panel)
 

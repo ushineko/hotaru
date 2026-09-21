@@ -21,15 +21,19 @@ func (p *panel) Readout(context.Context) error              { p.readouts++; retu
 func (p *panel) Appearance(context.Context, int, int) error { return nil }
 
 // dashboard records whether it has been asked to stand down.
-type dashboard struct{ held bool }
+type screenAuthor struct {
+	held    bool
+	redrawn int
+}
 
-func (d *dashboard) Hold()    { d.held = true }
-func (d *dashboard) Release() { d.held = false }
+func (d *screenAuthor) Hold()    { d.held = true }
+func (d *screenAuthor) Release() { d.held = false }
+func (d *screenAuthor) Redraw()  { d.redrawn++ }
 
-func drawn(t *testing.T) (*service.Service, *panel, *dashboard) {
+func drawn(t *testing.T) (*service.Service, *panel, *screenAuthor) {
 	t.Helper()
 	svc := service.New(nil, openrgb.NewFake(), "")
-	screen, board := &panel{}, &dashboard{}
+	screen, board := &panel{}, &screenAuthor{}
 	svc.SetCooler(screen)
 	svc.SetDashboard(board)
 	return svc, screen, board

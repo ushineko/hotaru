@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/ushineko/hotaru/internal/colour"
 	"github.com/ushineko/hotaru/internal/cooler"
@@ -242,6 +243,22 @@ func (s *Service) screen(ctx context.Context, scene scenes.Scene) (string, strin
 		return scene.Screen, s.draw(ctx, Screen{Dashboard: true})
 	case scenes.ScreenReadout:
 		return scene.Screen, s.draw(ctx, Screen{Readout: true})
+	}
+
+	/*
+		A scene can name a dashboard, which is how one keypress changes the
+		lights and the screen together.
+
+		Choosing it is a saved change rather than a momentary one: `hotaru
+		dashboard use` is the same call, and a scene that put a dashboard up
+		for as long as it was applied would leave the panel showing whatever
+		the last scene happened to be when somebody stopped using scenes.
+	*/
+	if name, ok := strings.CutPrefix(scene.Screen, scenes.ScreenDashboardPrefix); ok {
+		if err := s.UseDashboard(name); err != nil {
+			return "", fmt.Sprintf("the screen: %v", err)
+		}
+		return scene.Screen, s.draw(ctx, Screen{Dashboard: true})
 	}
 
 	gif, err := os.ReadFile(scene.Screen) //nolint:gosec // a path the user saved

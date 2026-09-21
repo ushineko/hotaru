@@ -292,6 +292,74 @@ type Error struct {
 }
 
 /*
+DashboardsResponse is everything the panel can be asked to draw, and which of
+them it is drawing.
+*/
+type DashboardsResponse struct {
+	Dashboards []Dashboard `json:"dashboards"`
+	// Active is the one the panel draws.
+	Active string `json:"active"`
+	// Arrangements and Themes are what an editor offers, named by the
+	// service so a window does not carry its own copy of the list.
+	Arrangements []Arrangement `json:"arrangements,omitempty"`
+	Themes       []string      `json:"themes,omitempty"`
+}
+
+// Arrangement is one layout and how much it has room for.
+type Arrangement struct {
+	Name  string `json:"name"`
+	Slots int    `json:"slots"`
+	Rings int    `json:"rings"`
+}
+
+/*
+Dashboard is one screen: where things go, what they say, and what is behind
+them.
+
+The same shape as the stored file rather than a flattened one, because the
+window's editor and the file are editing the same thing and a translation
+layer between them is a third place for a field to go missing.
+*/
+type Dashboard struct {
+	Name        string `json:"name"`
+	Shipped     bool   `json:"shipped,omitempty"`
+	Arrangement string `json:"arrangement,omitempty"`
+	Theme       string `json:"theme,omitempty"`
+
+	Background DashboardBackground `json:"background,omitempty"`
+	Headline   DashboardSlot       `json:"headline,omitempty"`
+	Rings      []string            `json:"rings,omitempty"`
+	Slots      []DashboardSlot     `json:"slots,omitempty"`
+	Caption    string              `json:"caption,omitempty"`
+}
+
+// DashboardSlot is one reading as a dashboard wants it said. An empty label
+// or unit means the reading's own.
+type DashboardSlot struct {
+	Source string `json:"source"`
+	Label  string `json:"label,omitempty"`
+	Unit   string `json:"unit,omitempty"`
+}
+
+// DashboardBackground is what is drawn behind the numbers.
+type DashboardBackground struct {
+	Kind    string `json:"kind,omitempty"`
+	Picture string `json:"picture,omitempty"`
+	Dim     int    `json:"dim,omitempty"`
+}
+
+// PreviewedDashboard is a rendered frame, base64-encoded, for somebody to
+// look at before it goes on the panel.
+type PreviewedDashboard struct {
+	Image string `json:"image"`
+	Bytes int    `json:"bytes"`
+	// Floor is how long the panel needs between pushes of a frame this size,
+	// in seconds. A photograph behind the numbers costs refresh rate, and
+	// this is where somebody finds that out.
+	Floor float64 `json:"floor_seconds"`
+}
+
+/*
 ReadingsResponse is every number this machine can put on the panel.
 
 Each carries its own label and unit so a client draws the list without a table

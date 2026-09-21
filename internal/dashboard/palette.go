@@ -23,6 +23,40 @@ const (
 	metricInset = 140
 	metricSlots = 3
 	ringWidth   = 14
+
+	/*
+		The insets the other arrangements need, for the reason the metric row
+		needed its own: the ring curves inward, and a column placed by the
+		panel's edge is drawn through by it.
+
+		Grid sits wider than the metric row because its two columns are
+		wider than three; the stacked rows clear the ring entirely by
+		starting below where it ends.
+	*/
+	gridInset = 96
+	rowInset  = 120
+
+	/*
+		Where the rows go, and how tall each one is.
+
+		A column is 126 tall -- label, value, unit -- and the first version
+		of the grid stepped by 112, which put one row's unit through the
+		next row's label. Only visible by rendering it and looking.
+	*/
+	columnHeight = 126
+	gridTop      = 292
+	rowHeight    = 66
+	stackTop     = 288
+
+	/*
+		captionY is a band every arrangement keeps clear.
+
+		The author's line is the one piece of text whose length nobody can
+		predict, so it gets a reserved row rather than being fitted around
+		the readings: an arrangement that ran into it would be an
+		arrangement that looked right until somebody typed a caption.
+	*/
+	captionY = 556
 )
 
 // Coolant colour bands, matching the alert thresholds in the reader so the
@@ -32,19 +66,32 @@ const (
 	critC = 60.0
 )
 
+/*
+The colours no theme may change.
+
+A theme is style; these three are meaning. The screen's grade has to agree
+with what the alerts say, because a panel showing calm while a notification
+says otherwise is worse than either alone -- so green, amber and red are the
+same green, amber and red on every dashboard anybody builds.
+*/
 var (
-	colBG     = color.RGBA{12, 14, 18, 255}
-	colMuted  = color.RGBA{130, 140, 155, 255}
-	colAccent = color.RGBA{120, 190, 255, 255}
-	colBright = color.RGBA{236, 239, 244, 255}
-	colOK     = color.RGBA{126, 200, 140, 255}
-	colWarn   = color.RGBA{230, 180, 90, 255}
-	colCrit   = color.RGBA{235, 110, 110, 255}
-	colEdge   = color.RGBA{60, 68, 82, 255}
+	colOK   = color.RGBA{126, 200, 140, 255}
+	colWarn = color.RGBA{230, 180, 90, 255}
+	colCrit = color.RGBA{235, 110, 110, 255}
+	/*
+		colOutline is the ring of dark drawn around text over a picture.
+
+		Black rather than the theme's background, which on a light theme
+		would be no outline at all. The point is contrast with whatever
+		somebody's photograph happens to put under a glyph, and only one
+		colour is reliably darker than "anything".
+	*/
+	colOutline = color.RGBA{0, 0, 0, 255}
 )
 
 /*
-palette is eight fixed colours and a short ramp.
+palette is the theme's colours, the grade's, a short ramp, and whatever the
+background needs.
 
 A size decision as much as a visual one. GIF is LZW over palette indices, so a
 long gradient gives nearly every pixel its own value and compresses to nothing:
@@ -53,18 +100,27 @@ starfield turned a 21 KB frame into 105 KB. Frame size buys settling time on
 this panel rather than nothing -- see the floor in push.go -- so it is a real
 trade.
 */
-func palette() color.Palette {
-	out := color.Palette{colBG, colMuted, colAccent, colOK, colWarn, colCrit, colBright, colEdge}
+func palette(theme Theme, extra color.Palette) color.Palette {
+	out := color.Palette{
+		theme.BG, theme.Muted, theme.Accent, colOK, colWarn, colCrit,
+		theme.Bright, theme.Edge, colOutline,
+	}
+	/*
+		A short ramp from the background towards the sky, for the starfield's
+		gradients. Built from the theme rather than fixed, because a ramp
+		into somebody else's blue is what makes an amber panel look wrong at
+		the edges.
+	*/
 	for i := range 24 {
 		f := float64(i) / 23
 		out = append(out, color.RGBA{
-			R: clamp(12 + f*100),
-			G: clamp(14 + f*80),
-			B: clamp(18 + f*140),
+			R: clamp(float64(theme.BG.R) + f*float64(theme.Ramp.R)),
+			G: clamp(float64(theme.BG.G) + f*float64(theme.Ramp.G)),
+			B: clamp(float64(theme.BG.B) + f*float64(theme.Ramp.B)),
 			A: 255,
 		})
 	}
-	return out
+	return append(out, extra...)
 }
 
 func clamp(v float64) uint8 {
@@ -77,12 +133,17 @@ func clamp(v float64) uint8 {
 	return uint8(v)
 }
 
-// coolantColour grades the headline by temperature. This is the one colour on
-// the screen that carries meaning rather than style.
-func coolantColour(c float64, known bool) color.RGBA {
+/*
+coolantColour grades a temperature. This is the one colour on the screen that
+carries meaning rather than style.
+
+A reading nobody could take is drawn in the theme's muted colour: it is
+absence, and absence is not a grade.
+*/
+func coolantColour(c float64, known bool, theme Theme) color.RGBA {
 	switch {
 	case !known:
-		return colMuted
+		return theme.Muted
 	case c >= critC:
 		return colCrit
 	case c >= warnC:

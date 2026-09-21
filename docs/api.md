@@ -316,6 +316,38 @@ is not revived -- the devices may belong to somebody else by now.
 Ends a preview and puts the lights back to what was last applied, answering
 with the same shape as `/v1/reconcile`. `{"token": "…"}`.
 
+## GET /v1/dashboards
+
+Everything the panel can be asked to draw, which of them it is drawing, and
+what an editor offers: the arrangements with how many readings and rings each
+has room for, and the themes by name. The lists come from here so a window
+does not carry its own copy and show eight of nine after a sensor is added.
+
+## PUT /v1/dashboards/{name}
+
+Writes one, replacing any of the same name. Saving over a name hotaru ships
+replaces it for as long as the saved one exists.
+
+## DELETE /v1/dashboards/{name}
+
+Forgets one. Deleting an override of a shipped name brings the shipped one
+back.
+
+## POST /v1/dashboards/{name}/use
+
+Makes it the dashboard the panel draws, and answers with it.
+
+## POST /v1/dashboards/{name}/preview
+
+A rendered frame, base64-encoded, with its size and the seconds the panel
+needs between frames that size. With a body, it draws that unsaved edit
+instead of what is stored — which is what an editor with a preview in it
+needs. With no body, it draws the stored one.
+
+The service renders rather than the client: the panel takes a 640x640 GIF and
+this is what makes them, and a second renderer would be a second answer about
+what the screen shows.
+
 ## GET /v1/readings
 
 Every number this machine can put on the panel, each with its label, its unit

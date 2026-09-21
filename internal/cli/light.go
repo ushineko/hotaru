@@ -25,7 +25,8 @@ import (
 func Commands() []*cobra.Command {
 	return []*cobra.Command{
 		lightCommand(), sceneCommand(), keysCommand(), imageCommand(),
-		previewCommand(), statusCommand(), coolingCommand(), readingsCommand(), screenCommand(),
+		previewCommand(), statusCommand(), coolingCommand(), readingsCommand(),
+		screenCommand(), dashboardCommand(),
 		reconcileCommand(), reloadCommand(),
 	}
 }

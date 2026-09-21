@@ -25,6 +25,7 @@ import (
 	"github.com/ushineko/hotaru/internal/colour"
 	"github.com/ushineko/hotaru/internal/config"
 	"github.com/ushineko/hotaru/internal/cooler"
+	"github.com/ushineko/hotaru/internal/dashboard"
 	"github.com/ushineko/hotaru/internal/devices"
 	"github.com/ushineko/hotaru/internal/openrgb"
 	"github.com/ushineko/hotaru/internal/queue"
@@ -54,6 +55,9 @@ type Service struct {
 	// leases maps a device to the preview held over it. One device, one
 	// preview: see preview.go.
 	leases map[string]*Lease
+
+	// dashboards is what the panel can be asked to draw: see dashboards.go.
+	dashboards *dashboard.Store
 }
 
 /*
@@ -68,6 +72,10 @@ type Dashboard interface {
 	Hold()
 	// Release gives it back, and the dashboard redraws at once.
 	Release()
+	// Redraw says that what is being drawn has changed, which a reading
+	// moving does not cover: a new arrangement of the same numbers says the
+	// same thing to a hash of the last frame's content.
+	Redraw()
 }
 
 // SetDashboard gives the service the dashboard to stand down, where there is
