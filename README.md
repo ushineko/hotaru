@@ -36,7 +36,7 @@ all to keys.
 | **The cooler** | Coolant and CPU temperature, pump and fan speeds, read where the kernel has no driver for the device |
 | **The screen** | The cooler's LCD: its own readout, an image, an animation, or a live dashboard rendered from the telemetry |
 | **Hotkeys** | Scenes on global shortcuts: nine shipped on `Ctrl+Alt+Num1`–`Num9`, the shifted row left free for your own. On Plasma through a KWin script installed on every KWin start; on any other desktop by binding the CLI in that desktop's own shortcut editor |
-| **A GUI** | Manage the service, see the machine's devices and zones drawn as a picture, stage a scene, preview it on the hardware, name the segments you just worked out, save it |
+| **A GUI** | `hotaru-gui`: manage the service, and see the machine's devices and zones drawn as a picture with what each is showing. The scene editor and the hotkey binder are next |
 
 ## Architecture
 
@@ -160,7 +160,7 @@ installing and using hotaru must take no extra steps.
 | 002 | Cooler telemetry behind the same API | [#2](https://github.com/ushineko/hotaru/issues/2) |
 | 003 | The LCD and the dashboard | **done** — [#3](https://github.com/ushineko/hotaru/issues/3) |
 | 004 | Scenes, preview and leases | **done** — [#4](https://github.com/ushineko/hotaru/issues/4) |
-| 005 | The GUI on [fynedesygn](https://github.com/ushineko/fynedesygn) | [#5](https://github.com/ushineko/hotaru/issues/5) |
+| 005 | The GUI on [fynedesygn](https://github.com/ushineko/fynedesygn) | **in progress** — [#5](https://github.com/ushineko/hotaru/issues/5) |
 | 006 | Hotkeys and the cutover | **done** — [#6](https://github.com/ushineko/hotaru/issues/6) |
 | 007 | Packaging and release | [#7](https://github.com/ushineko/hotaru/issues/7) |
 
@@ -186,6 +186,8 @@ necessary is an artefact of where it used to live.
 - [specs/009-writes-that-mean-what-they-say.md](specs/009-writes-that-mean-what-they-say.md):
   why a write that lands in the buffer is not always a write, and what hotaru
   checks instead.
+- [specs/017-the-window-and-what-it-shows.md](specs/017-the-window-and-what-it-shows.md):
+  the GUI's first window, what it draws, and why it has no glance panel.
 - [specs/013-the-dashboard.md](specs/013-the-dashboard.md): the monitor's LCD
   dashboard ported, and the settling time the panel turns out to need.
 - [specs/012-the-cooler-without-liquidctl.md](specs/012-the-cooler-without-liquidctl.md):
@@ -218,6 +220,17 @@ MIT. See [LICENSE](LICENSE).
 ## Changelog
 
 ### Unreleased
+
+- `hotaru-gui`, the window: a Service section with health and its remedies and
+  a way to reconcile, a System view that draws every device with its zones
+  proportional to their LED counts and in the colours they are showing, and the
+  cooler's numbers beside them. A client like the CLI — it holds no device
+  handle, which is a property of what it imports rather than a rule it follows,
+  and a test over the import graph says so (spec 017, #5).
+
+- The window keeps view state in `gui.yml` and nothing else. The service owns
+  the rules, the scenes and the desired state, and never reads the window's
+  file (spec 017).
 
 - An image that is not the panel's size is scaled to fit before it is sent. The
   cooler displays nothing at all for an image of the wrong size — no error, on

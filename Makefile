@@ -16,7 +16,7 @@ GOLANGCI           := $(HOME)/go/bin/golangci-lint-$(LINT_VERSION)
 # panic on files it thinks are from the future.
 LINT_GO_TOOLCHAIN  ?= go1.26.0
 
-.PHONY: all test race lint vuln build tidy clean
+.PHONY: all test race lint vuln build gui tidy clean
 
 all: test build
 
@@ -36,6 +36,12 @@ vuln:
 
 build:
 	go build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/hotaru ./cmd/hotaru
+
+# The window. Separate from `build` because it needs cgo and the graphics
+# stack, which the service deliberately does not: a headless box builds and
+# runs everything above without any of this.
+gui:
+	go build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/hotaru-gui ./cmd/hotaru-gui
 
 tidy:
 	go mod tidy
