@@ -188,6 +188,8 @@ necessary is an artefact of where it used to live.
 - [specs/009-writes-that-mean-what-they-say.md](specs/009-writes-that-mean-what-they-say.md):
   why a write that lands in the buffer is not always a write, and what hotaru
   checks instead.
+- [specs/022-more-to-read.md](specs/022-more-to-read.md): the nine numbers the
+  machine can report, and why utilisation is absent the first time it is asked.
 - [specs/021-the-window-says-what-this-is.md](specs/021-the-window-says-what-this-is.md):
   the About section, and why it is this file rather than a summary of it.
 - [specs/020-a-scene-from-a-picture.md](specs/020-a-scene-from-a-picture.md):
@@ -232,6 +234,13 @@ MIT. See [LICENSE](LICENSE).
 ## Changelog
 
 ### Unreleased
+
+- Five more numbers to read: CPU and GPU utilisation, the pump and fan duty
+  cycles the cooler always reported and nothing showed, and fan RPM.
+  `hotaru readings` prints all nine with their units, which is how somebody
+  finds out whether their graphics card reports utilisation before putting it
+  on a panel. A reading is now looked up by name rather than held in a field,
+  because a dashboard slot holds a name (spec 022, #51).
 
 - Branding: the byline is "lights, cooler, action!", and the bulb's filament is
   an italic H rather than a zigzag that read as an N. A firefly kanji was tried

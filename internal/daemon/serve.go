@@ -165,7 +165,7 @@ func run(cmd *cobra.Command) error {
 			off. The defers run bottom-up, so this one is registered after
 			the close it must precede.
 		*/
-		panel := dashboard.NewPusher(owner, readings(owner))
+		panel := dashboard.NewPusher(owner, svc.Readings)
 		panel.Report = report
 		svc.SetDashboard(panel)
 
@@ -252,32 +252,6 @@ func connect(ctx context.Context, svc *service.Service, address string, report f
 			return
 		case <-time.After(wait):
 		}
-	}
-}
-
-/*
-readings composes what the screen shows from what the machine will say.
-
-Four numbers from three places: the cooler answers for coolant and pump, the
-kernel for the processor, and the graphics card by whichever route it has. Each
-is taken independently and each can be absent -- a sensor that has gone away
-draws a placeholder rather than stopping the panel, because the screen is
-decorative and the other three numbers are still true.
-*/
-func readings(c *cooler.Owner) func(context.Context) dashboard.Reading {
-	return func(ctx context.Context) dashboard.Reading {
-		var r dashboard.Reading
-		if status, err := c.Status(ctx); err == nil {
-			r.Coolant, r.CoolantOK = status.Coolant, true
-			r.PumpRPM, r.PumpOK = status.PumpRPM, true
-		}
-		if t, err := cooler.CPUPackage.Temperature(); err == nil {
-			r.CPU, r.CPUOK = t, true
-		}
-		if t, err := cooler.GPUTemperature(ctx); err == nil {
-			r.GPU, r.GPUOK = t, true
-		}
-		return r
 	}
 }
 

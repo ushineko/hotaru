@@ -3,31 +3,26 @@ package dashboard
 import (
 	"bytes"
 	"crypto/sha256"
-	"fmt"
 	"image"
 	"image/gif"
 	"math"
-	"strconv"
 	"time"
+
+	"github.com/ushineko/hotaru/internal/readings"
 )
 
 /*
 Reading is what the screen shows.
 
-Every field can be absent, and an absent one draws a placeholder: the panel is
-decorative, and a render fault must not disturb telemetry, reconciliation or
-lighting.
+Every number can be absent, and an absent one draws a placeholder: the panel
+is decorative, and a render fault must not disturb telemetry, reconciliation
+or lighting.
+
+An alias rather than a type of this package's own: what the machine can say is
+the readings package's subject, and the dashboard is one of the things that
+asks.
 */
-type Reading struct {
-	Coolant   float64
-	CoolantOK bool
-	CPU       int
-	CPUOK     bool
-	GPU       int
-	GPUOK     bool
-	PumpRPM   int
-	PumpOK    bool
-}
+type Reading = readings.Reading
 
 // Frame is a rendered dashboard, ready to send.
 type Frame struct {
@@ -39,22 +34,6 @@ type Frame struct {
 	Content [32]byte
 	// Taken is when it was rendered.
 	Taken time.Time
-}
-
-const placeholder = "--"
-
-func temperature(v float64, ok bool) string {
-	if !ok {
-		return placeholder
-	}
-	return fmt.Sprintf("%.1f", v)
-}
-
-func whole(v int, ok bool) string {
-	if !ok {
-		return placeholder
-	}
-	return strconv.Itoa(v)
 }
 
 /*
@@ -72,19 +51,20 @@ func Render(r Reading, tick int) Frame {
 	img := image.NewPaletted(image.Rect(0, 0, Size, Size), palette())
 	copy(img.Pix, background().Pix)
 
-	colour := coolantColour(r.Coolant, r.CoolantOK)
+	coolant, coolantOK := r.Value(readings.Coolant)
+	colour := coolantColour(coolant, coolantOK)
 	centre, radius := float64(Size)/2, float64(Size-2*margin)/2
 
 	// A single arc carrying the headline's severity, legible across a room
 	// without reading the number.
 	arc(img, centre, centre, radius, ringWidth, 0, 2*math.Pi, colEdge)
-	if r.CoolantOK {
-		fraction := math.Max(0, math.Min(1, (r.Coolant-20)/50))
+	if coolantOK {
+		fraction := math.Max(0, math.Min(1, (coolant-20)/50))
 		arc(img, centre, centre, radius, ringWidth, math.Pi/2, -2*math.Pi*fraction, colour)
 	}
 
 	centred(img, "COOLANT", 0, 132, Size, 36, 22, false, colMuted)
-	centred(img, temperature(r.Coolant, r.CoolantOK), 0, 170, Size, 158, 118, true, colour)
+	centred(img, r.Text(readings.Coolant), 0, 170, Size, 158, 118, true, colour)
 	centred(img, "°C", 0, 330, Size, 38, 27, false, colMuted)
 
 	/*
@@ -93,12 +73,12 @@ func Render(r Reading, tick int) Frame {
 		the opposite -- the most alarming number this screen can show.
 	*/
 	pumpColour := colAccent
-	if r.PumpOK && r.PumpRPM == 0 {
+	if rpm, ok := r.Value(readings.PumpRPM); ok && rpm == 0 {
 		pumpColour = colCrit
 	}
-	metric(img, 0, "CPU", whole(r.CPU, r.CPUOK), "°C", colAccent)
-	metric(img, 1, "GPU", whole(r.GPU, r.GPUOK), "°C", colAccent)
-	metric(img, 2, "PUMP", whole(r.PumpRPM, r.PumpOK), "RPM", pumpColour)
+	metric(img, 0, "CPU", r.Text(readings.CPUTemp), "°C", colAccent)
+	metric(img, 1, "GPU", r.Text(readings.GPUTemp), "°C", colAccent)
+	metric(img, 2, "PUMP", r.Text(readings.PumpRPM), "RPM", pumpColour)
 
 	content := sha256.Sum256(img.Pix)
 	drawTick(img, tick)

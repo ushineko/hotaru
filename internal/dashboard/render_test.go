@@ -9,15 +9,16 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"github.com/ushineko/hotaru/internal/readings"
 )
 
 func reading() Reading {
-	return Reading{
-		Coolant: 37.5, CoolantOK: true,
-		CPU: 52, CPUOK: true,
-		GPU: 38, GPUOK: true,
-		PumpRPM: 2608, PumpOK: true,
-	}
+	var r Reading
+	r.Set(readings.Coolant, 37.5)
+	r.Set(readings.CPUTemp, 52)
+	r.Set(readings.GPUTemp, 38)
+	r.Set(readings.PumpRPM, 2608)
+	return r
 }
 
 func TestTheSameReadingLooksTheSame(t *testing.T) {
@@ -52,7 +53,7 @@ func TestTheTickAdvancesWithoutDefeatingTheGate(t *testing.T) {
 
 func TestAChangedReadingIsANewPicture(t *testing.T) {
 	warmer := reading()
-	warmer.Coolant = 41.0
+	warmer.Set(readings.Coolant, 41.0)
 
 	require.NotEqual(t, Render(reading(), 1).Content, Render(warmer, 1).Content)
 }
@@ -60,7 +61,8 @@ func TestAChangedReadingIsANewPicture(t *testing.T) {
 func TestAMissingMetricDrawsAPlaceholder(t *testing.T) {
 	// The panel is decorative: a reading hotaru could not take must not stop
 	// it drawing, and must not be drawn as a zero.
-	absent := Reading{Coolant: 37.5, CoolantOK: true}
+	var absent Reading
+	absent.Set(readings.Coolant, 37.5)
 
 	frame := Render(absent, 0)
 	require.NotEmpty(t, frame.GIF)
@@ -91,7 +93,7 @@ func TestAStoppedPumpIsNotDrawnCalmly(t *testing.T) {
 	// The most alarming number this screen can show, and it used to be drawn
 	// in the same colour as a healthy CPU.
 	stopped := reading()
-	stopped.PumpRPM = 0
+	stopped.Set(readings.PumpRPM, 0)
 
 	require.NotEqual(t, Render(reading(), 0).Content, Render(stopped, 0).Content)
 }
@@ -178,12 +180,12 @@ func TestAHotProcessorIsNotAnAlarm(t *testing.T) {
 		the most alarming number this screen can show, whatever else is calm.
 	*/
 	hot := reading()
-	hot.CPU = 101
+	hot.Set(readings.CPUTemp, 101)
 	require.Zero(t, pixels(decode(t, Render(hot, 0)), colCrit),
 		"a busy processor was drawn as a fault")
 
 	stopped := reading()
-	stopped.PumpRPM = 0
+	stopped.Set(readings.PumpRPM, 0)
 	require.Positive(t, pixels(decode(t, Render(stopped, 0)), colCrit),
 		"a stopped pump was drawn like a healthy one")
 }

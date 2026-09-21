@@ -292,6 +292,32 @@ type Error struct {
 }
 
 /*
+ReadingsResponse is every number this machine can put on the panel.
+
+Each carries its own label and unit so a client draws the list without a table
+of its own: the CLI and the window would otherwise have two names for one
+number, and the one nobody updates is the one on screen.
+
+`known` is the whole point of the shape. A sensor that has gone away is absent
+rather than zero, because a pump drawn at 0 RPM is the most alarming number
+this machine can show, on no evidence.
+*/
+type ReadingsResponse struct {
+	Readings []ReadingValue `json:"readings"`
+}
+
+// ReadingValue is one number, or the absence of one.
+type ReadingValue struct {
+	Source string  `json:"source"`
+	Label  string  `json:"label"`
+	Unit   string  `json:"unit"`
+	Value  float64 `json:"value"`
+	Known  bool    `json:"known"`
+	// Text is the value as the panel draws it, "--" when it is not known.
+	Text string `json:"text"`
+}
+
+/*
 Cooling is the body of GET /v1/cooling: what the liquid cooler reports.
 
 Raw measurements and when they were taken, rather than what any one view needs.
