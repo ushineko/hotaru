@@ -316,6 +316,16 @@ MIT. See [LICENSE](LICENSE).
 
 ## Changelog
 
+### Unreleased
+
+- The numpad shortcuts do not fire on a machine whose keyboard is shared over
+  deskflow, and everything else about them does: the script is loaded, the
+  actions are registered, and invoking one applies the scene. Non-numpad
+  bindings work there. Written down in
+  [docs/hardware.md](docs/hardware.md#the-numpad-over-a-shared-keyboard)
+  rather than worked around, because the remedy is one binding and the cause
+  is in somebody else's key forwarding.
+
 ### 0.1.1 (2026-09-21)
 
 The first release after this one was installed somewhere else, and everything
