@@ -73,6 +73,21 @@ type DashboardsSection struct {
 // tests, like OpenEditor.
 func OpenDashboards(d *DashboardsSection, app *App) { d.app = app }
 
+// EditDashboard puts a section into its editing state, and DraftDashboard is
+// what it is editing. For tests: the editor is reached by a button on a row,
+// and a test that pressed it would be a test about rows.
+func EditDashboard(d *DashboardsSection, one api.Dashboard) {
+	d.editing, d.name = &one, one.Name
+}
+
+// DraftDashboard is the draft the editor holds, for tests to read back.
+func DraftDashboard(d *DashboardsSection) api.Dashboard {
+	if d.editing == nil {
+		return api.Dashboard{}
+	}
+	return *d.editing
+}
+
 // Title is the name in the navigation.
 func (d *DashboardsSection) Title() string { return "Screen" }
 

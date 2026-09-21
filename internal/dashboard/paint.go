@@ -1,6 +1,7 @@
 package dashboard
 
 import (
+	"fmt"
 	"image"
 	"image/color"
 	"image/draw"
@@ -17,9 +18,14 @@ others are not is a renderer where the one somebody forgot is the one over the
 bright part of the photograph.
 */
 type paint struct {
-	img     *image.Paletted
-	theme   Theme
-	outline bool
+	img   *image.Paletted
+	theme Theme
+	// picture says the background is a photograph, which is what decides
+	// whether text is outlined when the dashboard has not said.
+	picture bool
+	// letters is the dashboard's own typography, applied on top of what the
+	// arrangement and the theme decided. See Lettering.
+	letters Lettering
 }
 
 // newPaint prepares the canvas with its background already drawn.
@@ -35,16 +41,20 @@ func newPaint(d Dashboard, theme Theme, behind image.Image) *paint {
 
 	switch kind {
 	case Picture:
-		return &paint{img: dimmed(behind, d.Background.Darkness(), theme), theme: theme, outline: true}
+		return &paint{
+			img:   dimmed(behind, d.Background.Darkness(), theme),
+			theme: theme, picture: true, letters: d.Lettering,
+		}
 	case Plain:
-		img := image.NewPaletted(image.Rect(0, 0, Size, Size), palette(theme, nil))
+		img := image.NewPaletted(image.Rect(0, 0, Size, Size),
+			palette(theme, nil, d.Lettering.chosen()...))
 		draw.Draw(img, img.Bounds(), image.NewUniform(theme.BG), image.Point{}, draw.Src)
-		return &paint{img: img, theme: theme}
+		return &paint{img: img, theme: theme, letters: d.Lettering}
 	default:
 		sky := background(theme)
 		img := image.NewPaletted(sky.Bounds(), sky.Palette)
 		copy(img.Pix, sky.Pix)
-		return &paint{img: img, theme: theme}
+		return &paint{img: img, theme: theme, letters: d.Lettering}
 	}
 }
 
@@ -55,7 +65,7 @@ The picture gets what is left after the interface's own colours: a photograph
 through 240 entries is indistinguishable from one through 256, and text drawn
 in the nearest available colour to white is not white.
 */
-func dimmed(behind image.Image, keep float64, theme Theme) *image.Paletted {
+func dimmed(behind image.Image, keep float64, theme Theme, chosen ...color.RGBA) *image.Paletted {
 	bounds := image.Rect(0, 0, Size, Size)
 	rgba := image.NewRGBA(bounds)
 	draw.Draw(rgba, bounds, image.NewUniform(theme.BG), image.Point{}, draw.Src)
@@ -73,7 +83,7 @@ func dimmed(behind image.Image, keep float64, theme Theme) *image.Paletted {
 		}
 	}
 
-	img := image.NewPaletted(bounds, palette(theme, fromPicture(rgba)))
+	img := image.NewPaletted(bounds, palette(theme, fromPicture(rgba), chosen...))
 	draw.Draw(img, bounds, rgba, image.Point{}, draw.Src)
 	return img
 }
@@ -137,26 +147,70 @@ func popular(counts map[color.RGBA]int, n int) color.Palette {
 }
 
 /*
-text draws a string, with a dark outline where the background is a picture.
+label draws one of the words: the dashboard's lettering for labels, and the
+theme's muted colour unless it named one.
+*/
+func (p *paint) label(s string, x, y, w, h int, pt float64) {
+	p.write(s, x, y, w, h, pt, false, p.letters.Labels, p.theme.Muted)
+}
+
+/*
+value draws one of the readings.
+
+**A graded colour is not overridden.** Coolant is green, amber or red because
+that is what the alerts say, and a screen showing calm while a notification
+says critical is worse than either alone (spec 013). So a dashboard's own
+colour applies to the readings that carry no grade, and the one that means
+something keeps meaning it.
+*/
+func (p *paint) value(s string, x, y, w, h int, pt float64, c color.Color, graded bool) {
+	style := p.letters.Values
+	if graded {
+		style.Colour = ""
+	}
+	p.write(s, x, y, w, h, pt, true, style, c)
+}
+
+/*
+write draws a string at a style, with a dark outline where one is called for.
 
 Eight offsets and then the fill. Four would leave the diagonals thin, and a
 glyph whose corner blends into a bright pixel is a digit somebody misreads --
 which on this panel means misreading a temperature.
 */
-func (p *paint) text(s string, x, y, w, h int, pt float64, bold bool, c color.Color) {
-	if p.outline {
+func (p *paint) write(s string, x, y, w, h int, pt float64, bold bool, style Text, c color.Color) {
+	if chosen, ok := parseColour(style.Colour); ok {
+		c = chosen
+	}
+	pt *= style.Scale()
+	family := p.letters.Font
+
+	if edge := style.Edge(p.picture); edge > 0 {
 		for _, d := range []image.Point{
-			{X: -outlineWidth}, {X: outlineWidth}, {Y: -outlineWidth}, {Y: outlineWidth},
-			{X: -outlineWidth, Y: -outlineWidth}, {X: outlineWidth, Y: -outlineWidth},
-			{X: -outlineWidth, Y: outlineWidth}, {X: outlineWidth, Y: outlineWidth},
+			{X: -edge}, {X: edge}, {Y: -edge}, {Y: edge},
+			{X: -edge, Y: -edge}, {X: edge, Y: -edge},
+			{X: -edge, Y: edge}, {X: edge, Y: edge},
 		} {
-			centred(p.img, s, x+d.X, y+d.Y, w, h, pt, bold, colOutline)
+			centred(p.img, s, x+d.X, y+d.Y, w, h, pt, bold, family, colOutline)
 		}
 	}
-	centred(p.img, s, x, y, w, h, pt, bold, c)
+	centred(p.img, s, x, y, w, h, pt, bold, family, c)
 }
 
-// outlineWidth is how far the outline is drawn from the glyph. Two pixels at
-// 640: enough to survive a bright background, small enough that the digits do
-// not close up at the headline's size.
-const outlineWidth = 2
+/*
+parseColour reads "#rrggbb".
+
+Anything else is not a colour and is ignored, which leaves the theme's own --
+a dashboard edited by hand into a colour that does not parse draws the way it
+did before, rather than in black on black.
+*/
+func parseColour(s string) (color.RGBA, bool) {
+	if len(s) != 7 || s[0] != '#' {
+		return color.RGBA{}, false
+	}
+	var r, g, b uint8
+	if _, err := fmt.Sscanf(s[1:], "%02x%02x%02x", &r, &g, &b); err != nil {
+		return color.RGBA{}, false
+	}
+	return color.RGBA{R: r, G: g, B: b, A: 255}, true
+}
