@@ -28,14 +28,26 @@ func blank() []byte {
 
 func TestAnEmptySlotIsPreferred(t *testing.T) {
 	slots := [][]byte{slot(0, 0, 7), slot(1, 22, 22), blank(), slot(3, 66, 22)}
-	require.Equal(t, 2, free(slots))
+	require.Equal(t, 2, free(slots, -1))
+}
+
+func TestTheSlotOnScreenIsNeverFree(t *testing.T) {
+	/*
+		The transfer takes about a second and the panel keeps showing its
+		current slot throughout. Write into that slot and the screen is blank
+		for the duration -- which is what a dashboard updating every two
+		seconds looks like when placement walks into the image it is
+		replacing.
+	*/
+	slots := [][]byte{slot(0, 0, 7), blank(), blank()}
+	require.Equal(t, 2, free(slots, 1))
 }
 
 func TestAFullScreenReportsNoFreeSlot(t *testing.T) {
 	// -1 rather than 0: "all taken" leads to clearing one, and a caller that
 	// cannot tell the two apart writes over an image nobody asked it to.
 	slots := [][]byte{slot(0, 0, 7), slot(1, 22, 22)}
-	require.Equal(t, -1, free(slots))
+	require.Equal(t, -1, free(slots, -1))
 }
 
 func TestAnImageThatStillFitsKeepsItsAddress(t *testing.T) {
