@@ -261,7 +261,19 @@ can see. Health answers "why is nothing happening"; this answers "what is
 running, and what does it remember".
 */
 type Status struct {
-	Version    string   `json:"version"`
+	Version string `json:"version"`
+	/*
+		Scene and Showing are the last scene applied and what the panel was
+		last asked to draw.
+
+		A label for the last thing that happened, not a claim about the
+		present: something that changed the lights by another route leaves
+		them saying what they said. The window shows them as "last applied"
+		for that reason.
+	*/
+	Scene   string `json:"scene,omitempty"`
+	Showing string `json:"showing,omitempty"`
+
 	Connected  bool     `json:"connected"`
 	Address    string   `json:"address"`
 	Protocol   uint32   `json:"protocol,omitempty"`
@@ -471,8 +483,16 @@ type Scene struct {
 	Assignments []SceneAssignment `json:"assignments,omitempty"`
 	// Effects name what each device should be doing, by any part of its name.
 	Effects map[string]string `json:"effects,omitempty"`
-	// Screen is "dashboard", "readout", or a path to a GIF. Empty means the
-	// scene says nothing about the screen and the screen does not change.
+	/*
+		Distance is how far apart this scene's colours were pushed when it
+		was built from a picture or a dashboard, where 1 is as measured.
+		Zero on a scene nobody built that way.
+	*/
+	Distance float64 `json:"distance,omitempty"`
+
+	// Screen is "dashboard", "readout", "dashboard:<name>", or a path to a
+	// GIF. Empty means the scene says nothing about the screen, and the
+	// screen does not change.
 	Screen string `json:"screen,omitempty"`
 }
 
@@ -480,6 +500,10 @@ type Scene struct {
 const (
 	ScreenDashboard = "dashboard"
 	ScreenReadout   = "readout"
+	// ScreenDashboardPrefix names a particular dashboard --
+	// "dashboard:load" -- where ScreenDashboard alone means whichever one
+	// the panel is set to.
+	ScreenDashboardPrefix = "dashboard:"
 )
 
 // CaptureRequest saves what the lights are showing now as a named scene.
@@ -662,6 +686,22 @@ question.
 type SceneFromImageRequest struct {
 	// Scene is what to call it. An existing name is replaced.
 	Scene string `json:"scene"`
+	/*
+		Distance is how far apart to push the colours, where 1 is as
+		measured and 3 is as far as it goes.
+
+		A knob for the eye rather than a correction with a right answer: what
+		a person picks and what an LED shows are not the same thing, because
+		a strip's colour is filtered through a diffuser, a case window and
+		whatever else is lit in the room.
+	*/
+	Distance float64 `json:"distance,omitempty"`
+}
+
+// RecolourRequest builds a scene's lights again from whatever it shows, at a
+// different separation.
+type RecolourRequest struct {
+	Distance float64 `json:"distance,omitempty"`
 }
 
 // ShowImageRequest puts a stored picture on the panel.

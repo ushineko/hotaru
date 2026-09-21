@@ -1,9 +1,16 @@
 package gui
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
 	"fmt"
-	"strings"
+	"image"
+	"image/draw"
+	"image/gif"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -12,10 +19,12 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	fd "github.com/ushineko/fynedesygn"
+	"github.com/ushineko/fynedesygn/imagecache"
 	"github.com/ushineko/fynedesygn/shell"
 	"github.com/ushineko/fynedesygn/widgets"
 	"github.com/ushineko/hotaru/internal/api"
 	"github.com/ushineko/hotaru/internal/readings"
+	xdraw "golang.org/x/image/draw"
 )
 
 /*
@@ -91,15 +100,24 @@ func (d *DashboardsSection) Build(sh *shell.Shell) fyne.CanvasObject {
 	}
 	stored, err := d.app.client.Dashboards(context.Background())
 	if err != nil {
-		return container.NewVBox(title("Screen"), widgets.Note(err.Error(), fd.StatusWarn))
+		return container.NewVBox(widgets.Note(err.Error(), fd.StatusWarn))
 	}
 	if d.editing != nil {
 		return d.editor(sh, stored)
 	}
+
 	return d.list(sh, stored)
 }
 
-// list is what the screen can be asked to draw.
+/*
+list is what the screen can be asked to draw.
+
+A table rather than a column of lines. Each dashboard is a name, three
+choices and a picture of what it looks like, and the choices only mean
+anything read down the column: "ring, midnight, starfield" against "grid,
+ice, starfield" says something, and the same words run together in a sentence
+per row say much less.
+*/
 func (d *DashboardsSection) list(sh *shell.Shell, got api.DashboardsResponse) fyne.CanvasObject {
 	add := widget.NewButtonWithIcon("New screen", theme.ContentAddIcon(), func() {
 		fresh := blank()
@@ -108,22 +126,59 @@ func (d *DashboardsSection) list(sh *shell.Shell, got api.DashboardsResponse) fy
 	})
 	add.Importance = widget.HighImportance
 
-	rows := make([]fyne.CanvasObject, 0, len(got.Dashboards))
+	rows := []fyne.CanvasObject{heading()}
 	for _, one := range got.Dashboards {
-		rows = append(rows, d.row(sh, one, one.Name == got.Active))
+		rows = append(rows, d.row(sh, one, one.Name == got.Active), widget.NewSeparator())
 	}
 
 	return container.NewBorder(
-		container.NewVBox(title("Screen"), add), nil, nil, nil,
+		container.NewVBox(add), nil, nil, nil,
 		container.NewVScroll(container.NewVBox(rows...)),
 	)
 }
 
-// row is one dashboard: what it is, and the three things worth doing with it.
+/*
+The columns, and what each is wide enough for.
+
+Fixed, because a column that sized itself to its contents would move every
+time somebody renamed a dashboard -- and the point of a table is that the
+same thing is in the same place on every line.
+*/
+const (
+	shotSize   = 72  // the picture of the dashboard
+	nameWidth  = 150 // "coolant  (shipped)"
+	factWidth  = 110 // "starfield", "stacked", "midnight"
+	behindWide = 190 // a picture's name, which is whatever somebody called it
+)
+
+// heading names the columns.
+func heading() fyne.CanvasObject {
+	return listRow([]fyne.CanvasObject{
+		column(shotSize, widgets.Dim("")),
+		column(nameWidth, widgets.Dim("NAME")),
+		column(factWidth, widgets.Dim("LAYOUT")),
+		column(factWidth, widgets.Dim("COLOURS")),
+		column(behindWide, widgets.Dim("BEHIND")),
+	})
+}
+
+/*
+row is one dashboard: what it looks like, what it is, and what to do with it.
+
+The picture first, because it is the thing somebody is choosing between. It
+is the frame the service would draw, at a size that fits a list -- rendered
+once per dashboard and kept, since re-rendering six of them on every build
+would cost more than the list shows.
+*/
 func (d *DashboardsSection) row(sh *shell.Shell, one api.Dashboard, active bool) fyne.CanvasObject {
-	facts := []string{arrangementName(one), themeName(one), backgroundName(one)}
+	name := one.Name
+	if one.Shipped {
+		name += "  (shipped)"
+	}
+	label := widget.NewLabel(name)
+	label.Truncation = fyne.TextTruncateEllipsis
 	if active {
-		facts = append([]string{"on the screen"}, facts...)
+		label.TextStyle = fyne.TextStyle{Bold: true}
 	}
 
 	use := widget.NewButton("Show it", func() {
@@ -147,35 +202,60 @@ func (d *DashboardsSection) row(sh *shell.Shell, one api.Dashboard, active bool)
 		sh.Invalidate()
 	})
 
-	buttons := []fyne.CanvasObject{use, edit}
-	if !one.Shipped {
-		buttons = append(buttons, widget.NewButtonWithIcon("", theme.DeleteIcon(), func() {
-			dialog.ShowConfirm("Delete "+one.Name+"?", "", func(yes bool) {
-				if !yes {
-					return
+	/*
+		A scene from a dashboard, the same way a picture makes one.
+
+		The frame the panel would draw is the picture: a screen full of amber
+		reads across the case as amber, which is what somebody choosing a
+		dashboard and then a set of colours was doing by hand.
+	*/
+	scene := widget.NewButtonWithIcon("", theme.ColorPaletteIcon(), func() {
+		makeScene(sh, one.Name, one.Name,
+			func(ctx context.Context, name string, distance float64) (api.Scene, error) {
+				return d.app.client.SceneFromDashboard(ctx, one.Name, name, distance)
+			})
+	})
+
+	/*
+		The delete button is always in the row, and disabled where there is
+		nothing to delete.
+
+		A shipped dashboard cannot be removed -- the store takes the request
+		and it is still there afterwards -- and leaving the button out
+		instead would put every other row's buttons at a different place on
+		the line, which is the jumble this table is fixing.
+	*/
+	forget := widget.NewButtonWithIcon("", theme.DeleteIcon(), func() {
+		dialog.ShowConfirm("Delete "+one.Name+"?", "", func(yes bool) {
+			if !yes {
+				return
+			}
+			sh.Perform("deleting "+one.Name, func(ctx context.Context) error {
+				if err := d.app.client.DeleteDashboard(ctx, one.Name); err != nil {
+					return err
 				}
-				sh.Perform("deleting "+one.Name, func(ctx context.Context) error {
-					if err := d.app.client.DeleteDashboard(ctx, one.Name); err != nil {
-						return err
-					}
-					onScreen(func() {
-						sh.Flash(one.Name+" is gone.", fd.StatusGood)
-						sh.Invalidate()
-					})
-					return nil
+				onScreen(func() {
+					sh.Flash(one.Name+" is gone.", fd.StatusGood)
+					sh.Invalidate()
 				})
-			}, sh.Window)
-		}))
+				return nil
+			})
+		}, sh.Window)
+	})
+	if one.Shipped {
+		forget.Disable()
 	}
 
-	name := one.Name
-	if one.Shipped {
-		name += "  (shipped)"
-	}
-	return container.NewBorder(nil, nil,
-		widget.NewLabel(name), container.NewHBox(buttons...),
-		widgets.Dim(strings.Join(facts, " · ")),
-	)
+	behind := widget.NewLabel(backgroundName(one))
+	behind.Truncation = fyne.TextTruncateEllipsis
+
+	return listRow([]fyne.CanvasObject{
+		d.shot(one),
+		column(nameWidth, label),
+		column(factWidth, widgets.Dim(arrangementName(one))),
+		column(factWidth, widgets.Dim(themeName(one))),
+		column(behindWide, behind),
+	}, use, edit, scene, forget)
 }
 
 // blank is a new screen: the shape of the one hotaru ships, because a form
@@ -264,4 +344,93 @@ func sourceOf(offered string) string {
 func defaultLabel(source string) string {
 	label, _ := readings.Describe(readings.Source(source))
 	return label
+}
+
+/*
+shot is a small picture of what a dashboard draws.
+
+Rendered by the service, like the editor's preview, and for the same reason:
+the panel takes a 640x640 GIF and the service is what makes them.
+
+**Fetched once per dashboard and kept.** Six dashboards on every build is six
+renders and six GIF encodes, and a list that cost that much to draw would be
+slower than the thing it lists. The key is the dashboard's description, so a
+dashboard somebody edits gets a new picture and one they only looked at does
+not.
+
+The readings move constantly and the picture does not follow them. That is
+the point: this is a picture of the *dashboard*, not of the machine.
+*/
+func (d *DashboardsSection) shot(one api.Dashboard) fyne.CanvasObject {
+	return dashboardShot(d.app, one)
+}
+
+// dashboardShot is a picture of what a dashboard draws, for any section that
+// wants one: the list, and the scene editor's screen chooser.
+func dashboardShot(app *App, one api.Dashboard) fyne.CanvasObject {
+	picture := canvas.NewImageFromImage(nil)
+	picture.FillMode = canvas.ImageFillContain
+	picture.SetMinSize(fyne.NewSize(shotSize, shotSize))
+
+	key := shotKey(one)
+	if held, ok := imagecache.Shared.Get(key, func() (image.Image, error) {
+		return nil, errNoShotYet
+	}); ok == nil && held != nil {
+		picture.Image = held
+		return picture
+	}
+
+	go func() {
+		frame, err := app.client.PreviewDashboard(context.Background(), one.Name, &one)
+		if err != nil {
+			return
+		}
+		body, err := base64.StdEncoding.DecodeString(frame.Image)
+		if err != nil {
+			return
+		}
+		small, err := imagecache.Shared.Get(key, func() (image.Image, error) {
+			return shrinkFrame(body)
+		})
+		if err != nil {
+			return
+		}
+		onScreen(func() {
+			// In place. Invalidating here would rebuild the list under
+			// whoever is reading it, once per dashboard.
+			picture.Image = small
+			picture.Refresh()
+		})
+	}()
+	return picture
+}
+
+// errNoShotYet is how shot asks the cache whether it already has a picture
+// without drawing one: a decode that fails caches nothing.
+var errNoShotYet = errors.New("not rendered yet")
+
+/*
+shotKey names a dashboard's picture by what the dashboard says.
+
+Not by its name: a dashboard somebody edits keeps its name and draws something
+else, and a key that did not change would show them what it used to look like.
+*/
+func shotKey(one api.Dashboard) string {
+	described, err := json.Marshal(one)
+	if err != nil {
+		return "hotaru/shot/" + one.Name
+	}
+	return fmt.Sprintf("hotaru/shot/%x", sha256.Sum256(described))
+}
+
+// shrinkFrame decodes a rendered frame and scales it to the list's size.
+func shrinkFrame(body []byte) (image.Image, error) {
+	first, err := gif.Decode(bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("that frame does not decode: %w", err)
+	}
+	const side = shotSize * 2 // twice drawn, for a scaled desktop
+	small := image.NewRGBA(image.Rect(0, 0, side, side))
+	xdraw.CatmullRom.Scale(small, small.Bounds(), first, first.Bounds(), draw.Src, nil)
+	return small, nil
 }

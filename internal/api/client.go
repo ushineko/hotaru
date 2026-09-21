@@ -466,11 +466,31 @@ SceneFromImage builds a scene whose lights match a picture and saves it.
 Every light gets the part of the image at its own position in its zone, so a
 run of lights carries the picture's own sweep rather than one averaged colour.
 */
-func (c *Client) SceneFromImage(ctx context.Context, picture, scene string) (Scene, error) {
+func (c *Client) SceneFromImage(ctx context.Context, picture, scene string, distance float64) (Scene, error) {
 	var out Scene
 	err := c.do(ctx, http.MethodPost,
 		"/"+Version+"/images/"+url.PathEscape(picture)+"/scene",
-		SceneFromImageRequest{Scene: scene}, &out)
+		SceneFromImageRequest{Scene: scene, Distance: distance}, &out)
+	return out, err
+}
+
+// SceneFromDashboard builds a scene whose lights match what a dashboard
+// draws, and which puts that dashboard on the screen.
+func (c *Client) SceneFromDashboard(ctx context.Context, board, scene string, distance float64) (Scene, error) {
+	var out Scene
+	err := c.do(ctx, http.MethodPost,
+		"/"+Version+"/dashboards/"+url.PathEscape(board)+"/scene",
+		SceneFromImageRequest{Scene: scene, Distance: distance}, &out)
+	return out, err
+}
+
+// Recolour builds a scene's lights again from whatever it shows, at a
+// different separation.
+func (c *Client) Recolour(ctx context.Context, scene string, distance float64) (Scene, error) {
+	var out Scene
+	err := c.do(ctx, http.MethodPost,
+		"/"+Version+"/scenes/"+url.PathEscape(scene)+"/recolour",
+		RecolourRequest{Distance: distance}, &out)
 	return out, err
 }
 

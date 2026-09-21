@@ -29,7 +29,8 @@ func dashboardCommand() *cobra.Command {
 	}
 	cmd.AddCommand(
 		dashboardListCommand(), dashboardShowCommand(), dashboardSaveCommand(),
-		dashboardUseCommand(), dashboardPreviewCommand(), dashboardDeleteCommand(),
+		dashboardUseCommand(), dashboardSceneCommand(),
+		dashboardPreviewCommand(), dashboardDeleteCommand(),
 	)
 	return cmd
 }
@@ -187,6 +188,40 @@ func dashboardSaveCommand() *cobra.Command {
 		},
 	}
 	cmd.Flags().String("from", "", "a YAML file describing the dashboard")
+	return cmd
+}
+
+/*
+dashboardSceneCommand makes a scene whose lights match a dashboard.
+
+The same idea as `hotaru image scene`, with the frame the panel would draw as
+the picture: a screen full of amber reads across the case as amber, which is
+what somebody choosing a dashboard and then a set of colours was doing by
+hand.
+
+The scene names the dashboard, so applying it puts that dashboard up.
+*/
+func dashboardSceneCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "scene <dashboard> <name>",
+		Short: "Make a scene whose lights match a dashboard",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, err := client(cmd)
+			if err != nil {
+				return err
+			}
+			distance, _ := cmd.Flags().GetFloat64("distance")
+			scene, err := client.SceneFromDashboard(cmd.Context(), args[0], args[1], distance)
+			if err != nil {
+				return quiet(err)
+			}
+			cmd.Printf("%s: %d assignment(s) from %s. `hotaru scene apply %s` lights it.\n",
+				scene.Name, len(scene.Assignments), args[0], scene.Name)
+			return nil
+		},
+	}
+	distanceFlag(cmd)
 	return cmd
 }
 

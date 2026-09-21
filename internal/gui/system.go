@@ -29,7 +29,16 @@ scope, in Direct, showing this purple right now.
 Every fact in that sentence is already on the wire. The value here is entirely
 in being a picture rather than a table.
 */
-type SystemSection struct{ app *App }
+type SystemSection struct {
+	app *App
+	// loaded and cooling are the cards that follow the machine, held so
+	// Tick can refill them without the section being rebuilt.
+	loaded, cooling *fyne.Container
+}
+
+// OpenSystem gives a section its app, which the shell normally does. For
+// tests, like OpenEditor.
+func OpenSystem(s *SystemSection, app *App) { s.app = app }
 
 // Title is the name in the navigation.
 func (s *SystemSection) Title() string { return "System" }
@@ -54,6 +63,52 @@ func (s *SystemSection) Changed(before, after Snapshot) bool {
 // Build draws the section from the last snapshot. Stateless, as the shell
 // wants: every change rebuilds it, so only this has to know every reason
 // something is or is not shown.
+/*
+loaded is what the machine is currently showing: the scene somebody applied
+and what is on the cooler's panel.
+
+Said as "last applied" rather than "this is the scene", because that is what
+it is. The service remembers the last thing it was asked for; something that
+changed the lights by another route -- a `hotaru light set`, another program,
+a device that woke up wrong -- leaves the label saying what it said. Claiming
+more than that would be the kind of plausible-looking screen this program has
+been caught behind before.
+*/
+func loaded(got Snapshot) fyne.CanvasObject {
+	scene := got.Status.Scene
+	if scene == "" {
+		scene = "nothing yet"
+	}
+	showing := got.Status.Showing
+	if showing == "" {
+		showing = "whatever it was showing"
+	}
+
+	return widgets.Card("Loaded",
+		widgets.PlainRow("Scene", scene),
+		widgets.PlainRow("Screen", showing),
+	)
+}
+
+/*
+Tick refills the cards that follow the machine, leaving the rest alone.
+
+The section is rebuilt when a device appears or goes away. Everything else it
+draws that moves -- the coolant, the pump, the scene somebody just applied --
+arrives here.
+*/
+func (s *SystemSection) Tick(got Snapshot) {
+	if s.loaded != nil {
+		s.loaded.Objects = []fyne.CanvasObject{loaded(got)}
+		s.loaded.Refresh()
+	}
+	if s.cooling != nil {
+		s.cooling.Objects = []fyne.CanvasObject{coolingCard(got)}
+		s.cooling.Refresh()
+	}
+}
+
+// Build draws what is loaded, the cooler, and every device this machine has.
 func (s *SystemSection) Build(_ *shell.Shell) fyne.CanvasObject {
 	got := s.app.machine.Read()
 	if got.Err != nil {
@@ -66,7 +121,19 @@ func (s *SystemSection) Build(_ *shell.Shell) fyne.CanvasObject {
 		)
 	}
 
-	body := []fyne.CanvasObject{title("This machine")}
+	/*
+		The two cards that move are held in slots and refilled, not rebuilt
+		with the section.
+
+		Cooling changes every poll and the device list does not, so a
+		Changed that watched the coolant would rebuild every device row twice
+		a minute -- which is the churn this window spent a day removing. The
+		slots are refilled by Tick instead: six widgets rather than sixty.
+	*/
+	s.loaded = container.NewStack(loaded(got))
+	s.cooling = container.NewStack(coolingCard(got))
+
+	body := []fyne.CanvasObject{title("This machine"), s.loaded, s.cooling}
 	for _, device := range got.Devices {
 		body = append(body, drawDevice(device))
 	}

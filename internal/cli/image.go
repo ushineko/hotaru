@@ -119,7 +119,7 @@ in a dialog.`,
 }
 
 func imageSceneCommand() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "scene <picture> <name>",
 		Short: "Make a scene whose lights match a picture",
 		Long: `Make a scene whose lights match a picture.
@@ -137,7 +137,8 @@ scene shows the picture on the cooler's panel as well.`,
 			if err != nil {
 				return err
 			}
-			scene, err := client.SceneFromImage(cmd.Context(), args[0], args[1])
+			distance, _ := cmd.Flags().GetFloat64("distance")
+			scene, err := client.SceneFromImage(cmd.Context(), args[0], args[1], distance)
 			if err != nil {
 				return quiet(err)
 			}
@@ -146,6 +147,22 @@ scene shows the picture on the cooler's panel as well.`,
 			return nil
 		},
 	}
+	distanceFlag(cmd)
+	return cmd
+}
+
+/*
+distanceFlag is the separation knob, on every command that builds a scene
+from a picture.
+
+A knob for the eye rather than a correction with a right answer: what a person
+picks and what an LED shows are not the same thing, because a strip's colour
+is filtered through a diffuser, a case window and whatever else is lit in the
+room. Colours that differ clearly in the picture can arrive as one wash.
+*/
+func distanceFlag(cmd *cobra.Command) {
+	cmd.Flags().Float64("distance", 1,
+		"how far apart to push the colours: 1 is as measured, 3 is as far as it goes")
 }
 
 func imageShowCommand() *cobra.Command {

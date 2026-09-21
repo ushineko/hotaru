@@ -143,3 +143,130 @@ func First(path string) (image.Image, error) {
 	}
 	return decoded, nil
 }
+
+/*
+Separate pushes a run of colours further apart.
+
+Wanted because what a person picks and what an LED shows are not the same
+thing. A strip's colour is filtered through a diffuser, a case window and
+whatever else is lit in the room, and a set of colours that differ clearly on
+a screen can arrive as one wash on the hardware -- more so on cheaper
+controllers, where the dimmer channels have less to say.
+
+So this is a knob for the eye rather than a correction with a right answer.
+Each colour is moved away from the run's average: `distance` of 1 leaves them
+as they were measured, 2 doubles every colour's difference from the mean.
+
+**Hue and saturation move freely; value is held above the floor.** A
+separation that darkened a light into invisibility would be trading the
+difference between two lights for the disappearance of one, and the panel's
+own lesson applies -- an LED given a shadow is an LED that is off.
+
+The mean hue is a circular mean, because hues are angles: the average of red
+at 350 degrees and red at 10 is red, not cyan.
+*/
+func Separate(colours []color.NRGBA, distance, floor float64) []color.NRGBA {
+	if len(colours) == 0 || distance == 1 {
+		return colours
+	}
+
+	hues, sats, vals := make([]float64, len(colours)), make([]float64, len(colours)), make([]float64, len(colours))
+	var sinH, cosH, sumS, sumV float64
+	for i, c := range colours {
+		hues[i], sats[i], vals[i] = toHSV(c)
+		radians := hues[i] * math.Pi / 180
+		sinH, cosH = sinH+math.Sin(radians), cosH+math.Cos(radians)
+		sumS, sumV = sumS+sats[i], sumV+vals[i]
+	}
+
+	n := float64(len(colours))
+	meanH := math.Atan2(sinH/n, cosH/n) * 180 / math.Pi
+	meanS, meanV := sumS/n, sumV/n
+
+	out := make([]color.NRGBA, len(colours))
+	for i := range colours {
+		h := meanH + turn(hues[i]-meanH)*distance
+		s := clamp01(meanS + (sats[i]-meanS)*distance)
+		v := math.Max(floor, clamp01(meanV+(vals[i]-meanV)*distance))
+		out[i] = fromHSV(h, s, v)
+	}
+	return out
+}
+
+// MostDistance is as far apart as this will push a run of colours. Beyond it
+// every colour is at one end of its range and the run stops being the
+// picture's.
+const MostDistance = 3
+
+// turn is an angle wrapped to the shortest way round, so a hue either side of
+// zero is a small difference rather than a nearly complete circle.
+func turn(degrees float64) float64 {
+	for degrees > 180 {
+		degrees -= 360
+	}
+	for degrees < -180 {
+		degrees += 360
+	}
+	return degrees
+}
+
+func clamp01(v float64) float64 { return math.Max(0, math.Min(1, v)) }
+
+// toHSV is hue in degrees, saturation and value in 0..1.
+func toHSV(c color.NRGBA) (h, s, v float64) {
+	r, g, b := float64(c.R)/255, float64(c.G)/255, float64(c.B)/255
+	high := math.Max(r, math.Max(g, b))
+	low := math.Min(r, math.Min(g, b))
+	chroma := high - low
+
+	switch {
+	case chroma == 0:
+		h = 0
+	case high == r:
+		h = 60 * math.Mod((g-b)/chroma+6, 6)
+	case high == g:
+		h = 60 * ((b-r)/chroma + 2)
+	default:
+		h = 60 * ((r-g)/chroma + 4)
+	}
+	if high > 0 {
+		s = chroma / high
+	}
+	return h, s, high
+}
+
+func fromHSV(h, s, v float64) color.NRGBA {
+	h = math.Mod(math.Mod(h, 360)+360, 360)
+	chroma := v * s
+	x := chroma * (1 - math.Abs(math.Mod(h/60, 2)-1))
+	m := v - chroma
+
+	var r, g, b float64
+	switch {
+	case h < 60:
+		r, g, b = chroma, x, 0
+	case h < 120:
+		r, g, b = x, chroma, 0
+	case h < 180:
+		r, g, b = 0, chroma, x
+	case h < 240:
+		r, g, b = 0, x, chroma
+	case h < 300:
+		r, g, b = x, 0, chroma
+	default:
+		r, g, b = chroma, 0, x
+	}
+	return color.NRGBA{
+		R: uint8(math.Round((r + m) * 255)),
+		G: uint8(math.Round((g + m) * 255)),
+		B: uint8(math.Round((b + m) * 255)),
+		A: 255,
+	}
+}
+
+// Hue and Turn are the wheel, exported for tests: a test that measured hues
+// with its own arithmetic would be testing that arithmetic.
+func Hue(c color.NRGBA) float64 { h, _, _ := toHSV(c); return h }
+
+// Turn wraps an angle to the shortest way round.
+func Turn(degrees float64) float64 { return turn(degrees) }

@@ -46,10 +46,31 @@ is rebuilt whenever anything does, which on a machine with a running pump is
 every poll. For the README that is a document torn down and built again under
 whoever is reading it, twice a minute, for numbers it does not draw.
 */
-type still struct{ *shell.FuncSection }
+type still struct{ shell.Section }
 
 // Changed implements Watcher: nothing here follows the machine.
 func (still) Changed(_, _ Snapshot) bool { return false }
+
+/*
+Detach and Arrive pass through to a section that has them.
+
+The wrapper is a `shell.Section`, which is three methods; a section may also
+be a Detacher or an Arriver, and hiding those would leak whatever the inner
+one cleans up. Forwarding unconditionally means the shell sees a Detacher
+where the inner section has nothing to detach, which costs a nil check per
+swap and keeps this wrapper usable on anything.
+*/
+func (s still) Detach() {
+	if d, ok := s.Section.(shell.Detacher); ok {
+		d.Detach()
+	}
+}
+
+func (s still) Arrive() {
+	if a, ok := s.Section.(shell.Arriver); ok {
+		a.Arrive()
+	}
+}
 
 func readme(socket string) *shell.FuncSection {
 	var pane *markdown.Pane

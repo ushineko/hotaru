@@ -11,6 +11,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/ushineko/hotaru/internal/images"
+	"github.com/ushineko/hotaru/internal/scenes"
 	"github.com/ushineko/hotaru/internal/service"
 )
 
@@ -47,7 +48,7 @@ func TestASceneFromAPictureCoversEveryDeviceInScope(t *testing.T) {
 	_, err := svc.AddImage("halves", encoded(t))
 	require.NoError(t, err)
 
-	scene, err := svc.SceneFromImage(t.Context(), "halves", "themed")
+	scene, err := svc.SceneFromImage(t.Context(), "halves", "themed", 1)
 	require.NoError(t, err)
 
 	named := map[string]bool{}
@@ -69,7 +70,7 @@ func TestASceneFromAPictureSweepsAcrossIt(t *testing.T) {
 	_, err := svc.AddImage("halves", encoded(t))
 	require.NoError(t, err)
 
-	scene, err := svc.SceneFromImage(t.Context(), "halves", "themed")
+	scene, err := svc.SceneFromImage(t.Context(), "halves", "themed", 1)
 	require.NoError(t, err)
 
 	var board []string
@@ -91,7 +92,7 @@ func TestAdjacentLightsThatAgreeAreOneRule(t *testing.T) {
 	_, err := svc.AddImage("halves", encoded(t))
 	require.NoError(t, err)
 
-	scene, err := svc.SceneFromImage(t.Context(), "halves", "themed")
+	scene, err := svc.SceneFromImage(t.Context(), "halves", "themed", 1)
 	require.NoError(t, err)
 
 	for _, assignment := range scene.Assignments {
@@ -110,7 +111,7 @@ func TestASceneFromAPictureShowsThatPicture(t *testing.T) {
 	stored, err := svc.AddImage("halves", encoded(t))
 	require.NoError(t, err)
 
-	scene, err := svc.SceneFromImage(t.Context(), "halves", "themed")
+	scene, err := svc.SceneFromImage(t.Context(), "halves", "themed", 1)
 	require.NoError(t, err)
 	require.Equal(t, stored.Path, scene.Screen)
 
@@ -127,7 +128,7 @@ func TestAPictureThatIsNotThereSaysSo(t *testing.T) {
 	svc, _ := lit(t)
 	withPictures(t, svc)
 
-	_, err := svc.SceneFromImage(t.Context(), "absent", "themed")
+	_, err := svc.SceneFromImage(t.Context(), "absent", "themed", 1)
 	require.ErrorContains(t, err, "absent")
 }
 
@@ -158,4 +159,68 @@ func channels(written string) (r, g, b int) {
 		}
 	}
 	return got[0], got[1], got[2]
+}
+
+func TestASceneFromADashboardNamesThatDashboard(t *testing.T) {
+	/*
+		So applying it puts that dashboard up. The lights were built from how
+		it looked at the time, which is the honest split: editing the
+		dashboard afterwards changes the screen without changing the lights,
+		and `recolour` brings them back in line.
+	*/
+	svc, _ := lit(t)
+	svc.SetCooler(&panel{})
+	withScreens(t, svc)
+
+	scene, err := svc.SceneFromDashboard(t.Context(), "quiet", "evening", 1)
+	require.NoError(t, err)
+	require.Equal(t, "dashboard:quiet", scene.Screen)
+	require.NotEmpty(t, scene.Assignments)
+}
+
+func TestSeparationChangesTheColoursAndNothingElse(t *testing.T) {
+	svc, _ := lit(t)
+	withPictures(t, svc)
+	_, err := svc.AddImage("halves", encoded(t))
+	require.NoError(t, err)
+
+	plain, err := svc.SceneFromImage(t.Context(), "halves", "themed", 1)
+	require.NoError(t, err)
+	apart, err := svc.SceneFromImage(t.Context(), "halves", "themed", 2.5)
+	require.NoError(t, err)
+
+	require.Equal(t, plain.Screen, apart.Screen)
+	require.InDelta(t, 2.5, apart.Distance, 0.001, "the separation was not kept")
+	require.NotEqual(t, plain.Assignments[0].Colour, apart.Assignments[0].Colour,
+		"separating the colours changed none of them")
+}
+
+func TestRecolouringTakesTheSceneAsItsSource(t *testing.T) {
+	/*
+		The knob has no right answer, so it has to be adjustable after the
+		fact: what somebody is judging is not on screen anywhere except the
+		case itself.
+	*/
+	svc, _ := lit(t)
+	withPictures(t, svc)
+	_, err := svc.AddImage("halves", encoded(t))
+	require.NoError(t, err)
+
+	made, err := svc.SceneFromImage(t.Context(), "halves", "themed", 1)
+	require.NoError(t, err)
+
+	again, err := svc.RecolourScene(t.Context(), "themed", 3)
+	require.NoError(t, err)
+	require.Equal(t, made.Screen, again.Screen, "recolouring changed what the scene shows")
+	require.InDelta(t, 3, again.Distance, 0.001)
+	require.NotEqual(t, made.Assignments[0].Colour, again.Assignments[0].Colour)
+}
+
+func TestASceneWithNothingToTakeColoursFromSaysSo(t *testing.T) {
+	// Rather than inventing a source.
+	svc, _ := lit(t, scenes.Scene{Name: "plain", Colour: "blue"})
+	withPictures(t, svc)
+
+	_, err := svc.RecolourScene(t.Context(), "plain", 2)
+	require.ErrorContains(t, err, "nothing to take its colours from")
 }
