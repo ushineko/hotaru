@@ -333,6 +333,10 @@ func (a *App) dropped(sh *shell.Shell, uris []fyne.URI) {
 	}
 }
 
+// Library is the picture section this window hands dropped files to, so a
+// test can wait for what a drop started. See Settle.
+func Library(a *App) *PicturesSection { return a.pictures }
+
 // Drop is dropped, for tests: the handler it belongs to is a window callback,
 // and a test that set one would be a test about Fyne.
 func Drop(a *App, sh *shell.Shell, uris []fyne.URI) { a.dropped(sh, uris) }

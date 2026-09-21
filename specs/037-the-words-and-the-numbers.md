@@ -93,6 +93,37 @@ back what it drew the form from.
       draft.
 - [x] AC8. A picture with more colours than the palette holds still encodes.
 - [x] AC9. Verified on the development machine, on the panel.
+- [x] AC10. Building the form twice asks the service for one frame and
+      leaves the draft as it was.
+
+### A form that edited itself
+
+Found by the package build failing, not by the tests here.
+
+`widget.Select.SetSelected` fires the handler, so a chooser built from a
+dashboard runs its own OnChanged while the form is being drawn. The face
+chooser compared what it shows ("sans") against what the dashboard says
+(""), decided they differed, wrote "sans" into the draft and asked the
+service for a frame; the outline chooser compared nothing at all. On a form
+that rebuilds as somebody types, that is a render per keystroke and a
+dashboard that has been edited by being looked at.
+
+Both compare against the *name* of what is set now, and a test builds the
+form twice and asserts one frame and an untouched draft.
+
+### And the tests were racing
+
+The same build found it. A preview and a frame are goroutines that come back
+to the interface, and Fyne's test driver runs `fyne.Do` inline on the calling
+goroutine -- so a goroutine outliving its test shaped text while the next
+test drew, and harfbuzz panicked with an index out of range. It failed about
+one run in three, which in a PKGBUILD's `check()` is a package that randomly
+refuses to build.
+
+`PicturesSection.Settle` and `DashboardsSection.Settle` wait for what is in
+flight, and the tests that start work call them. The window itself is
+unaffected: the real driver queues `fyne.Do` onto the main goroutine, which is
+what the sections were written against.
 
 ## Risks & Assumptions
 
