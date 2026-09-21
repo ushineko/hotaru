@@ -5,10 +5,10 @@
 RGB lighting and AIO cooler control for Linux, as a CLI, a user service and a
 desktop GUI. 蛍 — fireflies, small lights that pulse.
 
-It drives lighting through [OpenRGB](https://openrgb.org/) and a liquid cooler
-through [liquidctl](https://github.com/liquidctl/liquidctl): set colours down to
-individual fans, define scenes, put a live dashboard on the cooler's screen, and
-bind it all to keys.
+It drives lighting through [OpenRGB](https://openrgb.org/) and reaches a liquid
+cooler itself, over `/dev/hidraw` and usbfs: set colours down to individual
+fans, define scenes, put a live dashboard on the cooler's screen, and bind it
+all to keys.
 
 > **Status**: the lighting half works. The service, its API, the CLI and the
 > mapping wizard are built and tested on two machines with nothing in common —
@@ -114,9 +114,9 @@ The decisions worth knowing before reading any code:
 - **A frame per device.** Assignments compose into one complete frame before any
   write, so a write is atomic from the device's point of view, coalescing cannot
   drop half a scene, and "is this device showing what it should?" has an answer.
-- **Nothing is required.** OpenRGB, liquidctl and OpenLinkHub are each optional
-  at runtime. Absent ones are reported as absent and their features disappear
-  from the interface; the service still starts and serves.
+- **Nothing is required.** OpenRGB is optional at runtime, and so is the cooler.
+  Absent ones are reported as absent and their features disappear from the
+  interface; the service still starts and serves.
 - **A fresh install is inert.** With nothing recorded, hotaru discovers your
   hardware and touches none of it until asked — so installing it cannot stamp
   over lighting you configured elsewhere.
@@ -137,10 +137,12 @@ dependency. The core — OpenRGB client, scenes, the service, the API — is
 portable; the platform pieces (the systemd user unit, the KWin script, the
 desktop entry) are build-tagged and their absence costs only those features.
 
-**What works is whatever OpenRGB and liquidctl support** — hotaru contains no
-device drivers of its own, which is also why installing it installs them.
+**Lighting is whatever OpenRGB supports** — hotaru contains no lighting drivers
+of its own, which is also why installing it installs OpenRGB. The cooler is the
+exception: hotaru speaks NZXT's protocol directly, so telemetry and the screen
+need no Python and no separate tool (spec 012).
 [docs/hardware.md](docs/hardware.md) lists what has actually been tested, and
-points at those projects' own device lists for everything else.
+points at OpenRGB's own device list for everything else.
 
 Nothing is assumed about your hardware. The machine this was written for is a
 test case, not the target: scope defaults to every device OpenRGB reports, and
@@ -216,6 +218,10 @@ MIT. See [LICENSE](LICENSE).
 ## Changelog
 
 ### Unreleased
+
+- The README no longer says the cooler is reached through liquidctl. It has not
+  been since spec 012, and the front page is the only description most readers
+  get.
 
 - The cooler's screen shows a live dashboard: coolant temperature with a
   severity-coloured ring, the processor, the graphics card and the pump, over a
