@@ -53,6 +53,11 @@ type Device struct {
 
 	InScope bool `json:"in_scope"`
 
+	// Preview, when set, is who is holding a draft on this device and what
+	// they are looking at. A device whose re-assertion is suspended otherwise
+	// looks identical to one that is simply behaving.
+	Preview *Preview `json:"preview,omitempty"`
+
 	// Reassert, when set, is how often this device's colour is re-sent,
 	// because it does not hold what it is told.
 	Reassert string `json:"reassert,omitempty"`
@@ -333,4 +338,102 @@ type ScreenRequest struct {
 	// keeps both across restarts.
 	Brightness  *int `json:"brightness,omitempty"`
 	Orientation *int `json:"orientation,omitempty"`
+}
+
+/*
+Preview is a draft somebody is holding on some devices.
+
+A preview is what a person is looking at, never what they want, so it is
+reported apart from desired state everywhere it appears.
+*/
+type Preview struct {
+	// Token is what the holder renews and releases with.
+	Token string `json:"token"`
+	// Scene is the name being previewed, where it is a saved one.
+	Scene string `json:"scene,omitempty"`
+	// Holder is who has it, in a form a person can read.
+	Holder string `json:"holder,omitempty"`
+	// Devices are the devices it covers.
+	Devices []string `json:"devices,omitempty"`
+	// Expires is when it lapses unless renewed. Absent when the lease is
+	// bound to a connection instead, which is the better signal where the
+	// client can hold one.
+	Expires *time.Time `json:"expires,omitempty"`
+}
+
+// Scene is a named lighting state, as a client sees it.
+type Scene struct {
+	Name        string            `json:"name"`
+	Assignments []SceneAssignment `json:"assignments,omitempty"`
+	// Effects name what each device should be doing, by any part of its name.
+	Effects map[string]string `json:"effects,omitempty"`
+	// Screen is "dashboard", "readout", or a path to a GIF. Empty means the
+	// scene says nothing about the screen and the screen does not change.
+	Screen string `json:"screen,omitempty"`
+}
+
+// Screen states a scene can name, beyond a path to an image.
+const (
+	ScreenDashboard = "dashboard"
+	ScreenReadout   = "readout"
+)
+
+// CaptureRequest saves what the lights are showing now as a named scene.
+type CaptureRequest struct {
+	// Screen is what the scene should say about the cooler's panel. Empty
+	// means the scene says nothing and applying it leaves the screen alone.
+	Screen string `json:"screen,omitempty"`
+}
+
+// SceneAssignment is one colour on one target, in the form somebody types.
+type SceneAssignment struct {
+	Target string `json:"target"`
+	Colour string `json:"colour"`
+}
+
+// ScenesResponse is every saved scene.
+type ScenesResponse struct {
+	Scenes []Scene `json:"scenes"`
+}
+
+/*
+SceneRequest applies or previews a scene.
+
+Preview and Hold are separate because they answer different questions: whether
+this is a draft, and whether the caller can keep a connection open to hold it.
+A GUI sets both; a shell script sets Preview alone and renews.
+*/
+type SceneRequest struct {
+	// Preview writes the scene without meaning it: not recorded, not
+	// reconciled over, and held under a lease that ends with its holder.
+	Preview bool `json:"preview,omitempty"`
+	// Hold says the caller is sitting on this request and the preview should
+	// end when the connection does. Ignored unless Preview is set.
+	Hold bool `json:"hold,omitempty"`
+	// Holder is who to name in a listing. Optional; the route fills in
+	// something honest when it is empty.
+	Holder string `json:"holder,omitempty"`
+}
+
+/*
+SceneResponse is what a scene did.
+
+Per device, because "the scene worked" says nothing useful about six devices
+when one of them is dark. Problems are the scene's own -- a line that would not
+parse, a GIF that is not there -- and a scene that cannot be fully applied
+applies the rest and reports them.
+*/
+type SceneResponse struct {
+	Scene    string   `json:"scene"`
+	Results  []Result `json:"results,omitempty"`
+	Problems []string `json:"problems,omitempty"`
+	// Screen is what the panel was set to, absent when the scene left it be.
+	Screen string `json:"screen,omitempty"`
+	// Preview is the lease, when this was a preview.
+	Preview *Preview `json:"preview,omitempty"`
+}
+
+// PreviewRequest renews or releases a lease by token.
+type PreviewRequest struct {
+	Token string `json:"token"`
 }

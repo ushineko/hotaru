@@ -51,6 +51,9 @@ type Restore struct {
 	Results []Result
 	Applied int
 	Missing []string
+	// Previewing are devices left alone because somebody is looking at a
+	// draft on them. Not missing and not applied: deliberately untouched.
+	Previewing []string
 }
 
 // Complete reports whether every remembered device was reached.
@@ -93,6 +96,20 @@ func (s *Service) Reconcile(ctx context.Context, only []string) (Restore, error)
 		if len(only) > 0 && !named(only, name) {
 			continue
 		}
+		if lease, held := s.Previewing(name); held {
+			/*
+				Somebody is looking at a draft on this device.
+
+				Re-assertion exists to correct hardware that forgets, and here
+				it would correct the person instead: the G502's timer puts
+				desired state back within sixty seconds, underneath whoever is
+				deciding whether they like the colour. The lease ends and this
+				device is reconciled then, by Release.
+			*/
+			_ = lease
+			restore.Previewing = append(restore.Previewing, name)
+			continue
+		}
 		device, here := present[name]
 		if !here {
 			// Recorded, and not on the server. The device may enumerate later,
@@ -101,9 +118,18 @@ func (s *Service) Reconcile(ctx context.Context, only []string) (Restore, error)
 			continue
 		}
 
+		/*
+			The mode is restored as well as the colours.
+
+			Desired state has always recorded the mode hotaru settled on, and
+			reconciling used to discard it and resolve again from scratch.
+			That was invisible while every scene was a solid colour, and wrong
+			as soon as one carries an effect: a keyboard rippling under typing
+			would come back from a re-assert sitting in Direct.
+		*/
 		want := desired.Devices[name]
 		result := s.through(ctx, device.Name, func(ctx context.Context) Result {
-			return s.writeFrame(ctx, client, device, want.Frame(name), false, "", false, nil)
+			return s.writeFrame(ctx, client, device, want.Frame(name), false, want.Mode, false, nil)
 		})
 		if result.Applied {
 			restore.Applied++

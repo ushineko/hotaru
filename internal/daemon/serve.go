@@ -19,6 +19,7 @@ import (
 	"github.com/ushineko/hotaru/internal/dashboard"
 	"github.com/ushineko/hotaru/internal/openrgb"
 	"github.com/ushineko/hotaru/internal/queue"
+	"github.com/ushineko/hotaru/internal/scenes"
 	"github.com/ushineko/hotaru/internal/service"
 	"github.com/ushineko/hotaru/internal/state"
 	"github.com/ushineko/hotaru/internal/systemd"
@@ -89,6 +90,25 @@ func run(cmd *cobra.Command) error {
 	}
 	svc.SetRecorder(desired)
 	defer func() { _ = desired.Flush() }()
+
+	/*
+		Named scenes, if the file can be read.
+
+		An unreadable scenes file is reported and the service carries on
+		without scenes: it is somebody's saved work and is never rewritten, so
+		the recovery is a person fixing their YAML rather than hotaru
+		discarding it. Everything else -- lighting, the cooler, the API --
+		works meanwhile.
+	*/
+	scenesPath, err := config.ScenesPath()
+	if err != nil {
+		return err
+	}
+	if saved, err := scenes.Open(scenesPath); err != nil {
+		cmd.PrintErrf("hotaru: %v\n", err)
+	} else {
+		svc.SetScenes(saved)
+	}
 
 	// One goroutine per device, created on first write. A reconcile and a
 	// user's scene cannot interleave on the same device, and a write that is
