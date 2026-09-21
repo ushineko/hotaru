@@ -24,6 +24,8 @@ and a transcript reads as what someone meant.
 */
 package api
 
+import "time"
+
 // Version is the path prefix every route sits under.
 const Version = "v1"
 
@@ -282,4 +284,51 @@ type ReloadResponse struct {
 type Error struct {
 	Error  string `json:"error"`
 	Detail string `json:"detail,omitempty"`
+}
+
+/*
+Cooling is the body of GET /v1/cooling: what the liquid cooler reports.
+
+Raw measurements and when they were taken, rather than what any one view needs.
+The pump-failure alert moves here later and a future Go rewrite of
+peripheral-battery-monitor reads the same snapshot, so a field nobody currently
+draws is still worth carrying. See spec 012.
+*/
+type Cooling struct {
+	// Device is what was found, empty on a machine with no cooler.
+	Device string `json:"device,omitempty"`
+
+	Coolant  float64 `json:"coolant_c"`
+	PumpRPM  int     `json:"pump_rpm"`
+	PumpDuty int     `json:"pump_duty"`
+	FanRPM   int     `json:"fan_rpm"`
+	FanDuty  int     `json:"fan_duty"`
+
+	// Taken is when the cooler was read, so a consumer can judge staleness
+	// rather than assuming the number is current.
+	Taken time.Time `json:"taken"`
+
+	// Absent says there is no cooler on this machine, which is an ordinary
+	// state and not an error. Detail says why, when there is more to say.
+	Absent bool   `json:"absent,omitempty"`
+	Detail string `json:"detail,omitempty"`
+}
+
+/*
+ScreenRequest is the body of POST /v1/screen.
+
+Exactly one thing at a time. A GIF arrives base64-encoded because this is JSON
+and a picture is not text; the alternative is a second content type for one
+route, which costs every client more than it saves.
+*/
+type ScreenRequest struct {
+	// Image is a base64 GIF. Still pictures are not retained by the firmware,
+	// so one frame of a GIF is how a static image is shown.
+	Image string `json:"image,omitempty"`
+	// Readout hands the panel back to the cooler's own display.
+	Readout bool `json:"readout,omitempty"`
+	// Brightness is 0-100, Orientation one of 0, 90, 180, 270. The device
+	// keeps both across restarts.
+	Brightness  *int `json:"brightness,omitempty"`
+	Orientation *int `json:"orientation,omitempty"`
 }
