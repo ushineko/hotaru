@@ -247,6 +247,36 @@ MIT. See [LICENSE](LICENSE).
 
 ### Unreleased
 
+- Colours taken from a picture are pushed apart as far as somebody asks. A
+  slice of a starfield averages to dark grey and a slice of a sunset to brown,
+  so the mean is weighted by chroma now — and even then a photograph is mostly
+  one hue, so a separation slider scales each colour away from the picture's
+  average hue. A machine lit from a nebula was olive; it is not now. The same
+  slider recolours a scene already saved, `hotaru scene recolour` does it at
+  the terminal, and a dashboard is a source for a scene the same way a picture
+  is (spec 029, #70).
+
+- Pictures, Screen and Scenes are one entry called Create, in the order
+  somebody does them in, and Cooling is part of System rather than an entry of
+  its own for four readings. System also says what is loaded: the scene last
+  applied and what the panel is showing, refilled on the poll rather than
+  rebuilt, so the device rows are not rebuilt twice a minute to show a pump
+  speed (spec 030, #71).
+
+- A row's buttons sit beside it. They were pinned to the window's edge, so a
+  wide window left a hand's width of nothing between the end of a line and the
+  button belonging to it — four pixels now against 1,471 — and every column
+  holds a width, so `Shift+1` being wider than `6` no longer moves everything
+  after it (spec 031, #72).
+
+- The screen chooser opens at once. It asked the service for the pictures and
+  the dashboards to build its list and then again for every line in it: thirty
+  round trips on the thread drawing the window, growing with the number of
+  pictures kept. The list is fetched once and refreshed when the navigation
+  arrives. Its thumbnails line up with the options too — a VBox pads between
+  its children and Fyne's radio group does not, so by the tenth option the
+  picture was beside the wrong name (spec 031, #72).
+
 - The window has an Appearance section, like every other program on
   fynedesygn: the scheme, the font, the text size and the interface scale.
   Fyne draws its own widgets, so those are the whole of what makes this window

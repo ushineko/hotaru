@@ -3,15 +3,18 @@ package gui_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"go/build"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/storage"
@@ -150,9 +153,19 @@ func screen(t *testing.T, client *api.Client, section string) string {
 	sh := shell.Headless(a, opts)
 	app.Refresh(context.Background())
 
+	/*
+		Inside the Create group as well as beside it.
+
+		Pictures, Screen and Scenes are three parts of one entry now, and a
+		test that had to press a tab to reach one would be a test about
+		tabs.
+	*/
 	for _, s := range sh.Sections() {
 		if s.Title() == section {
 			return fynetest.Text(s.Build(sh))
+		}
+		if group, ok := s.(*gui.Create); ok && group.Show(section) {
+			return fynetest.Text(group.Build(sh))
 		}
 	}
 	t.Fatalf("no section called %q", section)
@@ -169,9 +182,8 @@ func TestTheWindowHasItsSections(t *testing.T) {
 	for _, s := range sh.Sections() {
 		titles = append(titles, s.Title())
 	}
-	require.Equal(t, []string{
-		"Service", "System", "Scenes", "Pictures", "Screen", "Cooling", "Appearance", "About",
-	}, titles)
+	require.Equal(t, []string{"Service", "System", "Create", "Appearance", "About"}, titles,
+		"the navigation changed shape")
 }
 
 func TestAServiceThatIsNotRunningSaysWhatToType(t *testing.T) {
@@ -182,7 +194,7 @@ func TestAServiceThatIsNotRunningSaysWhatToType(t *testing.T) {
 	*/
 	absent := api.NewClient(filepath.Join(t.TempDir(), "nothing.sock"))
 
-	for _, section := range []string{"Service", "System", "Scenes", "Pictures", "Cooling"} {
+	for _, section := range []string{"Service", "System", "Scenes", "Pictures", "Screen"} {
 		said := screen(t, absent, section)
 		require.Contains(t, said, "systemctl --user start hotaru",
 			"%s did not say how to start the service", section)
@@ -238,8 +250,10 @@ func TestADeviceUnderAPreviewIsMarked(t *testing.T) {
 	require.Contains(t, said, "Showing a draft held by hotaru-gui")
 }
 
-func TestTheCoolingSectionShowsTheNumbers(t *testing.T) {
-	said := screen(t, service(t, healthy()), "Cooling")
+func TestTheCoolingNumbersAreOnTheSystemPage(t *testing.T) {
+	// Cooling was a section of its own and was too small to be one: four
+	// readings about a device the same page already lists.
+	said := screen(t, service(t, healthy()), "System")
 
 	require.Contains(t, said, "37.5 °C")
 	require.Contains(t, said, "2608 rpm")
@@ -254,8 +268,7 @@ func TestAMachineWithNoCoolerIsNotAFailure(t *testing.T) {
 		Absent: true, Detail: "no supported liquid cooler",
 	}
 
-	said := screen(t, service(t, routes), "Cooling")
-	require.Contains(t, said, "No cooler")
+	said := screen(t, service(t, routes), "System")
 	require.Contains(t, said, "no supported liquid cooler")
 	require.NotContains(t, strings.ToLower(said), "error")
 }
@@ -444,9 +457,15 @@ func TestTheCoolerMovingDoesNotRebuildTheSceneList(t *testing.T) {
 	require.False(t, scenes.Changed(before, after),
 		"the scene list rebuilt because the pump changed speed")
 
-	cooling := &gui.CoolingSection{}
-	require.True(t, cooling.Changed(before, after),
-		"the cooling section did not notice its own numbers moving")
+	/*
+		Nor does the System section, which draws the coolant.
+
+		It is the section the cooling card moved into, and a Changed that
+		watched the coolant would rebuild every device row twice a minute.
+		The card is refilled by Tick instead.
+	*/
+	require.False(t, (&gui.SystemSection{}).Changed(before, after),
+		"the device list rebuilt because the pump changed speed")
 }
 
 func TestASceneAppearingDoesRebuildTheList(t *testing.T) {
@@ -466,12 +485,43 @@ func TestABindingChangingRebuildsTheList(t *testing.T) {
 	require.True(t, (&gui.ScenesSection{}).Changed(before, after))
 }
 
-func TestALightChangingDoesNotRebuildTheCoolingSection(t *testing.T) {
+func TestALightChangingRebuildsTheDeviceList(t *testing.T) {
 	before := gui.Snapshot{Devices: []api.Device{{Name: "Keychron", Colours: []string{"#ff0000"}}}}
 	after := gui.Snapshot{Devices: []api.Device{{Name: "Keychron", Colours: []string{"#00ff00"}}}}
 
-	require.False(t, (&gui.CoolingSection{}).Changed(before, after))
 	require.True(t, (&gui.SystemSection{}).Changed(before, after))
+}
+
+func TestTheCoolingCardFollowsTheMachineWithoutARebuild(t *testing.T) {
+	/*
+		The other half of a narrow Changed. Cooling was a section of its own
+		and was too small to be one -- four readings about a device the same
+		page already lists -- so it is a card in System now, and the numbers
+		arrive through Tick rather than by rebuilding sixty device rows.
+	*/
+	a := test.NewApp()
+	t.Cleanup(a.Quit)
+
+	app := gui.New(service(t, healthy()))
+	opts := app.Options("s")
+	opts.SettingsPath = filepath.Join(t.TempDir(), "gui.yml")
+	sh := shell.Headless(a, opts)
+	app.Refresh(context.Background())
+
+	section := &gui.SystemSection{}
+	gui.OpenSystem(section, app)
+	built := section.Build(sh)
+
+	section.Tick(gui.Snapshot{
+		Devices: []api.Device{{Name: "Keychron"}},
+		Cooling: api.Cooling{Device: "NZXT Kraken", Coolant: 41.2, PumpRPM: 2608},
+		Status:  api.Status{Scene: "evening", Showing: "dashboard: quiet"},
+	})
+
+	said := fynetest.Text(built)
+	require.Contains(t, said, "41.2", "the coolant did not reach the card")
+	require.Contains(t, said, "evening", "the applied scene is not shown")
+	require.Contains(t, said, "dashboard: quiet", "what the screen shows is not shown")
 }
 
 func TestASceneLineIsEditedWhereItIsShown(t *testing.T) {
@@ -1025,6 +1075,9 @@ func built(t *testing.T, client *api.Client, section string) fyne.CanvasObject {
 		if s.Title() == section {
 			return s.Build(sh)
 		}
+		if group, ok := s.(*gui.Create); ok && group.Show(section) {
+			return group.Build(sh)
+		}
 	}
 	t.Fatalf("no section called %q", section)
 	return nil
@@ -1230,4 +1283,304 @@ func TestABindingIsChangedFromTheRowThatShowsIt(t *testing.T) {
 		}
 		return seen == 2
 	}, 3*time.Second, 10*time.Millisecond, "moving a shortcut made %d calls, not two", seen)
+}
+
+func TestNothingThatIgnoresTheMachineIsRebuiltByIt(t *testing.T) {
+	/*
+		The poll rebuilds whatever is on screen when something it watches
+		moves, and a section that says nothing about what it watches is
+		rebuilt whenever anything does -- which on a machine with a running
+		pump is every two seconds. A rebuild takes the page back to the top
+		under whoever is reading it.
+
+		Reported twice: once for the README, once for the appearance. Both
+		are sections about the program rather than about the machine, and
+		this is the list of them.
+	*/
+	a := test.NewApp()
+	t.Cleanup(a.Quit)
+
+	app := gui.New(service(t, healthy()))
+	opts := app.Options("/run/nowhere/hotaru.sock")
+	opts.SettingsPath = filepath.Join(t.TempDir(), "gui.yml")
+	sh := shell.Headless(a, opts)
+
+	moved := gui.Snapshot{Cooling: api.Cooling{PumpRPM: 2400}}
+	for _, name := range []string{"Appearance", "About"} {
+		var found gui.Watcher
+		for _, section := range sh.Sections() {
+			if section.Title() != name {
+				continue
+			}
+			watcher, ok := section.(gui.Watcher)
+			require.True(t, ok, "%s does not say what it watches", name)
+			found = watcher
+		}
+		require.NotNil(t, found, "no section called %q", name)
+		require.False(t, found.Changed(gui.Snapshot{}, moved),
+			"%s is rebuilt when the pump moves", name)
+	}
+}
+
+func TestARowsButtonsSitBesideIt(t *testing.T) {
+	/*
+		They were pushed to the far edge of the window, so a wide window left
+		a hand's width of nothing between the end of a line and the button
+		belonging to it. With twenty rows on screen the eye has to track
+		across that gap and back for every one, and which button belongs to
+		which line stops being obvious exactly when there are enough lines
+		for it to matter.
+	*/
+	test.NewTempApp(t)
+
+	/*
+		Measured against the shape it replaces, because the fault was the
+		border's right slot rather than anything about the button: a row
+		built as `Border(nil, nil, left, actions, middle)` pins the actions
+		to the window's edge however wide the window is.
+	*/
+	const wide = 1600
+
+	beside := widget.NewLabel("a scene")
+	near := widget.NewButton("Apply", func() {})
+	put(t, gui.ListRow([]fyne.CanvasObject{beside}, near), wide)
+
+	away := widget.NewLabel("a scene")
+	far := widget.NewButton("Apply", func() {})
+	put(t, container.NewBorder(nil, nil, away, far, widget.NewLabel("")), wide)
+
+	closeBy := near.Position().X - (beside.Position().X + beside.Size().Width)
+	pinned := far.Position().X - (away.Position().X + away.Size().Width)
+
+	require.Less(t, closeBy, pinned/4,
+		"the button is %.0f from the end of the row against %.0f pinned to the edge",
+		closeBy, pinned)
+}
+
+// put lays an object out at a width, which is what makes positions real.
+func put(t *testing.T, o fyne.CanvasObject, width float32) {
+	t.Helper()
+	window := test.NewWindow(o)
+	t.Cleanup(window.Close)
+	window.Resize(fyne.NewSize(width, 200))
+}
+
+func TestEveryRowsButtonsAreInTheSamePlace(t *testing.T) {
+	/*
+		A shipped scene cannot be deleted, so its row carries two buttons
+		where the rows around it carry three -- and the key that starts the
+		line is "6" on one row and "Shift+1" on the next. Both are widths,
+		and anything packed after a width that changes lands somewhere else
+		on every line. The result is a column of buttons that is not a
+		column, which is the fault this row shape exists to fix.
+	*/
+	a := test.NewApp()
+	t.Cleanup(a.Quit)
+
+	// One key held with Shift and one without, which is the pair of widths
+	// that took the lines out of line.
+	routes := healthy()
+	routes["GET /"+api.Version+"/keys"] = api.KeysResponse{Bindings: []api.Binding{
+		{Key: "Ctrl+Alt+Num+1", Scene: "red"},
+		{Key: "Ctrl+Alt+Shift+Num+1", Scene: "evening"},
+	}}
+
+	app := gui.New(service(t, routes))
+	opts := app.Options("s")
+	opts.SettingsPath = filepath.Join(t.TempDir(), "gui.yml")
+	sh := shell.Headless(a, opts)
+	app.Refresh(context.Background())
+
+	section := &gui.ScenesSection{}
+	gui.OpenScenes(section, app)
+	built := section.Build(sh)
+	window := test.NewWindow(built)
+	t.Cleanup(window.Close)
+	window.Resize(fyne.NewSize(1200, 700))
+
+	var at []float32
+	fynetest.Walk(built, func(o fyne.CanvasObject) bool {
+		if button, ok := o.(*widget.Button); ok && button.Text == "Apply" {
+			at = append(at, fyne.CurrentApp().Driver().AbsolutePositionForObject(o).X)
+		}
+		return false
+	})
+	require.Len(t, at, 2, "the list did not draw both scenes")
+	require.Equal(t, at[0], at[1],
+		"one row's Apply is at %.0f and the other's at %.0f", at[0], at[1])
+}
+
+// counting is a fake service that says how many times each route was asked
+// for, which is the thing a test about round trips has to see.
+func counting(t *testing.T, routes map[string]any) (*api.Client, func(string) int) {
+	t.Helper()
+
+	var mu sync.Mutex
+	times := map[string]int{}
+
+	socket := filepath.Join(t.TempDir(), "s")
+	listener, err := api.Listen(t.Context(), socket)
+	require.NoError(t, err)
+
+	mux := http.NewServeMux()
+	for path, body := range routes {
+		mux.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
+			mu.Lock()
+			times[r.URL.Path]++
+			mu.Unlock()
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(body))
+		})
+	}
+	server := &http.Server{Handler: mux, ReadHeaderTimeout: api.ReadHeaderTimeout}
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(func() { _ = server.Close() })
+
+	return api.NewClient(socket), func(path string) int {
+		mu.Lock()
+		defer mu.Unlock()
+		return times[path]
+	}
+}
+
+// screenful is a fixture with enough to choose between that asking per option
+// is visible in the count.
+func screenful() map[string]any {
+	routes := healthy()
+
+	pictures := make([]api.Image, 0, 12)
+	for i := range 12 {
+		name := fmt.Sprintf("picture%d", i)
+		pictures = append(pictures, api.Image{Name: name, Path: "/tmp/" + name + ".gif"})
+	}
+	routes["GET /"+api.Version+"/images"] = api.ImagesResponse{Images: pictures}
+	routes["GET /"+api.Version+"/dashboards"] = api.DashboardsResponse{
+		Dashboards: []api.Dashboard{{Name: "cooling"}, {Name: "load"}},
+	}
+	return routes
+}
+
+func TestTheScreenChooserAsksTheServiceOnceNotOncePerOption(t *testing.T) {
+	/*
+		It fetched the pictures and the dashboards to build the list, and then
+		called both routes again for every line in it to find the one
+		thumbnail that line needed. Fourteen options meant thirty round trips
+		over the socket on the thread drawing the window, which is the pause
+		this is about -- and it grew with the number of pictures somebody had
+		kept.
+	*/
+	a := test.NewApp()
+	t.Cleanup(a.Quit)
+
+	client, times := counting(t, screenful())
+	app := gui.New(client)
+	opts := app.Options("s")
+	opts.SettingsPath = filepath.Join(t.TempDir(), "gui.yml")
+	sh := shell.Headless(a, opts)
+	app.Refresh(context.Background())
+
+	window := test.NewWindow(widget.NewLabel("behind"))
+	t.Cleanup(window.Close)
+	window.Resize(fyne.NewSize(900, 700))
+	sh.Window = window
+
+	section := &gui.ScenesSection{}
+	gui.OpenEditor(section, app, gui.NewDraft())
+	gui.ChooseScreen(section, sh)
+
+	images := "/" + api.Version + "/images"
+	require.LessOrEqual(t, times(images), 1,
+		"the chooser asked for the pictures %d times for 12 of them", times(images))
+}
+
+func TestTheScreenChoosersPicturesLineUpWithItsOptions(t *testing.T) {
+	/*
+		Fyne's radio group draws text and nothing else, so a thumbnail can
+		only sit beside its option -- and beside means the column is laid out
+		at the group's own pitch. As a VBox it was not: a VBox puts padding
+		between its children and the group puts none between its options, so
+		the pictures drifted a few pixels further out of line with every row
+		until they were beside the wrong names.
+	*/
+	a := test.NewApp()
+	t.Cleanup(a.Quit)
+
+	client, _ := counting(t, screenful())
+	app := gui.New(client)
+	opts := app.Options("s")
+	opts.SettingsPath = filepath.Join(t.TempDir(), "gui.yml")
+	sh := shell.Headless(a, opts)
+	app.Refresh(context.Background())
+
+	window := test.NewWindow(widget.NewLabel("behind"))
+	t.Cleanup(window.Close)
+	window.Resize(fyne.NewSize(900, 900))
+	sh.Window = window
+
+	section := &gui.ScenesSection{}
+	gui.OpenEditor(section, app, gui.NewDraft())
+	gui.ChooseScreen(section, sh)
+
+	shown := window.Canvas().Overlays().Top()
+	require.NotNil(t, shown, "the chooser did not open")
+
+	group := fynetest.Find[*widget.RadioGroup](shown)
+	require.NotNil(t, group, "no list of options")
+
+	var column *fyne.Container
+	fynetest.WalkRendered(shown, func(o fyne.CanvasObject) bool {
+		box, ok := o.(*fyne.Container)
+		if !ok {
+			return false
+		}
+		if _, ok := box.Layout.(gui.Beside); ok {
+			column = box
+			return true
+		}
+		return false
+	})
+	require.NotNil(t, column, "the thumbnails are not laid out beside the options")
+
+	require.Len(t, column.Objects, len(group.Options),
+		"%d pictures for %d options", len(column.Objects), len(group.Options))
+
+	pitch := group.MinSize().Height / float32(len(group.Options))
+	require.InDelta(t, pitch, column.Layout.(gui.Beside).Pitch, 0.01,
+		"the pictures are stacked at %.2f and the options at %.2f",
+		column.Layout.(gui.Beside).Pitch, pitch)
+}
+
+func TestTheTabStripSaysThePartsNameAndTheBodyDoesNot(t *testing.T) {
+	/*
+		The three parts of Create were sections of their own and each drew
+		its own heading. Inside a tab strip that is the same word twice, a
+		hand's width apart, and the second one is the one that is not a
+		control.
+	*/
+	a := test.NewApp()
+	t.Cleanup(a.Quit)
+
+	// A fixture with pictures and dashboards in it, so every part draws its
+	// list rather than the note it shows when the service will not answer.
+	app := gui.New(service(t, screenful()))
+	opts := app.Options("s")
+	opts.SettingsPath = filepath.Join(t.TempDir(), "gui.yml")
+	sh := shell.Headless(a, opts)
+	app.Refresh(context.Background())
+
+	create := gui.NewCreate(app)
+	for _, part := range create.Parts() {
+		require.True(t, create.Show(part.Title()), "no part called %q", part.Title())
+
+		said := 0
+		fynetest.WalkRendered(create.Build(sh), func(o fyne.CanvasObject) bool {
+			if text, ok := o.(*canvas.Text); ok && text.Text == part.Title() {
+				said++
+			}
+			return false
+		})
+		require.Equal(t, 1, said,
+			"%q is on screen %d times: the tab and the heading say the same thing",
+			part.Title(), said)
+	}
 }

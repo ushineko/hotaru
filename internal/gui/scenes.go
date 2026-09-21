@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"image/color"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -47,6 +48,9 @@ type ScenesSection struct {
 	*/
 	scroller *container.Scroll
 	rows     *fyne.Container
+	// kept holds the chooser's list of screens between openings.
+	kept
+
 	// scrolling says which view the scroller belongs to. The list and the
 	// editor are different material, so an offset from one is meaningless in
 	// the other and carrying it over reads as the window losing its place.
@@ -56,6 +60,12 @@ type ScenesSection struct {
 // OpenScenes gives a section its app, which the shell normally does. For
 // tests, like OpenEditor.
 func OpenScenes(s *ScenesSection, app *App) { s.app = app }
+
+// ChooseScreen opens the chooser, for tests: it is reached by a button in a
+// card, and a test that clicked it would be a test about the card.
+func ChooseScreen(s *ScenesSection, sh *shell.Shell) {
+	s.chooseScreen(sh, screenOf(s.draft))
+}
 
 // Rebind moves a scene's shortcut, for tests: the dialog that calls it is a
 // dialog, and a test that drove it would be a test about radio buttons.
@@ -178,6 +188,11 @@ replaced"; Arrive means "somebody just came here".
 */
 func (s *ScenesSection) Arrive() {
 	s.scroller, s.rows, s.showing = nil, nil, ""
+
+	// And the chooser's list is fetched again, off the thread drawing this,
+	// because a picture added in another tab belongs in it.
+	s.forgetScreens()
+	go s.warmScreens()
 }
 
 func (s *ScenesSection) list(sh *shell.Shell) fyne.CanvasObject {
@@ -206,7 +221,7 @@ func (s *ScenesSection) list(sh *shell.Shell) fyne.CanvasObject {
 		this window and asked where the buttons were.
 	*/
 	return container.NewBorder(
-		container.NewVBox(title("Scenes"), add), nil, nil, nil,
+		container.NewVBox(add), nil, nil, nil,
 		s.scrolling("list", rows),
 	)
 }
@@ -315,7 +330,16 @@ func (s *ScenesSection) row(sh *shell.Shell, scene api.Scene, key string) fyne.C
 		facts = append(facts, fmt.Sprintf("%d target(s)", len(scene.Assignments)))
 	}
 	if scene.Screen != "" {
-		facts = append(facts, "screen: "+scene.Screen)
+		/*
+			The picture's name, not the path it is kept at.
+
+			`/home/nverenin/.local/share/hotaru/images/screenshot-20260920-233906.gif`
+			is the same forty characters on every line, and the eight that
+			differ are at the end -- so the line reads as a path rather than
+			as a scene, and it is long enough to push everything after it off
+			the useful part of the window.
+		*/
+		facts = append(facts, "screen: "+s.screenName(scene.Screen))
 	}
 
 	apply := widget.NewButton("Apply", func() {
@@ -394,14 +418,30 @@ func (s *ScenesSection) row(sh *shell.Shell, scene api.Scene, key string) fyne.C
 	*/
 	shortcut := widget.NewButton(pretty(key), func() { s.bind(sh, scene, key) })
 	shortcut.Importance = widget.LowImportance
-	left := []fyne.CanvasObject{shortcut, swatch, widget.NewLabel(name)}
 
-	return container.NewBorder(nil, nil,
-		container.NewHBox(left...),
-		container.NewHBox(buttons...),
-		widgets.Dim(join(facts)),
-	)
+	title := widget.NewLabel(name)
+	title.Truncation = fyne.TextTruncateEllipsis
+	said := widgets.Dim(join(facts))
+	if label, ok := said.(*widget.Label); ok {
+		label.Truncation = fyne.TextTruncateEllipsis
+	}
+
+	return listRow([]fyne.CanvasObject{
+		column(sceneKeyWidth, shortcut), swatch,
+		column(sceneNameWidth, title),
+		column(sceneFactsWidth, said),
+	}, buttons...)
 }
+
+// The scene list's columns. Wide enough for the names and the facts on this
+// desk, and fixed so the buttons are in the same place on every line.
+const (
+	// Wide enough for "\u21e71" and "12" alike: the key is the first thing on
+	// the line, so everything after it moves when it does not hold a width.
+	sceneKeyWidth   = 52
+	sceneNameWidth  = 170
+	sceneFactsWidth = 300
+)
 
 /*
 pretty shortens a key for the listing.
@@ -496,7 +536,7 @@ func (s *ScenesSection) editor(sh *shell.Shell, got Snapshot) fyne.CanvasObject 
 		Container.MinSize at 31% of it. A list builds the rows that are on
 		screen and recycles them. See spec 026.
 	*/
-	left := container.NewBorder(nil, container.NewVBox(s.colours(sh), s.screen()), nil, nil,
+	left := container.NewBorder(nil, container.NewVBox(s.colours(sh), s.screen(sh)), nil, nil,
 		s.assignments(sh))
 	right := s.scrolling("editor", []fyne.CanvasObject{
 		widgets.Dim("Pick a device, a zone, or a light:"),
@@ -784,41 +824,155 @@ a GIF and saving it kept the GIF by luck rather than by choice.
 **A scene that says nothing about the screen leaves it alone**, which is the
 option somebody picks most and therefore the one that is offered first.
 */
-func (s *ScenesSection) screen() fyne.CanvasObject {
-	choices := []string{leaveScreen, api.ScreenDashboard, api.ScreenReadout}
-	labels := map[string]string{
-		leaveScreen:         "leave it alone",
-		api.ScreenDashboard: "the dashboard",
-		api.ScreenReadout:   "the cooler's own display",
-	}
+/*
+screen is what the scene puts on the cooler's panel.
 
-	stored, _ := s.app.client.Images(context.Background())
-	for _, image := range stored {
-		choices = append(choices, image.Path)
-		labels[image.Path] = "picture: " + image.Name
-	}
+A chooser with pictures in it rather than a dropdown of words. What somebody
+is choosing between is six wallpapers and five dashboards, and the difference
+between two wallpapers is not in their names -- `wallhaven-2kkreg` and
+`wallhaven-ymqmj7` are the same word twice to anybody who did not download
+them.
 
-	names := make([]string, 0, len(choices))
-	for _, choice := range choices {
-		names = append(names, labels[choice])
-	}
+Fyne's Select draws text, so this is a button showing the current choice and a
+dialog showing the rest. The same shape as the shortcut chooser, for the same
+reason: a list somebody has to look at does not fit in a dropdown.
+*/
+func (s *ScenesSection) screen(sh *shell.Shell) fyne.CanvasObject {
+	current := screenOf(s.draft)
+	shown := widget.NewButton(s.screenName(current), func() { s.chooseScreen(sh, current) })
 
-	chooser := widget.NewSelect(names, func(chosen string) {
-		for value, label := range labels {
-			if label != chosen {
-				continue
+	return widgets.Card("The screen",
+		container.NewBorder(nil, nil,
+			sized(screenShotSize, s.screenShot(s.screens(), current)), nil, shown))
+}
+
+// screenName is a choice in the words the chooser offers it in.
+func (s *ScenesSection) screenName(choice string) string {
+	switch {
+	case choice == leaveScreen || choice == "":
+		return "leave it alone"
+	case choice == api.ScreenDashboard:
+		return "the dashboard, whichever is set"
+	case choice == api.ScreenReadout:
+		return "the cooler's own display"
+	case strings.HasPrefix(choice, api.ScreenDashboardPrefix):
+		return "dashboard: " + strings.TrimPrefix(choice, api.ScreenDashboardPrefix)
+	}
+	return "picture: " + pictureName(choice)
+}
+
+// pictureName is a stored picture's name, from the path a scene keeps.
+func pictureName(path string) string {
+	return suggested(filepath.Base(path))
+}
+
+/*
+screenShot is a small picture of what a choice puts on the panel.
+
+The same pictures the Pictures and Screen sections draw, through the same
+cache, so choosing between them here costs nothing they have not already
+paid.
+*/
+func (s *ScenesSection) screenShot(got screens, choice string) fyne.CanvasObject {
+	switch {
+	case strings.HasPrefix(choice, api.ScreenDashboardPrefix):
+		for _, one := range got.boards {
+			if one.Name == strings.TrimPrefix(choice, api.ScreenDashboardPrefix) {
+				return dashboardShot(s.app, one)
 			}
-			if value == leaveScreen {
-				s.draft.SetScreen("")
+		}
+	case strings.HasSuffix(choice, ".gif"):
+		for _, stored := range got.pictures {
+			if stored.Path == choice {
+				return pictureShot(stored)
+			}
+		}
+	}
+	return canvas.NewRectangle(color.Transparent)
+}
+
+// screenShotSize is how big a choice is drawn beside the button. Small: it
+// says which picture, not what is in it.
+const screenShotSize = 48
+
+// sized holds a picture to the chooser's own size.
+func sized(side float32, o fyne.CanvasObject) fyne.CanvasObject {
+	if picture, ok := o.(*canvas.Image); ok {
+		picture.SetMinSize(fyne.NewSize(side, side))
+	}
+	return container.NewGridWrap(fyne.NewSize(side, side), o)
+}
+
+/*
+chooseScreen is the list of everything the panel can be asked to show.
+
+Pictures and dashboards together, because from a scene's point of view they
+are the same choice: something to put on the screen when these colours go on
+the lights.
+*/
+func (s *ScenesSection) chooseScreen(sh *shell.Shell, current string) {
+	got := s.screens()
+
+	choices := []string{leaveScreen, api.ScreenDashboard, api.ScreenReadout}
+	for _, one := range got.boards {
+		choices = append(choices, api.ScreenDashboardPrefix+one.Name)
+	}
+	for _, stored := range got.pictures {
+		choices = append(choices, stored.Path)
+	}
+
+	rows := make([]fyne.CanvasObject, 0, len(choices))
+	picked := current
+	var list *widget.RadioGroup
+
+	labels := make([]string, 0, len(choices))
+	for _, choice := range choices {
+		labels = append(labels, s.screenName(choice))
+	}
+	list = widget.NewRadioGroup(labels, func(chosen string) {
+		for i, label := range labels {
+			if label == chosen {
+				picked = choices[i]
 				return
 			}
-			s.draft.SetScreen(value)
-			return
 		}
 	})
-	chooser.SetSelected(labels[screenOf(s.draft)])
+	list.Required = true
+	list.Selected = s.screenName(current)
 
-	return widgets.Card("The screen", chooser)
+	/*
+		The pictures beside the list rather than in it, at the height one
+		option takes.
+
+		Fyne's radio group draws text and nothing else, so a thumbnail can
+		only sit next to its option -- and "next to" means the column is laid
+		out at the group's own pitch, which is its height over the number of
+		options. Asking for that number is why the group is built first.
+	*/
+	pitch := list.MinSize().Height / float32(len(labels))
+	for _, choice := range choices {
+		rows = append(rows, container.NewCenter(
+			sized(pitch-theme.Padding()*2, s.screenShot(got, choice))))
+	}
+
+	// The group at its own height, not the dialog's: stretched, its options
+	// spread out and the pictures no longer line up with them.
+	body := container.NewBorder(nil, nil,
+		container.New(Beside{Pitch: pitch}, rows...), nil,
+		container.NewVBox(list))
+	ask := dialog.NewCustomConfirm("What the screen shows", "Choose", "Cancel",
+		container.NewVScroll(body), func(ok bool) {
+			if !ok {
+				return
+			}
+			if picked == leaveScreen {
+				s.draft.SetScreen("")
+			} else {
+				s.draft.SetScreen(picked)
+			}
+			sh.Invalidate()
+		}, sh.Window)
+	roomy(ask, sh)
 }
 
 // leaveScreen is the choice that changes nothing, which is what a scene

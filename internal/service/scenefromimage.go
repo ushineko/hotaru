@@ -1,10 +1,13 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"image"
 	"image/color"
+	"image/gif"
+	"strings"
 
 	"github.com/ushineko/hotaru/internal/devices"
 	"github.com/ushineko/hotaru/internal/images"
@@ -28,7 +31,7 @@ rather than themed.
 The scene shows the picture on the panel too, because a machine lit by an image
 with a different image on its screen is two themes at once.
 */
-func (s *Service) SceneFromImage(ctx context.Context, picture, name string) (scenes.Scene, error) {
+func (s *Service) SceneFromImage(ctx context.Context, picture, name string, distance float64) (scenes.Scene, error) {
 	library, err := s.library()
 	if err != nil {
 		return scenes.Scene{}, err
@@ -54,8 +57,85 @@ func (s *Service) SceneFromImage(ctx context.Context, picture, name string) (sce
 		return scenes.Scene{}, err
 	}
 
-	scene := scenes.Scene{Name: name, Screen: found.Path}
-	assignments, err := s.paint(ctx, decoded)
+	return s.painted(ctx, scenes.Scene{
+		Name: name, Screen: found.Path, Distance: distance,
+	}, decoded)
+}
+
+/*
+SceneFromDashboard builds a scene whose lights match a dashboard.
+
+The same idea as a picture, with the frame the panel would draw as the
+picture: a screen full of amber reads across the case as amber, which is what
+somebody choosing a dashboard and then a set of colours was doing by hand.
+
+The scene names the dashboard rather than a file, so applying it puts that
+dashboard up -- and a dashboard somebody edits afterwards changes what the
+screen shows without changing the lights, which is the honest split. The
+lights were built from how it looked at the time; `hotaru scene recolour`
+brings them back in line.
+*/
+func (s *Service) SceneFromDashboard(ctx context.Context, board, name string, distance float64) (scenes.Scene, error) {
+	one, err := s.Dashboard(board)
+	if err != nil {
+		return scenes.Scene{}, err
+	}
+	frame, err := s.RenderDashboard(ctx, one)
+	if err != nil {
+		return scenes.Scene{}, err
+	}
+	decoded, err := gif.Decode(bytes.NewReader(frame))
+	if err != nil {
+		return scenes.Scene{}, fmt.Errorf("read the dashboard's own frame: %w", err)
+	}
+
+	return s.painted(ctx, scenes.Scene{
+		Name: name, Screen: scenes.ScreenDashboardPrefix + one.Name, Distance: distance,
+	}, decoded)
+}
+
+/*
+RecolourScene builds a scene's lights again from whatever it shows.
+
+For the knob that has no right answer. Somebody sets a separation, looks at
+the case, and wants it further apart -- and the thing they are adjusting is
+not on screen anywhere except the machine itself, so it has to be adjustable
+after the fact.
+
+The source is the scene's own screen: the picture it names, or the dashboard.
+A scene that shows neither has nothing to recolour from and says so, rather
+than inventing a source.
+*/
+func (s *Service) RecolourScene(ctx context.Context, name string, distance float64) (scenes.Scene, error) {
+	store, err := s.sceneStore()
+	if err != nil {
+		return scenes.Scene{}, err
+	}
+	scene, err := store.Get(name)
+	if err != nil {
+		return scenes.Scene{}, err
+	}
+
+	switch {
+	case strings.HasPrefix(scene.Screen, scenes.ScreenDashboardPrefix):
+		board := strings.TrimPrefix(scene.Screen, scenes.ScreenDashboardPrefix)
+		return s.SceneFromDashboard(ctx, board, scene.Name, distance)
+	case scene.Screen == "" || scene.Screen == scenes.ScreenDashboard || scene.Screen == scenes.ScreenReadout:
+		return scenes.Scene{}, fmt.Errorf(
+			"%s does not show a picture or a named dashboard, so there is nothing to take its colours from", name)
+	}
+
+	picture, err := images.First(scene.Screen)
+	if err != nil {
+		return scenes.Scene{}, err
+	}
+	scene.Distance = distance
+	return s.painted(ctx, scene, picture)
+}
+
+// painted fills in a scene's lights from a picture and keeps it.
+func (s *Service) painted(ctx context.Context, scene scenes.Scene, picture image.Image) (scenes.Scene, error) {
+	assignments, err := s.paint(ctx, picture, scene.Distance)
 	if err != nil {
 		return scenes.Scene{}, err
 	}
@@ -77,7 +157,7 @@ something physical -- a ring goes round, a strip goes along.
 A zone of one light gets the colour of the slice it would have had, which is
 the middle of the picture for a single-LED logo.
 */
-func (s *Service) paint(ctx context.Context, picture image.Image) ([]scenes.Assignment, error) {
+func (s *Service) paint(ctx context.Context, picture image.Image, distance float64) ([]scenes.Assignment, error) {
 	_, client, addr := s.current()
 	if client == nil {
 		return nil, unreachable(addr)
@@ -94,26 +174,26 @@ func (s *Service) paint(ctx context.Context, picture image.Image) ([]scenes.Assi
 		if !cfg.InScope(device.Name) {
 			continue
 		}
-		out = append(out, paintDevice(device, picture)...)
+		out = append(out, paintDevice(device, picture, distance)...)
 	}
 	return out, nil
 }
 
 // paintDevice is one device's worth of assignments.
-func paintDevice(device *devices.Device, picture image.Image) []scenes.Assignment {
+func paintDevice(device *devices.Device, picture image.Image, distance float64) []scenes.Assignment {
 	if len(device.Zones) == 0 {
 		// Nothing to run a sweep along, so the whole device takes the
 		// picture's middle.
-		colours := images.Scan(picture, 1)
+		colours := lit(images.Scan(picture, 1), distance)
 		return []scenes.Assignment{{
 			Target: device.Name,
-			Colour: written(images.Lit(colours[0], images.Brightness)),
+			Colour: written(colours[0]),
 		}}
 	}
 
 	var out []scenes.Assignment
 	for _, zone := range device.Zones {
-		out = append(out, paintZone(device.Name, zone, picture)...)
+		out = append(out, paintZone(device.Name, zone, picture, distance)...)
 	}
 	return out
 }
@@ -126,18 +206,18 @@ Adjacent lights that come out the same colour become one run: a keyboard of a
 hundred keys across a picture with four colours in it is four assignments, not
 a hundred, and a scene somebody opens afterwards is a scene they can read.
 */
-func paintZone(device string, zone devices.Zone, picture image.Image) []scenes.Assignment {
+func paintZone(device string, zone devices.Zone, picture image.Image, distance float64) []scenes.Assignment {
 	if zone.Count <= 0 {
 		return nil
 	}
-	colours := images.Scan(picture, zone.Count)
+	colours := lit(images.Scan(picture, zone.Count), distance)
 
 	var out []scenes.Assignment
 	first := 0
-	anchor := images.Lit(colours[0], images.Brightness)
+	anchor := colours[0]
 
 	for i := 1; i < zone.Count; i++ {
-		next := images.Lit(colours[i], images.Brightness)
+		next := colours[i]
 		if alike(anchor, next) {
 			continue
 		}
@@ -182,6 +262,24 @@ func run(device, zone string, first, last int, colour string) scenes.Assignment 
 		target = fmt.Sprintf("%s/%s[%d]", device, zone, first)
 	}
 	return scenes.Assignment{Target: target, Colour: colour}
+}
+
+/*
+lit brings a run of sampled colours up to something a light can show, and
+then pushes them apart.
+
+In that order. Lifting a shadow is a correction -- a photograph is mostly
+midtones and an LED given one is an LED that is off -- and separation is a
+preference about how different two lights should look. Separating first and
+lifting afterwards would undo the separation on exactly the colours it was
+asked for.
+*/
+func lit(sampled []color.NRGBA, distance float64) []color.NRGBA {
+	out := make([]color.NRGBA, len(sampled))
+	for i, c := range sampled {
+		out[i] = images.Lit(c, images.Brightness)
+	}
+	return images.Separate(out, distance, images.Brightness)
 }
 
 // written is a colour as hotaru writes it.

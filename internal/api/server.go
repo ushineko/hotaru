@@ -54,6 +54,8 @@ func Routes() []string {
 		"PUT /" + Version + "/images/{name}",
 		"DELETE /" + Version + "/images/{name}",
 		"POST /" + Version + "/images/{name}/scene",
+		"POST /" + Version + "/dashboards/{name}/scene",
+		"POST /" + Version + "/scenes/{name}/recolour",
 		"POST /" + Version + "/images/{name}/show",
 		"GET /" + Version + "/keys",
 		"POST /" + Version + "/keys/bind",
@@ -159,6 +161,8 @@ func Handler(svc *service.Service) http.Handler {
 			Address:    health.Address,
 			Protocol:   health.Protocol,
 			RulesFile:  svc.RulesPath(),
+			Scene:      svc.Applied(),
+			Showing:    svc.Showing(),
 			Remembered: sortedNames(desired.Names()),
 		}
 		write(w, http.StatusOK, status)
@@ -485,7 +489,44 @@ func Handler(svc *service.Service) http.Handler {
 			return
 		}
 
-		scene, err := svc.SceneFromImage(r.Context(), r.PathValue("name"), in.Scene)
+		scene, err := svc.SceneFromImage(r.Context(), r.PathValue("name"), in.Scene, in.Distance)
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		write(w, http.StatusOK, asScene(scene))
+	})
+
+	mux.HandleFunc("POST /"+Version+"/dashboards/{name}/scene", func(w http.ResponseWriter, r *http.Request) {
+		var in SceneFromImageRequest
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			write(w, http.StatusBadRequest, Error{Error: "that request does not decode", Detail: err.Error()})
+			return
+		}
+
+		scene, err := svc.SceneFromDashboard(r.Context(), r.PathValue("name"), in.Scene, in.Distance)
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		write(w, http.StatusOK, asScene(scene))
+	})
+
+	/*
+		A scene's lights, built again from whatever it shows.
+
+		For the knob that has no right answer: somebody sets a separation,
+		looks at the case, and wants it further apart -- and what they are
+		adjusting is not on screen anywhere except the machine itself.
+	*/
+	mux.HandleFunc("POST /"+Version+"/scenes/{name}/recolour", func(w http.ResponseWriter, r *http.Request) {
+		var in RecolourRequest
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			write(w, http.StatusBadRequest, Error{Error: "that request does not decode", Detail: err.Error()})
+			return
+		}
+
+		scene, err := svc.RecolourScene(r.Context(), r.PathValue("name"), in.Distance)
 		if err != nil {
 			fail(w, err)
 			return
@@ -810,6 +851,7 @@ func asScene(scene scenes.Scene) Scene {
 	out := Scene{
 		Name: scene.Name, Colour: scene.Colour, Off: scene.Off,
 		Shipped: scene.Shipped, Effects: scene.Effects, Screen: scene.Screen,
+		Distance: scene.Distance,
 	}
 	for _, a := range scene.Assignments {
 		out.Assignments = append(out.Assignments, SceneAssignment{Target: a.Target, Colour: a.Colour})
@@ -820,7 +862,7 @@ func asScene(scene scenes.Scene) Scene {
 // fromScene is the reverse, for a client saving one.
 func fromScene(in Scene) scenes.Scene {
 	out := scenes.Scene{
-		Name: in.Name, Colour: in.Colour, Off: in.Off,
+		Name: in.Name, Colour: in.Colour, Off: in.Off, Distance: in.Distance,
 		Effects: in.Effects, Screen: in.Screen,
 	}
 	for _, a := range in.Assignments {

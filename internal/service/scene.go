@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/ushineko/hotaru/internal/colour"
@@ -119,7 +120,14 @@ func (s *Service) ApplyScene(ctx context.Context, name string) (SceneOutcome, er
 	if err != nil {
 		return SceneOutcome{}, err
 	}
-	return s.light(ctx, scene, Request{})
+	out, err := s.light(ctx, scene, Request{})
+	if err == nil {
+		// Applied, not previewed. A preview is not what anybody asked the
+		// machine to be, which is why it is remembered here and not in
+		// light.
+		s.applying(scene.Name)
+	}
+	return out, err
 }
 
 /*
@@ -242,6 +250,7 @@ func (s *Service) screen(ctx context.Context, scene scenes.Scene) (string, strin
 	case scenes.ScreenDashboard:
 		return scene.Screen, s.draw(ctx, Screen{Dashboard: true})
 	case scenes.ScreenReadout:
+		s.drawing("the cooler's own readout")
 		return scene.Screen, s.draw(ctx, Screen{Readout: true})
 	}
 
@@ -265,7 +274,14 @@ func (s *Service) screen(ctx context.Context, scene scenes.Scene) (string, strin
 	if err != nil {
 		return "", fmt.Sprintf("the screen: %v", err)
 	}
+	s.drawing("picture: " + pictureName(scene.Screen))
 	return scene.Screen, s.draw(ctx, Screen{Image: gif})
+}
+
+// pictureName is a stored picture's name, from the path a scene keeps: what
+// somebody called it, rather than where it ended up.
+func pictureName(path string) string {
+	return strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
 }
 
 /*

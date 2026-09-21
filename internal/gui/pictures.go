@@ -91,7 +91,7 @@ func (p *PicturesSection) Build(sh *shell.Shell) fyne.CanvasObject {
 
 	stored, err := p.app.client.Images(context.Background())
 	if err != nil {
-		return container.NewVBox(title("Pictures"), add, widgets.Note(err.Error(), fd.StatusWarn))
+		return container.NewVBox(add, widgets.Note(err.Error(), fd.StatusWarn))
 	}
 
 	var body []fyne.CanvasObject
@@ -105,7 +105,7 @@ func (p *PicturesSection) Build(sh *shell.Shell) fyne.CanvasObject {
 	}
 
 	return container.NewBorder(
-		container.NewVBox(title("Pictures"), add), nil, nil, nil,
+		container.NewVBox(add), nil, nil, nil,
 		container.NewVScroll(container.NewVBox(body...)),
 	)
 }
@@ -159,6 +159,12 @@ The converted one, not the original: what somebody needs to see is what the
 panel will show, which is the whole reason a conversion is worth previewing.
 */
 func (p *PicturesSection) thumbnail(stored api.Image) fyne.CanvasObject {
+	return pictureShot(stored)
+}
+
+// pictureShot is a stored picture at thumbnail size, for any section that
+// wants one: the library, and the scene editor's screen chooser.
+func pictureShot(stored api.Image) fyne.CanvasObject {
 	/*
 		Through the shared cache, so the thumbnails survive this section
 		being rebuilt and are bounded when they do not.
@@ -237,28 +243,10 @@ beside each other, and that judgement is the tedious half of making a scene by
 hand.
 */
 func (p *PicturesSection) scene(sh *shell.Shell, image api.Image) {
-	entry := widget.NewEntry()
-	entry.SetText(image.Name)
-
-	dialog.ShowForm("Make a scene from "+image.Name, "Make it", "Cancel",
-		[]*widget.FormItem{widget.NewFormItem("Name", entry)},
-		func(ok bool) {
-			if !ok || entry.Text == "" {
-				return
-			}
-			sh.Perform("reading "+image.Name, func(ctx context.Context) error {
-				made, err := p.app.client.SceneFromImage(ctx, image.Name, entry.Text)
-				if err != nil {
-					return err
-				}
-				onScreen(func() {
-					sh.Flash(fmt.Sprintf("%s: %d assignment(s). It is in Scenes.",
-						made.Name, len(made.Assignments)), fd.StatusGood)
-					sh.Invalidate()
-				})
-				return nil
-			})
-		}, sh.Window)
+	makeScene(sh, image.Name, image.Name,
+		func(ctx context.Context, name string, distance float64) (api.Scene, error) {
+			return p.app.client.SceneFromImage(ctx, image.Name, name, distance)
+		})
 }
 
 /*
