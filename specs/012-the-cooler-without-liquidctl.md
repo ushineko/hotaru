@@ -405,42 +405,39 @@ A cooler that is present and will not answer is the same shape with its name
 attached, because present-and-silent is a different problem from absent and the
 name is the first thing somebody needs in order to chase it.
 
-### Fake what hotaru defines, not what hotaru is learning
+### Why there is no fake screen
 
-There is no fake screen, and the reason is a rule rather than a judgement about
-this one device.
+The testing policy already covers this, and this spec is a worked example of
+it rather than a new rule:
 
-**A fake tests conformance to a model somebody wrote.** Where the behaviour is
-hotaru's own -- scope resolution, frame composition, the wizard's flow, the
-rules file -- that model *is* the specification, and the OpenRGB fake earns its
-place several times over: it runs the whole suite on a laptop with no RGB in
-it, and it can lie on purpose in the specific ways real controllers do.
+> Mocks make this strictly worse: the AI invents the mock, invents the
+> contract, and writes a test that passes against its own invention.
 
-Where the behaviour belongs to somebody else's firmware, the same exercise is
-circular. You encode what you believe the device does, then confirm that you
-believe it. It cannot tell you whether anything works, because the only
-question worth asking -- does this hardware do what I think -- is the one it
-assumes.
+That is what a fake cooler would be. Where the behaviour is hotaru's own --
+scope resolution, frame composition, the wizard's flow -- a model of it *is*
+the specification, which is why the OpenRGB fake earns its place and runs the
+whole suite on a laptop with no RGB in it. Where the behaviour belongs to
+somebody else's firmware, encoding a belief and then confirming it says nothing
+about the hardware.
 
-The test of that is what it found. In the day behind this spec, the device fake
-found **nothing**. Every discovery came from the panel, from `liquidctl`
-disagreeing, or from somebody looking at a screen and saying what they saw. The
-fake's models of unsolicited broadcasts, a queued backlog and a lost reply were
-each written *after* the corresponding bug had already been diagnosed on
-hardware. That makes it a regression guard, which is worth keeping, and not an
-instrument.
+The evidence is what it found: in the day behind this spec, nothing. Every
+discovery came from the panel, from `liquidctl` disagreeing, or from somebody
+looking at a screen and saying what they saw. The existing cooler fake's models
+of unsolicited broadcasts, a queued backlog and a lost reply were each written
+*after* the corresponding bug had been diagnosed on hardware -- a regression
+guard, not an instrument.
 
-Worse, written earlier it would have been actively harmful: a fake built from
-the understanding held at the start of that hour would have accepted a setup
-before `36 03`, ignored delete results, and taken any address. All three of the
-day's bugs would have passed against it. A test that certifies a
-misunderstanding is worse than no test, because it is believed.
+Written earlier it would have been worse than absent. Built from the
+understanding held at the start of that hour, it would have accepted a setup
+before `36 03`, ignored delete results, and taken any address: all three of the
+day's bugs would have passed against it.
 
-So: the protocol is verified by somebody looking at the panel, and written down
-above so the next person does not have to re-derive it. What is tested without
-hardware is the part that is not protocol -- slot selection and placement
-arithmetic are pure functions over the bytes the device returns, with real edge
-cases, and one of those tests caught a wrong assumption immediately.
+The device is an integration boundary, so the policy's rule applies directly --
+at least one acceptance criterion exercises the real thing. That is AC15, and
+it is not satisfiable any other way. What is tested without hardware is the
+part that is not protocol: slot selection and placement arithmetic are pure
+functions over the bytes the device returns, with real edge cases, and one of
+those tests caught a wrong assumption immediately.
 
 ## Risks & Assumptions
 
