@@ -434,7 +434,19 @@ day's bugs would have passed against it.
 
 The device is an integration boundary, so the policy's rule applies directly --
 at least one acceptance criterion exercises the real thing. That is AC15, and
-it is not satisfiable any other way. What is tested without hardware is the
+it is not satisfiable any other way. Those checks live in `live_test.go` beside
+the OpenRGB one, so they are re-run rather than retyped: they skip where there
+is no cooler, and the screen test is opt-in and puts the firmware readout back,
+because a test that leaves a checkerboard on somebody's cooler is a test nobody
+runs twice.
+
+The rest of this package's tests divide the way the policy divides them.
+Contracts between components -- what the service gets from a cooler that is
+absent, present, or present and silent -- are the ones worth keeping through a
+refactor. Slot selection and placement are not contracts; they are the
+"isolating specific logic" case, justified by arithmetic with real edge cases
+and by one of those tests catching a wrong assumption immediately, and they
+should be recognised as that rather than dressed up as boundaries. What is tested without hardware is the
 part that is not protocol: slot selection and placement arithmetic are pure
 functions over the bytes the device returns, with real edge cases, and one of
 those tests caught a wrong assumption immediately.
