@@ -73,6 +73,7 @@ func (a *App) Options(socket string) shell.Options {
 			&ScenesSection{app: a},
 			pictures,
 			&CoolingSection{app: a},
+			about(socket),
 		},
 		SettingsPath: a.settingsPath(),
 

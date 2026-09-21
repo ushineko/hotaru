@@ -1,5 +1,7 @@
 # hotaru
 
+*lights, cooler, action!*
+
 **Version**: unreleased — specified, not yet built
 
 RGB lighting and AIO cooler control for Linux, as a CLI, a user service and a
@@ -186,6 +188,8 @@ necessary is an artefact of where it used to live.
 - [specs/009-writes-that-mean-what-they-say.md](specs/009-writes-that-mean-what-they-say.md):
   why a write that lands in the buffer is not always a write, and what hotaru
   checks instead.
+- [specs/021-the-window-says-what-this-is.md](specs/021-the-window-says-what-this-is.md):
+  the About section, and why it is this file rather than a summary of it.
 - [specs/020-a-scene-from-a-picture.md](specs/020-a-scene-from-a-picture.md):
   reading a picture as lighting, and why a slice of a photograph is not its
   average either.
@@ -228,6 +232,17 @@ MIT. See [LICENSE](LICENSE).
 ## Changelog
 
 ### Unreleased
+
+- Branding: the byline is "lights, cooler, action!", and the bulb's filament is
+  an italic H rather than a zigzag that read as an N. A firefly kanji was tried
+  in its place and kept out: it draws well at 128 pixels and is a smudge at 22,
+  which is the size the icon is at in a panel (#49).
+
+- The window has an About section, and it is this README: embedded, rendered
+  with the architecture diagram drawn at build time, with a link to the
+  project. One description of hotaru rather than two, since the one in the
+  window is the one that goes stale. `make generate` renders the diagrams
+  (spec 021, #49).
 
 - A scene can be deleted from the window. It could only be done from the
   terminal, and nothing flagged it: the parity test runs one way, proving the
