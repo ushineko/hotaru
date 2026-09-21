@@ -121,9 +121,16 @@ four faults stayed alive.
 what the HTTP route calls. No second implementation of anything, and nothing
 else exported.
 
+**R9a. A claim is cleared through KDE, not through the file.** The daemon owns
+that table and rewrites the file whenever anything registers a shortcut, so
+editing it is undone within seconds.
+
 **R9. Keys claimed by something else are reported, not seized.** hotaru names
 the stale entries, says what they will do to the binding, and offers to remove
-them. Declining leaves the file alone.
+them. Declining leaves the file alone. **The service reports; the CLI clears.**
+The service's unit gives it write access to its own two directories and nothing
+else, so a route that edited the desktop's file could not work on a hardened
+install and should not work on any other.
 
 **R10. A desktop that is not Plasma loses the KWin script and nothing else.**
 The CLI is the binding mechanism there -- somebody binds `hotaru scene apply
@@ -152,7 +159,9 @@ silent.
       returning false is an error, not a success.
 - [x] AC9. The D-Bus method applies a scene by name and returns what happened.
 - [x] AC10. `hotaru keys` reports the shortcuts, what holds them, and any stale
-      claim, and offers to clear a claim rather than clearing it.
+      claim, and offers to clear a claim rather than clearing it. The clearing
+      happens in the CLI's own process, because the service is not permitted to
+      write that file.
 - [x] AC11. On a machine with no KWin, the service starts, says the KWin
       integration is unavailable once, and everything else works.
 - [x] AC12. Verified on the development machine: the stale `AIOScene*` entries
@@ -186,6 +195,70 @@ stopping its object is what freed the keys.
 KWin's own journal is the evidence the script installed:
 
 	kwin_wayland[6240]: hotaru: registered 9 shortcuts
+
+### The service cannot clear the claim, and should not be able to
+
+Found at the moment of using it: `hotaru keys release` worked against a
+foreground build and failed against the packaged one with
+
+	write /home/…/.config/kglobalshortcutsrc: read-only file system
+
+The unit sets `ProtectHome=read-only` with `ReadWritePaths` naming hotaru's own
+two directories, so the service cannot write another program's configuration --
+which is exactly the property that hardening is there to give, arriving as a
+failure at the one moment it was being violated.
+
+So the editing moved to the CLI, in the user's own process. The service reads
+the file and reports what is in the way; removing an entry is done by whoever
+asked. `POST /v1/keys/release` is gone rather than permitted.
+
+That also settles a question the CLI's import rule would otherwise have raised:
+that rule is about **devices** -- no command may write a light -- and the
+desktop's shortcut file is not one.
+
+### The panel says no by showing nothing
+
+Five of the nine animations were blank, and the five were exactly the 480x480
+ones. The panel is 640x640, and an image of any other size **transfers
+successfully, switches buckets successfully, and displays nothing at all** --
+no error anywhere, on either side.
+
+It was found by reading the device's own slot table, which showed the picture
+sitting in memory at the address it had been given, and then by running `file`
+over the nine GIFs. The program this replaces never met the problem because
+Pillow resized every frame on its way out; hotaru sends files, so hotaru fits
+them now, in palette space by nearest neighbour so that nothing is re-quantised
+and a twenty-megabyte animation that is already the right size is not decoded
+at all.
+
+Worth keeping in mind for anything else sent to this panel: a silent blank
+screen is the device's way of refusing, and it looks identical to a hotaru bug.
+
+### Deleting the lines does not clear a claim
+
+The remedy this spec inherited -- hand-edit `kglobalshortcutsrc` -- does not
+work, and the measurement is unambiguous. The nine entries were removed,
+hotaru registered its eighteen shortcuts, and **all eighteen of the monitor's
+entries were back in the file a second later**: `kglobalaccel` holds the table
+in memory and writes it out whenever anything registers, so a deletion survives
+exactly until the next save.
+
+`org.kde.KGlobalAccel.unregister(component, action)` is the supported route. It
+does both halves -- the daemon forgets and the file loses the line -- and it is
+the only way that does not require logging out. Eighteen calls cleared the bank
+for good.
+
+### A leftover entry does not necessarily block anything
+
+Also measured, and it corrects this spec's own framing. hotaru registered its
+nine keys with all eighteen `AIOScene*` entries present and **every key
+worked**. The grab belongs to the loaded script; the line in the file is a
+record, not a lock, and KDE refuses a sequence only to a *different* component.
+
+So the reporting says what is true: these are leftovers, the program that made
+them may be long gone, hotaru's keys may work anyway -- and if one does nothing
+while everything reports success, this is the first place to look. The earlier
+wording promised a failure that did not happen, which is its own kind of wrong.
 
 ### The reserved row was claimed too, and hotaru could not see it
 

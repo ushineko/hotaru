@@ -429,15 +429,18 @@ type KeysResponse struct {
 	Reserved []string `json:"reserved,omitempty"`
 	// Desktop says whether the KWin integration is installed, and why not.
 	Desktop string `json:"desktop,omitempty"`
-	// Claimed are shortcuts another program still holds, which is how this
-	// class of bug presents: the registration succeeds and the key does
-	// nothing.
-	Claimed []string `json:"claimed,omitempty"`
-}
+	/*
+		Claimed are shortcuts another program still holds, which is how this
+		class of bug presents: the registration succeeds and the key does
+		nothing.
 
-// ReleasedResponse says how many stale claims were removed.
-type ReleasedResponse struct {
-	Removed int `json:"removed"`
+		Reported here and cleared elsewhere. The service reads the desktop's
+		file and cannot write it -- its unit gives it write access to its own
+		two directories and nothing else -- so removing an entry is done by
+		whoever asked, in their own process. That is a property worth keeping
+		rather than a limitation to work around.
+	*/
+	Claimed []string `json:"claimed,omitempty"`
 }
 
 // BindRequest points a key at a scene. An empty scene unbinds it.

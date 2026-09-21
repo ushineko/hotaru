@@ -219,6 +219,16 @@ MIT. See [LICENSE](LICENSE).
 
 ### Unreleased
 
+- An image that is not the panel's size is scaled to fit before it is sent. The
+  cooler displays nothing at all for an image of the wrong size — no error, on
+  either side — which had five of the development machine's nine LCD animations
+  silently blank (spec 016).
+
+- An image larger than four megabytes reaches the cooler's screen. usbfs takes
+  one contiguous kernel allocation per transfer, so a bulk write is split into
+  one-megabyte pieces; four of the development machine's nine LCD animations
+  are between 9 and 20 MB and none of them had ever been sent (spec 016).
+
 - Scenes on hotkeys. Nine shipped scenes — red, green, blue, purple, cyan,
   orange, white, magenta and off — on `Ctrl+Alt+Num1` to `Num9`, which is the
   bank `peripheral-battery-monitor` has had on this hardware for two years, read
@@ -229,9 +239,10 @@ MIT. See [LICENSE](LICENSE).
 - `hotaru keys` says what is bound, what is reserved, and **what else is
   holding those sequences** — the fault that makes a shortcut register
   successfully and then do nothing. `hotaru keys release` removes another
-  program's stale entries from `kglobalshortcutsrc` after showing you them, and
-  touches no other line in the file. `hotaru keys bind` and `unbind` change what
-  a key does (spec 016, #6).
+  program's stale entries by asking KDE to forget them, after showing you them
+  — in your own process, because the service is deliberately not permitted to
+  touch that file. `hotaru keys bind` and `unbind`
+  change what a key does (spec 016, #6).
 
 - The KWin script is installed on **every** appearance of KWin, not once at
   start-up: the shortcuts live exactly as long as the loaded script, so a KWin

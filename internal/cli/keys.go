@@ -6,6 +6,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
+	"github.com/ushineko/hotaru/internal/desktop"
 )
 
 /*
@@ -34,6 +35,10 @@ func keysCommand() *cobra.Command {
 			if keys.Desktop != "" {
 				cmd.Printf("The desktop integration is not running: %s\n\n", keys.Desktop)
 			}
+			bound := map[string]bool{}
+			for _, binding := range keys.Bindings {
+				bound[binding.Key] = true
+			}
 			if len(keys.Bindings) == 0 {
 				cmd.Println("Nothing is bound.")
 			} else {
@@ -51,9 +56,17 @@ func keysCommand() *cobra.Command {
 				}
 			}
 
-			if len(keys.Reserved) > 0 {
+			// Only the ones still free: saying a key is reserved for your
+			// own scenes while it is applying one of them reads as a bug.
+			var free []string
+			for _, key := range keys.Reserved {
+				if !bound[key] {
+					free = append(free, key)
+				}
+			}
+			if len(free) > 0 {
 				cmd.Printf("\n%s are left free for your own scenes.\n",
-					strings.Join([]string{keys.Reserved[0], "…", keys.Reserved[len(keys.Reserved)-1]}, " "))
+					strings.Join([]string{free[0], "…", free[len(free)-1]}, " "))
 			}
 			if len(keys.Claimed) > 0 {
 				/*
@@ -61,11 +74,24 @@ func keysCommand() *cobra.Command {
 					possible, because the symptom -- a key that does nothing
 					while everything reports success -- gives no hint at all.
 				*/
-				cmd.Println("\nSomething else is holding these keys, and hotaru's will not fire while it does:")
+				/*
+					Worth saying and easy to overstate. Measured on the
+					development machine: hotaru registered its keys with
+					eighteen of these present and every key worked, because
+					the grab belongs to the loaded script rather than to the
+					line. They are leftovers -- and KDE will refuse a
+					sequence to a *different* component, so a key that does
+					nothing while everything reports success is still the
+					first thing to check here.
+				*/
+				cmd.Println("\nAnother program still has these keys recorded:")
 				for _, claim := range keys.Claimed {
 					cmd.Printf("  %s\n", claim)
 				}
-				cmd.Println("\n`hotaru keys release` removes those entries. Nothing else in the file is touched.")
+				cmd.Println("\nThey are leftovers: the program that registered them is not necessarily")
+				cmd.Println("running, and hotaru's own keys may work anyway. If one does nothing while")
+				cmd.Println("everything reports success, this is why. `hotaru keys release` asks KDE to")
+				cmd.Println("forget them.")
 			}
 			return nil
 		},
@@ -130,29 +156,53 @@ the program: unloading its script does not remove them and neither does
 restarting the desktop. While one is there, hotaru's own registration succeeds
 and the key does nothing.
 
-This removes exactly those entries from ~/.config/kglobalshortcutsrc and leaves
-every other line in the file alone. It asks first.`,
+This asks KDE to forget exactly those entries, through the daemon that owns
+them, and touches nothing else. It asks first.
+
+Deleting the lines from kglobalshortcutsrc does not work: kglobalaccel keeps
+the table in memory and writes it out whenever anything registers a shortcut,
+so the entries come back within seconds. Going through the daemon is also the
+only way that does not need you to log out.
+
+It happens here rather than in the service, which has write access to its own
+two directories and nothing else -- a property worth keeping rather than a
+limitation to work around.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			client, err := client(cmd)
 			if err != nil {
 				return err
 			}
+			keys, err := client.Keys(cmd.Context())
+			if err != nil {
+				return quiet(err)
+			}
+
+			path, err := desktop.ShortcutsFile()
+			if err != nil {
+				return err
+			}
+			wanted := make([]string, 0, len(keys.Bindings)+len(keys.Reserved))
+			for _, binding := range keys.Bindings {
+				wanted = append(wanted, binding.Key)
+			}
+			wanted = append(wanted, keys.Reserved...)
+
+			claims, err := desktop.Claimed(path, wanted)
+			if err != nil {
+				return err
+			}
+			if len(claims) == 0 {
+				cmd.Println("Nothing else is holding hotaru's keys.")
+				return nil
+			}
+
+			cmd.Printf("These entries will be removed from %s:\n", path)
+			for _, claim := range claims {
+				cmd.Printf("  %s holds %s (in %s)\n", claim.Entry, claim.Key, claim.Component)
+			}
 			yes, _ := cmd.Flags().GetBool("yes")
 			if !yes {
-				keys, err := client.Keys(cmd.Context())
-				if err != nil {
-					return quiet(err)
-				}
-				if len(keys.Claimed) == 0 {
-					cmd.Println("Nothing else is holding hotaru's keys.")
-					return nil
-				}
-
-				cmd.Println("These entries will be removed from ~/.config/kglobalshortcutsrc:")
-				for _, claim := range keys.Claimed {
-					cmd.Printf("  %s\n", claim)
-				}
 				asker := NewTerminal(cmd.Context(), cmd.InOrStdin(), cmd.OutOrStdout())
 				agreed, err := asker.Confirm("Remove them?")
 				if err != nil {
@@ -164,16 +214,17 @@ every other line in the file alone. It asks first.`,
 				}
 			}
 
-			removed, err := client.ReleaseKeys(cmd.Context())
+			conn, err := desktop.Session()
 			if err != nil {
-				return quiet(err)
+				return err
 			}
-			if removed == 0 {
-				cmd.Println("Nothing else is holding hotaru's keys.")
-				return nil
+			defer func() { _ = conn.Close() }()
+
+			removed, err := desktop.Release(conn, claims)
+			if err != nil {
+				return err
 			}
-			cmd.Printf("Removed %d entr%s. Log out and back in, or restart the desktop, "+
-				"for the keys to come free.\n", removed, plural(removed))
+			cmd.Printf("KDE has forgotten %d entr%s.\n", removed, plural(removed))
 			return nil
 		},
 	}

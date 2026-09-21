@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/godbus/dbus/v5"
 )
 
 /*
@@ -49,6 +51,14 @@ than hotaru's own.
 Read-only, always. The file is the desktop's, hotaru's rule is that anything it
 can fix is offered rather than done, and a program that quietly edits another
 program's configuration is the thing this project keeps declining to be.
+
+What a claim means is narrower than it first appears, and the difference was
+measured: hotaru registered its keys with all eighteen of the monitor's entries
+present and **every key worked**. The grab belongs to the loaded script, not to
+the line in the file. These are leftovers -- a program's recorded claim on a
+sequence, outliving the program -- and they matter because KDE will refuse a
+sequence to a different component and because nobody can tell from the outside
+which case they are looking at.
 */
 func Claimed(path string, wanted []string) ([]Claim, error) {
 	file, err := os.Open(path) //nolint:gosec // the desktop's own configuration
@@ -93,44 +103,43 @@ func Claimed(path string, wanted []string) ([]Claim, error) {
 }
 
 /*
-Release removes named entries from the file, keeping everything else.
+Release asks KDE to forget entries, through the daemon that owns them.
 
-Only ever called because somebody said yes. Rewritten line by line rather than
-parsed and re-serialised: it is not hotaru's file, and the parts it does not
-understand -- every other program's shortcuts, comments, ordering -- must come
-out exactly as they went in.
+**Editing the file does not work, and this is where that was learned.** The
+entries were deleted from kglobalshortcutsrc, hotaru registered its eighteen
+shortcuts, and all eighteen of the old ones were back in the file a second
+later: `kglobalaccel` holds the table in memory and writes it out whenever
+anything registers, so a deletion survives exactly until the next save.
+
+`org.kde.KGlobalAccel.unregister(component, action)` is the supported way and
+it does both halves -- the daemon forgets, and the file loses the line. It is
+also the only route that works without logging out, which is what the
+alternative amounted to.
+
+Only ever called because somebody said yes.
 */
-func Release(path string, entries []Claim) (int, error) {
-	body, err := os.ReadFile(path) //nolint:gosec // the desktop's own configuration
-	if err != nil {
-		return 0, fmt.Errorf("read %s: %w", path, err)
-	}
-
-	drop := map[string]bool{}
-	for _, claim := range entries {
-		drop[claim.Entry] = true
-	}
-
-	var kept []string
+func Release(conn *dbus.Conn, entries []Claim) (int, error) {
+	accel := conn.Object(accelName, accelPath)
 	removed := 0
-	for _, line := range strings.Split(string(body), "\n") {
-		entry, _, ok := strings.Cut(strings.TrimSpace(line), "=")
-		if ok && drop[strings.TrimSpace(entry)] {
-			removed++
-			continue
+	for _, claim := range entries {
+		var gone bool
+		err := accel.Call(accelIface+".unregister", 0, claim.Component, claim.Entry).Store(&gone)
+		if err != nil {
+			return removed, fmt.Errorf("ask KDE to forget %s: %w", claim.Entry, err)
 		}
-		kept = append(kept, line)
-	}
-	if removed == 0 {
-		return 0, nil
-	}
-
-	//nolint:gosec // the caller passes ShortcutsFile's path, which is built from $HOME
-	if err := os.WriteFile(path, []byte(strings.Join(kept, "\n")), 0o600); err != nil {
-		return 0, fmt.Errorf("write %s: %w", path, err)
+		if gone {
+			removed++
+		}
 	}
 	return removed, nil
 }
+
+// KDE's shortcut registry, which owns the entries in kglobalshortcutsrc.
+const (
+	accelName  = "org.kde.kglobalaccel"
+	accelPath  = dbus.ObjectPath("/kglobalaccel")
+	accelIface = "org.kde.KGlobalAccel"
+)
 
 // normalise compares sequences the way KDE writes them, which varies in case
 // and spacing between the file and the API.
