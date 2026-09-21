@@ -247,6 +247,13 @@ MIT. See [LICENSE](LICENSE).
 
 ### Unreleased
 
+- The window has an Appearance section, like every other program on
+  fynedesygn: the scheme, the font, the text size and the interface scale.
+  Fyne draws its own widgets, so those are the whole of what makes this window
+  look like it belongs on the desktop it is running on.
+
+- Tables in the About section read like tables, from fynedesygn v0.1.34.
+
 - A scene's shortcut is changed from the row that shows it. The key was
   already the first thing on the line and the one thing on it the window could
   not change; it is a button now, and the chooser offers every key with what
