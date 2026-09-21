@@ -1870,3 +1870,53 @@ func TestAKeyOutsideTheBankCanBeBoundFromTheWindow(t *testing.T) {
 		3*time.Second, 20*time.Millisecond, "nothing was bound")
 	require.Equal(t, api.BindRequest{Key: "Meta+Shift+L", Scene: "evening"}, asked()[0])
 }
+
+func TestTheScreenEditorOffersTheLettering(t *testing.T) {
+	/*
+		The controls exist and reach the draft. A form that drew them and
+		sent the dashboard it started from would look exactly like this one
+		and change nothing.
+	*/
+	a := test.NewApp()
+	t.Cleanup(a.Quit)
+
+	routes := screenful()
+	routes["POST /"+api.Version+"/dashboards/preview"] = api.PreviewedDashboard{}
+
+	app := gui.New(service(t, routes))
+	opts := app.Options("s")
+	opts.SettingsPath = filepath.Join(t.TempDir(), "gui.yml")
+	sh := shell.Headless(a, opts)
+	app.Refresh(context.Background())
+
+	section := &gui.DashboardsSection{}
+	gui.OpenDashboards(section, app)
+	gui.EditDashboard(section, api.Dashboard{Name: "quiet", Arrangement: "ring"})
+
+	built := section.Build(sh)
+	window := test.NewWindow(built)
+	t.Cleanup(window.Close)
+	window.Resize(fyne.NewSize(1200, 900))
+
+	said := fynetest.Text(built)
+	for _, want := range []string{"Font", "Labels", "Readings", "Size", "Colour", "Outline"} {
+		require.Contains(t, said, want, "the form does not offer %q", want)
+	}
+
+	// And the one that says what a dashboard may not paint over.
+	require.Contains(t, said, "coolant keeps its own")
+
+	var sizes []*widget.Slider
+	fynetest.WalkRendered(built, func(o fyne.CanvasObject) bool {
+		if slider, ok := o.(*widget.Slider); ok && slider.Min == 50 && slider.Max == 150 {
+			sizes = append(sizes, slider)
+		}
+		return false
+	})
+	require.Len(t, sizes, 2, "there is not a size for the words and one for the readings")
+
+	sizes[0].Value = 140
+	sizes[0].OnChangeEnded(140)
+	require.Equal(t, 140, gui.DraftDashboard(section).Lettering.Labels.Size,
+		"moving the label size changed nothing")
+}

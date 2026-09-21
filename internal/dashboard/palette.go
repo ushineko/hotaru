@@ -100,10 +100,22 @@ starfield turned a 21 KB frame into 105 KB. Frame size buys settling time on
 this panel rather than nothing -- see the floor in push.go -- so it is a real
 trade.
 */
-func palette(theme Theme, extra color.Palette) color.Palette {
+func palette(theme Theme, extra color.Palette, chosen ...color.RGBA) color.Palette {
 	out := color.Palette{
 		theme.BG, theme.Muted, theme.Accent, colOK, colWarn, colCrit,
 		theme.Bright, theme.Edge, colOutline,
+	}
+	/*
+		A dashboard's own text colours, exactly.
+
+		They go in the interface's part of the palette rather than competing
+		with the picture's for what is left: text drawn in the nearest
+		available colour to the one somebody chose is text in a colour
+		nobody chose, which is the same argument as the comment on
+		pictureColours.
+	*/
+	for _, c := range chosen {
+		out = append(out, c)
 	}
 	/*
 		A short ramp from the background towards the sky, for the starfield's
@@ -120,8 +132,30 @@ func palette(theme Theme, extra color.Palette) color.Palette {
 			A: 255,
 		})
 	}
-	return append(out, extra...)
+	out = append(out, extra...)
+
+	/*
+		**A GIF has 256 colours and no more.**
+
+		The encoder refuses a block with more, and the renderer discards its
+		error -- so a palette over the limit was a zero-byte frame: the panel
+		showed nothing and nothing said why. It took a noisy photograph to
+		reach it, which is why it survived until a dashboard could add
+		colours of its own.
+
+		The interface's colours are first and are kept; what is dropped is
+		the tail of the background's, which are the least common ones in the
+		picture.
+	*/
+	if len(out) > MaxColours {
+		out = out[:MaxColours]
+	}
+	return out
 }
+
+// MaxColours is what a GIF frame holds, which is the limit the palette is
+// built to rather than a number to check afterwards.
+const MaxColours = 256
 
 func clamp(v float64) uint8 {
 	switch {

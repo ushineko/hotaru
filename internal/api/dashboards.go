@@ -23,6 +23,11 @@ func asDashboard(one dashboard.Dashboard) Dashboard {
 		},
 		Headline: asSlot(one.Headline),
 		Caption:  one.Caption,
+		Lettering: DashboardLettering{
+			Font:   one.Lettering.Font,
+			Labels: asText(one.Lettering.Labels),
+			Values: asText(one.Lettering.Values),
+		},
 	}
 	for _, ring := range one.Rings {
 		out.Rings = append(out.Rings, string(ring))
@@ -31,6 +36,14 @@ func asDashboard(one dashboard.Dashboard) Dashboard {
 		out.Slots = append(out.Slots, asSlot(slot))
 	}
 	return out
+}
+
+func asText(t dashboard.Text) DashboardText {
+	return DashboardText{Size: t.Size, Colour: t.Colour, Outline: t.Outline}
+}
+
+func fromText(t DashboardText) dashboard.Text {
+	return dashboard.Text{Size: t.Size, Colour: t.Colour, Outline: t.Outline}
 }
 
 func asSlot(slot dashboard.Slot) DashboardSlot {
@@ -45,6 +58,11 @@ func toDashboard(one Dashboard) dashboard.Dashboard {
 		},
 		Headline: toSlot(one.Headline),
 		Caption:  one.Caption,
+		Lettering: dashboard.Lettering{
+			Font:   one.Lettering.Font,
+			Labels: fromText(one.Lettering.Labels),
+			Values: fromText(one.Lettering.Values),
+		},
 	}
 	for _, ring := range one.Rings {
 		out.Rings = append(out.Rings, readings.Source(ring))

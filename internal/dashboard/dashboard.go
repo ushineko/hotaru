@@ -1,6 +1,8 @@
 package dashboard
 
 import (
+	"image/color"
+
 	"github.com/ushineko/hotaru/internal/readings"
 )
 
@@ -61,7 +63,120 @@ type Dashboard struct {
 	// Caption is a line of the author's own text. Empty draws nothing and
 	// takes no space.
 	Caption string `json:"caption,omitempty"`
+
+	// Lettering is how the words and the numbers are drawn. Empty draws
+	// them the way the arrangement and the theme say.
+	Lettering Lettering `json:"lettering,omitempty"`
 }
+
+/*
+Lettering is how a dashboard's text is drawn, over what the arrangement and
+the theme already decided.
+
+Split into labels and values because they are read differently: a label is a
+word somebody has learned the shape of and glances past, and a value is the
+thing they are actually looking at from across a room. Making one bigger is
+usually a reason to leave the other alone.
+
+Everything here is a *modification*, never a replacement. The arrangement
+still chooses where text goes and how big it is relative to the rest, and the
+theme still chooses the colours; this scales and recolours what they decided.
+A panel whose sizes were set by looking at it in a case (spec 013) stays laid
+out that way.
+*/
+type Lettering struct {
+	// Font is the face: empty or "sans" for Go, "mono" for Go Mono,
+	// "smallcaps" for Go Smallcaps. An unknown one draws in the default,
+	// because a dashboard written by a later version should still light up.
+	Font string `json:"font,omitempty"`
+
+	// Labels are the words, Values the readings.
+	Labels Text `json:"labels,omitempty"`
+	Values Text `json:"values,omitempty"`
+}
+
+// Text is one category's lettering.
+type Text struct {
+	/*
+		Size is a percentage of what the arrangement draws. Zero means 100.
+
+		A percentage rather than points: the arrangement's sizes are spec
+		013's, arrived at by looking at a panel in a case, and the headline
+		being three times its label is a relationship worth keeping when
+		somebody makes both bigger.
+	*/
+	Size int `json:"size,omitempty"`
+
+	// Colour is "#rrggbb". Empty is the theme's own.
+	Colour string `json:"colour,omitempty"`
+
+	/*
+		Outline is how many pixels of dark edge the text carries.
+
+		Nil is the background's decision -- two pixels over a picture, none
+		over the theme's own colours -- which is what the panel has always
+		drawn. Zero is explicitly none, which is why this is a pointer: "not
+		set" and "set to none" are different answers and a plain int cannot
+		hold both.
+	*/
+	Outline *int `json:"outline,omitempty"`
+}
+
+// Scale is Size as a multiplier, clamped to what still fits the panel.
+func (t Text) Scale() float64 {
+	if t.Size == 0 {
+		return 1
+	}
+	return float64(min(max(t.Size, MinSize), MaxSize)) / 100
+}
+
+// The range a size may be set to. Below the lower bound the text is unreadable
+// at arm's length, which is the whole job; above the upper one it leaves the
+// space the arrangement gave it and overlaps its neighbour.
+const (
+	MinSize = 50
+	MaxSize = 150
+)
+
+// Edge is how thick an outline to draw, given whether the background is a
+// picture. See Text.Outline.
+func (t Text) Edge(overPicture bool) int {
+	if t.Outline != nil {
+		return max(*t.Outline, 0)
+	}
+	if overPicture {
+		return DefaultOutline
+	}
+	return 0
+}
+
+// DefaultOutline is the edge text carries over a picture. Two pixels at 640:
+// enough to survive a bright background, small enough that the digits do not
+// close up at the headline's size.
+const DefaultOutline = 2
+
+/*
+chosen are the colours this lettering names, for the palette.
+
+A paletted image draws in the nearest colour it has, so a colour that is not
+in the palette is a colour somebody asked for and did not get. Both are added
+whether or not they are used: the cost is two entries, and the alternative is
+working out which text will be drawn before the drawing starts.
+*/
+func (l Lettering) chosen() []color.RGBA {
+	var out []color.RGBA
+	for _, text := range []Text{l.Labels, l.Values} {
+		if c, ok := parseColour(text.Colour); ok {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// Fonts are the faces a dashboard may name, in the order the editor offers
+// them. Compiled in, because a panel that drew in a font somebody else
+// installed would draw differently on the next machine.
+func Fonts() []string { return []string{"sans", "mono", "smallcaps"} }
 
 /*
 Slot is one reading, as this dashboard wants it said.
