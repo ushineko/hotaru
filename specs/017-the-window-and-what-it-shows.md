@@ -120,6 +120,12 @@ it introduces no new state.
 showing. A background window that keeps a service busy is a background window
 somebody will close for the wrong reason.
 
+**R6a. It looks like a program.** An icon in the titlebar and in the task
+manager, and the navigation shapes fynedesygn offers rather than the one it
+defaults to. On KDE under Wayland an icon is three things that have to agree
+and a cache that hides them when they do; `docs/packaging.md` carries the
+detail, because it is a packaging fact rather than a drawing one.
+
 **R7a. No exposition.** A section is its name and its facts. The house style
 for comments and specs is expository; the interface is not.
 
@@ -146,6 +152,9 @@ and no service.
 - [x] AC10. The GUI's settings file holds view state only, and the service's
       files are untouched by it.
 - [x] AC11. Tests run headless with no display and no socket.
+- [x] AC13. The window carries an icon, ships a desktop entry named for its
+      app_id with a matching StartupWMClass, and offers every navigation shape
+      fynedesygn has.
 - [x] AC12. Verified on the development machine: the window draws its six
       devices with their real colours and the cooler's numbers match `hotaru
       cooling`.
