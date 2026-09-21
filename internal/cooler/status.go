@@ -45,7 +45,7 @@ matching liquidctl's own indices so the two can be compared directly -- which
 is how this was checked.
 */
 func (c *Cooler) Status(ctx context.Context) (Status, error) {
-	reply, err := c.t.ask(ctx, askStatus, askStatusB)
+	reply, err := c.exchange(ctx, askStatus, askStatusB)
 	if err != nil {
 		return Status{}, err
 	}

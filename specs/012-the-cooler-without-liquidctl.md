@@ -312,11 +312,24 @@ name is the first thing somebody needs in order to chase it.
 - **One cooler, one firmware.** Everything here was learned from an Elite V2 on
   1.2.0. The Kraken family differs by product id, and hotaru should decline to
   drive a cooler it does not recognise rather than guess.
-- **Writing to a device nobody else is writing to.** The Python's queue existed
-  partly because the OpenRGB server also holds a handle to this cooler -- for
-  its lighting, on a *different* interface and a different hidraw node
-  (`hidraw14` against `hidraw7` here). They do not collide, and this should be
-  re-checked rather than assumed on other hardware.
+- **Another program holds the same node, and takes replies.** The OpenRGB
+  server had this cooler on a different hidraw node earlier in development, so
+  the two were assumed not to collide. After a reboot they were on the same
+  one:
+
+	openrgb  576461  fd 26u  /dev/hidraw7
+	hotaru  1056349  fd  3u  /dev/hidraw7
+
+  A report OpenRGB reads is a report hotaru does not, so the reply to a status
+  request occasionally never arrives -- reported from the machine as "no 7501
+  reply in 12 reports", intermittently, with forty consecutive calls succeeding
+  either side of it.
+
+  Nothing can prevent it: peripheral-battery-monitor documented the same hazard
+  and could only serialise its own calls. Asking again is the mitigation, and
+  it is enough because losing a reply is occasional rather than persistent. The
+  retry lives on the Cooler rather than in the transport so that the fake
+  exercises it -- a retry the tests cannot reach is a retry nobody has checked.
 - **Rollback** is a revert to shelling out, which is why R1 is a requirement
   about behaviour and not a rewrite of the interface the rest of hotaru sees.
 

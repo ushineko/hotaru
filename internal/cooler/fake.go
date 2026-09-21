@@ -33,6 +33,9 @@ type Fake struct {
 	Silent bool
 	// Faulty reports 0xFFFF where a temperature belongs -- liquidctl#172.
 	Faulty bool
+	// LoseFirst drops this many replies before answering, as another reader
+	// on the same node does when it takes a report hotaru was waiting for.
+	LoseFirst int
 
 	// Told is every command sent, in order, for a test to assert against.
 	Told [][]byte
@@ -80,6 +83,10 @@ func (f *Fake) await(ctx context.Context, a, b byte) ([]byte, error) {
 			return nil, fmt.Errorf("gave up waiting for the cooler: %w", err)
 		}
 		_ = f.broadcast() // read and discarded, as a mismatched report is
+	}
+	if f.LoseFirst > 0 {
+		f.LoseFirst--
+		return nil, fmt.Errorf("no %02x%02x reply in %d reports", a, b, attempts)
 	}
 	if f.Silent {
 		return nil, fmt.Errorf("no %02x%02x reply in %d reports", a, b, attempts)

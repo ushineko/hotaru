@@ -94,3 +94,40 @@ func (c *Cooler) Device() Device { return c.device }
 
 // Close releases the control channel.
 func (c *Cooler) Close() error { return c.t.Close() }
+
+/*
+exchanges is how many times a question is asked before giving up on it.
+
+Not for a device that is slow -- a read already waits -- but for one whose
+replies somebody else is reading. The OpenRGB server holds this same hidraw
+node open on the development machine, and a report it reads is a report hotaru
+does not: the reply to a status request simply does not arrive.
+
+	openrgb  576461  fd 26u  /dev/hidraw7
+	hotaru  1056349  fd  3u  /dev/hidraw7
+
+peripheral-battery-monitor documented the same hazard and could only serialise
+its own calls; so can hotaru. Asking again is the whole mitigation, and it is
+enough because losing a reply is occasional rather than persistent.
+
+It lives here rather than in the transport so that every transport gets it,
+including the one tests use -- a retry the fake cannot exercise is a retry
+nobody has checked.
+*/
+const exchanges = 3
+
+// exchange asks a question, and asks again if the answer went astray.
+func (c *Cooler) exchange(ctx context.Context, data ...byte) ([]byte, error) {
+	var last error
+	for range exchanges {
+		reply, err := c.t.ask(ctx, data...)
+		if err == nil {
+			return reply, nil
+		}
+		if ctx.Err() != nil {
+			return nil, err
+		}
+		last = err
+	}
+	return nil, last
+}
