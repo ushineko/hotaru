@@ -188,6 +188,9 @@ necessary is an artefact of where it used to live.
 - [specs/009-writes-that-mean-what-they-say.md](specs/009-writes-that-mean-what-they-say.md):
   why a write that lands in the buffer is not always a write, and what hotaru
   checks instead.
+- [specs/023-a-dashboard-you-can-change.md](specs/023-a-dashboard-you-can-change.md):
+  the dashboard editor, and the font cache that killed the service when two
+  goroutines drew at once.
 - [specs/022-more-to-read.md](specs/022-more-to-read.md): the nine numbers the
   machine can report, and why utilisation is absent the first time it is asked.
 - [specs/021-the-window-says-what-this-is.md](specs/021-the-window-says-what-this-is.md):
@@ -234,6 +237,18 @@ MIT. See [LICENSE](LICENSE).
 ## Changelog
 
 ### Unreleased
+
+- The cooler's screen is something you can change. Named dashboards, saved and
+  switched like scenes: four arrangements drawn against the round panel, any
+  of the nine readings in each slot with a label of its own, rings that each
+  track a reading and thin as they go inwards, four themes, a caption, and a
+  background that is the starfield, a plain colour or a picture from the
+  library. Text over a picture is outlined, because a photograph will sooner
+  or later put a light region under light text. `hotaru dashboard
+  list|show|save|use|preview|delete`, an editor in the window with the frame
+  previewed beside the form, and `screen: dashboard:quiet` in a scene so one
+  keypress changes the lights and the screen together. The shipped `coolant`
+  dashboard is spec 013's screen to the pixel (spec 023, #52).
 
 - Five more numbers to read: CPU and GPU utilisation, the pump and fan duty
   cycles the cooler always reported and nothing showed, and fan RPM.

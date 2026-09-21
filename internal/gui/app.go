@@ -72,6 +72,7 @@ func (a *App) Options(socket string) shell.Options {
 			&SystemSection{app: a},
 			&ScenesSection{app: a},
 			pictures,
+			&DashboardsSection{app: a},
 			&CoolingSection{app: a},
 			about(socket),
 		},

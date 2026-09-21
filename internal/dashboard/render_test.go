@@ -6,6 +6,9 @@ import (
 	"image/color"
 	"image/gif"
 	"math"
+	"os"
+	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -27,8 +30,8 @@ func TestTheSameReadingLooksTheSame(t *testing.T) {
 		It matters more than it sounds: every push costs the device a settling
 		period, and an idle machine's coolant and pump hold steady for hours.
 	*/
-	first := Render(reading(), 1)
-	second := Render(reading(), 2)
+	first := shown(reading(), 1)
+	second := shown(reading(), 2)
 
 	require.Equal(t, first.Content, second.Content,
 		"two identical readings were treated as different pictures")
@@ -44,8 +47,8 @@ func TestTheTickAdvancesWithoutDefeatingTheGate(t *testing.T) {
 		So the tick is drawn after the content is hashed: the frames differ,
 		what they *say* does not.
 	*/
-	first := Render(reading(), 1)
-	second := Render(reading(), 2)
+	first := shown(reading(), 1)
+	second := shown(reading(), 2)
 
 	require.Equal(t, first.Content, second.Content)
 	require.NotEqual(t, first.GIF, second.GIF, "the tick did not advance")
@@ -55,7 +58,7 @@ func TestAChangedReadingIsANewPicture(t *testing.T) {
 	warmer := reading()
 	warmer.Set(readings.Coolant, 41.0)
 
-	require.NotEqual(t, Render(reading(), 1).Content, Render(warmer, 1).Content)
+	require.NotEqual(t, shown(reading(), 1).Content, shown(warmer, 1).Content)
 }
 
 func TestAMissingMetricDrawsAPlaceholder(t *testing.T) {
@@ -64,15 +67,15 @@ func TestAMissingMetricDrawsAPlaceholder(t *testing.T) {
 	var absent Reading
 	absent.Set(readings.Coolant, 37.5)
 
-	frame := Render(absent, 0)
+	frame := shown(absent, 0)
 	require.NotEmpty(t, frame.GIF)
-	require.NotEqual(t, Render(reading(), 0).Content, frame.Content)
+	require.NotEqual(t, shown(reading(), 0).Content, frame.Content)
 }
 
 func TestNothingKnownStillRenders(t *testing.T) {
 	// The worst case: the cooler answered nothing at all. It still draws,
 	// because a blank screen says less than a screen full of dashes.
-	frame := Render(Reading{}, 0)
+	frame := shown(Reading{}, 0)
 	require.NotEmpty(t, frame.GIF)
 }
 
@@ -82,11 +85,12 @@ func TestColourBandsFollowTheAlertThresholds(t *testing.T) {
 		and it has to agree with what the alerts say: a screen showing calm
 		green while a notification says critical is worse than either alone.
 	*/
-	require.Equal(t, colOK, coolantColour(49.9, true))
-	require.Equal(t, colWarn, coolantColour(50.0, true))
-	require.Equal(t, colWarn, coolantColour(59.9, true))
-	require.Equal(t, colCrit, coolantColour(60.0, true))
-	require.Equal(t, colMuted, coolantColour(0, false), "an unknown temperature was graded as though known")
+	require.Equal(t, colOK, coolantColour(49.9, true, ThemeOf("")))
+	require.Equal(t, colWarn, coolantColour(50.0, true, ThemeOf("")))
+	require.Equal(t, colWarn, coolantColour(59.9, true, ThemeOf("")))
+	require.Equal(t, colCrit, coolantColour(60.0, true, ThemeOf("")))
+	require.Equal(t, ThemeOf("").Muted, coolantColour(0, false, ThemeOf("")),
+		"an unknown temperature was graded as though known")
 }
 
 func TestAStoppedPumpIsNotDrawnCalmly(t *testing.T) {
@@ -95,13 +99,13 @@ func TestAStoppedPumpIsNotDrawnCalmly(t *testing.T) {
 	stopped := reading()
 	stopped.Set(readings.PumpRPM, 0)
 
-	require.NotEqual(t, Render(reading(), 0).Content, Render(stopped, 0).Content)
+	require.NotEqual(t, shown(reading(), 0).Content, shown(stopped, 0).Content)
 }
 
 func TestTheBackgroundIsBuiltOnce(t *testing.T) {
 	// Re-quantising four hundred thousand pixels per frame cost 128 ms
 	// against 7.8 ms for copying a quantised one.
-	require.Same(t, background(), background())
+	require.Same(t, background(ThemeOf("")), background(ThemeOf("")))
 }
 
 func TestAFrameIsSmallEnoughToSettle(t *testing.T) {
@@ -112,7 +116,7 @@ func TestAFrameIsSmallEnoughToSettle(t *testing.T) {
 		background can push it over without touching the pushing logic, so
 		the size is asserted here where that change would be made.
 	*/
-	frame := Render(reading(), 0)
+	frame := shown(reading(), 0)
 	require.Less(t, len(frame.GIF), 32*1024,
 		"the dashboard grew; check the floor in push.go before raising this")
 	t.Logf("frame is %d bytes", len(frame.GIF))
@@ -124,7 +128,7 @@ func BenchmarkRender(b *testing.B) {
 	r := reading()
 	b.ReportAllocs()
 	for i := 0; b.Loop(); i++ {
-		_ = Render(r, i)
+		_ = shown(r, i)
 	}
 }
 
@@ -181,11 +185,80 @@ func TestAHotProcessorIsNotAnAlarm(t *testing.T) {
 	*/
 	hot := reading()
 	hot.Set(readings.CPUTemp, 101)
-	require.Zero(t, pixels(decode(t, Render(hot, 0)), colCrit),
+	require.Zero(t, pixels(decode(t, shown(hot, 0)), colCrit),
 		"a busy processor was drawn as a fault")
 
 	stopped := reading()
 	stopped.Set(readings.PumpRPM, 0)
-	require.Positive(t, pixels(decode(t, Render(stopped, 0)), colCrit),
+	require.Positive(t, pixels(decode(t, shown(stopped, 0)), colCrit),
 		"a stopped pump was drawn like a healthy one")
+}
+
+// draw is the shipped dashboard, which is spec 013's screen. Most of these
+// tests are about that screen rather than about choosing another one.
+func shown(r Reading, tick int) Frame { return Render(Shipped()[0], r, tick, nil) }
+
+/*
+The shipped dashboard is spec 013's screen, to the pixel.
+
+A machine that upgrades and touches nothing must see exactly what it saw, so
+the golden frame in testdata was produced by the *previous* renderer -- run
+from a worktree of the commit before this one -- rather than by this one
+saying what it says.
+
+Colours, not palette indices. Making the rings a list added a colour to the
+palette for the outline, which moved every index after it without moving a
+single pixel: comparing `Content` would fail on a screen that is identical,
+which is a test failing for the tidiness of a byte array rather than for
+anything anybody can see.
+*/
+func TestTheShippedDashboardIsUnchanged(t *testing.T) {
+	want := decodeFile(t, filepath.Join("testdata", "spec013.gif"))
+	got := decode(t, shown(reading(), 0))
+
+	require.Equal(t, want.Bounds(), got.Bounds())
+	for y := range want.Bounds().Dy() {
+		for x := range want.Bounds().Dx() {
+			if want.At(x, y) != got.At(x, y) {
+				require.Failf(t, "the default screen moved",
+					"pixel %d,%d was %v and is %v; spec 023 says it must not move",
+					x, y, want.At(x, y), got.At(x, y))
+			}
+		}
+	}
+}
+
+func decodeFile(t *testing.T, path string) image.Image {
+	t.Helper()
+	body, err := os.ReadFile(path)
+	require.NoError(t, err)
+	decoded, err := gif.Decode(bytes.NewReader(body))
+	require.NoError(t, err)
+	return decoded
+}
+
+/*
+Two renders at once do not corrupt the font.
+
+The preview route renders per request while the push loop renders for the
+life of the service, and an opentype.Face is not safe for concurrent use:
+two goroutines shaping text through one panicked inside sfnt with an index
+out of range. The HTTP server recovered from that and answered EOF; the push
+loop had nothing to recover it, and the service exited.
+
+Run with -race this also catches the maps.
+*/
+func TestTwoRendersAtOnceDoNotCorruptTheFont(t *testing.T) {
+	var wg sync.WaitGroup
+	for i := range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range 4 {
+				frame := Render(Shipped()[i%len(Shipped())], reading(), i, nil)
+				require.NotEmpty(t, frame.GIF)
+			}
+		}()
+	}
+	wg.Wait()
 }

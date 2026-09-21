@@ -6,11 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 
 	"github.com/ushineko/hotaru/internal/colour"
 	"github.com/ushineko/hotaru/internal/cooler"
+	"github.com/ushineko/hotaru/internal/dashboard"
 	"github.com/ushineko/hotaru/internal/devices"
 	"github.com/ushineko/hotaru/internal/images"
 	"github.com/ushineko/hotaru/internal/readings"
@@ -42,6 +44,11 @@ func Routes() []string {
 		"POST /" + Version + "/scenes/{name}/apply",
 		"POST /" + Version + "/scenes/{name}/capture",
 		"GET /" + Version + "/readings",
+		"GET /" + Version + "/dashboards",
+		"PUT /" + Version + "/dashboards/{name}",
+		"DELETE /" + Version + "/dashboards/{name}",
+		"POST /" + Version + "/dashboards/{name}/use",
+		"POST /" + Version + "/dashboards/{name}/preview",
 		"GET /" + Version + "/images",
 		"POST /" + Version + "/images/preview",
 		"PUT /" + Version + "/images/{name}",
@@ -297,6 +304,99 @@ func Handler(svc *service.Service) http.Handler {
 			the kernel, with no clock and no heartbeat involved.
 		*/
 		hold(w, r, svc, outcome)
+	})
+
+	mux.HandleFunc("GET /"+Version+"/dashboards", func(w http.ResponseWriter, _ *http.Request) {
+		stored, err := svc.Dashboards()
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		out := DashboardsResponse{
+			Dashboards:   make([]Dashboard, 0, len(stored)),
+			Arrangements: arrangements(),
+			Themes:       themeNames(),
+		}
+		for _, one := range stored {
+			out.Dashboards = append(out.Dashboards, asDashboard(one))
+		}
+		if active, err := svc.ActiveDashboard(); err == nil {
+			out.Active = active.Name
+		}
+		write(w, http.StatusOK, out)
+	})
+
+	mux.HandleFunc("PUT /"+Version+"/dashboards/{name}", func(w http.ResponseWriter, r *http.Request) {
+		var in Dashboard
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			write(w, http.StatusBadRequest, Error{Error: "that request does not decode", Detail: err.Error()})
+			return
+		}
+		in.Name = r.PathValue("name")
+		if err := svc.SaveDashboard(toDashboard(in)); err != nil {
+			fail(w, err)
+			return
+		}
+		write(w, http.StatusOK, in)
+	})
+
+	mux.HandleFunc("DELETE /"+Version+"/dashboards/{name}", func(w http.ResponseWriter, r *http.Request) {
+		if err := svc.DeleteDashboard(r.PathValue("name")); err != nil {
+			fail(w, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	mux.HandleFunc("POST /"+Version+"/dashboards/{name}/use", func(w http.ResponseWriter, r *http.Request) {
+		if err := svc.UseDashboard(r.PathValue("name")); err != nil {
+			fail(w, err)
+			return
+		}
+		one, err := svc.ActiveDashboard()
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		write(w, http.StatusOK, asDashboard(one))
+	})
+
+	/*
+		A frame of a dashboard, saved or not.
+
+		The name says which, and a body -- when there is one -- says what it
+		would look like edited. Both halves are wanted: the window previews
+		an unsaved draft, which is the whole point of an editor with a
+		preview in it, and a terminal previews a stored one without having to
+		send its description back.
+	*/
+	mux.HandleFunc("POST /"+Version+"/dashboards/{name}/preview", func(w http.ResponseWriter, r *http.Request) {
+		one, err := svc.Dashboard(r.PathValue("name"))
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		var in Dashboard
+		switch err := json.NewDecoder(r.Body).Decode(&in); {
+		case errors.Is(err, io.EOF): // no body: the stored one
+		case err != nil:
+			write(w, http.StatusBadRequest, Error{Error: "that request does not decode", Detail: err.Error()})
+			return
+		default:
+			in.Name = one.Name
+			one = toDashboard(in)
+		}
+
+		frame, err := svc.RenderDashboard(r.Context(), one)
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		write(w, http.StatusOK, PreviewedDashboard{
+			Image: base64.StdEncoding.EncodeToString(frame),
+			Bytes: len(frame),
+			Floor: dashboard.Floor(len(frame)).Seconds(),
+		})
 	})
 
 	mux.HandleFunc("GET /"+Version+"/readings", func(w http.ResponseWriter, r *http.Request) {

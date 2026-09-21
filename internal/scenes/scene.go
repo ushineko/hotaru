@@ -102,7 +102,15 @@ type Assignment struct {
 // Screen states a scene can name, beyond a path to an image.
 const (
 	ScreenDashboard = "dashboard"
-	ScreenReadout   = "readout"
+	/*
+		ScreenDashboardPrefix names a particular dashboard: "dashboard:load".
+
+		A prefix rather than a second field, so a scene written before there
+		was more than one dashboard still means what it meant -- "dashboard"
+		on its own is whichever one the panel is set to, and always was.
+	*/
+	ScreenDashboardPrefix = "dashboard:"
+	ScreenReadout         = "readout"
 )
 
 /*
