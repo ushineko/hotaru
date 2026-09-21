@@ -486,7 +486,76 @@ type SceneResponse struct {
 	Preview *Preview `json:"preview,omitempty"`
 }
 
+/*
+DraftRequest previews a scene that has not been saved.
+
+The editor's shape: the scene travels in the body rather than being named,
+because a draft in a window is not in anybody's scene file and making it one to
+look at it would be a saved scene nobody asked for.
+*/
+type DraftRequest struct {
+	Scene Scene `json:"scene"`
+	// Hold says the caller is sitting on this request and the preview ends
+	// when the connection does.
+	Hold bool `json:"hold,omitempty"`
+	// Holder is who to name in a listing.
+	Holder string `json:"holder,omitempty"`
+}
+
 // PreviewRequest renews or releases a lease by token.
 type PreviewRequest struct {
 	Token string `json:"token"`
+}
+
+/*
+Image is a stored picture, converted to what the panel takes.
+
+Path is on the wire because a scene names an image by its path, which is what a
+scene already does with a GIF -- nothing new was needed in the scene format,
+and a scene written before the library existed keeps working.
+*/
+type Image struct {
+	Name string `json:"name"`
+	Path string `json:"path"`
+	// Bytes is its size on disk, which decides how often the panel can be
+	// written: the push floor scales with frame size, not with a rate limit.
+	Bytes int64 `json:"bytes"`
+	// Frames is how many it has. More than one moves.
+	Frames int       `json:"frames"`
+	Added  time.Time `json:"added"`
+}
+
+// ImagesResponse is the library.
+type ImagesResponse struct {
+	Images []Image `json:"images"`
+}
+
+/*
+ImageRequest adds a picture, base64-encoded.
+
+The same shape the screen route uses, for the same reason: this is JSON and a
+picture is not text, and a second content type for one route costs every client
+more than it saves.
+*/
+type ImageRequest struct {
+	Image string `json:"image"`
+}
+
+/*
+ConvertedImage is a picture converted and not kept.
+
+The bytes come back so a client can show what the panel would show, which is
+the only preview worth having: a wallpaper that looked fine and survives being
+cropped square is a different picture from one that did not.
+*/
+type ConvertedImage struct {
+	// Image is the converted GIF, base64-encoded.
+	Image  string `json:"image"`
+	Bytes  int    `json:"bytes"`
+	Frames int    `json:"frames"`
+}
+
+// ShowImageRequest puts a stored picture on the panel.
+type ShowImageRequest struct {
+	Name string `json:"name"`
 }

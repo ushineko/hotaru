@@ -26,6 +26,17 @@ type App struct {
 	// somebody will eventually have to reason about.
 	every time.Duration
 	stop  chan struct{}
+
+	// preview is the window's hold on a draft the hardware is showing.
+	preview preview
+
+	// drawn is the snapshot the window is currently showing, so a poll that
+	// changed nothing can rebuild nothing.
+	drawn Snapshot
+
+	// pictures takes files dropped on the window, wherever the navigation
+	// happens to be.
+	pictures *PicturesSection
 }
 
 /*
@@ -49,6 +60,8 @@ func New(client *api.Client) *App {
 
 // Options describes the window to fynedesygn's shell.
 func (a *App) Options(socket string) shell.Options {
+	pictures := &PicturesSection{app: a}
+
 	return shell.Options{
 		AppID:   AppID,
 		Name:    "hotaru",
@@ -57,6 +70,8 @@ func (a *App) Options(socket string) shell.Options {
 		Sections: []shell.Section{
 			&ServiceSection{app: a},
 			&SystemSection{app: a},
+			&ScenesSection{app: a},
+			pictures,
 			&CoolingSection{app: a},
 		},
 		SettingsPath: a.settingsPath(),
@@ -71,11 +86,29 @@ func (a *App) Options(socket string) shell.Options {
 		*/
 		NavModes:      []shell.NavMode{shell.NavLabels, shell.NavIcons, shell.NavHidden},
 		NavPlacements: []shell.NavPlacement{shell.NavLeft, shell.NavTop},
-		OnCreate:      func(s *shell.Shell) { a.shell = s },
-		OnStart:       func(*shell.Shell) { a.Start(context.Background()) },
-		OnStop:        func(*shell.Shell) { a.Stop() },
-		StatusBar:     func(*shell.Shell) []fyne.CanvasObject { return a.status(socket) },
-		OnInvalidate:  func(*shell.Shell) { a.refresh(context.Background()) },
+		OnCreate: func(s *shell.Shell) {
+			a.shell, a.pictures = s, pictures
+		},
+		OnStart: func(s *shell.Shell) {
+			/*
+				A picture dragged onto the window from a file manager.
+
+				Registered here rather than by the section itself: the
+				callback belongs to the window, and a section that set it
+				would leave it pointing at itself long after the navigation
+				moved on.
+			*/
+			if s.Window != nil {
+				s.Window.SetOnDropped(func(_ fyne.Position, uris []fyne.URI) {
+					s.Select("Pictures")
+					a.pictures.Dropped(s, uris)
+				})
+			}
+			a.Start(context.Background())
+		},
+		OnStop:       func(*shell.Shell) { a.Stop() },
+		StatusBar:    func(*shell.Shell) []fyne.CanvasObject { return a.status(socket) },
+		OnInvalidate: func(*shell.Shell) { a.refresh(context.Background()) },
 	}
 }
 
@@ -133,11 +166,70 @@ func (a *App) refresh(ctx context.Context) {
 	a.machine.Refresh(ctx, a.client)
 }
 
-// redraw rebuilds the current section on the UI thread. fyne.Do, never
-// DoAndWait: the poll goroutine must not wait on the thread it is feeding.
+/*
+redraw rebuilds the current section, and only when the machine moved.
+
+Rebuilding is not free to look at: the section is built fresh, so a list
+rebuilt under a pointer jumps and the scene somebody was about to click moves
+out from under them. A two-second poll did that to a list of eighteen. An idle
+machine now rebuilds nothing at all.
+
+A section in the middle of something -- an open editor, a colour being dragged
+-- says so and is left alone even when the machine did move. Its own work is
+worth more than a fresher reading.
+
+fyne.Do, never DoAndWait: the poll goroutine must not wait on the thread it is
+feeding.
+*/
 func (a *App) redraw() {
 	if a.shell == nil || !a.shell.OnScreen() {
 		return
 	}
-	fyne.Do(func() { a.shell.Invalidate() })
+	got := a.machine.Read()
+	current := a.shell.Current()
+
+	if busy, ok := current.(Busy); ok && busy.Busy() {
+		return
+	}
+	/*
+		Whether this is a change is the *section's* question.
+
+		A snapshot differs from the one before it on almost every poll,
+		because the pump and the fans never sit still -- so "has anything
+		moved?" is always yes, and the Scenes list was rebuilt under the
+		pointer every two seconds by numbers it does not draw. A section that
+		says what it watches is rebuilt when that moves and left alone
+		otherwise.
+	*/
+	changed := !got.Same(a.drawn)
+	if watcher, ok := current.(Watcher); ok {
+		changed = watcher.Changed(a.drawn, got)
+	}
+	a.drawn = got
+
+	if changed {
+		fyne.Do(func() { a.shell.Invalidate() })
+	}
+}
+
+/*
+Watcher is implemented by a section that draws part of the machine rather than
+all of it.
+
+Without it every section is rebuilt whenever anything moves, which on a machine
+with a running pump is every poll.
+*/
+type Watcher interface {
+	Changed(before, after Snapshot) bool
+}
+
+/*
+Busy is implemented by a section that is in the middle of something.
+
+The editor is: it holds a draft, a selection and an open colour picker, none of
+which survive being rebuilt and none of which a change in the machine should
+interrupt.
+*/
+type Busy interface {
+	Busy() bool
 }

@@ -202,3 +202,54 @@ func TestCapturingSavesWhatIsShowing(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, api.ScreenReadout, byName(t, saved, "kept").Screen)
 }
+
+func TestADraftThatWasNeverSavedCanBePreviewed(t *testing.T) {
+	/*
+		The editor's route. A draft in a window is not in anybody's scene
+		file, and making it one in order to look at it would be a saved scene
+		nobody asked for -- which is what "saved" would then stop meaning.
+	*/
+	client, server := withScenes(t, blue())
+	_, err := client.ApplyScene(t.Context(), "blue", api.SceneRequest{})
+	require.NoError(t, err)
+
+	draft := api.Scene{
+		Name:        "a draft",
+		Assignments: []api.SceneAssignment{{Target: "Keychron", Colour: "#00ff00"}},
+	}
+	done, release, err := client.HoldDraft(t.Context(), draft, "an editor")
+	require.NoError(t, err)
+	require.NotNil(t, done.Preview)
+	require.Equal(t, "#00ff00", colours(t, server))
+
+	// It is a preview, so nothing was recorded and nothing was saved.
+	saved, err := client.Scenes(t.Context())
+	require.NoError(t, err)
+	for _, scene := range saved {
+		require.NotEqual(t, "a draft", scene.Name)
+	}
+
+	release()
+	require.Eventually(t, func() bool { return colours(t, server) == "#0000ff" },
+		3*time.Second, 10*time.Millisecond,
+		"the draft stayed on the hardware after its editor let go")
+}
+
+func TestADraftPreviewCanBeHeldByTokenToo(t *testing.T) {
+	// The other half of the lease, for a client that cannot sit on a
+	// connection: a shell script staging a colour, or a GUI mid-development.
+	client, server := withScenes(t, blue())
+	_, err := client.ApplyScene(t.Context(), "blue", api.SceneRequest{})
+	require.NoError(t, err)
+
+	draft := api.Scene{Assignments: []api.SceneAssignment{{Target: "Keychron", Colour: "red"}}}
+	done, err := client.PreviewDraft(t.Context(), draft, "a script")
+	require.NoError(t, err)
+	require.NotNil(t, done.Preview.Expires)
+	require.Equal(t, "#ff0000", colours(t, server))
+
+	restore, err := client.ReleasePreview(t.Context(), done.Preview.Token)
+	require.NoError(t, err)
+	require.Equal(t, 1, restore.Applied)
+	require.Equal(t, "#0000ff", colours(t, server))
+}

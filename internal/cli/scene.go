@@ -201,8 +201,8 @@ reboot and is re-sent to hardware that forgets.`,
 }
 
 func scenePreviewCommand() *cobra.Command {
-	return &cobra.Command{
-		Use:   "preview <name>",
+	cmd := &cobra.Command{
+		Use:   "preview <name> | <target>=<colour>...",
 		Short: "Look at a scene without keeping it",
 		Long: `Look at a scene without keeping it.
 
@@ -211,15 +211,37 @@ colours to the devices this scene covers, so what you are looking at is not
 quietly corrected underneath you while you decide.
 
 It ends when this command does -- press Ctrl-C, or close the terminal, or kill
-it -- and the lights go back to what was last applied.`,
-		Args: cobra.ExactArgs(1),
+it -- and the lights go back to what was last applied.
+
+Targets can be given instead of a name, and then nothing needs to have been
+saved at all:
+
+	hotaru scene preview kraken=#201040 keychron=black`,
+		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client, err := client(cmd)
 			if err != nil {
 				return err
 			}
-			done, release, err := client.HoldScene(cmd.Context(), args[0],
-				api.SceneRequest{Holder: "hotaru scene preview"})
+
+			/*
+				Detached, the preview outlives this command under a lease
+				somebody else renews. For a script, and for the case this is
+				being run from: a terminal that cannot sit still.
+			*/
+			if detach, _ := cmd.Flags().GetBool("detach"); detach {
+				done, err := detached(cmd, client, args)
+				if err != nil {
+					return quiet(err)
+				}
+				report(cmd, done)
+				cmd.Printf("Previewing, for about %s. `hotaru preview renew %s` keeps it, "+
+					"`hotaru preview release %s` ends it.\n",
+					previewFor, done.Preview.Token, done.Preview.Token)
+				return nil
+			}
+
+			done, release, err := hold(cmd, client, args)
 			if err != nil {
 				return quiet(err)
 			}
@@ -232,6 +254,32 @@ it -- and the lights go back to what was last applied.`,
 			return nil
 		},
 	}
+	cmd.Flags().Bool("detach", false,
+		"leave the preview up under a token, instead of holding it here")
+	return cmd
+}
+
+// previewFor is how long a detached preview lasts unrenewed. The service's
+// own number, repeated in the message so nobody has to go and look it up.
+const previewFor = "10 seconds"
+
+/*
+detached takes a preview and lets go of it.
+
+The token form of the same lease. A command that returns cannot be the thing
+holding a draft up, so the expiry is what stops a script that died from leaving
+somebody's lights on a colour nobody chose.
+*/
+func detached(cmd *cobra.Command, client *api.Client, args []string) (api.SceneResponse, error) {
+	const who = "hotaru scene preview --detach"
+	if len(args) == 1 && !strings.Contains(args[0], "=") {
+		return client.PreviewScene(cmd.Context(), args[0], api.SceneRequest{Holder: who})
+	}
+	draft, err := draftOf(args)
+	if err != nil {
+		return api.SceneResponse{}, err
+	}
+	return client.PreviewDraft(cmd.Context(), draft, who)
 }
 
 func sceneSaveCommand() *cobra.Command {
@@ -280,6 +328,41 @@ func sceneDeleteCommand() *cobra.Command {
 			return nil
 		},
 	}
+}
+
+/*
+hold starts a preview, from a saved name or from targets typed on the spot.
+
+The unsaved form exists because the editor needs it and parity is symmetrical:
+a route the window can reach is a route a terminal can reach. It is also the
+quickest way to try a colour without leaving anything behind.
+*/
+func hold(cmd *cobra.Command, client *api.Client, args []string) (api.SceneResponse, func(), error) {
+	const who = "hotaru scene preview"
+	if len(args) == 1 && !strings.Contains(args[0], "=") {
+		return client.HoldScene(cmd.Context(), args[0], api.SceneRequest{Holder: who})
+	}
+
+	draft, err := draftOf(args)
+	if err != nil {
+		return api.SceneResponse{}, nil, err
+	}
+	return client.HoldDraft(cmd.Context(), draft, who)
+}
+
+// draftOf reads target=colour pairs into a scene nobody saved.
+func draftOf(args []string) (api.Scene, error) {
+	draft := api.Scene{Name: "a draft"}
+	for _, arg := range args {
+		target, colour, ok := strings.Cut(arg, "=")
+		if !ok {
+			return api.Scene{}, fmt.Errorf(
+				"%q: a scene name, or target=colour for something unsaved", arg)
+		}
+		draft.Assignments = append(draft.Assignments,
+			api.SceneAssignment{Target: target, Colour: colour})
+	}
+	return draft, nil
 }
 
 // find resolves a name the way the service does, so `show` and `apply` accept

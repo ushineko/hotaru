@@ -24,6 +24,14 @@ func (s *ServiceSection) Title() string { return "Service" }
 // Icon is the navigation's icon for this section.
 func (s *ServiceSection) Icon() fyne.Resource { return theme.ComputerIcon() }
 
+// Changed says this section draws health and the device count, which move
+// when the machine's shape does rather than when a fan spins up.
+func (s *ServiceSection) Changed(before, after Snapshot) bool {
+	return !sameHealth(before.Health, after.Health) ||
+		len(before.Devices) != len(after.Devices) ||
+		(before.Err == nil) != (after.Err == nil)
+}
+
 // Build draws the section from the last snapshot. Stateless, as the shell
 // wants: every change rebuilds it, so only this has to know every reason
 // something is or is not shown.

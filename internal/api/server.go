@@ -39,8 +39,14 @@ func Routes() []string {
 		"DELETE /" + Version + "/scenes/{name}",
 		"POST /" + Version + "/scenes/{name}/apply",
 		"POST /" + Version + "/scenes/{name}/capture",
+		"GET /" + Version + "/images",
+		"POST /" + Version + "/images/preview",
+		"PUT /" + Version + "/images/{name}",
+		"DELETE /" + Version + "/images/{name}",
+		"POST /" + Version + "/images/{name}/show",
 		"GET /" + Version + "/keys",
 		"POST /" + Version + "/keys/bind",
+		"POST /" + Version + "/preview",
 		"POST /" + Version + "/preview/renew",
 		"POST /" + Version + "/preview/release",
 		"POST /" + Version + "/reconcile",
@@ -289,6 +295,85 @@ func Handler(svc *service.Service) http.Handler {
 		hold(w, r, svc, outcome)
 	})
 
+	mux.HandleFunc("GET /"+Version+"/images", func(w http.ResponseWriter, _ *http.Request) {
+		stored, err := svc.Images()
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		out := ImagesResponse{Images: make([]Image, 0, len(stored))}
+		for _, image := range stored {
+			out.Images = append(out.Images, Image{
+				Name: image.Name, Path: image.Path, Bytes: image.Bytes,
+				Frames: image.Frames, Added: image.Added,
+			})
+		}
+		write(w, http.StatusOK, out)
+	})
+
+	mux.HandleFunc("POST /"+Version+"/images/preview", func(w http.ResponseWriter, r *http.Request) {
+		var in ImageRequest
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			write(w, http.StatusBadRequest, Error{Error: "that request does not decode", Detail: err.Error()})
+			return
+		}
+		source, err := base64.StdEncoding.DecodeString(in.Image)
+		if err != nil {
+			write(w, http.StatusBadRequest, Error{Error: "the image is not base64", Detail: err.Error()})
+			return
+		}
+
+		converted, frames, err := svc.PreviewImage(source)
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		write(w, http.StatusOK, ConvertedImage{
+			Image:  base64.StdEncoding.EncodeToString(converted),
+			Bytes:  len(converted),
+			Frames: frames,
+		})
+	})
+
+	mux.HandleFunc("PUT /"+Version+"/images/{name}", func(w http.ResponseWriter, r *http.Request) {
+		var in ImageRequest
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			write(w, http.StatusBadRequest, Error{Error: "that request does not decode", Detail: err.Error()})
+			return
+		}
+		source, err := base64.StdEncoding.DecodeString(in.Image)
+		if err != nil {
+			write(w, http.StatusBadRequest, Error{Error: "the image is not base64", Detail: err.Error()})
+			return
+		}
+
+		stored, err := svc.AddImage(r.PathValue("name"), source)
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		write(w, http.StatusOK, Image{
+			Name: stored.Name, Path: stored.Path, Bytes: stored.Bytes,
+			Frames: stored.Frames, Added: stored.Added,
+		})
+	})
+
+	mux.HandleFunc("DELETE /"+Version+"/images/{name}", func(w http.ResponseWriter, r *http.Request) {
+		if err := svc.RemoveImage(r.PathValue("name")); err != nil {
+			fail(w, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	mux.HandleFunc("POST /"+Version+"/images/{name}/show", func(w http.ResponseWriter, r *http.Request) {
+		if err := svc.ShowImage(r.Context(), r.PathValue("name")); err != nil {
+			fail(w, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+
 	mux.HandleFunc("GET /"+Version+"/keys", func(w http.ResponseWriter, _ *http.Request) {
 		keys, err := svc.Keys()
 		if err != nil {
@@ -319,6 +404,33 @@ func Handler(svc *service.Service) http.Handler {
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
+	})
+
+	/*
+		Previewing a scene that has no name.
+
+		The editor's route: a draft is not a saved scene and must not have to
+		become one to be looked at. Everything else is the named form's, lease
+		included.
+	*/
+	mux.HandleFunc("POST /"+Version+"/preview", func(w http.ResponseWriter, r *http.Request) {
+		var in DraftRequest
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			write(w, http.StatusBadRequest, Error{Error: "that request does not decode", Detail: err.Error()})
+			return
+		}
+
+		outcome, err := svc.Preview(r.Context(), fromScene(in.Scene),
+			holderOf(SceneRequest{Holder: in.Holder}, r), in.Hold)
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		if !in.Hold || outcome.Lease == nil {
+			write(w, http.StatusOK, asOutcome(outcome))
+			return
+		}
+		hold(w, r, svc, outcome)
 	})
 
 	mux.HandleFunc("POST /"+Version+"/preview/renew", func(w http.ResponseWriter, r *http.Request) {
