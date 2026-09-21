@@ -169,11 +169,22 @@ this cooler had two earlier the same day -- and they are indistinguishable from
 outside. The glob is lexical besides, so `hidraw10` sorts before `hidraw7` and
 "the first match" is a coin toss that lands differently after a reboot.
 
-So every candidate is asked for a reading, with a short deadline, and the one
-that replies is the cooler. It is safe, because candidates are already filtered
-to a known vendor and product, and it is decisive, because a mismatched device
-answers with its own prefix -- a Corsair power supply asked this replied
-`74 96`, which is not a status reply.
+There is a declarative discriminator and hotaru uses it: the HID **usage page**
+in the report descriptor, which is what hidapi exposes as `usage_page`. A
+control protocol lives on a vendor-defined page -- this cooler declares
+`0xFF00` -- while a device's other collections declare standard ones. So
+candidates are ordered vendor-defined first.
+
+It is an ordering and not a filter, because a usage page says what an interface
+is *for* and not whether this firmware will answer on it. So every candidate is
+then asked for a reading, with a short deadline, and the one that replies is
+the cooler. Asking is safe, because candidates are already filtered to a known
+vendor and product, and decisive, because a mismatched device answers with its
+own prefix -- a Corsair power supply, asked this, replied `74 96`.
+
+liquidctl does neither: it takes hidapi's first match, filtered by serial
+number where it has one. That works until a device exposes two nodes, which
+most of the ones on the development machine do.
 
 **R4. One goroutine owns the device.** Both interfaces, one owner, a single
 slot mailbox where a newer request replaces a waiting one -- the pattern
