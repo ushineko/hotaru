@@ -32,7 +32,7 @@ all to keys.
 
 | | |
 |---|---|
-| **Lighting** | Supports every device OpenRGB can see, addressed by device, zone, LED range, or a segment. The user can label device in plain words, e.g. "top fan red, bottom fan blue" |
+| **Lighting** | Supports every device OpenRGB can see, addressed by device, zone, LED range, or a segment. The user can label devices in plain words, e.g. "top fan red, bottom fan blue" |
 | **Scenes** | A named set of colour assignments, an effect per device and what the screen shows, applied as a previewable unit. |
 | **The cooler** | Coolant and CPU temperature, pump and fan speeds, read from the device directly. |
 | **The screen** | The cooler's LCD: its own readout, an image, an animation, or a live dashboard rendered from the telemetry |
@@ -196,14 +196,38 @@ hotaru is a ground-up rearchitecture. Hardware learnings are carried over.
 
 ## Documentation
 
-specs - design decisions and feature development.
-docs - adjunct documentation such as architecture.
+* specs - design decisions and feature development.
+* docs - adjunct documentation such as architecture.
 
 ## Licence
 
 MIT. See [LICENSE](LICENSE).
 
 ## Changelog
+
+### Unreleased
+
+- The scene editor sets what each device does with the colours. A scene has
+  carried a mode per device since spec 015 and only the wizard ever asked; the
+  window could do less than `hotaru scene write --effect`. Each row says what
+  the device is doing now, because "leave it alone" means nothing on its own
+  (spec 038, #94).
+
+- A scene's style can be given to other scenes. `hotaru scene style <from>
+  <to>...`, and the same from the editor. It replaces rather than merges, and
+  a wrong name changes nothing at all (spec 038, #94).
+
+- `hotaru image scene --effect` and the window's "Make a scene" take effects.
+  A picture says what colour each light should be and nothing about the mode a
+  device runs. Recolouring keeps them (spec 038, #94).
+
+- Create opens on Scenes, then Pictures, then Screen. A picture becomes a
+  screen and a screen goes in a scene exactly once per picture; the scene list
+  is what the window gets opened for.
+
+- A build that is not the release says so: `0.1.3-1a2b3c4-dev` unless HEAD is
+  on the version's tag with a clean tree. Packages stamp their own version and
+  are unaffected.
 
 ### Unreleased
 

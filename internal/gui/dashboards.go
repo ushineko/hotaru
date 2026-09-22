@@ -266,9 +266,9 @@ func (d *DashboardsSection) row(sh *shell.Shell, one api.Dashboard, active bool)
 		dashboard and then a set of colours was doing by hand.
 	*/
 	scene := widget.NewButtonWithIcon("", theme.ColorPaletteIcon(), func() {
-		makeScene(sh, one.Name, one.Name,
-			func(ctx context.Context, name string, distance float64) (api.Scene, error) {
-				return d.app.client.SceneFromDashboard(ctx, one.Name, name, distance)
+		makeScene(sh, one.Name, one.Name, d.app.machine.Read().Devices,
+			func(ctx context.Context, name string, distance float64, effects map[string]string) (api.Scene, error) {
+				return d.app.client.SceneFromDashboard(ctx, one.Name, name, distance, effects)
 			})
 	})
 

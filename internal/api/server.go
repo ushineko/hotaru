@@ -56,6 +56,7 @@ func Routes() []string {
 		"POST /" + Version + "/images/{name}/scene",
 		"POST /" + Version + "/dashboards/{name}/scene",
 		"POST /" + Version + "/scenes/{name}/recolour",
+		"POST /" + Version + "/scenes/{name}/effects",
 		"POST /" + Version + "/images/{name}/show",
 		"GET /" + Version + "/keys",
 		"POST /" + Version + "/keys/bind",
@@ -497,7 +498,7 @@ func Handler(svc *service.Service) http.Handler {
 			return
 		}
 
-		scene, err := svc.SceneFromImage(r.Context(), r.PathValue("name"), in.Scene, in.Distance)
+		scene, err := svc.SceneFromImage(r.Context(), r.PathValue("name"), in.Scene, in.Distance, in.Effects)
 		if err != nil {
 			fail(w, err)
 			return
@@ -512,7 +513,7 @@ func Handler(svc *service.Service) http.Handler {
 			return
 		}
 
-		scene, err := svc.SceneFromDashboard(r.Context(), r.PathValue("name"), in.Scene, in.Distance)
+		scene, err := svc.SceneFromDashboard(r.Context(), r.PathValue("name"), in.Scene, in.Distance, in.Effects)
 		if err != nil {
 			fail(w, err)
 			return
@@ -540,6 +541,29 @@ func Handler(svc *service.Service) http.Handler {
 			return
 		}
 		write(w, http.StatusOK, asScene(scene))
+	})
+
+	/*
+		One scene's style, given to others.
+
+		A style and a colour are different things -- a mode per device
+		against a colour per light -- and somebody who decides their keyboard
+		should be reactive has decided that about the keyboard rather than
+		about one scene.
+	*/
+	mux.HandleFunc("POST /"+Version+"/scenes/{name}/effects", func(w http.ResponseWriter, r *http.Request) {
+		var in CopyEffectsRequest
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			write(w, http.StatusBadRequest, Error{Error: "that request does not decode", Detail: err.Error()})
+			return
+		}
+
+		changed, err := svc.CopyEffects(r.PathValue("name"), in.To)
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		write(w, http.StatusOK, CopyEffectsResponse{Scenes: changed})
 	})
 
 	mux.HandleFunc("POST /"+Version+"/images/{name}/show", func(w http.ResponseWriter, r *http.Request) {

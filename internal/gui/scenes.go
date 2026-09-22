@@ -61,6 +61,16 @@ type ScenesSection struct {
 // tests, like OpenEditor.
 func OpenScenes(s *ScenesSection, app *App) { s.app = app }
 
+// ChooseEffects opens the effects chooser, for tests: it is reached by a
+// button in a card, and a test that clicked it would be a test about cards.
+func ChooseEffects(s *ScenesSection, sh *shell.Shell, got Snapshot) {
+	s.chooseEffects(sh, got)
+}
+
+// ShareStyle opens the chooser that gives other scenes this one's effects,
+// for tests: it is reached by a button inside a dialog.
+func ShareStyle(s *ScenesSection, sh *shell.Shell, got Snapshot) { s.share(sh, got) }
+
 // ChooseScreen opens the chooser, for tests: it is reached by a button in a
 // card, and a test that clicked it would be a test about the card.
 func ChooseScreen(s *ScenesSection, sh *shell.Shell) {
@@ -536,7 +546,8 @@ func (s *ScenesSection) editor(sh *shell.Shell, got Snapshot) fyne.CanvasObject 
 		Container.MinSize at 31% of it. A list builds the rows that are on
 		screen and recycles them. See spec 026.
 	*/
-	left := container.NewBorder(nil, container.NewVBox(s.colours(sh), s.screen(sh)), nil, nil,
+	left := container.NewBorder(nil,
+		container.NewVBox(s.colours(sh), s.screen(sh), s.effects(sh, got)), nil, nil,
 		s.assignments(sh))
 	right := s.scrolling("editor", []fyne.CanvasObject{
 		widgets.Dim("Pick a device, a zone, or a light:"),
@@ -844,6 +855,157 @@ func (s *ScenesSection) screen(sh *shell.Shell) fyne.CanvasObject {
 	return widgets.Card("The screen",
 		container.NewBorder(nil, nil,
 			sized(screenShotSize, s.screenShot(s.screens(), current)), nil, shown))
+}
+
+/*
+effects is what each device should be doing with this scene's colours.
+
+Beside the screen chooser because it is the same kind of question -- what the
+scene does beyond the colours themselves -- and because both are about the
+scene as a whole rather than about the light somebody has selected.
+*/
+func (s *ScenesSection) effects(sh *shell.Shell, got Snapshot) fyne.CanvasObject {
+	shown := widget.NewButton(effectsSaid(s.draft.Effects()), func() { s.chooseEffects(sh, got) })
+	return widgets.Card("Effects", shown)
+}
+
+/*
+effectsSaid is what the scene says about what its devices are doing, in one
+line.
+
+The card is a button like the screen's, for the reason the screen's is one:
+five devices, each with a chooser and a line saying what it is doing now, is
+three hundred pixels of a pane whose job is to stay out of the way. The editor
+already does not fit a default window with the scene's own lines in it.
+*/
+func effectsSaid(effects map[string]string) string {
+	switch len(effects) {
+	case 0:
+		return "every device left alone"
+	case 1:
+		for device, mode := range effects {
+			return device + ": " + mode
+		}
+	}
+	return fmt.Sprintf("%d devices", len(effects))
+}
+
+/*
+chooseEffects is what each device should be doing with this scene's colours.
+
+A dialog rather than a pane, so the editor's controls stay the size they were,
+and the same shape as the screen chooser next to it: a card that says what is
+set, and a dialog that sets it.
+*/
+func (s *ScenesSection) chooseEffects(sh *shell.Shell, got Snapshot) {
+	rows := []fyne.CanvasObject{effectFields(got.Devices,
+		func(device string) string { return s.draft.Effect(device) },
+		func(device, mode string) { s.draft.SetEffect(device, mode) })}
+
+	/*
+		And the way to stop setting it nine times.
+
+		A style is a decision about a device, not about a scene: somebody who
+		wants their keyboard reactive wants it reactive, and a bank of nine
+		scenes meant opening nine. Offered where there is something to copy,
+		somewhere to copy it to, and a saved scene to copy from -- the
+		service copies what a scene holds.
+	*/
+	switch {
+	case len(got.Scenes) < 2:
+	case s.draft.From == "":
+		rows = append(rows, widgets.Dim("Save this scene to use its style in others."))
+	default:
+		share := widget.NewButtonWithIcon("Use this style in other scenes",
+			theme.ContentCopyIcon(), func() { s.share(sh, got) })
+		rows = append(rows, share)
+	}
+
+	ask := dialog.NewCustomConfirm("What the devices do", "Done", "Cancel",
+		container.NewVScroll(container.NewVBox(rows...)),
+		func(bool) { sh.Invalidate() }, sh.Window)
+	roomy(ask, sh)
+}
+
+/*
+share gives other scenes this draft's effects.
+
+Saved scenes, from the service, because what is being copied to is a scene on
+disk rather than a draft in this window -- and the draft's own effects are
+what spread, so it is what is on screen rather than what was last saved.
+*/
+func (s *ScenesSection) share(sh *shell.Shell, got Snapshot) {
+	// The scene's own name, not the editor's heading for it: this is what
+	// the service is asked about.
+	from := s.draft.From
+
+	/*
+		In the order the Scenes list shows them, which is the order of the
+		keys they sit on.
+
+		The list somebody is choosing from here is the list they were looking
+		at a moment ago, and two orderings of the same nine scenes is two
+		lists to learn.
+	*/
+	ordered, _ := byKey(got.Scenes, got.Keys)
+	others := make([]string, 0, len(ordered))
+	for _, scene := range ordered {
+		if scene.Name != from {
+			others = append(others, scene.Name)
+		}
+	}
+
+	picked := map[string]bool{}
+	rows := make([]fyne.CanvasObject, 0, len(others)+1)
+	for _, name := range others {
+		check := widget.NewCheck(name, func(on bool) { picked[name] = on })
+		rows = append(rows, check)
+	}
+
+	body := container.NewBorder(
+		widgets.DimWrapped("The effects only, not the colours. Each scene ends up with "+
+			"exactly what this one does, including nothing."), nil, nil, nil,
+		container.NewVScroll(container.NewVBox(rows...)))
+
+	ask := dialog.NewCustomConfirm("Use "+from+"'s style in", "Use it", "Cancel", body,
+		func(ok bool) {
+			if !ok {
+				return
+			}
+			var to []string
+			for _, name := range others {
+				if picked[name] {
+					to = append(to, name)
+				}
+			}
+			if len(to) == 0 {
+				return
+			}
+			s.restyle(sh, from, to)
+		}, sh.Window)
+	roomy(ask, sh)
+}
+
+// restyle saves the draft and hands its effects to the scenes chosen.
+func (s *ScenesSection) restyle(sh *shell.Shell, from string, to []string) {
+	scene := s.draft.Scene(from)
+	sh.Perform("restyling", func(ctx context.Context) error {
+		// Saved first: the service copies what a scene holds, and the
+		// effects being copied are the ones on screen.
+		if err := s.app.client.SaveScene(ctx, scene); err != nil {
+			return err
+		}
+		changed, err := s.app.client.CopyEffects(ctx, from, to)
+		if err != nil {
+			return err
+		}
+		onScreen(func() {
+			sh.Flash(fmt.Sprintf("%d scene(s) now do what %s does.", len(changed), from),
+				fd.StatusGood)
+			sh.Invalidate()
+		})
+		return nil
+	})
 }
 
 // screenName is a choice in the words the chooser offers it in.

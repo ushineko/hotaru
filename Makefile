@@ -5,7 +5,24 @@
 
 TAG        := $(shell cat .tag)
 MODULE     := github.com/ushineko/hotaru
-LDFLAGS    := -X $(MODULE)/internal/version.Version=$(TAG)
+
+# A build that is not the release says so.
+#
+# .tag is the version the release flow sets, and stamping it unconditionally
+# meant a build from a working tree reported the same string as the package --
+# so a window open beside a terminal could not be told apart from the one
+# pacman installed, which is exactly the confusion a dev build creates.
+#
+# Released is HEAD sitting exactly on this version's tag with nothing
+# modified. Anything else is `0.1.3-1a2b3c4-dev`, which names the commit it
+# came from. The PKGBUILD stamps pkgver itself and never runs this, so a
+# package is always the plain version.
+COMMIT     := $(shell git rev-parse --short HEAD 2>/dev/null)
+DIRTY      := $(shell git status --porcelain 2>/dev/null | head -1)
+ATTAG      := $(shell git describe --exact-match --tags --match 'v$(TAG)' HEAD 2>/dev/null)
+VERSION    := $(if $(and $(ATTAG),$(if $(DIRTY),,x)),$(TAG),$(TAG)-$(COMMIT)-dev)
+
+LDFLAGS    := -X $(MODULE)/internal/version.Version=$(VERSION)
 GOFLAGS    := -trimpath
 
 # The window is built without Fyne's thread-safety check.

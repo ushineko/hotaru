@@ -48,7 +48,7 @@ func TestASceneFromAPictureCoversEveryDeviceInScope(t *testing.T) {
 	_, err := svc.AddImage("halves", encoded(t))
 	require.NoError(t, err)
 
-	scene, err := svc.SceneFromImage(t.Context(), "halves", "themed", 1)
+	scene, err := svc.SceneFromImage(t.Context(), "halves", "themed", 1, nil)
 	require.NoError(t, err)
 
 	named := map[string]bool{}
@@ -70,7 +70,7 @@ func TestASceneFromAPictureSweepsAcrossIt(t *testing.T) {
 	_, err := svc.AddImage("halves", encoded(t))
 	require.NoError(t, err)
 
-	scene, err := svc.SceneFromImage(t.Context(), "halves", "themed", 1)
+	scene, err := svc.SceneFromImage(t.Context(), "halves", "themed", 1, nil)
 	require.NoError(t, err)
 
 	var board []string
@@ -92,7 +92,7 @@ func TestAdjacentLightsThatAgreeAreOneRule(t *testing.T) {
 	_, err := svc.AddImage("halves", encoded(t))
 	require.NoError(t, err)
 
-	scene, err := svc.SceneFromImage(t.Context(), "halves", "themed", 1)
+	scene, err := svc.SceneFromImage(t.Context(), "halves", "themed", 1, nil)
 	require.NoError(t, err)
 
 	for _, assignment := range scene.Assignments {
@@ -111,7 +111,7 @@ func TestASceneFromAPictureShowsThatPicture(t *testing.T) {
 	stored, err := svc.AddImage("halves", encoded(t))
 	require.NoError(t, err)
 
-	scene, err := svc.SceneFromImage(t.Context(), "halves", "themed", 1)
+	scene, err := svc.SceneFromImage(t.Context(), "halves", "themed", 1, nil)
 	require.NoError(t, err)
 	require.Equal(t, stored.Path, scene.Screen)
 
@@ -128,7 +128,7 @@ func TestAPictureThatIsNotThereSaysSo(t *testing.T) {
 	svc, _ := lit(t)
 	withPictures(t, svc)
 
-	_, err := svc.SceneFromImage(t.Context(), "absent", "themed", 1)
+	_, err := svc.SceneFromImage(t.Context(), "absent", "themed", 1, nil)
 	require.ErrorContains(t, err, "absent")
 }
 
@@ -172,7 +172,7 @@ func TestASceneFromADashboardNamesThatDashboard(t *testing.T) {
 	svc.SetCooler(&panel{})
 	withScreens(t, svc)
 
-	scene, err := svc.SceneFromDashboard(t.Context(), "quiet", "evening", 1)
+	scene, err := svc.SceneFromDashboard(t.Context(), "quiet", "evening", 1, nil)
 	require.NoError(t, err)
 	require.Equal(t, "dashboard:quiet", scene.Screen)
 	require.NotEmpty(t, scene.Assignments)
@@ -184,9 +184,9 @@ func TestSeparationChangesTheColoursAndNothingElse(t *testing.T) {
 	_, err := svc.AddImage("halves", encoded(t))
 	require.NoError(t, err)
 
-	plain, err := svc.SceneFromImage(t.Context(), "halves", "themed", 1)
+	plain, err := svc.SceneFromImage(t.Context(), "halves", "themed", 1, nil)
 	require.NoError(t, err)
-	apart, err := svc.SceneFromImage(t.Context(), "halves", "themed", 2.5)
+	apart, err := svc.SceneFromImage(t.Context(), "halves", "themed", 2.5, nil)
 	require.NoError(t, err)
 
 	require.Equal(t, plain.Screen, apart.Screen)
@@ -206,7 +206,7 @@ func TestRecolouringTakesTheSceneAsItsSource(t *testing.T) {
 	_, err := svc.AddImage("halves", encoded(t))
 	require.NoError(t, err)
 
-	made, err := svc.SceneFromImage(t.Context(), "halves", "themed", 1)
+	made, err := svc.SceneFromImage(t.Context(), "halves", "themed", 1, nil)
 	require.NoError(t, err)
 
 	again, err := svc.RecolourScene(t.Context(), "themed", 3)
@@ -223,4 +223,55 @@ func TestASceneWithNothingToTakeColoursFromSaysSo(t *testing.T) {
 
 	_, err := svc.RecolourScene(t.Context(), "plain", 2)
 	require.ErrorContains(t, err, "nothing to take its colours from")
+}
+
+// painting is a service with a picture in it, which is what every test below
+// starts from.
+func painting(t *testing.T) *service.Service {
+	t.Helper()
+	svc, _ := lit(t)
+	withPictures(t, svc)
+	_, err := svc.AddImage("halves", encoded(t))
+	require.NoError(t, err)
+	return svc
+}
+
+func TestASceneFromAPictureCarriesTheEffectsItWasGiven(t *testing.T) {
+	/*
+		A picture says what colour each light should be and nothing about
+		what a device should be doing with it, so a keyboard asked to ripple
+		is a decision the caller makes. Nothing is the default: every device
+		shows the colours it was given.
+	*/
+	svc := painting(t)
+
+	plain, err := svc.SceneFromImage(t.Context(), "halves", "themed", 1, nil)
+	require.NoError(t, err)
+	require.Empty(t, plain.Effects, "a scene invented an effect nobody asked for")
+
+	with, err := svc.SceneFromImage(t.Context(), "halves", "rippling", 1,
+		map[string]string{"Keychron": "Typing Heatmap"})
+	require.NoError(t, err)
+	require.Equal(t, map[string]string{"Keychron": "Typing Heatmap"}, with.Effects)
+	require.NotEmpty(t, with.Assignments, "the colours were lost with the effect added")
+
+	// And it is kept, because the scene is saved on the way out.
+	saved, err := svc.Scene("rippling")
+	require.NoError(t, err)
+	require.Equal(t, "Typing Heatmap", saved.Effects["Keychron"])
+}
+
+func TestRecolouringKeepsTheEffects(t *testing.T) {
+	// Recolouring is about the colours. A keyboard's mode is not one of
+	// them, and losing it would make the separation slider destructive.
+	svc := painting(t)
+
+	_, err := svc.SceneFromImage(t.Context(), "halves", "themed", 1,
+		map[string]string{"Keychron": "Typing Heatmap"})
+	require.NoError(t, err)
+
+	again, err := svc.RecolourScene(t.Context(), "themed", 2.5)
+	require.NoError(t, err)
+	require.Equal(t, "Typing Heatmap", again.Effects["Keychron"],
+		"recolouring dropped what the devices were doing")
 }

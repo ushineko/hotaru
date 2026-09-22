@@ -402,3 +402,29 @@ func gif(t *testing.T) []byte {
 	require.NoError(t, png.Encode(&out, image.NewRGBA(image.Rect(0, 0, 8, 8))))
 	return out.Bytes()
 }
+
+func TestASceneFromAPictureTakesAnEffect(t *testing.T) {
+	// The parity rule: the window can set what a device does with a scene's
+	// colours, so the terminal can too.
+	socket := serving(t, &config.Config{}, openrgb.NewFake(board()))
+
+	picture := filepath.Join(t.TempDir(), "wallpaper.png")
+	require.NoError(t, os.WriteFile(picture, gif(t), 0o600))
+
+	_, err := run(t, socket, "image", "add", "wall", picture)
+	require.NoError(t, err)
+
+	_, err = run(t, socket, "image", "scene", "wall", "themed",
+		"--effect", `maximus=Rainbow Wave`)
+	require.NoError(t, err)
+
+	said, err := run(t, socket, "scene", "show", "themed")
+	require.NoError(t, err)
+	require.Contains(t, said, "Rainbow Wave", "the effect did not reach the scene")
+
+	// And a flag that is not device=mode is a usage error rather than a
+	// silently ignored word.
+	_, err = run(t, socket, "image", "scene", "wall", "other", "--effect", "rainbow")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "device=mode")
+}

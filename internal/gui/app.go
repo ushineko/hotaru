@@ -58,6 +58,10 @@ const AppID = "io.github.ushineko.hotaru"
 // still looking at the window.
 const Poll = 2 * time.Second
 
+// Machine is the last snapshot the poll took, for tests that build a section
+// the way the window does.
+func (a *App) Machine() Snapshot { return a.machine.Read() }
+
 // Client is the service this window talks to. For tests, which ask the same
 // service what the window's actions did to it.
 func (a *App) Client() *api.Client { return a.client }
@@ -70,7 +74,16 @@ func New(client *api.Client) *App {
 // Options describes the window to fynedesygn's shell.
 func (a *App) Options(socket string) shell.Options {
 	create := NewCreate(a)
-	pictures, _ := create.parts[0].(*PicturesSection)
+
+	// By type rather than by position: a dropped file goes to the library
+	// wherever the library happens to sit in the tab strip, and the strip's
+	// order is about what somebody opens most rather than about this.
+	var pictures *PicturesSection
+	for _, part := range create.parts {
+		if found, ok := part.(*PicturesSection); ok {
+			pictures = found
+		}
+	}
 
 	return shell.Options{
 		AppID:   AppID,
