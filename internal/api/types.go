@@ -731,6 +731,38 @@ type SceneFromImageRequest struct {
 		whatever else is lit in the room.
 	*/
 	Distance float64 `json:"distance,omitempty"`
+
+	/*
+		Effects are what each device should be doing with the colours, by any
+		part of its name, as a scene's own effects are.
+
+		A picture says what colour each light should be and nothing about the
+		mode a device runs, so a keyboard asked to ripple is a decision the
+		caller makes. Empty leaves every device showing the colours it was
+		given, which is what most scenes from a picture want.
+	*/
+	Effects map[string]string `json:"effects,omitempty"`
+}
+
+/*
+CopyEffectsRequest gives other scenes the style of this one.
+
+A style and a colour are different things: a scene names a colour per light
+and a mode per device. Somebody who decides their keyboard should be reactive
+has decided that about the keyboard rather than about one scene.
+
+It replaces rather than merges, so "these scenes now look like that one" is
+true of every device rather than of some of them.
+*/
+type CopyEffectsRequest struct {
+	// To are the scenes to give this one's effects to. The source itself is
+	// ignored if it is in the list.
+	To []string `json:"to"`
+}
+
+// CopyEffectsResponse is the scenes that changed.
+type CopyEffectsResponse struct {
+	Scenes []string `json:"scenes"`
 }
 
 // RecolourRequest builds a scene's lights again from whatever it shows, at a

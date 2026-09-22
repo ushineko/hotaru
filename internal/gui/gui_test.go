@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -92,11 +93,17 @@ func healthy() map[string]any {
 		"GET /" + api.Version + "/devices": api.DevicesResponse{Devices: []api.Device{
 			{
 				Name: "NZXT Kraken", LEDs: 4, ActiveMode: "Direct", InScope: true,
+				Modes:    []string{"Direct", "Rainbow Wave", "Breathing"},
 				Zones:    []api.Zone{{Name: "Ring", First: 0, Count: 2}, {Name: "Fans", First: 2, Count: 2}},
 				Colours:  []string{"#ff0000", "#ff0000", "#0000ff", "#0000ff"},
 				Reassert: "1m0s",
 			},
-			{Name: "Corsair MM700", LEDs: 3, ActiveMode: "Direct", InScope: false},
+			// Out of scope, and with modes of its own: a device hotaru will
+			// not write to must not be offered one.
+			{
+				Name: "Corsair MM700", LEDs: 3, ActiveMode: "Direct", InScope: false,
+				Modes: []string{"Direct", "Rainbow Wave"},
+			},
 		}},
 		"GET /" + api.Version + "/cooling": api.Cooling{
 			Device: "NZXT Kraken", Coolant: 37.5, PumpRPM: 2608, FanRPM: 1190,
@@ -1971,4 +1978,326 @@ func TestOpeningTheScreenEditorAsksForOneFrameAndChangesNothing(t *testing.T) {
 		"building the form twice asked for %d frames", times(preview))
 	require.Empty(t, gui.DraftDashboard(section).Lettering.Font,
 		"the form wrote a face into a dashboard nobody edited")
+}
+
+func TestTheSceneEditorSetsWhatADeviceIsDoing(t *testing.T) {
+	/*
+		A scene carries a mode per device, and the only place that was ever
+		asked was the mapping wizard -- which asks once about a machine
+		rather than every time about a scene. `hotaru scene write --effect`
+		could set one and the window could not, which is the parity rule
+		backwards.
+	*/
+	a := test.NewApp()
+	t.Cleanup(a.Quit)
+
+	app := gui.New(service(t, healthy()))
+	opts := app.Options("s")
+	opts.SettingsPath = filepath.Join(t.TempDir(), "gui.yml")
+	sh := shell.Headless(a, opts)
+	app.Refresh(context.Background())
+
+	section := &gui.ScenesSection{}
+	draft := gui.NewDraft()
+	gui.OpenEditor(section, app, draft)
+	built := section.Build(sh)
+
+	window := test.NewWindow(built)
+	t.Cleanup(window.Close)
+	window.Resize(fyne.NewSize(1200, 900))
+	sh.Window = window
+
+	require.Contains(t, fynetest.Text(built), "Effects", "the editor does not offer them")
+
+	// The card is a button, like the screen's: five devices with a chooser
+	// and a line each is three hundred pixels of a pane that has to stay out
+	// of the way.
+	gui.ChooseEffects(section, sh, app.Machine())
+	shown := window.Canvas().Overlays().Top()
+	require.NotNil(t, shown, "the chooser did not open")
+
+	var modes *widget.Select
+	fynetest.WalkRendered(shown, func(o fyne.CanvasObject) bool {
+		if choose, ok := o.(*widget.Select); ok && slices.Contains(choose.Options, "Rainbow Wave") {
+			modes = choose
+			return true
+		}
+		return false
+	})
+	require.NotNil(t, modes, "no chooser offers the modes a device advertises")
+	require.Equal(t, "leave it alone", modes.Selected,
+		"a new scene starts by telling a device to do something")
+
+	modes.SetSelected("Rainbow Wave")
+	require.Equal(t, "Rainbow Wave", draft.Scene("evening").Effects["NZXT Kraken"],
+		"choosing a mode did not reach the draft")
+
+	// And taking it back out leaves the scene saying nothing about it.
+	modes.SetSelected("leave it alone")
+	require.Empty(t, draft.Scene("evening").Effects)
+}
+
+func TestOnlyADeviceWithAChoiceIsOfferedOne(t *testing.T) {
+	/*
+		A device advertising one mode has nothing to offer, and a list where
+		some rows are decisions and others are not is a list somebody has to
+		read to find out which. Out of scope is the same argument: hotaru
+		will not write to it, so a mode for it could not happen.
+	*/
+	a := test.NewApp()
+	t.Cleanup(a.Quit)
+
+	app := gui.New(service(t, healthy()))
+	opts := app.Options("s")
+	opts.SettingsPath = filepath.Join(t.TempDir(), "gui.yml")
+	sh := shell.Headless(a, opts)
+	app.Refresh(context.Background())
+
+	window := test.NewWindow(widget.NewLabel("behind"))
+	t.Cleanup(window.Close)
+	sh.Window = window
+
+	section := &gui.ScenesSection{}
+	gui.OpenEditor(section, app, gui.NewDraft())
+	section.Build(sh)
+	gui.ChooseEffects(section, sh, app.Machine())
+
+	said := fynetest.Text(window.Canvas().Overlays().Top())
+	require.Contains(t, said, "NZXT Kraken", "a device with modes was not offered")
+	require.NotContains(t, said, "Corsair MM700",
+		"a device out of scope was offered a mode it will never run")
+}
+
+func TestTheEditorSaysWhatADeviceIsDoingNow(t *testing.T) {
+	/*
+		"Leave it alone" is not an answer until you know what it leaves. The
+		chooser said what the scene sets and nothing about the machine, so a
+		keyboard sitting in a reactive mode looked identical to one sitting
+		in Direct -- and that difference is what the scene will look like
+		when it is applied.
+	*/
+	routes := healthy()
+	devices := routes["GET /"+api.Version+"/devices"].(api.DevicesResponse)
+	devices.Devices[0].ActiveMode = "Breathing"
+	routes["GET /"+api.Version+"/devices"] = devices
+
+	a := test.NewApp()
+	t.Cleanup(a.Quit)
+
+	app := gui.New(service(t, routes))
+	opts := app.Options("s")
+	opts.SettingsPath = filepath.Join(t.TempDir(), "gui.yml")
+	sh := shell.Headless(a, opts)
+	app.Refresh(context.Background())
+
+	section := &gui.ScenesSection{}
+	gui.OpenEditor(section, app, gui.NewDraft())
+
+	window := test.NewWindow(widget.NewLabel("behind"))
+	t.Cleanup(window.Close)
+	sh.Window = window
+
+	section.Build(sh)
+	gui.ChooseEffects(section, sh, app.Machine())
+	require.Contains(t, fynetest.Text(window.Canvas().Overlays().Top()), "now: Breathing",
+		"the chooser does not say what the device is doing")
+}
+
+func TestAStyleIsOfferedToOtherScenesOnlyWhenThereIsOne(t *testing.T) {
+	/*
+		A style is a decision about a device rather than about a scene, so it
+		spreads. The offer appears when there is something to copy and
+		somewhere to copy it to, and a draft that was never saved is asked to
+		be saved first -- the service copies what a scene holds.
+	*/
+	a := test.NewApp()
+	t.Cleanup(a.Quit)
+
+	app := gui.New(service(t, healthy()))
+	opts := app.Options("s")
+	opts.SettingsPath = filepath.Join(t.TempDir(), "gui.yml")
+	sh := shell.Headless(a, opts)
+	app.Refresh(context.Background())
+
+	window := test.NewWindow(widget.NewLabel("behind"))
+	t.Cleanup(window.Close)
+	sh.Window = window
+
+	// An unsaved draft: the note is the reason it cannot yet, because the
+	// service copies what a scene holds.
+	unsaved := &gui.ScenesSection{}
+	gui.OpenEditor(unsaved, app, gui.NewDraft())
+	unsaved.Build(sh)
+	gui.ChooseEffects(unsaved, sh, app.Machine())
+	said := fynetest.Text(window.Canvas().Overlays().Top())
+	require.Contains(t, said, "Save this scene to use its style in others.")
+	require.NotContains(t, said, "Use this style in other scenes")
+
+	// A saved scene: offered.
+	section := &gui.ScenesSection{}
+	gui.OpenEditor(section, app, gui.DraftFrom(api.Scene{
+		Name: "evening", Effects: map[string]string{"NZXT Kraken": "Breathing"},
+	}))
+	section.Build(sh)
+	gui.ChooseEffects(section, sh, app.Machine())
+	require.Contains(t, fynetest.Text(window.Canvas().Overlays().Top()),
+		"Use this style in other scenes")
+}
+
+func TestCreateOpensOnScenes(t *testing.T) {
+	/*
+		The order a tab strip is read in is how often somebody lands on each
+		tab, not the order the work is done in. A picture becomes a screen
+		and a screen goes in a scene exactly once per picture; the scene list
+		is what this window is opened for.
+	*/
+	a := test.NewApp()
+	t.Cleanup(a.Quit)
+
+	app := gui.New(service(t, healthy()))
+	create := gui.NewCreate(app)
+
+	titles := make([]string, 0, len(create.Parts()))
+	for _, part := range create.Parts() {
+		titles = append(titles, part.Title())
+	}
+	require.Equal(t, []string{"Scenes", "Pictures", "Screen"}, titles)
+	require.Equal(t, "Scenes", create.Showing(), "it opens on something else")
+}
+
+func TestTheStylePickerListsScenesTheWayTheListDoes(t *testing.T) {
+	/*
+		The scenes somebody is choosing between here are the ones they were
+		looking at a moment ago, and two orderings of the same nine is two
+		lists to learn. The Scenes section shows them under the keys they sit
+		on; so does this.
+	*/
+	routes := healthy()
+	routes["GET /"+api.Version+"/scenes"] = api.ScenesResponse{Scenes: []api.Scene{
+		{Name: "aardvark", Colour: "red"},
+		{Name: "evening", Colour: "blue"},
+		{Name: "zebra", Colour: "green"},
+	}}
+	routes["GET /"+api.Version+"/keys"] = api.KeysResponse{Bindings: []api.Binding{
+		{Key: "Ctrl+Alt+Num+1", Scene: "zebra"},
+		{Key: "Ctrl+Alt+Num+2", Scene: "evening"},
+	}}
+
+	a := test.NewApp()
+	t.Cleanup(a.Quit)
+
+	app := gui.New(service(t, routes))
+	opts := app.Options("s")
+	opts.SettingsPath = filepath.Join(t.TempDir(), "gui.yml")
+	sh := shell.Headless(a, opts)
+	app.Refresh(context.Background())
+
+	window := test.NewWindow(widget.NewLabel("behind"))
+	t.Cleanup(window.Close)
+	sh.Window = window
+
+	section := &gui.ScenesSection{}
+	gui.OpenEditor(section, app, gui.DraftFrom(api.Scene{
+		Name: "aardvark", Effects: map[string]string{"NZXT Kraken": "Breathing"},
+	}))
+	section.Build(sh)
+	gui.ShareStyle(section, sh, app.Machine())
+
+	var names []string
+	fynetest.WalkRendered(window.Canvas().Overlays().Top(), func(o fyne.CanvasObject) bool {
+		if check, ok := o.(*widget.Check); ok {
+			names = append(names, check.Text)
+		}
+		return false
+	})
+	// Bound scenes first, in key order, then the rest: zebra is on Num+1.
+	require.Equal(t, []string{"zebra", "evening"}, names)
+}
+
+func TestTheEffectsChooserLinesItsColumnsUp(t *testing.T) {
+	/*
+		Six devices as six label-and-control pairs is six left edges and six
+		different places the chooser starts. Ragged pairs read at two rows
+		and are a wall at six, which is what this desk has.
+	*/
+	routes := healthy()
+	devices := api.DevicesResponse{Devices: []api.Device{
+		{
+			Name: "NZXT Kraken 2024 ELITE Series RGB", LEDs: 4, InScope: true,
+			ActiveMode: "Direct", Modes: []string{"Direct", "Breathing"},
+			Zones: []api.Zone{{Name: "Ring", First: 0, Count: 4}},
+		},
+		{
+			Name: "G502 X PLUS", LEDs: 3, InScope: true,
+			ActiveMode: "Direct", Modes: []string{"Direct", "Cycle"},
+			Zones: []api.Zone{{Name: "Mouse", First: 0, Count: 3}},
+		},
+	}}
+	routes["GET /"+api.Version+"/devices"] = devices
+
+	a := test.NewApp()
+	t.Cleanup(a.Quit)
+
+	app := gui.New(service(t, routes))
+	opts := app.Options("s")
+	opts.SettingsPath = filepath.Join(t.TempDir(), "gui.yml")
+	sh := shell.Headless(a, opts)
+	app.Refresh(context.Background())
+
+	window := test.NewWindow(widget.NewLabel("behind"))
+	t.Cleanup(window.Close)
+	window.Resize(fyne.NewSize(1100, 800))
+	sh.Window = window
+
+	section := &gui.ScenesSection{}
+	gui.OpenEditor(section, app, gui.NewDraft())
+	section.Build(sh)
+	gui.ChooseEffects(section, sh, app.Machine())
+
+	shown := window.Canvas().Overlays().Top()
+	require.NotNil(t, shown)
+
+	var at []float32
+	fynetest.WalkRendered(shown, func(o fyne.CanvasObject) bool {
+		if _, ok := o.(*widget.Select); ok {
+			at = append(at, fyne.CurrentApp().Driver().AbsolutePositionForObject(o).X)
+		}
+		return false
+	})
+	require.Len(t, at, 2, "a chooser per device")
+	require.Equal(t, at[0], at[1],
+		"one chooser starts at %.0f and the other at %.0f", at[0], at[1])
+
+	/*
+		Measured against the shape it replaces, in the same run, because
+		equal positions are easy to get by accident: a truncating label
+		reports the same minimum whatever its text, so a broken layout of
+		these two rows lines up as well as a correct one. What says the
+		column is doing the work is that a *plain* label beside a control
+		does not.
+	*/
+	ragged := container.NewVBox(
+		container.NewBorder(nil, nil, widget.NewLabel("G502 X PLUS"), nil,
+			widget.NewSelect([]string{"Direct"}, nil)),
+		container.NewBorder(nil, nil, widget.NewLabel("NZXT Kraken 2024 ELITE Series RGB"), nil,
+			widget.NewSelect([]string{"Direct"}, nil)),
+	)
+	put(t, ragged, 1100)
+
+	var loose []float32
+	fynetest.WalkRendered(ragged, func(o fyne.CanvasObject) bool {
+		if _, ok := o.(*widget.Select); ok {
+			loose = append(loose, fyne.CurrentApp().Driver().AbsolutePositionForObject(o).X)
+		}
+		return false
+	})
+	require.Len(t, loose, 2)
+	require.NotEqual(t, loose[0], loose[1],
+		"the shape this replaces lines up on its own, so the test proves nothing")
+
+	// And the table says which column is which.
+	said := fynetest.Text(shown)
+	for _, want := range []string{"DEVICE", "THIS SCENE", "DOING NOW"} {
+		require.Contains(t, said, want)
+	}
 }

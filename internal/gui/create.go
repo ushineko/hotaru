@@ -48,12 +48,19 @@ type Section interface {
 	Changed(before, after Snapshot) bool
 }
 
-// NewCreate builds the group in the order the work is done in.
+/*
+NewCreate builds the group, scenes first.
+
+The order a tab strip is read in is the order of how often somebody lands on
+it, not the order the work is done in. A picture becomes a screen and a screen
+goes in a scene, which is the sequence exactly once per picture; the scene
+list is what somebody opens this window for, most times they open it.
+*/
 func NewCreate(app *App) *Create {
 	return &Create{app: app, parts: []Section{
+		&ScenesSection{app: app},
 		&PicturesSection{app: app},
 		&DashboardsSection{app: app},
-		&ScenesSection{app: app},
 	}}
 }
 

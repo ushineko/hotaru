@@ -406,6 +406,20 @@ func (c *Client) PreviewDraft(ctx context.Context, scene Scene, holder string) (
 	return out, err
 }
 
+/*
+CopyEffects gives other scenes the effects of this one.
+
+The style without the colours: what each device should be doing, moved to a
+bank of scenes in one call rather than by opening each of them.
+*/
+func (c *Client) CopyEffects(ctx context.Context, from string, to []string) ([]string, error) {
+	var out CopyEffectsResponse
+	err := c.do(ctx, http.MethodPost,
+		"/"+Version+"/scenes/"+url.PathEscape(from)+"/effects",
+		CopyEffectsRequest{To: to}, &out)
+	return out.Scenes, err
+}
+
 // Images is the stored pictures, converted to what the panel takes.
 func (c *Client) Images(ctx context.Context) ([]Image, error) {
 	var out ImagesResponse
@@ -466,21 +480,25 @@ SceneFromImage builds a scene whose lights match a picture and saves it.
 Every light gets the part of the image at its own position in its zone, so a
 run of lights carries the picture's own sweep rather than one averaged colour.
 */
-func (c *Client) SceneFromImage(ctx context.Context, picture, scene string, distance float64) (Scene, error) {
+func (c *Client) SceneFromImage(
+	ctx context.Context, picture, scene string, distance float64, effects map[string]string,
+) (Scene, error) {
 	var out Scene
 	err := c.do(ctx, http.MethodPost,
 		"/"+Version+"/images/"+url.PathEscape(picture)+"/scene",
-		SceneFromImageRequest{Scene: scene, Distance: distance}, &out)
+		SceneFromImageRequest{Scene: scene, Distance: distance, Effects: effects}, &out)
 	return out, err
 }
 
 // SceneFromDashboard builds a scene whose lights match what a dashboard
 // draws, and which puts that dashboard on the screen.
-func (c *Client) SceneFromDashboard(ctx context.Context, board, scene string, distance float64) (Scene, error) {
+func (c *Client) SceneFromDashboard(
+	ctx context.Context, board, scene string, distance float64, effects map[string]string,
+) (Scene, error) {
 	var out Scene
 	err := c.do(ctx, http.MethodPost,
 		"/"+Version+"/dashboards/"+url.PathEscape(board)+"/scene",
-		SceneFromImageRequest{Scene: scene, Distance: distance}, &out)
+		SceneFromImageRequest{Scene: scene, Distance: distance, Effects: effects}, &out)
 	return out, err
 }
 

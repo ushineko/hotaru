@@ -453,3 +453,63 @@ func TestASceneAppliesOnAMachineWhoseScreenCannotBeDrawnOn(t *testing.T) {
 	require.Empty(t, done.Problems, "a screen that cannot be drawn on was reported as a fault")
 	require.True(t, done.Results[0].Applied, "the lights did not change")
 }
+
+func TestAStyleIsGivenToOtherScenesWithoutTheirColours(t *testing.T) {
+	/*
+		A style and a colour are different things: a scene names a colour per
+		light and a mode per device. Somebody who decides their keyboard
+		should be reactive has decided that about the keyboard rather than
+		about one scene, and saying so across a bank of nine meant editing
+		nine scenes.
+	*/
+	svc, _ := lit(t,
+		scenes.Scene{
+			Name: "evening", Colour: "blue",
+			Effects: map[string]string{"Keychron": "Typing Heatmap"},
+		},
+		scenes.Scene{Name: "red", Colour: "red"},
+		scenes.Scene{
+			Name: "green", Colour: "green",
+			Effects: map[string]string{"Keychron": "Direct", "Kraken": "Breathing"},
+		},
+	)
+
+	changed, err := svc.CopyEffects("evening", []string{"red", "green"})
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"red", "green"}, changed)
+
+	for _, name := range []string{"red", "green"} {
+		scene, err := svc.Scene(name)
+		require.NoError(t, err)
+		require.Equal(t, map[string]string{"Keychron": "Typing Heatmap"}, scene.Effects,
+			"%s did not take the style", name)
+	}
+
+	// The colours are untouched, which is the whole point.
+	red, err := svc.Scene("red")
+	require.NoError(t, err)
+	require.Equal(t, "red", red.Colour)
+
+	// And it replaces rather than merges: green's second effect is gone,
+	// because "these scenes now look like that one" has to be true of every
+	// device rather than of some of them.
+	green, err := svc.Scene("green")
+	require.NoError(t, err)
+	require.NotContains(t, green.Effects, "Kraken")
+}
+
+func TestAStyleGoesNowhereWhenAScenesNameIsWrong(t *testing.T) {
+	// Every target is read before any is written: a name that is not there
+	// costs nothing rather than leaving half a bank restyled.
+	svc, _ := lit(t,
+		scenes.Scene{Name: "evening", Effects: map[string]string{"Keychron": "Splash"}},
+		scenes.Scene{Name: "red", Colour: "red"},
+	)
+
+	_, err := svc.CopyEffects("evening", []string{"red", "nothing-called-this"})
+	require.Error(t, err)
+
+	red, err := svc.Scene("red")
+	require.NoError(t, err)
+	require.Empty(t, red.Effects, "a scene was restyled before the run failed")
+}

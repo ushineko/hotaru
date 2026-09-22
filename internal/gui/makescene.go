@@ -3,6 +3,7 @@ package gui
 import (
 	"context"
 	"fmt"
+	"maps"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -33,9 +34,22 @@ Which is also why it can be changed afterwards: the thing being adjusted is
 not on screen anywhere except the case itself, so nobody gets it right first
 time.
 */
-func makeScene(sh *shell.Shell, from, suggest string, build func(context.Context, string, float64) (api.Scene, error)) {
+func makeScene(
+	sh *shell.Shell, from, suggest string, devices []api.Device,
+	build func(ctx context.Context, name string, distance float64, effects map[string]string) (api.Scene, error),
+) {
 	name := widget.NewEntry()
 	name.SetText(suggest)
+
+	/*
+		And what each device should do with the colours.
+
+		The picture answers "what colour is each light" and nothing else, so
+		a keyboard that should ripple rather than sit still is a decision
+		nobody could make here until now. Nothing is the default, which is
+		every light showing the colours the picture gave it.
+	*/
+	effects := map[string]string{}
 
 	distance := widget.NewSlider(1, images.MostDistance)
 	distance.Step = 0.1
@@ -49,6 +63,16 @@ func makeScene(sh *shell.Shell, from, suggest string, build func(context.Context
 		widgets.DimWrapped("Colours that differ clearly in the picture can arrive as one "+
 			"wash on the lights. Push them further apart until the case looks right; "+
 			"you can change it afterwards."),
+		widget.NewSeparator(),
+		effectFields(devices,
+			func(string) string { return "" },
+			func(device, mode string) {
+				if mode == "" {
+					delete(effects, device)
+					return
+				}
+				effects[device] = mode
+			}),
 	)
 
 	ask := dialog.NewCustomConfirm("Make a scene from "+from, "Make it", "Cancel", body,
@@ -58,8 +82,9 @@ func makeScene(sh *shell.Shell, from, suggest string, build func(context.Context
 			}
 			made := name.Text
 			apart := distance.Value
+			chosen := maps.Clone(effects)
 			sh.Perform("reading "+from, func(ctx context.Context) error {
-				scene, err := build(ctx, made, apart)
+				scene, err := build(ctx, made, apart, chosen)
 				if err != nil {
 					return err
 				}
@@ -79,7 +104,7 @@ func makeScene(sh *shell.Shell, from, suggest string, build func(context.Context
 // note under it is two lines rather than six.
 const (
 	sceneDialogWidth  = 560
-	sceneDialogHeight = 300
+	sceneDialogHeight = 460
 )
 
 /*

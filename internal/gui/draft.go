@@ -61,6 +61,27 @@ func DraftFrom(scene api.Scene) *Draft {
 	return d
 }
 
+/*
+SetEffect says what a device should be doing with the colours. An empty mode
+takes the effect back out, which is how somebody undoes one.
+*/
+func (d *Draft) SetEffect(device, mode string) {
+	if strings.TrimSpace(mode) == "" {
+		delete(d.rest.Effects, device)
+		return
+	}
+	if d.rest.Effects == nil {
+		d.rest.Effects = map[string]string{}
+	}
+	d.rest.Effects[device] = mode
+}
+
+// Effect is what this draft says a device should be doing, empty for nothing.
+func (d *Draft) Effect(device string) string { return d.rest.Effects[device] }
+
+// Effects are every device this draft says something about.
+func (d *Draft) Effects() map[string]string { return d.rest.Effects }
+
 // Set gives a target a colour. An empty colour removes it, which is how
 // somebody takes an exception back out of a scene.
 func (d *Draft) Set(target, colour string) {

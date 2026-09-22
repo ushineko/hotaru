@@ -212,7 +212,11 @@ func dashboardSceneCommand() *cobra.Command {
 				return err
 			}
 			distance, _ := cmd.Flags().GetFloat64("distance")
-			scene, err := client.SceneFromDashboard(cmd.Context(), args[0], args[1], distance)
+			effects, err := effectsFlag(cmd)
+			if err != nil {
+				return err
+			}
+			scene, err := client.SceneFromDashboard(cmd.Context(), args[0], args[1], distance, effects)
 			if err != nil {
 				return quiet(err)
 			}
@@ -222,6 +226,7 @@ func dashboardSceneCommand() *cobra.Command {
 		},
 	}
 	distanceFlag(cmd)
+	effectFlag(cmd)
 	return cmd
 }
 

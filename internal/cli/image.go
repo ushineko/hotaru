@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"os"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
@@ -138,7 +139,11 @@ scene shows the picture on the cooler's panel as well.`,
 				return err
 			}
 			distance, _ := cmd.Flags().GetFloat64("distance")
-			scene, err := client.SceneFromImage(cmd.Context(), args[0], args[1], distance)
+			effects, err := effectsFlag(cmd)
+			if err != nil {
+				return err
+			}
+			scene, err := client.SceneFromImage(cmd.Context(), args[0], args[1], distance, effects)
 			if err != nil {
 				return quiet(err)
 			}
@@ -148,7 +153,38 @@ scene shows the picture on the cooler's panel as well.`,
 		},
 	}
 	distanceFlag(cmd)
+	effectFlag(cmd)
 	return cmd
+}
+
+/*
+effectFlag is what a device should be doing with the colours.
+
+A picture says what colour each light should be and nothing about the mode a
+device runs, so a keyboard asked to ripple is a decision somebody makes rather
+than one the image answers. The same spelling as `hotaru scene write
+--effect`, because it is the same field on the same scene.
+*/
+func effectFlag(cmd *cobra.Command) {
+	cmd.Flags().StringSlice("effect", nil,
+		`what a device should be doing: device="Mode Name"`)
+}
+
+// effectsFlag reads the flag into the map a scene keeps.
+func effectsFlag(cmd *cobra.Command) (map[string]string, error) {
+	given, _ := cmd.Flags().GetStringSlice("effect")
+	if len(given) == 0 {
+		return nil, nil
+	}
+	out := map[string]string{}
+	for _, one := range given {
+		device, mode, ok := strings.Cut(one, "=")
+		if !ok {
+			return nil, fmt.Errorf("%q: an effect is written device=mode", one)
+		}
+		out[device] = mode
+	}
+	return out, nil
 }
 
 /*

@@ -28,7 +28,8 @@ func sceneCommand() *cobra.Command {
 	}
 	cmd.AddCommand(sceneListCommand(), sceneShowCommand(), sceneWriteCommand(),
 		sceneApplyCommand(), scenePreviewCommand(), sceneSaveCommand(),
-		sceneRecolourCommand(), sceneAdoptCommand(), sceneDeleteCommand())
+		sceneRecolourCommand(), sceneStyleCommand(), sceneAdoptCommand(),
+		sceneDeleteCommand())
 	return cmd
 }
 
@@ -455,6 +456,48 @@ func free(name string, taken map[string]bool) string {
 		if !taken[next] {
 			return next
 		}
+	}
+}
+
+/*
+sceneStyleCommand gives other scenes the style of one.
+
+A style and a colour are different things: a scene names a colour per light
+and a mode per device -- what that device does with the colours once it has
+them. Somebody who decides their keyboard should be reactive has decided that
+about the keyboard rather than about one scene, and saying so across a bank of
+nine used to mean editing nine scenes.
+*/
+func sceneStyleCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "style <from> <to>...",
+		Short: "Give other scenes the effects of this one",
+		Long: `Give other scenes the effects of this one.
+
+The effects only: what each device is doing with the colours, not the colours
+themselves. A keyboard set to a reactive mode in one scene can be reactive in
+all of them without touching what any of them light.
+
+It replaces rather than merges, so every named scene ends up with exactly the
+effects the source has -- including none, which is how a bank is put back to
+plain colours.`,
+		Args: cobra.MinimumNArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, err := client(cmd)
+			if err != nil {
+				return err
+			}
+			changed, err := client.CopyEffects(cmd.Context(), args[0], args[1:])
+			if err != nil {
+				return quiet(err)
+			}
+			if len(changed) == 0 {
+				cmd.Println("Nothing to change.")
+				return nil
+			}
+			cmd.Printf("%s: %s now do what it does.\n", args[0], strings.Join(changed, ", "))
+			return nil
+		},
 	}
 }
 

@@ -30,8 +30,16 @@ rather than themed.
 
 The scene shows the picture on the panel too, because a machine lit by an image
 with a different image on its screen is two themes at once.
+
+**Effects are the caller's, not the picture's.** A picture says what colour
+each light should be and nothing about what a device should be *doing* with
+it, so a keyboard asked to run a rainbow is a decision somebody makes here.
+Nothing is the default, which leaves every device lit with the colours it was
+given.
 */
-func (s *Service) SceneFromImage(ctx context.Context, picture, name string, distance float64) (scenes.Scene, error) {
+func (s *Service) SceneFromImage(
+	ctx context.Context, picture, name string, distance float64, effects map[string]string,
+) (scenes.Scene, error) {
 	library, err := s.library()
 	if err != nil {
 		return scenes.Scene{}, err
@@ -58,7 +66,7 @@ func (s *Service) SceneFromImage(ctx context.Context, picture, name string, dist
 	}
 
 	return s.painted(ctx, scenes.Scene{
-		Name: name, Screen: found.Path, Distance: distance,
+		Name: name, Screen: found.Path, Distance: distance, Effects: effects,
 	}, decoded)
 }
 
@@ -75,7 +83,9 @@ screen shows without changing the lights, which is the honest split. The
 lights were built from how it looked at the time; `hotaru scene recolour`
 brings them back in line.
 */
-func (s *Service) SceneFromDashboard(ctx context.Context, board, name string, distance float64) (scenes.Scene, error) {
+func (s *Service) SceneFromDashboard(
+	ctx context.Context, board, name string, distance float64, effects map[string]string,
+) (scenes.Scene, error) {
 	one, err := s.Dashboard(board)
 	if err != nil {
 		return scenes.Scene{}, err
@@ -91,6 +101,7 @@ func (s *Service) SceneFromDashboard(ctx context.Context, board, name string, di
 
 	return s.painted(ctx, scenes.Scene{
 		Name: name, Screen: scenes.ScreenDashboardPrefix + one.Name, Distance: distance,
+		Effects: effects,
 	}, decoded)
 }
 
@@ -119,7 +130,9 @@ func (s *Service) RecolourScene(ctx context.Context, name string, distance float
 	switch {
 	case strings.HasPrefix(scene.Screen, scenes.ScreenDashboardPrefix):
 		board := strings.TrimPrefix(scene.Screen, scenes.ScreenDashboardPrefix)
-		return s.SceneFromDashboard(ctx, board, scene.Name, distance)
+		// The scene's own effects, not none: recolouring is about the
+		// colours, and a keyboard's mode is not one of them.
+		return s.SceneFromDashboard(ctx, board, scene.Name, distance, scene.Effects)
 	case scene.Screen == "" || scene.Screen == scenes.ScreenDashboard || scene.Screen == scenes.ScreenReadout:
 		return scenes.Scene{}, fmt.Errorf(
 			"%s does not show a picture or a named dashboard, so there is nothing to take its colours from", name)
