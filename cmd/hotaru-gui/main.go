@@ -17,9 +17,11 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/ushineko/fynedesygn/profiling"
 	"github.com/ushineko/fynedesygn/shell"
+	fdtheme "github.com/ushineko/fynedesygn/theme"
 	"github.com/ushineko/hotaru/internal/api"
 	"github.com/ushineko/hotaru/internal/config"
 	"github.com/ushineko/hotaru/internal/gui"
@@ -30,6 +32,18 @@ func main() { os.Exit(run()) }
 func run() int {
 	socket := flag.String("socket", "",
 		"the service's socket (default: $XDG_RUNTIME_DIR/hotaru/hotaru.sock)")
+	/*
+		Which section to open on, and a colour scheme for this run.
+
+		For a window somebody opens to look at one thing -- and for the
+		screenshot script, which starts a window per image and cannot click.
+		The scheme is not saved, so a capture in Breeze Dark does not
+		overwrite whatever this desk had chosen.
+	*/
+	section := flag.String("section", "",
+		"open on this section: "+strings.Join(gui.SectionNames(), ", "))
+	scheme := flag.String("scheme", "",
+		"colour scheme for this run, not saved: "+strings.Join(fdtheme.SchemeNames(), ", "))
 	flag.Parse()
 
 	path := *socket
@@ -58,7 +72,10 @@ func run() int {
 	defer profiling.FromEnv("HOTARU_PPROF", report)()
 	profiling.Limit(memoryCeiling, "HOTARU_MEMLIMIT", report)
 
-	shell.Run(gui.New(api.NewClient(path)).Options(path))
+	opts := gui.New(api.NewClient(path)).Options(path)
+	opts.Scheme = *scheme
+	gui.OpenOn(&opts, *section)
+	shell.Run(opts)
 	return 0
 }
 

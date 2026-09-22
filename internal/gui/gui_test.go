@@ -2301,3 +2301,38 @@ func TestTheEffectsChooserLinesItsColumnsUp(t *testing.T) {
 		require.Contains(t, said, want)
 	}
 }
+
+func TestTheWindowCanBeAskedToOpenOnAPart(t *testing.T) {
+	/*
+		"Open on Pictures", not "open on Create and then press the second
+		tab": a part is how somebody thinks of it, and the screenshot script
+		starts a window per image and cannot press a tab.
+	*/
+	a := test.NewApp()
+	t.Cleanup(a.Quit)
+
+	app := gui.New(service(t, healthy()))
+
+	require.Contains(t, gui.SectionNames(), "Pictures", "a part is not offered by name")
+	require.Contains(t, gui.SectionNames(), "About")
+
+	// A part: the group, with that part in front.
+	opts := app.Options("s")
+	gui.OpenOn(&opts, "Pictures")
+	require.Equal(t, "Create", opts.Section)
+	for _, section := range opts.Sections {
+		if group, ok := section.(*gui.Create); ok {
+			require.Equal(t, "Pictures", group.Showing())
+		}
+	}
+
+	// A section: itself.
+	plain := app.Options("s")
+	gui.OpenOn(&plain, "about")
+	require.Equal(t, "About", plain.Section, "a name is matched whatever its case")
+
+	// And a name nothing answers to is left alone, which opens the first.
+	nothing := app.Options("s")
+	gui.OpenOn(&nothing, "Nowhere")
+	require.Empty(t, nothing.Section)
+}

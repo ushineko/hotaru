@@ -2,6 +2,7 @@ package gui
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -260,6 +261,22 @@ func (a *App) redraw() {
 		fyne.Do(func() { ticker.Tick(got) })
 	}
 
+	/*
+		The status bar every poll, whatever the section says.
+
+		It is the window's one line about the machine as a whole -- health,
+		how many devices are in scope, the coolant -- and it was only
+		repainted when a section was rebuilt. On a section that watches
+		little, nothing rebuilt it: the bar kept whatever it said when the
+		window opened, which on a fresh window is "0 of 0 devices" under a
+		list of six. Found in a screenshot, where the window is new every
+		time and the bar was wrong in every image.
+
+		Cheap enough to do unconditionally: a handful of labels, against a
+		poll that already asked the service four questions.
+	*/
+	fyne.Do(a.shell.RedrawStatus)
+
 	changed := !got.Same(a.drawn)
 	if watcher, ok := current.(Watcher); ok {
 		changed = watcher.Changed(a.drawn, got)
@@ -353,3 +370,60 @@ func Library(a *App) *PicturesSection { return a.pictures }
 // Drop is dropped, for tests: the handler it belongs to is a window callback,
 // and a test that set one would be a test about Fyne.
 func Drop(a *App, sh *shell.Shell, uris []fyne.URI) { a.dropped(sh, uris) }
+
+/*
+SectionNames are what the window can be asked to open on: its sections, and
+the parts of Create by their own names.
+
+The parts are named because that is how somebody thinks of them -- "open on
+Pictures", not "open on Create and then press the second tab" -- and because
+the screenshot script starts a window per image and cannot press a tab.
+
+Built from the same constructor the window uses rather than from a second copy
+of the list, and read before there is an app to ask, which is why it builds a
+throwaway one.
+*/
+func SectionNames() []string {
+	opts := New(nil).Options("")
+	var out []string
+	for _, section := range opts.Sections {
+		out = append(out, section.Title())
+		if group, ok := section.(*Create); ok {
+			for _, part := range group.Parts() {
+				out = append(out, part.Title())
+			}
+		}
+	}
+	return out
+}
+
+/*
+OpenOn points the window at a section, or at one of Create's parts.
+
+A part is not a section as far as the shell is concerned, so asking for
+"Pictures" is asking for Create with Pictures in front. An unknown name is
+left alone: the shell opens on the first section, which is what it does with a
+name it does not have.
+*/
+func OpenOn(opts *shell.Options, name string) {
+	if name == "" {
+		return
+	}
+	for _, section := range opts.Sections {
+		if strings.EqualFold(section.Title(), name) {
+			opts.Section = section.Title()
+			return
+		}
+		group, ok := section.(*Create)
+		if !ok {
+			continue
+		}
+		for _, part := range group.Parts() {
+			if strings.EqualFold(part.Title(), name) {
+				group.Show(part.Title())
+				opts.Section = group.Title()
+				return
+			}
+		}
+	}
+}
