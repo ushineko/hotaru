@@ -2,7 +2,7 @@
 
 *lights, cooler, action!*
 
-**Version**: 0.1.4
+**Version**: 0.1.5
 
 RGB lighting and AIO cooler control for Linux, as a CLI, a user service and a
 desktop GUI. 
@@ -209,7 +209,7 @@ MIT. See [LICENSE](LICENSE).
 
 ## Changelog
 
-### Unreleased
+### 0.1.5 (2026-09-22)
 
 - A gallery: [docs/gallery.md](docs/gallery.md), one image per part of the
   window, captured by `tools/screenshot.sh` rather than by hand. `make
