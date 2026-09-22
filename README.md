@@ -2,7 +2,7 @@
 
 *lights, cooler, action!*
 
-**Version**: 0.1.3
+**Version**: 0.1.4
 
 RGB lighting and AIO cooler control for Linux, as a CLI, a user service and a
 desktop GUI. 
@@ -205,7 +205,7 @@ MIT. See [LICENSE](LICENSE).
 
 ## Changelog
 
-### Unreleased
+### 0.1.4 (2026-09-22)
 
 - The scene editor sets what each device does with the colours. A scene has
   carried a mode per device since spec 015 and only the wizard ever asked; the
