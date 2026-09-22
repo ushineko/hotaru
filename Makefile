@@ -46,7 +46,7 @@ GOLANGCI           := $(HOME)/go/bin/golangci-lint-$(LINT_VERSION)
 # panic on files it thinks are from the future.
 LINT_GO_TOOLCHAIN  ?= go1.26.0
 
-.PHONY: all test race lint vuln build gui install generate tidy clean
+.PHONY: all test race lint vuln build gui install generate screenshots tidy clean
 
 all: test build
 
@@ -78,6 +78,15 @@ gui:
 install:
 	go install $(GOFLAGS) -ldflags "$(LDFLAGS)" ./cmd/hotaru
 	go install $(GOFLAGS) $(GUITAGS) -ldflags "$(LDFLAGS)" ./cmd/hotaru-gui
+
+# The gallery in docs/gallery.md, recaptured. Starts a window per image and
+# takes over the screen for about a minute, so it is a target somebody runs
+# deliberately rather than part of a build. Needs kdotool, spectacle and
+# Pillow, a KDE/Wayland session, and the service running: the window is a
+# client, and a picture of "the service is not running" is a picture of a
+# machine nobody has.
+screenshots: gui
+	tools/screenshot.sh --all
 
 # The README's mermaid diagrams, rendered to the PNGs the window embeds.
 # Build-time only: a program that drew a diagram at runtime would need node,

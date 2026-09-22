@@ -198,12 +198,29 @@ hotaru is a ground-up rearchitecture. Hardware learnings are carried over.
 
 * specs - design decisions and feature development.
 * docs - adjunct documentation such as architecture.
+* [docs/gallery.md](docs/gallery.md) - what the window looks like, section by
+  section. Kept out of this file on purpose: the About section renders this
+  README, and a gallery of the window inside the window is a program showing
+  pictures of itself.
 
 ## Licence
 
 MIT. See [LICENSE](LICENSE).
 
 ## Changelog
+
+### Unreleased
+
+- A gallery: [docs/gallery.md](docs/gallery.md), one image per part of the
+  window, captured by `tools/screenshot.sh` rather than by hand. `make
+  screenshots` refreshes the set. `hotaru-gui` takes `--section` and
+  `--scheme` for it, which is also a way to open the window where you want it
+  (spec 039, #97).
+
+- The status bar follows the machine on every section. It was repainted when
+  a section was rebuilt, and a section that watches little is never rebuilt --
+  so a new window sat on Pictures reading "0 of 0 devices" with six of them in
+  scope. Found by the gallery, in its first run (spec 039, #97).
 
 ### 0.1.4 (2026-09-22)
 
