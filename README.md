@@ -2,7 +2,7 @@
 
 *lights, cooler, action!*
 
-**Version**: 0.1.6
+**Version**: 0.1.7
 
 RGB lighting and AIO cooler control for Linux, as a CLI, a user service and a
 desktop GUI. 
@@ -209,7 +209,7 @@ MIT. See [LICENSE](LICENSE).
 
 ## Changelog
 
-### Unreleased
+### 0.1.7 (2026-09-22)
 
 - The big number stops moving while it renders. It was one centred string, so
   every character shifted when the character count changed -- `9` to `10`,
