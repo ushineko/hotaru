@@ -3,7 +3,6 @@ package gui
 import (
 	"image/color"
 	"strconv"
-	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -33,8 +32,15 @@ type Picker struct {
 	hex    *widget.Entry
 	swatch *canvas.Rectangle
 
-	// OnPick is called whenever the colour changes by any route, already
-	// throttled: see live.
+	/*
+		OnPick is called whenever the colour changes by any route: the wheel,
+		either slider, the number boxes or a named swatch.
+
+		Every change, on the UI thread, with nothing held back. The picker is
+		a control and not a rate limiter -- the spacing belongs to whatever is
+		driving hardware at the other end, which is the only thing that knows
+		how long a write takes. See limiter.
+	*/
 	OnPick func(string)
 
 	/*
@@ -48,23 +54,7 @@ type Picker struct {
 		hardware and in the numbers.
 	*/
 	syncing bool
-
-	last time.Time
-	// pending is the colour a throttled call held back, sent when the pause
-	// ends so the last move is never the one that is dropped.
-	pending string
-	timer   *time.Timer
 }
-
-/*
-live is how often a colour in motion reaches the hardware.
-
-The wheel reports every drag step, which is far more than a device wants; the
-service coalesces per device, so the cost of asking too often lands on the USB
-bus rather than being absorbed. This is slow enough to be kind and fast enough
-that the lights follow the pointer rather than catching up afterwards.
-*/
-const live = 120 * time.Millisecond
 
 // NewPicker builds the control, opened on a colour.
 func NewPicker(start color.Color) *Picker {
@@ -177,16 +167,6 @@ func (p *Picker) Choose(c color.Color) {
 	p.show(true)
 }
 
-// Stop cancels a throttled call that has not fired. The editor calls it when
-// the picker goes away, so a colour cannot land on the hardware after the
-// control that chose it has gone.
-func (p *Picker) Stop() {
-	if p.timer != nil {
-		p.timer.Stop()
-		p.timer = nil
-	}
-}
-
 // show updates every other part of the control from the wheel, and reports the
 // change onward if asked.
 func (p *Picker) show(report bool) {
@@ -204,37 +184,9 @@ func (p *Picker) show(report bool) {
 	p.value.SetValue(p.wheel.Value())
 	p.sat.SetValue(p.wheel.Saturation())
 
-	if report {
-		p.throttled(hex(c))
+	if report && p.OnPick != nil {
+		p.OnPick(hex(c))
 	}
-}
-
-/*
-throttled sends a colour onward at most every `live`, and always sends the last
-one.
-
-Dropping intermediate steps is the point; dropping the final one is the bug
-that shape of code usually has. A drag that ends between two ticks would
-otherwise leave the hardware on the second-to-last colour, which looks exactly
-like the picker being wrong.
-*/
-func (p *Picker) throttled(colour string) {
-	if p.OnPick == nil {
-		return
-	}
-	p.pending = colour
-	if time.Since(p.last) >= live {
-		p.last = time.Now()
-		p.OnPick(colour)
-		return
-	}
-	if p.timer != nil {
-		return
-	}
-	p.timer = time.AfterFunc(live, func() {
-		p.last, p.timer = time.Now(), nil
-		fyne.Do(func() { p.OnPick(p.pending) })
-	})
 }
 
 // fromFields reads the three numbers back into the wheel.
