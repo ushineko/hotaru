@@ -2387,7 +2387,7 @@ func TestTheScreenEditorPairsTwoReadingsInOneSlot(t *testing.T) {
 	section.Settle()
 	window.SetContent(built)
 
-	separator := entryPlaceheld(t, built, " / ")
+	separator := entryPlaceheld(t, built, " · ")
 	require.NotNil(t, separator, "a paired slot offers no separator")
 	separator.SetText(" · ")
 	require.Equal(t, " · ", gui.DraftDashboard(section).Headline.Separator)

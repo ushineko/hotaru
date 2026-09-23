@@ -4,8 +4,6 @@ import (
 	"image"
 	"testing"
 
-	"golang.org/x/image/font"
-
 	"github.com/stretchr/testify/require"
 	"github.com/ushineko/hotaru/internal/readings"
 )
@@ -28,19 +26,24 @@ func TestASlotWithTwoReadingsJoinsThem(t *testing.T) {
 	r.Set(readings.CPUTemp, 59)
 
 	slot := Slot{Source: readings.CPULoad, Second: readings.CPUTemp}
-	require.Equal(t, "11 / 59", slot.Text(r))
+	require.Equal(t, "11 · 59", slot.Text(r))
 }
 
-func TestTheSeparatorIsTheAuthorsWithASlashAsTheDefault(t *testing.T) {
+func TestTheSeparatorIsTheAuthorsWithAMiddleDotAsTheDefault(t *testing.T) {
 	r := reading()
 	r.Set(readings.CPULoad, 11)
 	r.Set(readings.CPUTemp, 59)
 	slot := Slot{Source: readings.CPULoad, Second: readings.CPUTemp}
 
-	require.Equal(t, "11 / 59", slot.Text(r), "no separator did not draw the default")
+	require.Equal(t, "11 · 59", slot.Text(r), "no separator did not draw the default")
 
-	slot.Separator = " · "
-	require.Equal(t, "11 · 59", slot.Text(r))
+	/*
+		And an author who set one keeps it, including the slash that used to
+		be the default. A default is what happens when nobody said anything;
+		changing it must not reach into the dashboards of people who did.
+	*/
+	slot.Separator = " / "
+	require.Equal(t, "11 / 59", slot.Text(r))
 
 	// Including one with no spaces in it, which is a thing somebody will want
 	// in a narrow column.
@@ -50,7 +53,7 @@ func TestTheSeparatorIsTheAuthorsWithASlashAsTheDefault(t *testing.T) {
 
 func TestOneMissingSensorDoesNotTakeTheOtherWithIt(t *testing.T) {
 	/*
-		A pair with one sensor gone reads "-- / 59", which says which half
+		A pair with one sensor gone reads "-- · 59", which says which half
 		went away. Collapsing to a single placeholder would report both as
 		absent on the evidence of one, and the other one is still true --
 		which is the whole shape of this package.
@@ -59,7 +62,7 @@ func TestOneMissingSensorDoesNotTakeTheOtherWithIt(t *testing.T) {
 	r.Set(readings.CPUTemp, 59)
 
 	slot := Slot{Source: readings.CPULoad, Second: readings.CPUTemp}
-	require.Equal(t, readings.Placeholder+" / 59", slot.Text(r))
+	require.Equal(t, readings.Placeholder+" · 59", slot.Text(r))
 }
 
 func TestADefaultLabelCarriesTheUnit(t *testing.T) {
@@ -72,12 +75,17 @@ func TestADefaultLabelCarriesTheUnit(t *testing.T) {
 
 	// Two readings of the same thing are named once: "CPU % / CPU °C" makes
 	// the eye read a word to learn nothing.
-	require.Equal(t, "CPU % / °C",
+	require.Equal(t, "CPU % · °C",
 		Slot{Source: readings.CPULoad, Second: readings.CPUTemp}.Words())
 
 	// Two different things are both named.
-	require.Equal(t, "CPU % / GPU °C",
+	require.Equal(t, "CPU % · GPU °C",
 		Slot{Source: readings.CPULoad, Second: readings.GPUTemp}.Words())
+
+	// The label is divided by whatever divides the numbers: two answers to
+	// one question is one answer too many.
+	require.Equal(t, "CPU % / °C",
+		Slot{Source: readings.CPULoad, Second: readings.CPUTemp, Separator: " / "}.Words())
 
 	// And the author's own words beat all of it.
 	require.Equal(t, "PROC",
@@ -180,27 +188,36 @@ func TestAValueTooWideForItsBandIsDrawnSmaller(t *testing.T) {
 		pump reading colliding with its neighbour, fixed at the time by
 		making the font smaller for every dashboard.
 
-		A pair makes it certain rather than an edge case: "1450 / 1450" is
-		eleven characters in a band sized for four.
+		A pair makes it certain rather than an edge case, and reserving each
+		half its widest (spec 042) makes it certainer: the assembly is wider
+		than the characters in it, which is why the fitting measures boxes
+		and not text.
 	*/
-	const band = 200
+	p := &paint{}
+	pump := Slot{Source: readings.PumpRPM}.Fields(reading())
+	pair := Slot{Source: readings.PumpRPM, Second: readings.FanRPM}.Fields(reading())
 
-	require.Equal(t, 34.0, fitted("2608", band, 34, true, ""),
-		"a value that fits was shrunk anyway")
+	_, total := p.boxes(pump, 34)
+	_, _, kept := p.fittedBoxes(pump, total+10, 34)
+	require.Equal(t, 34.0, kept, "a value that fits was shrunk anyway")
 
-	got := fitted("1450 / 1450", band, 34, true, "")
-	require.Less(t, got, 34.0, "a value far too wide for its band was not shrunk")
-	require.GreaterOrEqual(t, got, float64(minValuePt))
-	require.LessOrEqual(t, width(t, "1450 / 1450", got), band,
-		"the shrunk value still does not fit")
+	_, wide := p.boxes(pair, 34)
+	_, fitted, size := p.fittedBoxes(pair, 200, 34)
+	require.Less(t, size, 34.0, "a pair far too wide for its band was not shrunk")
+	require.GreaterOrEqual(t, size, float64(minValuePt))
+	require.LessOrEqual(t, fitted, 200, "the shrunk assembly still does not fit")
+	require.Greater(t, wide, 200, "the band was not too small; this proves nothing")
 }
 
 func TestAValueIsNotShrunkIntoIllegibility(t *testing.T) {
 	// Below the floor it overruns instead. Overrunning visibly is better
 	// than being unreadable quietly, on a screen whose whole job is being
 	// read from the other side of a desk.
-	require.Equal(t, float64(minValuePt),
-		fitted("1450 / 1450 / 1450 / 1450", 20, 34, true, ""))
+	p := &paint{}
+	pair := Slot{Source: readings.PumpRPM, Second: readings.FanRPM}.Fields(reading())
+
+	_, _, size := p.fittedBoxes(pair, 20, 34)
+	require.Equal(t, float64(minValuePt), size)
 }
 
 func TestAStackedPairStaysInsideItsRow(t *testing.T) {
@@ -210,23 +227,23 @@ func TestAStackedPairStaysInsideItsRow(t *testing.T) {
 		the row now, and the worst pair this machine can report has to sit
 		inside it.
 	*/
+	p := &paint{}
 	band := Size - 2*rowInset - rowLabelWidth
-	require.LessOrEqual(t, width(t, "1450 / 1450", fitted("1450 / 1450", band, 34, true, "")), band)
-}
 
-// width is how wide a string is drawn at a size, which is the question
-// fitted exists to answer.
-func width(t *testing.T, s string, pt float64) int {
-	t.Helper()
-	drawing.Lock()
-	defer drawing.Unlock()
-	return font.MeasureString(face(pt, true, ""), s).Round()
+	// The worst pair this machine can report, at the widths it reserves.
+	worst := reading()
+	worst.Set(readings.PumpRPM, 9999)
+	worst.Set(readings.FanRPM, 9999)
+	fields := Slot{Source: readings.PumpRPM, Second: readings.FanRPM}.Fields(worst)
+
+	_, total, _ := p.fittedBoxes(fields, band, rowValuePt)
+	require.LessOrEqual(t, total, band)
 }
 
 func TestTheStackedRowsAreSetLikeATable(t *testing.T) {
 	/*
 		Centred in their bands, every row started and ended somewhere
-		different: "2709 / 90" is fifty pixels wider than "12 / 63", so four
+		different: "2709 · 90" is fifty pixels wider than "12 · 63", so four
 		rows were four left edges and four right ones. A table has two.
 
 		**Asserted on the drawn pixels**, not on the arithmetic that places
@@ -240,8 +257,8 @@ func TestTheStackedRowsAreSetLikeATable(t *testing.T) {
 		Background:  Background{Kind: Plain},
 		Headline:    Slot{Source: readings.Coolant, Label: "COOLANT °C"},
 		Slots: []Slot{
-			{Source: readings.CPULoad, Second: readings.CPUTemp, Label: "CPU % / °C"},
-			{Source: readings.PumpRPM, Second: readings.PumpDuty, Label: "PUMP RPM / %"},
+			{Source: readings.CPULoad, Second: readings.CPUTemp, Label: "CPU % · °C"},
+			{Source: readings.PumpRPM, Second: readings.PumpDuty, Label: "PUMP RPM · %"},
 		},
 	}
 	r := reading()
@@ -317,29 +334,33 @@ func TestOneSizeForTheWholeColumn(t *testing.T) {
 		justifying was for. The widest number decides for all of them.
 	*/
 	p := &paint{}
-	wide, narrow := "2709 / 90", "12 / 63"
 	const band = 168
 
-	alone := fitted(narrow, band, rowValuePt, true, "")
-	together := min(fitted(narrow, band, rowValuePt, true, ""),
-		fitted(wide, band, rowValuePt, true, ""))
+	narrow := Slot{Source: readings.CPULoad, Second: readings.CPUTemp}.Fields(reading())
+	wide := Slot{Source: readings.PumpRPM, Second: readings.FanRPM}.Fields(reading())
+
+	_, _, alone := p.fittedBoxes(narrow, band, rowValuePt)
+	_, _, other := p.fittedBoxes(wide, band, rowValuePt)
+	together := min(alone, other)
 	require.Less(t, together, alone,
 		"the widest number did not bring the column down with it")
 
 	// Which is the point: both are drawn at one size, and both fit.
-	require.LessOrEqual(t, p.textWidth(wide, together, true, Text{}), band)
-	require.LessOrEqual(t, p.textWidth(narrow, together, true, Text{}), band)
+	for _, fields := range [][]Field{narrow, wide} {
+		_, total := p.boxes(fields, together)
+		require.LessOrEqual(t, total, band)
+	}
 }
 
 func TestAWideLabelPushesTheNumberRatherThanMeetingIt(t *testing.T) {
 	/*
 		The collision justifying created. A label wider than its band
 		overflowed both ways when it was centred and nobody noticed; hard
-		left it overflows one way, into the number -- "PUMP RPM / %" is 208
+		left it overflows one way, into the number -- "PUMP RPM · %" is 208
 		pixels and left three of them.
 	*/
 	p := &paint{}
-	long := "PUMP RPM / %"
+	long := "PUMP RPM · %"
 	require.Greater(t, p.textWidth(long, 22, false, Text{}), rowLabelWidth,
 		"the label this is about now fits its band; pick a longer one")
 

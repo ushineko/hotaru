@@ -98,8 +98,8 @@ func headline(p *paint, d Dashboard, r Reading, at headlineAt, ring bool) {
 	}
 
 	p.label(d.Headline.Words(), 0, at.labelY, Size, 36, 22)
-	p.value(d.Headline.Text(r), 0, at.valueY, Size, at.valueH, at.size,
-		colour, graded(d.Headline.Source, value, known))
+	p.fields(d.Headline.Fields(r), headlineInset, at.valueY, Size-2*headlineInset,
+		at.valueH, at.size, colour, graded(d.Headline.Source, value, known), Centre)
 }
 
 /*
@@ -149,8 +149,8 @@ above carries it.
 func column(p *paint, slot Slot, r Reading, x, y, width int) {
 	value, known := r.Value(slot.Source)
 	p.label(slot.Words(), x, y, width, 28, 16)
-	p.value(slot.Text(r), x, y+30, width, 66, 34,
-		gradeOf(slot.Source, value, known, p.theme), graded(slot.Source, value, known))
+	p.fields(slot.Fields(r), x, y+30, width, 66, 34,
+		gradeOf(slot.Source, value, known, p.theme), graded(slot.Source, value, known), Centre)
 }
 
 // drawGrid is the headline over four readings in two rows of two.
@@ -203,25 +203,32 @@ func drawStacked(p *paint, d Dashboard, r Reading) {
 	*/
 	slots := fit(d, Stacked)
 	words := make([]string, len(slots))
-	values := make([]string, len(slots))
 	labelWidth := rowLabelWidth
 	for i, slot := range slots {
-		words[i], values[i] = slot.Words(), slot.Text(r)
+		words[i] = slot.Words()
 		labelWidth = max(labelWidth, p.textWidth(words[i], 22, false, p.letters.Labels))
 	}
 
 	left := rowInset + labelWidth + rowGap
 	band := Size - rowInset - left
+
+	/*
+		One size for the column, and it is the widest *assembly* that decides
+		-- the reserved fields, not the characters in them. Fitting on the
+		text would leave the boxes overrunning by exactly the room the
+		reservations added.
+	*/
 	size := rowValuePt * p.letters.Values.Scale()
-	for _, value := range values {
-		size = min(size, fitted(value, band, size, true, p.letters.Font))
+	for _, slot := range slots {
+		_, _, fits := p.fittedBoxes(slot.Fields(r), band, size)
+		size = min(size, fits)
 	}
 
 	for i, slot := range slots {
 		y := stackTop + i*rowHeight
 		reading, known := r.Value(slot.Source)
 		p.labelAt(words[i], rowInset, y, labelWidth, 48, 22, Left)
-		p.valueSized(values[i], left, y, band, 48, size,
+		p.fieldsSized(slot.Fields(r), left, y, band, 48, size,
 			gradeOf(slot.Source, reading, known, p.theme),
 			graded(slot.Source, reading, known), Right)
 	}

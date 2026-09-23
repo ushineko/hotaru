@@ -52,6 +52,20 @@ const (
 	rowValuePt = 34.0
 
 	/*
+		headlineInset keeps the big number off the panel's edges.
+
+		It did not need one while the value was drawn to the width of
+		whatever it said: "37.5" at 170 point is 508 pixels and sat well
+		inside 640. Reserving each half of a pair its widest (spec 042) makes
+		the assembly 945 before it is fitted, so without an inset it is
+		squeezed to 639 and touches both edges.
+
+		Wide enough to breathe, narrow enough that a single value is still
+		drawn at the size spec 013 chose for it.
+	*/
+	headlineInset = 32
+
+	/*
 		Where the rows go, and how tall each one is.
 
 		A column was 126 tall -- label, value, unit -- and the first version
