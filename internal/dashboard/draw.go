@@ -91,22 +91,48 @@ func faceSource(family string, bold bool) (key string, source []byte) {
 }
 
 /*
-centred draws text centred in both axes within a rect.
-
-The reason the Python has this helper: text is top-aligned by default, which
-lets a large glyph overrun its box and collide with the band beneath it.
+Align is where a string sits in the box it is given, horizontally. Vertically
+it is always centred: that is the reason this helper exists at all, because
+text is top-aligned by default and a large glyph overruns its box into the
+band beneath it.
 */
-func centred(dst draw.Image, s string, x, y, w, h int, pt float64, bold bool, family string, c color.Color) {
+type Align int
+
+// The alignments. Centre is what every arrangement drew before spec 041, and
+// is still what a column under its own label wants.
+const (
+	Centre Align = iota
+	Left
+	Right
+)
+
+// centred draws text in a rect, centred vertically and placed horizontally by
+// the alignment.
+func centred(dst draw.Image, s string, x, y, w, h int, pt float64, bold bool,
+	family string, c color.Color, align Align,
+) {
 	drawing.Lock()
 	defer drawing.Unlock()
 
 	f := face(pt, bold, family)
-	advance := font.MeasureString(f, s)
+	advance := font.MeasureString(f, s).Round()
 	metrics := f.Metrics()
 	(&font.Drawer{
 		Dst: dst, Src: image.NewUniform(c), Face: f,
-		Dot: fixed.P(x+(w-advance.Round())/2, y+(h+metrics.Ascent.Round()-metrics.Descent.Round())/2),
+		Dot: fixed.P(x+offset(w, advance, align),
+			y+(h+metrics.Ascent.Round()-metrics.Descent.Round())/2),
 	}).DrawString(s)
+}
+
+// offset is how far into a box of w a string of advance starts.
+func offset(w, advance int, align Align) int {
+	switch align {
+	case Left:
+		return 0
+	case Right:
+		return w - advance
+	}
+	return (w - advance) / 2
 }
 
 // nebulae are placed off-centre and kept dim: the middle of the panel carries
@@ -221,3 +247,44 @@ func arc(dst draw.Image, cx, cy, radius, width, from, sweep float64, c color.Col
 		}
 	}
 }
+
+/*
+fitted is the largest point size at or below pt that draws s inside w.
+
+**Measured, not guessed.** An advance is very nearly linear in the point size,
+so one measurement says what the size should be and the check that follows
+catches the rounding. That is two or three faces built in the worst case,
+against the hundred and fifty a one-point-at-a-time walk down from a headline
+size would build.
+
+Below minValuePt there is no point shrinking further: a number that small on a
+640-pixel panel is not readable from the other side of a desk, which is the
+only place this screen is ever read from. It overruns instead, and overrunning
+visibly is better than being illegible quietly.
+*/
+func fitted(s string, w int, pt float64, bold bool, family string) float64 {
+	if s == "" || w <= 0 || pt <= minValuePt {
+		return pt
+	}
+
+	drawing.Lock()
+	defer drawing.Unlock()
+
+	advance := font.MeasureString(face(pt, bold, family), s).Round()
+	if advance <= w || advance <= 0 {
+		return pt
+	}
+
+	fit := math.Floor(pt * float64(w) / float64(advance))
+	for fit > minValuePt {
+		if font.MeasureString(face(fit, bold, family), s).Round() <= w {
+			return fit
+		}
+		fit--
+	}
+	return minValuePt
+}
+
+// minValuePt is the smallest a value is shrunk to. Below it the digits stop
+// being readable at arm's length, which is the whole job of the panel.
+const minValuePt = 16

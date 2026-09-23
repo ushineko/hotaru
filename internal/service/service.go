@@ -47,10 +47,13 @@ type Service struct {
 	// processor samples utilisation, which is a rate: one sampler for the
 	// whole service so the first answer is not always a dash.
 	processor *readings.CPU
-	panel     Dashboard
-	scenes    SceneStore
-	images    ImageLibrary
-	desktop   string
+	// memory is not a rate and keeps nothing, but it lives beside the
+	// processor because both are the kernel answering about itself.
+	memory  *readings.Memory
+	panel   Dashboard
+	scenes  SceneStore
+	images  ImageLibrary
+	desktop string
 
 	// leases maps a device to the preview held over it. One device, one
 	// preview: see preview.go.
@@ -200,7 +203,10 @@ func New(cfg *config.Config, client openrgb.Client, address string) *Service {
 	if address == "" {
 		address = openrgb.DefaultAddress
 	}
-	return &Service{cfg: cfg, client: client, addr: address, processor: readings.NewCPU()}
+	return &Service{
+		cfg: cfg, client: client, addr: address,
+		processor: readings.NewCPU(), memory: readings.NewMemory(),
+	}
 }
 
 // SetClient swaps the connection, for a server that came back.

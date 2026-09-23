@@ -328,6 +328,22 @@ does not carry its own copy and show eight of nine after a sensor is added.
 Writes one, replacing any of the same name. Saving over a name hotaru ships
 replaces it for as long as the saved one exists.
 
+Each slot -- the headline and the smaller readings alike -- is a `source`, an
+optional `second`, an optional `separator` and an optional `label`:
+
+```json
+{"source": "cpu_pct", "second": "cpu_c", "separator": " / ", "label": "CPU % / °C"}
+```
+
+A slot with a `second` draws both numbers joined by the separator, which
+defaults to `" / "`. Colour and the headline's ring grade on `source`, so the
+order is the author's choice about what the colour means. An empty `label` is
+the readings' own words carrying what they are measured in -- `CPU °C` for one
+reading, `CPU % / °C` for that pair.
+
+There is no `unit`: the label is the only text drawn. A saved dashboard
+carrying one keeps it in the file and it is ignored.
+
 ## DELETE /v1/dashboards/{name}
 
 Forgets one. Deleting an override of a shipped name brings the shipped one
@@ -359,6 +375,8 @@ $ curl -s --unix-socket … http://hotaru/v1/readings
   "readings": [
     {"source": "coolant",  "label": "Coolant", "unit": "°C",  "value": 38.5, "known": true, "text": "38.5"},
     {"source": "cpu_pct",  "label": "CPU",     "unit": "%",   "value": 3,    "known": true, "text": "3"},
+    {"source": "mem_pct",  "label": "Memory",  "unit": "%",   "value": 43.7, "known": true, "text": "44"},
+    {"source": "mem_gb",   "label": "Memory",  "unit": "GB",  "value": 13.6, "known": true, "text": "14"},
     {"source": "gpu_pct",  "label": "GPU",     "unit": "%",   "known": false, "text": "--"}
   ]
 }

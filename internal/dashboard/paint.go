@@ -6,6 +6,8 @@ import (
 	"image/color"
 	"image/draw"
 	"sort"
+
+	"golang.org/x/image/font"
 )
 
 /*
@@ -147,15 +149,38 @@ func popular(counts map[color.RGBA]int, n int) color.Palette {
 }
 
 /*
+textWidth is how wide a string is as this dashboard draws it: the
+arrangement's size through the author's scale, in the author's face.
+
+The rows need it because they set themselves rather than being given bands.
+Everything else is told where to go by the arrangement.
+*/
+func (p *paint) textWidth(s string, pt float64, bold bool, style Text) int {
+	drawing.Lock()
+	defer drawing.Unlock()
+	return font.MeasureString(face(pt*style.Scale(), bold, p.letters.Font), s).Round()
+}
+
+/*
 label draws one of the words: the dashboard's lettering for labels, and the
 theme's muted colour unless it named one.
 */
 func (p *paint) label(s string, x, y, w, h int, pt float64) {
-	p.write(s, x, y, w, h, pt, false, p.letters.Labels, p.theme.Muted)
+	p.labelAt(s, x, y, w, h, pt, Centre)
+}
+
+// labelAt is label, placed. See Align.
+func (p *paint) labelAt(s string, x, y, w, h int, pt float64, align Align) {
+	p.write(s, x, y, w, h, pt, false, false, p.letters.Labels, p.theme.Muted, align)
 }
 
 /*
-value draws one of the readings.
+value draws one of the readings, shrunk to its band if it has to be.
+
+A pair makes overflow certain where it used to be a four-digit edge case:
+"1450 / 1450" is eleven characters in a band that was sized for four. The
+column comment records the last fix for that, which was to make the font
+smaller for every dashboard; this one costs nothing to the values that fit.
 
 **A graded colour is not overridden.** Coolant is green, amber or red because
 that is what the alerts say, and a screen showing calm while a notification
@@ -164,11 +189,37 @@ colour applies to the readings that carry no grade, and the one that means
 something keeps meaning it.
 */
 func (p *paint) value(s string, x, y, w, h int, pt float64, c color.Color, graded bool) {
+	p.valueAt(s, x, y, w, h, pt, c, graded, Centre)
+}
+
+/*
+valueSized draws a value at a point size the caller has already settled.
+
+The stacked rows work out one size for the whole column -- the author's scale
+applied, then shrunk until the widest number fits -- and scaling or shrinking
+it again per row is how a column that was measured as a table goes back to
+three sizes. So neither happens here: what is passed is what is drawn.
+*/
+func (p *paint) valueSized(s string, x, y, w, h int, pt float64, c color.Color,
+	graded bool, align Align,
+) {
 	style := p.letters.Values
 	if graded {
 		style.Colour = ""
 	}
-	p.write(s, x, y, w, h, pt, true, style, c)
+	style.Size = 0 // the caller applied it
+	p.write(s, x, y, w, h, pt, true, false, style, c, align)
+}
+
+// valueAt is value, placed. See Align.
+func (p *paint) valueAt(s string, x, y, w, h int, pt float64, c color.Color,
+	graded bool, align Align,
+) {
+	style := p.letters.Values
+	if graded {
+		style.Colour = ""
+	}
+	p.write(s, x, y, w, h, pt, true, true, style, c, align)
 }
 
 /*
@@ -177,13 +228,23 @@ write draws a string at a style, with a dark outline where one is called for.
 Eight offsets and then the fill. Four would leave the diagonals thin, and a
 glyph whose corner blends into a bright pixel is a digit somebody misreads --
 which on this panel means misreading a temperature.
+
+`fit` shrinks the text to its band rather than letting it overrun. Values ask
+for it and labels do not: a label too long is the author's sentence and theirs
+to shorten, and a value is the machine's and cannot be edited. The size is
+settled before the outline loop so all nine draws are the same glyphs.
 */
-func (p *paint) write(s string, x, y, w, h int, pt float64, bold bool, style Text, c color.Color) {
+func (p *paint) write(s string, x, y, w, h int, pt float64, bold, fit bool,
+	style Text, c color.Color, align Align,
+) {
 	if chosen, ok := parseColour(style.Colour); ok {
 		c = chosen
 	}
 	pt *= style.Scale()
 	family := p.letters.Font
+	if fit {
+		pt = fitted(s, w, pt, bold, family)
+	}
 
 	if edge := style.Edge(p.picture); edge > 0 {
 		for _, d := range []image.Point{
@@ -191,10 +252,10 @@ func (p *paint) write(s string, x, y, w, h int, pt float64, bold bool, style Tex
 			{X: -edge, Y: -edge}, {X: edge, Y: -edge},
 			{X: -edge, Y: edge}, {X: edge, Y: edge},
 		} {
-			centred(p.img, s, x+d.X, y+d.Y, w, h, pt, bold, family, colOutline)
+			centred(p.img, s, x+d.X, y+d.Y, w, h, pt, bold, family, colOutline, align)
 		}
 	}
-	centred(p.img, s, x, y, w, h, pt, bold, family, c)
+	centred(p.img, s, x, y, w, h, pt, bold, family, c, align)
 }
 
 /*

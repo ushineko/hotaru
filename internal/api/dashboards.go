@@ -47,7 +47,10 @@ func fromText(t DashboardText) dashboard.Text {
 }
 
 func asSlot(slot dashboard.Slot) DashboardSlot {
-	return DashboardSlot{Source: string(slot.Source), Label: slot.Label, Unit: slot.Unit}
+	return DashboardSlot{
+		Source: string(slot.Source), Second: string(slot.Second),
+		Separator: slot.Separator, Label: slot.Label,
+	}
 }
 
 func toDashboard(one Dashboard) dashboard.Dashboard {
@@ -75,7 +78,8 @@ func toDashboard(one Dashboard) dashboard.Dashboard {
 
 func toSlot(slot DashboardSlot) dashboard.Slot {
 	return dashboard.Slot{
-		Source: readings.Source(slot.Source), Label: slot.Label, Unit: slot.Unit,
+		Source: readings.Source(slot.Source), Second: readings.Source(slot.Second),
+		Separator: slot.Separator, Label: slot.Label,
 	}
 }
 

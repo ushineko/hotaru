@@ -2,6 +2,7 @@ package dashboard
 
 import (
 	"image/color"
+	"strings"
 
 	"github.com/ushineko/hotaru/internal/readings"
 )
@@ -179,29 +180,90 @@ func (l Lettering) chosen() []color.RGBA {
 func Fonts() []string { return []string{"sans", "mono", "smallcaps"} }
 
 /*
-Slot is one reading, as this dashboard wants it said.
+Slot is what one place on the panel says.
 
-Label and Unit are the dashboard's own words where it has them. Empty means
-the reading's: "Coolant" and "°C" are already written down once, in the
-readings package, and a dashboard that had to repeat them would be a second
-place for them to be wrong.
+One reading, or two. CPU load and CPU temperature are one thought, and so are
+memory used and memory free; drawn as `11 / 59` under a label that says
+`CPU % / C` they take the room of one number and answer two questions.
+
+Label is the dashboard's own words where it has them and the reading's where
+it does not, and it is the *only* place words are drawn. There used to be a
+unit under every value, taken from the readings package and editable nowhere,
+which is one line spent saying something the author never chose. The label
+says it now, and the author can spell it how they like.
 */
 type Slot struct {
 	Source readings.Source `json:"source"`
-	Label  string          `json:"label,omitempty"`
-	Unit   string          `json:"unit,omitempty"`
+
+	// Second is the other half of a pair. Empty is one reading, which is
+	// what every dashboard written before this said.
+	Second readings.Source `json:"second,omitempty"`
+
+	/*
+		Separator goes between the two values. Empty is DefaultSeparator.
+
+		The author's, because the label beside it is: somebody writing
+		`CPU % / C` above their numbers wants a slash between them, and
+		somebody writing `CPU %  C` wants two spaces. One of them would
+		otherwise be writing a label that does not match the value under it.
+	*/
+	Separator string `json:"separator,omitempty"`
+
+	Label string `json:"label,omitempty"`
 }
 
-// Words are the label and unit this slot draws.
-func (s Slot) Words() (label, unit string) {
-	label, unit = readings.Describe(s.Source)
+// DefaultSeparator is what joins a pair when the author has said nothing.
+const DefaultSeparator = " / "
+
+/*
+Words is the label this slot draws.
+
+The author's, or one built from what the readings are called and measured in.
+The built one carries the unit, which is what the unit line used to do: a slot
+nobody has edited still says whether it is degrees or percent.
+
+Two readings with the same name are named once -- `CPU % / °C` rather than
+`CPU % / CPU °C`, because the second CPU is a word the eye has to read to
+learn nothing.
+*/
+func (s Slot) Words() string {
 	if s.Label != "" {
-		label = s.Label
+		return s.Label
 	}
-	if s.Unit != "" {
-		unit = s.Unit
+
+	label, unit := readings.Describe(s.Source)
+	if s.Second == "" {
+		return strings.TrimSpace(label + " " + unit)
 	}
-	return label, unit
+
+	other, otherUnit := readings.Describe(s.Second)
+	if other == label {
+		other = ""
+	}
+	return strings.TrimSpace(label+" "+unit) + " / " + strings.TrimSpace(other+" "+otherUnit)
+}
+
+// Join is the separator this slot puts between its two values.
+func (s Slot) Join() string {
+	if s.Separator == "" {
+		return DefaultSeparator
+	}
+	return s.Separator
+}
+
+/*
+Text is the value this slot draws: one reading, or two joined.
+
+The placeholder for a reading the machine did not have is the reading
+package's, per half. A pair with one sensor missing reads `-- / 59`, which
+says which half went away -- where dropping to a single placeholder would
+report both as absent on the evidence of one.
+*/
+func (s Slot) Text(r readings.Reading) string {
+	if s.Second == "" {
+		return r.Text(s.Source)
+	}
+	return r.Text(s.Source) + s.Join() + r.Text(s.Second)
 }
 
 // Background kinds.

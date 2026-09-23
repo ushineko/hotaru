@@ -90,7 +90,6 @@ is a gauge, and a gauge with nothing in it looks broken -- but it is graded on
 its own scale rather than on the coolant's thresholds.
 */
 func headline(p *paint, d Dashboard, r Reading, at headlineAt, ring bool) {
-	label, unit := d.Headline.Words()
 	value, known := r.Value(d.Headline.Source)
 	colour := gradeOf(d.Headline.Source, value, known, p.theme)
 
@@ -98,10 +97,9 @@ func headline(p *paint, d Dashboard, r Reading, at headlineAt, ring bool) {
 		drawRings(p, d, r)
 	}
 
-	p.label(label, 0, at.labelY, Size, 36, 22)
-	p.value(r.Text(d.Headline.Source), 0, at.valueY, Size, at.valueH, at.size,
+	p.label(d.Headline.Words(), 0, at.labelY, Size, 36, 22)
+	p.value(d.Headline.Text(r), 0, at.valueY, Size, at.valueH, at.size,
 		colour, graded(d.Headline.Source, value, known))
-	p.label(unit, 0, at.unitY, Size, 38, 27)
 }
 
 /*
@@ -111,16 +109,21 @@ Coordinates rather than an offset from the label, because the ring
 arrangement's are spec 013's exact numbers -- arrived at by looking at the
 panel in a case -- and deriving them from each other would move one of them
 by two pixels for the sake of tidiness.
+
+The unit line that used to sit below the value is gone (spec 041), and its
+coordinate with it. The others are untouched: the number stays exactly where
+spec 013 put it, and what is under it is now whatever the arrangement draws
+there.
 */
 type headlineAt struct {
-	labelY, valueY, valueH, unitY int
-	size                          float64
+	labelY, valueY, valueH int
+	size                   float64
 }
 
 // drawRing is spec 013's screen: the ring, the headline inside it, and three
 // columns along the bottom.
 func drawRing(p *paint, d Dashboard, r Reading) {
-	headline(p, d, r, headlineAt{labelY: 132, valueY: 170, valueH: 158, unitY: 330, size: 118}, true)
+	headline(p, d, r, headlineAt{labelY: 132, valueY: 170, valueH: 158, size: 118}, true)
 
 	slots := fit(d, Ring)
 	width := (Size - 2*metricInset) / metricSlots
@@ -135,21 +138,24 @@ column draws one of the bottom readings.
 
 The value font is smaller at three columns than it was at two, because a
 four-digit pump reading at the old size overflows its width and collides with
-its neighbour. The inset clears the ring, which at this height curves inward
-far enough to have been drawn through the word "RPM".
+its neighbour -- which is now also handled by the value shrinking to fit, but
+the smaller size is what the panel was looked at with. The inset clears the
+ring, which at this height curves inward far enough to have been drawn through
+the word "RPM".
+
+The unit line that used to sit under the value is gone (spec 041); the label
+above carries it.
 */
 func column(p *paint, slot Slot, r Reading, x, y, width int) {
-	label, unit := slot.Words()
 	value, known := r.Value(slot.Source)
-	p.label(label, x, y, width, 28, 16)
-	p.value(r.Text(slot.Source), x, y+30, width, 66, 34,
+	p.label(slot.Words(), x, y, width, 28, 16)
+	p.value(slot.Text(r), x, y+30, width, 66, 34,
 		gradeOf(slot.Source, value, known, p.theme), graded(slot.Source, value, known))
-	p.label(unit, x, y+100, width, 26, 14)
 }
 
 // drawGrid is the headline over four readings in two rows of two.
 func drawGrid(p *paint, d Dashboard, r Reading) {
-	headline(p, d, r, headlineAt{labelY: 76, valueY: 114, valueH: 116, unitY: 232, size: 88}, true)
+	headline(p, d, r, headlineAt{labelY: 76, valueY: 114, valueH: 116, size: 88}, true)
 
 	slots := fit(d, Grid)
 	width := (Size - 2*gridInset) / 2
@@ -163,23 +169,67 @@ func drawGrid(p *paint, d Dashboard, r Reading) {
 // drawStacked is four rows under the headline, with no ring: numbers rather
 // than an instrument.
 func drawStacked(p *paint, d Dashboard, r Reading) {
-	headline(p, d, r, headlineAt{labelY: 60, valueY: 98, valueH: 116, unitY: 216, size: 88}, false)
+	headline(p, d, r, headlineAt{labelY: 60, valueY: 98, valueH: 116, size: 88}, false)
 
+	/*
+		The rows are a table, so they are set like one: the words hard left,
+		the numbers hard right, and the space between them absorbing the
+		difference.
+
+		Centred in their bands is what they were, and it reads as ragged the
+		moment somebody scans down the column -- "2709 / 90" is fifty pixels
+		wider than "12 / 63", so each row started and ended somewhere
+		different. Four rows of that is four left edges and four right ones.
+
+		The value band runs from the label to the far inset. It used to stop
+		at 200 pixels with the unit drawn beyond it; with the unit gone there
+		is nothing to leave room for, and a pair needs every pixel of it --
+		"1450 / 1450" is eleven characters where the band was sized for four.
+	*/
+	/*
+		The rows are one table, so the column is measured once for all of
+		them rather than each row settling its own.
+
+		Two things go wrong when a row is left to itself. A label wider than
+		its band overflowed both ways when it was centred and nobody noticed;
+		justified it overflows one way, into the number -- "PUMP RPM / %" is
+		208 pixels and left three of them before "2709 / 90". And a row that
+		shrinks its own value to fit puts three point sizes down one column,
+		which reads worse than the ragged edges this was meant to fix.
+
+		So: the words column is as wide as the widest label, the numbers get
+		what is left, and they are all drawn at the size the widest of them
+		needs. One left edge, one right edge, one size.
+	*/
 	slots := fit(d, Stacked)
+	words := make([]string, len(slots))
+	values := make([]string, len(slots))
+	labelWidth := rowLabelWidth
+	for i, slot := range slots {
+		words[i], values[i] = slot.Words(), slot.Text(r)
+		labelWidth = max(labelWidth, p.textWidth(words[i], 22, false, p.letters.Labels))
+	}
+
+	left := rowInset + labelWidth + rowGap
+	band := Size - rowInset - left
+	size := rowValuePt * p.letters.Values.Scale()
+	for _, value := range values {
+		size = min(size, fitted(value, band, size, true, p.letters.Font))
+	}
+
 	for i, slot := range slots {
 		y := stackTop + i*rowHeight
-		label, unit := slot.Words()
-		value, known := r.Value(slot.Source)
-		p.label(label, rowInset, y, 160, 48, 22)
-		p.value(r.Text(slot.Source), rowInset+160, y, 200, 48, 34,
-			gradeOf(slot.Source, value, known, p.theme), graded(slot.Source, value, known))
-		p.label(unit, rowInset+370, y, 100, 48, 18)
+		reading, known := r.Value(slot.Source)
+		p.labelAt(words[i], rowInset, y, labelWidth, 48, 22, Left)
+		p.valueSized(values[i], left, y, band, 48, size,
+			gradeOf(slot.Source, reading, known, p.theme),
+			graded(slot.Source, reading, known), Right)
 	}
 }
 
 // drawBig is the headline alone, as large as the panel will take.
 func drawBig(p *paint, d Dashboard, r Reading) {
-	headline(p, d, r, headlineAt{labelY: 170, valueY: 210, valueH: 220, unitY: 434, size: 170}, true)
+	headline(p, d, r, headlineAt{labelY: 170, valueY: 210, valueH: 220, size: 170}, true)
 }
 
 // caption is the author's own line, drawn low enough to clear the readings

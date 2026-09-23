@@ -211,6 +211,50 @@ MIT. See [LICENSE](LICENSE).
 
 ### Unreleased
 
+- A dashboard slot can show two readings. CPU load and CPU temperature are one
+  thought, and `11 / 59` under a label saying `CPU % / C` answers it in the
+  room one number used to take. Every slot, not only the big one; the
+  separator is the author's, defaulting to ` / `; colour and the headline's
+  ring grade on the first of the pair, so the order says what the colour
+  means (spec 041, #102).
+
+- **The unit line under every value is gone, and your panel will change on
+  upgrade.** It was taken from the readings package and editable nowhere,
+  which is one line spent saying something the author never chose. The label
+  says it now: a slot with no label of its own reads `CPU °C` rather than
+  `CPU` with `°C` beneath it, and one that has a label says exactly what its
+  author wrote. A saved dashboard whose author wrote a label without a unit
+  will say less than it did; there is no migration, because rewriting
+  somebody's labels for them is a worse answer than this paragraph
+  (spec 041, #102).
+
+- Memory usage is a reading, as a percentage and in gigabytes, from
+  `/proc/meminfo`. `MemAvailable` rather than `MemFree`: free memory on a
+  machine that has been up an hour is small on every Linux box, because the
+  kernel spends what nobody is using on cache, and a panel drawing that would
+  read alarming on a healthy machine (spec 041, #102).
+
+- The stacked rows are set as a table: the words hard left, the numbers hard
+  right, and one point size for the column settled by the widest number in
+  it. Centred in their own bands they were ragged down the column -- "2709 /
+  90" is fifty pixels wider than "12 / 63", so four rows were four left edges
+  and four right ones. A wide label pushes the numbers across rather than
+  being drawn through them (spec 041, #102).
+
+- A value too wide for its band is drawn smaller rather than over its
+  neighbour. `column`'s comment has recorded a four-digit pump reading
+  colliding with the next column since spec 013, fixed at the time by making
+  the font smaller for every dashboard; a pair makes overflow certain rather
+  than an edge case (spec 041, #102).
+
+- The shipped `load` and `cooling` dashboards pair their readings, and all
+  four carry their units in their labels. **The default screen therefore
+  moves**, which breaks spec 023's promise that a machine upgrading and
+  touching nothing sees exactly what it saw. That is deliberate: there is no
+  version of removing a line that leaves the default screen alone, and keeping
+  the line alive for the shipped four would have kept the promise by keeping
+  the redundancy in the screens most people are looking at (spec 041, #102).
+
 - Dragging the colour wheel no longer floods the devices or sticks the window.
   The picker's throttle measured the gap from the moment a send *started* and
   then made the send synchronously on the UI thread, so the gap was spent

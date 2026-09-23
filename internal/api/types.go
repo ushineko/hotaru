@@ -374,12 +374,18 @@ type DashboardText struct {
 	Outline *int   `json:"outline,omitempty"`
 }
 
-// DashboardSlot is one reading as a dashboard wants it said. An empty label
-// or unit means the reading's own.
+/*
+DashboardSlot is what one place on the panel says: one reading, or a pair.
+
+An empty label is the readings' own words, carrying what they are measured in.
+An empty second source is one reading, which is every dashboard written before
+spec 041. An empty separator is " / ".
+*/
 type DashboardSlot struct {
-	Source string `json:"source"`
-	Label  string `json:"label,omitempty"`
-	Unit   string `json:"unit,omitempty"`
+	Source    string `json:"source"`
+	Second    string `json:"second,omitempty"`
+	Separator string `json:"separator,omitempty"`
+	Label     string `json:"label,omitempty"`
 }
 
 // DashboardBackground is what is drawn behind the numbers.
