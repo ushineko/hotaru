@@ -71,25 +71,25 @@ func TestADefaultLabelCarriesTheUnit(t *testing.T) {
 		edited must still say whether it is degrees or percent -- otherwise
 		removing the line costs information rather than a redundancy.
 	*/
-	require.Equal(t, "CPU °C", Slot{Source: readings.CPUTemp}.Words())
+	require.Equal(t, "CPU °C", Slot{Source: readings.CPUTemp}.Words(false))
 
 	// Two readings of the same thing are named once: "CPU % / CPU °C" makes
 	// the eye read a word to learn nothing.
 	require.Equal(t, "CPU % · °C",
-		Slot{Source: readings.CPULoad, Second: readings.CPUTemp}.Words())
+		Slot{Source: readings.CPULoad, Second: readings.CPUTemp}.Words(false))
 
 	// Two different things are both named.
 	require.Equal(t, "CPU % · GPU °C",
-		Slot{Source: readings.CPULoad, Second: readings.GPUTemp}.Words())
+		Slot{Source: readings.CPULoad, Second: readings.GPUTemp}.Words(false))
 
 	// The label is divided by whatever divides the numbers: two answers to
 	// one question is one answer too many.
 	require.Equal(t, "CPU % / °C",
-		Slot{Source: readings.CPULoad, Second: readings.CPUTemp, Separator: " / "}.Words())
+		Slot{Source: readings.CPULoad, Second: readings.CPUTemp, Separator: " / "}.Words(false))
 
 	// And the author's own words beat all of it.
 	require.Equal(t, "PROC",
-		Slot{Source: readings.CPULoad, Second: readings.CPUTemp, Label: "PROC"}.Words())
+		Slot{Source: readings.CPULoad, Second: readings.CPUTemp, Label: "PROC"}.Words(false))
 }
 
 func TestNothingDrawsAUnitLine(t *testing.T) {
@@ -194,8 +194,8 @@ func TestAValueTooWideForItsBandIsDrawnSmaller(t *testing.T) {
 		and not text.
 	*/
 	p := &paint{}
-	pump := Slot{Source: readings.PumpRPM}.Fields(reading())
-	pair := Slot{Source: readings.PumpRPM, Second: readings.FanRPM}.Fields(reading())
+	pump := Slot{Source: readings.PumpRPM}.Fields(reading(), false)
+	pair := Slot{Source: readings.PumpRPM, Second: readings.FanRPM}.Fields(reading(), false)
 
 	_, total := p.boxes(pump, 34)
 	_, _, kept := p.fittedBoxes(pump, total+10, 34)
@@ -214,7 +214,7 @@ func TestAValueIsNotShrunkIntoIllegibility(t *testing.T) {
 	// than being unreadable quietly, on a screen whose whole job is being
 	// read from the other side of a desk.
 	p := &paint{}
-	pair := Slot{Source: readings.PumpRPM, Second: readings.FanRPM}.Fields(reading())
+	pair := Slot{Source: readings.PumpRPM, Second: readings.FanRPM}.Fields(reading(), false)
 
 	_, _, size := p.fittedBoxes(pair, 20, 34)
 	require.Equal(t, float64(minValuePt), size)
@@ -234,7 +234,7 @@ func TestAStackedPairStaysInsideItsRow(t *testing.T) {
 	worst := reading()
 	worst.Set(readings.PumpRPM, 9999)
 	worst.Set(readings.FanRPM, 9999)
-	fields := Slot{Source: readings.PumpRPM, Second: readings.FanRPM}.Fields(worst)
+	fields := Slot{Source: readings.PumpRPM, Second: readings.FanRPM}.Fields(worst, false)
 
 	_, total, _ := p.fittedBoxes(fields, band, rowValuePt)
 	require.LessOrEqual(t, total, band)
@@ -336,8 +336,8 @@ func TestOneSizeForTheWholeColumn(t *testing.T) {
 	p := &paint{}
 	const band = 168
 
-	narrow := Slot{Source: readings.CPULoad, Second: readings.CPUTemp}.Fields(reading())
-	wide := Slot{Source: readings.PumpRPM, Second: readings.FanRPM}.Fields(reading())
+	narrow := Slot{Source: readings.CPULoad, Second: readings.CPUTemp}.Fields(reading(), false)
+	wide := Slot{Source: readings.PumpRPM, Second: readings.FanRPM}.Fields(reading(), false)
 
 	_, _, alone := p.fittedBoxes(narrow, band, rowValuePt)
 	_, _, other := p.fittedBoxes(wide, band, rowValuePt)

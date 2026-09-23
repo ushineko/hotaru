@@ -278,12 +278,12 @@ func TestAReadingWiderThanItsFieldIsDrawnWhole(t *testing.T) {
 		sized for the ordinary case.
 	*/
 	p := &paint{}
-	ordinary := Slot{Source: readings.Coolant}.Fields(reading())
+	ordinary := Slot{Source: readings.Coolant}.Fields(reading(), false)
 	require.Equal(t, 4, ordinary[0].Chars)
 
 	hot := reading()
 	hot.Set(readings.Coolant, 100)
-	wide := Slot{Source: readings.Coolant}.Fields(hot)
+	wide := Slot{Source: readings.Coolant}.Fields(hot, false)
 	require.Equal(t, "100.0", wide[0].Text)
 
 	_, narrow := p.boxes(ordinary, 118)
@@ -327,7 +327,7 @@ func TestTheBoxesDoNotChangeWithTheReading(t *testing.T) {
 		r := reading()
 		r.Set(readings.CPULoad, v)
 		r.Set(readings.CPUTemp, v)
-		w, total := p.boxes(slot.Fields(r), 118)
+		w, total := p.boxes(slot.Fields(r, false), 118)
 		widths = append(widths, w)
 		totals = append(totals, total)
 	}

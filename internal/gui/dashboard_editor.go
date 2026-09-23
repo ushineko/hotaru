@@ -41,6 +41,7 @@ func (d *DashboardsSection) editor(sh *shell.Shell, got api.DashboardsResponse) 
 		d.slotFields(sh, got),
 		widget.NewSeparator(),
 		d.backgroundFields(sh),
+		d.unitsField(sh),
 		d.captionField(sh),
 		widget.NewSeparator(),
 		d.letteringFields(sh),
@@ -171,7 +172,7 @@ func (d *DashboardsSection) slotRow(sh *shell.Shell, slot *api.DashboardSlot) fy
 	choose.SetSelected(sourceLabel(slot.Source))
 
 	label := widget.NewEntry()
-	label.SetPlaceHolder(defaultLabel(slot.Source, slot.Second))
+	label.SetPlaceHolder(defaultLabel(slot.Source, slot.Second, d.editing.Units))
 	label.SetText(slot.Label)
 	label.OnChanged = func(s string) { slot.Label = s }
 	label.OnSubmitted = func(string) { d.redraw(sh) }
@@ -387,6 +388,27 @@ func (d *DashboardsSection) dimField(sh *shell.Shell) fyne.CanvasObject {
 		d.redraw(sh)
 	}
 	return field("Darkened", slider)
+}
+
+/*
+unitsField turns on what each number is measured in, beside it.
+
+One switch for the screen rather than one per reading: it is a decision about
+how this panel reads, the way the theme and the lettering are. It also changes
+what the labels say -- a slot with no label of its own stops carrying the unit,
+because it is beside the number now -- so the placeholders are rebuilt with
+the preview.
+*/
+func (d *DashboardsSection) unitsField(sh *shell.Shell) fyne.CanvasObject {
+	check := widget.NewCheck("", func(on bool) {
+		if on == d.editing.Units {
+			return
+		}
+		d.editing.Units = on
+		d.redraw(sh)
+	})
+	check.SetChecked(d.editing.Units)
+	return field("Units", check)
 }
 
 func (d *DashboardsSection) captionField(sh *shell.Shell) fyne.CanvasObject {

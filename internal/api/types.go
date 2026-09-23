@@ -348,6 +348,11 @@ type Dashboard struct {
 	Slots      []DashboardSlot     `json:"slots,omitempty"`
 	Caption    string              `json:"caption,omitempty"`
 
+	// Units draws what each number is measured in beside it, small, on the
+	// line the separator sits on. Off is every dashboard written before it
+	// existed.
+	Units bool `json:"units,omitempty"`
+
 	// Lettering is how the text is drawn, over what the arrangement and the
 	// theme decided. Empty draws it their way.
 	Lettering DashboardLettering `json:"lettering,omitempty"`

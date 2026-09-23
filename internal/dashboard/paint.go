@@ -196,6 +196,81 @@ func (p *paint) fields(fs []Field, x, y, w, h int, pt float64, c color.Color,
 }
 
 /*
+column is the field widths a set of rows share, and the size they all fit at.
+
+**Per field index, across every row.** The widest first number decides the
+first box for all of them, so the separators after those boxes land in one
+column -- which is the whole of what makes four rows read as a table rather
+than as four separate lines.
+
+A row with fewer fields than the widest contributes to the boxes it has and
+leaves the rest alone, which is also how it is drawn: from the left, its
+number under the other rows' first numbers.
+*/
+func (p *paint) column(rows [][]Field, w int, pt float64) ([]int, int, float64) {
+	for {
+		widths, total := p.columnBoxes(rows, pt)
+		if total <= w || w <= 0 || pt <= minValuePt {
+			return widths, total, pt
+		}
+		// Advances are near enough linear in the point size, so one estimate
+		// and a short walk down, the way a single assembly is fitted.
+		next := math.Floor(pt * float64(w) / float64(total))
+		if next >= pt {
+			next = pt - 1
+		}
+		pt = max(next, minValuePt)
+	}
+}
+
+// columnBoxes is the widest each field is across the rows, and their total.
+func (p *paint) columnBoxes(rows [][]Field, pt float64) ([]int, int) {
+	var widths []int
+	for _, row := range rows {
+		for i, f := range row {
+			w := p.fieldWidth(f, pt)
+			switch {
+			case i < len(widths):
+				widths[i] = max(widths[i], w)
+			default:
+				widths = append(widths, w)
+			}
+		}
+	}
+
+	total := 0
+	for _, w := range widths {
+		total += w
+	}
+	return widths, total
+}
+
+/*
+inColumn draws one row into widths the column settled.
+
+Left to right through the boxes, so a row with fewer fields sits under the
+first of everything rather than the last. Aligning a lone value from the right
+would put it under the other rows' *second* numbers, which is a lie about what
+it is.
+*/
+func (p *paint) inColumn(fs []Field, widths []int, x, y, h int, pt float64,
+	c color.Color, graded bool,
+) {
+	style := p.letters.Values
+	if graded {
+		style.Colour = ""
+	}
+	style.Size = 0 // the column applied it
+
+	at := x
+	for i, f := range fs {
+		w := widths[i]
+		p.write(f.Text, at, y, w, h, sizeOf(f, pt), true, style, c, hug(f))
+		at += w
+	}
+}
+
+/*
 fieldsSized is fields at a point size the caller has settled.
 
 The stacked rows work one size out for the whole column and then draw every
@@ -211,33 +286,79 @@ func (p *paint) fieldsSized(fs []Field, x, y, w, h int, pt float64, c color.Colo
 	}
 	style.Size = 0 // the caller applied it
 
+	if at, ok := dividerAt(fs); ok && align != Right {
+		p.aroundDivider(fs, at, x, y, w, h, pt, style, c)
+		return
+	}
+
 	widths, total := p.boxes(fs, pt)
-	at := x + offset(w, total, align)
+	place := x + offset(w, total, align)
 	for i, f := range fs {
-		p.write(f.Text, at, y, widths[i], h, pt, true, style, c, within(i, len(fs), align))
-		at += widths[i]
+		p.write(f.Text, place, y, widths[i], h, sizeOf(f, pt), true, style, c, hug(f))
+		place += widths[i]
 	}
 }
 
 /*
-within is where a field sits inside the box reserved for it.
+aroundDivider draws a pair anchored on the thing between its halves.
 
-Numbers grow leftwards, so a field is right-aligned by default -- which is
-what makes the digits already drawn stay put when another one arrives.
+**The separator is the fixed point**, at the centre of the space, with one
+number growing left from it and the other growing right. Nothing here reserves
+anything, and nothing needs to: an edge that does not move is an edge that
+does not move, and each number has one against the divider.
 
-**The last field of a pair is the exception when the assembly is centred.**
-Right-aligning both halves puts a blank character on each side of the
-separator, and a dot floating in that much space stops reading as a divider
-between two numbers and starts reading as a third thing. Hugging the separator
-puts the slack on the outer edges instead, where a centred assembly has it
-symmetrically and nobody sees it.
-
-A right-aligned assembly keeps every field right-aligned: it is a column, and
-what matters there is that the numbers end where the ones above and below them
-end.
+That is also what puts a unit against the number it belongs to. Packing
+outward from the middle means "12%" and "63°C" are each drawn as one run,
+where laying them into reserved boxes left a blank column between a figure and
+its own unit -- the number right-aligned in its box and the unit starting at
+the far side.
 */
-func within(i, n int, align Align) Align {
-	if i == n-1 && n > 1 && align != Right {
+func (p *paint) aroundDivider(fs []Field, divider, x, y, w, h int, pt float64,
+	style Text, c color.Color,
+) {
+	middle := x + w/2
+	span := p.textWidth(fs[divider].Text, pt, true, Text{})
+	p.write(fs[divider].Text, middle-span/2, y, span, h, pt, true, style, c, Left)
+
+	// Leftwards from the separator, in reverse, so each piece ends where the
+	// next one along begins.
+	place := middle - span/2
+	for i := divider - 1; i >= 0; i-- {
+		size := sizeOf(fs[i], pt)
+		width := p.textWidth(fs[i].Text, size, true, Text{})
+		place -= width
+		p.write(fs[i].Text, place, y, width, h, size, true, style, c, Left)
+	}
+
+	place = middle - span/2 + span
+	for _, f := range fs[divider+1:] {
+		size := sizeOf(f, pt)
+		width := p.textWidth(f.Text, size, true, Text{})
+		p.write(f.Text, place, y, width, h, size, true, style, c, Left)
+		place += width
+	}
+}
+
+// dividerAt is where the separator sits, if there is one.
+func dividerAt(fs []Field) (int, bool) {
+	for i, f := range fs {
+		if f.Divider {
+			return i, true
+		}
+	}
+	return 0, false
+}
+
+/*
+hug is where a field sits inside its own box.
+
+A number grows leftwards, so it is right-aligned: that is what keeps the
+digits already drawn where they are when another arrives. A unit grows
+rightwards from the number it belongs to, so it is left-aligned and lands
+against the figure rather than at the far side of a column sized for "RPM".
+*/
+func hug(f Field) Align {
+	if f.Small {
 		return Left
 	}
 	return Right
@@ -251,14 +372,46 @@ face here, so one digit's advance is the unit. A field wider than its
 reservation keeps its own width: the reservation is a floor, not a ceiling.
 */
 func (p *paint) boxes(fs []Field, pt float64) (widths []int, total int) {
-	digit := p.textWidth("0", pt, true, Text{})
 	widths = make([]int, len(fs))
 	for i, f := range fs {
-		widths[i] = max(f.Chars*digit, p.textWidth(f.Text, pt, true, Text{}))
+		widths[i] = p.fieldWidth(f, pt)
 		total += widths[i]
 	}
 	return widths, total
 }
+
+/*
+fieldWidth is the room one field takes at a size.
+
+A reservation is in characters and the digits are tabular in every face here,
+so a count is a width. A field wider than its reservation keeps its own: the
+reservation is a floor, not a ceiling.
+
+A small field -- a unit -- reserves nothing and is measured at its own size,
+because it is a word rather than a number and has no digits to hold still.
+*/
+func (p *paint) fieldWidth(f Field, pt float64) int {
+	size := sizeOf(f, pt)
+	if f.Small {
+		return p.textWidth(f.Text, size, true, Text{})
+	}
+	digit := p.textWidth("0", size, true, Text{})
+	return max(f.Chars*digit, p.textWidth(f.Text, size, true, Text{}))
+}
+
+// sizeOf is the point size one field is drawn at: the line's, or a unit's
+// fraction of it.
+func sizeOf(f Field, pt float64) float64 {
+	if f.Small {
+		return math.Max(pt*UnitScale, minUnitPt)
+	}
+	return pt
+}
+
+// minUnitPt keeps a unit readable when the line it belongs to has been shrunk
+// a long way. Below this it is a smudge beside a number, which is worse than
+// not drawing it.
+const minUnitPt = 10
 
 /*
 fittedBoxes is boxes at the largest size whose assembly fits the room given.

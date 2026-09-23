@@ -97,8 +97,8 @@ func headline(p *paint, d Dashboard, r Reading, at headlineAt, ring bool) {
 		drawRings(p, d, r)
 	}
 
-	p.label(d.Headline.Words(), 0, at.labelY, Size, 36, 22)
-	p.fields(d.Headline.Fields(r), headlineInset, at.valueY, Size-2*headlineInset,
+	p.label(d.Headline.Words(d.Units), 0, at.labelY, Size, 36, 22)
+	p.fields(d.Headline.Fields(r, d.Units), headlineInset, at.valueY, Size-2*headlineInset,
 		at.valueH, at.size, colour, graded(d.Headline.Source, value, known), Centre)
 }
 
@@ -129,7 +129,7 @@ func drawRing(p *paint, d Dashboard, r Reading) {
 	width := (Size - 2*metricInset) / metricSlots
 	for i, slot := range slots {
 		x := metricInset + i*width
-		column(p, slot, r, x, 416, width)
+		column(p, slot, r, d.Units, x, 416, width)
 	}
 }
 
@@ -146,10 +146,10 @@ the word "RPM".
 The unit line that used to sit under the value is gone (spec 041); the label
 above carries it.
 */
-func column(p *paint, slot Slot, r Reading, x, y, width int) {
+func column(p *paint, slot Slot, r Reading, units bool, x, y, width int) {
 	value, known := r.Value(slot.Source)
-	p.label(slot.Words(), x, y, width, 28, 16)
-	p.fields(slot.Fields(r), x, y+30, width, 66, 34,
+	p.label(slot.Words(units), x, y, width, 28, 16)
+	p.fields(slot.Fields(r, units), x, y+30, width, 66, 34,
 		gradeOf(slot.Source, value, known, p.theme), graded(slot.Source, value, known), Centre)
 }
 
@@ -162,7 +162,7 @@ func drawGrid(p *paint, d Dashboard, r Reading) {
 	for i, slot := range slots {
 		x := gridInset + (i%2)*width
 		y := gridTop + (i/2)*columnHeight
-		column(p, slot, r, x, y, width)
+		column(p, slot, r, d.Units, x, y, width)
 	}
 }
 
@@ -203,9 +203,11 @@ func drawStacked(p *paint, d Dashboard, r Reading) {
 	*/
 	slots := fit(d, Stacked)
 	words := make([]string, len(slots))
+	rows := make([][]Field, len(slots))
 	labelWidth := rowLabelWidth
 	for i, slot := range slots {
-		words[i] = slot.Words()
+		words[i] = slot.Words(d.Units)
+		rows[i] = slot.Fields(r, d.Units)
 		labelWidth = max(labelWidth, p.textWidth(words[i], 22, false, p.letters.Labels))
 	}
 
@@ -213,24 +215,36 @@ func drawStacked(p *paint, d Dashboard, r Reading) {
 	band := Size - rowInset - left
 
 	/*
-		One size for the column, and it is the widest *assembly* that decides
-		-- the reserved fields, not the characters in them. Fitting on the
-		text would leave the boxes overrunning by exactly the room the
-		reservations added.
+		Every field is as wide as the widest of *that* field across every row,
+		so the separators land in one column (spec 044).
+
+		Per row, the pump's four digits and the processor's two put their dots
+		in different places, and four rows of that is a table with a bend in
+		it. One measurement for the column costs the short rows some empty
+		space to the left of their numbers, which is what a table of numbers
+		looks like.
 	*/
-	size := rowValuePt * p.letters.Values.Scale()
-	for _, slot := range slots {
-		_, _, fits := p.fittedBoxes(slot.Fields(r), band, size)
-		size = min(size, fits)
-	}
+	widths, total, size := p.column(rows, band, rowValuePt*p.letters.Values.Scale())
+
+	/*
+		The column sits against the right edge of the band, and every row
+		starts at the same place inside it -- so the rows that have all the
+		fields still end together, which is spec 041's right edge.
+
+		A row with fewer fields ends earlier, and that is the honest cost: a
+		screen mixing pairs and single values cannot have both a dot column
+		and a right edge, and putting a lone number under the other rows'
+		second numbers would be a lie about what it is.
+	*/
+	start := left + max(band-total, 0)
 
 	for i, slot := range slots {
 		y := stackTop + i*rowHeight
 		reading, known := r.Value(slot.Source)
 		p.labelAt(words[i], rowInset, y, labelWidth, 48, 22, Left)
-		p.fieldsSized(slot.Fields(r), left, y, band, 48, size,
+		p.inColumn(rows[i], widths, start, y, 48, size,
 			gradeOf(slot.Source, reading, known, p.theme),
-			graded(slot.Source, reading, known), Right)
+			graded(slot.Source, reading, known))
 	}
 }
 
