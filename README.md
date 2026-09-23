@@ -2,7 +2,7 @@
 
 *lights, cooler, action!*
 
-**Version**: 0.1.7
+**Version**: 0.1.8
 
 RGB lighting and AIO cooler control for Linux, as a CLI, a user service and a
 desktop GUI. 
@@ -209,7 +209,7 @@ MIT. See [LICENSE](LICENSE).
 
 ## Changelog
 
-### Unreleased
+### 0.1.8 (2026-09-22)
 
 - The window can aim at a keyboard's lock keys. A rule names which of its
   segments are switches rather than decoration, and the editor gives them a
