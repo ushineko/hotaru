@@ -21,6 +21,9 @@ type Rule struct {
 	Brightness *int
 	Reassert   time.Duration
 	Segments   map[string]config.Segment
+	// Toggles are the segments that are switches rather than decoration. See
+	// config.DeviceRule.
+	Toggles []string
 }
 
 /*
@@ -65,6 +68,9 @@ func MergeRules(rules []config.DeviceRule) Rule {
 				out.Segments = map[string]config.Segment{}
 			}
 			out.Segments[name] = seg
+		}
+		if len(r.Toggles) > 0 {
+			out.Toggles = append([]string(nil), r.Toggles...)
 		}
 	}
 	return out

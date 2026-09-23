@@ -63,6 +63,10 @@ type Device struct {
 	Reassert string `json:"reassert,omitempty"`
 	// Segments are the names this machine's owner gave parts of the device.
 	Segments []string `json:"segments,omitempty"`
+
+	// Toggles are the segments that are switches rather than decoration, so
+	// an editor can offer them their own control.
+	Toggles []string `json:"toggles,omitempty"`
 }
 
 /*

@@ -76,6 +76,21 @@ type DeviceRule struct {
 	// how a person records which lights are which, once, instead of counting
 	// again every time they write a scene.
 	Segments map[string]Segment `json:"segments,omitempty"`
+
+	/*
+		Toggles are the segments that are switches rather than decoration:
+		Caps Lock, Num Lock, a keyboard's own indicators.
+
+		Names only. What colour they take, and whether a scene bothers with
+		them at all, is the scene's business -- one scheme may want them
+		shouting and the next may want them left alone. What belongs here is
+		the part that is a fact about the hardware: which lights those are.
+
+		The window offers them their own control, because a hundred-key zone
+		is drawn as runs of five and Caps Lock cannot be aimed at otherwise
+		(spec 043).
+	*/
+	Toggles []string `json:"toggles,omitempty"`
 }
 
 // Segment is a named part of a device: a whole zone, or a range within one.
@@ -204,7 +219,44 @@ func decodeRule(i int, raw json.RawMessage) (*DeviceRule, []Problem) {
 	if len(rule.Segments) == 0 {
 		rule.Segments = nil
 	}
+
+	/*
+		A toggle names a segment of this same rule, checked here rather than
+		when a window comes to draw it.
+
+		A typo, or a segment renamed with one reference left behind, is the
+		mistake somebody actually makes -- and a rules file is read once while
+		the editor is drawn every time anything changes. Saying it at load
+		means saying it once, in the terms the file uses.
+	*/
+	kept := rule.Toggles[:0]
+	for _, name := range rule.Toggles {
+		if _, ok := rule.Segments[name]; !ok {
+			problems = append(problems, Problem{where + " toggle " + name,
+				"no segment of that name; a toggle names one, and this rule has " +
+					listNames(rule.Segments)})
+			continue
+		}
+		kept = append(kept, name)
+	}
+	rule.Toggles = kept
+	if len(rule.Toggles) == 0 {
+		rule.Toggles = nil
+	}
 	return &rule, problems
+}
+
+// listNames is a rule's segment names, for the message a bad toggle gets.
+func listNames(segments map[string]Segment) string {
+	if len(segments) == 0 {
+		return "none"
+	}
+	names := make([]string, 0, len(segments))
+	for name := range segments {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return strings.Join(names, ", ")
 }
 
 func (s Segment) problem() string {
