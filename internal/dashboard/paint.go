@@ -5,6 +5,7 @@ import (
 	"image"
 	"image/color"
 	"image/draw"
+	"math"
 	"sort"
 
 	"golang.org/x/image/font"
@@ -171,36 +172,37 @@ func (p *paint) label(s string, x, y, w, h int, pt float64) {
 
 // labelAt is label, placed. See Align.
 func (p *paint) labelAt(s string, x, y, w, h int, pt float64, align Align) {
-	p.write(s, x, y, w, h, pt, false, false, p.letters.Labels, p.theme.Muted, align)
+	p.write(s, x, y, w, h, pt, false, p.letters.Labels, p.theme.Muted, align)
 }
 
 /*
-value draws one of the readings, shrunk to its band if it has to be.
+fields draws a value as reserved boxes rather than as one string, which is how
+it stops moving between frames.
 
-A pair makes overflow certain where it used to be a four-digit edge case:
-"1450 / 1450" is eleven characters in a band that was sized for four. The
-column comment records the last fix for that, which was to make the font
-smaller for every dashboard; this one costs nothing to the values that fit.
+Each field is drawn right-aligned in a box as wide as the characters it
+reserved -- numbers grow leftwards, the way a number should -- and the boxes
+are laid end to end and then placed as a unit. Because every box's width comes
+from the reservation rather than from the reading, the assembly is the same
+width every frame and sits in the same place.
 
-**A graded colour is not overridden.** Coolant is green, amber or red because
-that is what the alerts say, and a screen showing calm while a notification
-says critical is worse than either alone (spec 013). So a dashboard's own
-colour applies to the readings that carry no grade, and the one that means
-something keeps meaning it.
+The whole assembly shrinks together when it will not fit, for the reason a
+stacked column does: one size, or the pieces of one number are drawn at two.
 */
-func (p *paint) value(s string, x, y, w, h int, pt float64, c color.Color, graded bool) {
-	p.valueAt(s, x, y, w, h, pt, c, graded, Centre)
+func (p *paint) fields(fs []Field, x, y, w, h int, pt float64, c color.Color,
+	graded bool, align Align,
+) {
+	_, _, size := p.fittedBoxes(fs, w, pt*p.letters.Values.Scale())
+	p.fieldsSized(fs, x, y, w, h, size, c, graded, align)
 }
 
 /*
-valueSized draws a value at a point size the caller has already settled.
+fieldsSized is fields at a point size the caller has settled.
 
-The stacked rows work out one size for the whole column -- the author's scale
-applied, then shrunk until the widest number fits -- and scaling or shrinking
-it again per row is how a column that was measured as a table goes back to
-three sizes. So neither happens here: what is passed is what is drawn.
+The stacked rows work one size out for the whole column and then draw every
+row at it; fitting again per row is how a column measured as a table goes back
+to three sizes.
 */
-func (p *paint) valueSized(s string, x, y, w, h int, pt float64, c color.Color,
+func (p *paint) fieldsSized(fs []Field, x, y, w, h int, pt float64, c color.Color,
 	graded bool, align Align,
 ) {
 	style := p.letters.Values
@@ -208,18 +210,78 @@ func (p *paint) valueSized(s string, x, y, w, h int, pt float64, c color.Color,
 		style.Colour = ""
 	}
 	style.Size = 0 // the caller applied it
-	p.write(s, x, y, w, h, pt, true, false, style, c, align)
+
+	widths, total := p.boxes(fs, pt)
+	at := x + offset(w, total, align)
+	for i, f := range fs {
+		p.write(f.Text, at, y, widths[i], h, pt, true, style, c, within(i, len(fs), align))
+		at += widths[i]
+	}
 }
 
-// valueAt is value, placed. See Align.
-func (p *paint) valueAt(s string, x, y, w, h int, pt float64, c color.Color,
-	graded bool, align Align,
-) {
-	style := p.letters.Values
-	if graded {
-		style.Colour = ""
+/*
+within is where a field sits inside the box reserved for it.
+
+Numbers grow leftwards, so a field is right-aligned by default -- which is
+what makes the digits already drawn stay put when another one arrives.
+
+**The last field of a pair is the exception when the assembly is centred.**
+Right-aligning both halves puts a blank character on each side of the
+separator, and a dot floating in that much space stops reading as a divider
+between two numbers and starts reading as a third thing. Hugging the separator
+puts the slack on the outer edges instead, where a centred assembly has it
+symmetrically and nobody sees it.
+
+A right-aligned assembly keeps every field right-aligned: it is a column, and
+what matters there is that the numbers end where the ones above and below them
+end.
+*/
+func within(i, n int, align Align) Align {
+	if i == n-1 && n > 1 && align != Right {
+		return Left
 	}
-	p.write(s, x, y, w, h, pt, true, true, style, c, align)
+	return Right
+}
+
+/*
+boxes is how wide each field is drawn and how wide they are together.
+
+A field's reservation is in characters and the digits are tabular in every
+face here, so one digit's advance is the unit. A field wider than its
+reservation keeps its own width: the reservation is a floor, not a ceiling.
+*/
+func (p *paint) boxes(fs []Field, pt float64) (widths []int, total int) {
+	digit := p.textWidth("0", pt, true, Text{})
+	widths = make([]int, len(fs))
+	for i, f := range fs {
+		widths[i] = max(f.Chars*digit, p.textWidth(f.Text, pt, true, Text{}))
+		total += widths[i]
+	}
+	return widths, total
+}
+
+/*
+fittedBoxes is boxes at the largest size whose assembly fits the room given.
+
+Measured on the *assembly*, not on its text. The reservations make it wider
+than the characters in it, so shrinking until the text fits would leave the
+boxes overrunning by exactly the padding -- which is the whole of what was
+added. Advances are near enough linear in the point size for one estimate and
+a short walk down, the way a single value is fitted.
+*/
+func (p *paint) fittedBoxes(fs []Field, w int, pt float64) ([]int, int, float64) {
+	widths, total := p.boxes(fs, pt)
+	if total <= w || w <= 0 || total <= 0 || pt <= minValuePt {
+		return widths, total, pt
+	}
+
+	for size := math.Floor(pt * float64(w) / float64(total)); size > minValuePt; size-- {
+		if widths, total = p.boxes(fs, size); total <= w {
+			return widths, total, size
+		}
+	}
+	widths, total = p.boxes(fs, minValuePt)
+	return widths, total, minValuePt
 }
 
 /*
@@ -229,12 +291,11 @@ Eight offsets and then the fill. Four would leave the diagonals thin, and a
 glyph whose corner blends into a bright pixel is a digit somebody misreads --
 which on this panel means misreading a temperature.
 
-`fit` shrinks the text to its band rather than letting it overrun. Values ask
-for it and labels do not: a label too long is the author's sentence and theirs
-to shorten, and a value is the machine's and cannot be edited. The size is
-settled before the outline loop so all nine draws are the same glyphs.
+The size is settled by the caller, so all nine draws are the same glyphs.
+Values are sized by fittedBoxes before they get here; a label too long is the
+author's sentence and theirs to shorten, so it is drawn as written.
 */
-func (p *paint) write(s string, x, y, w, h int, pt float64, bold, fit bool,
+func (p *paint) write(s string, x, y, w, h int, pt float64, bold bool,
 	style Text, c color.Color, align Align,
 ) {
 	if chosen, ok := parseColour(style.Colour); ok {
@@ -242,9 +303,6 @@ func (p *paint) write(s string, x, y, w, h int, pt float64, bold, fit bool,
 	}
 	pt *= style.Scale()
 	family := p.letters.Font
-	if fit {
-		pt = fitted(s, w, pt, bold, family)
-	}
 
 	if edge := style.Edge(p.picture); edge > 0 {
 		for _, d := range []image.Point{

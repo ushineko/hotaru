@@ -249,42 +249,10 @@ func arc(dst draw.Image, cx, cy, radius, width, from, sweep float64, c color.Col
 }
 
 /*
-fitted is the largest point size at or below pt that draws s inside w.
+minValuePt is the smallest a value is shrunk to.
 
-**Measured, not guessed.** An advance is very nearly linear in the point size,
-so one measurement says what the size should be and the check that follows
-catches the rounding. That is two or three faces built in the worst case,
-against the hundred and fifty a one-point-at-a-time walk down from a headline
-size would build.
-
-Below minValuePt there is no point shrinking further: a number that small on a
-640-pixel panel is not readable from the other side of a desk, which is the
-only place this screen is ever read from. It overruns instead, and overrunning
-visibly is better than being illegible quietly.
+Below it the digits stop being readable at arm's length, which is the whole
+job of the panel -- so a value that still does not fit overruns instead.
+Overrunning visibly is better than being illegible quietly.
 */
-func fitted(s string, w int, pt float64, bold bool, family string) float64 {
-	if s == "" || w <= 0 || pt <= minValuePt {
-		return pt
-	}
-
-	drawing.Lock()
-	defer drawing.Unlock()
-
-	advance := font.MeasureString(face(pt, bold, family), s).Round()
-	if advance <= w || advance <= 0 {
-		return pt
-	}
-
-	fit := math.Floor(pt * float64(w) / float64(advance))
-	for fit > minValuePt {
-		if font.MeasureString(face(fit, bold, family), s).Round() <= w {
-			return fit
-		}
-		fit--
-	}
-	return minValuePt
-}
-
-// minValuePt is the smallest a value is shrunk to. Below it the digits stop
-// being readable at arm's length, which is the whole job of the panel.
 const minValuePt = 16

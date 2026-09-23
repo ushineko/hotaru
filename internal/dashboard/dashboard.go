@@ -212,8 +212,14 @@ type Slot struct {
 	Label string `json:"label,omitempty"`
 }
 
-// DefaultSeparator is what joins a pair when the author has said nothing.
-const DefaultSeparator = " / "
+/*
+DefaultSeparator is what joins a pair when the author has said nothing.
+
+A middle dot with a space either side. ` / ` was the first guess and this is
+what somebody chose after looking at both on the panel, which is the only
+place the question could be answered.
+*/
+const DefaultSeparator = " · "
 
 /*
 Words is the label this slot draws.
@@ -222,9 +228,13 @@ The author's, or one built from what the readings are called and measured in.
 The built one carries the unit, which is what the unit line used to do: a slot
 nobody has edited still says whether it is degrees or percent.
 
-Two readings with the same name are named once -- `CPU % / °C` rather than
-`CPU % / CPU °C`, because the second CPU is a word the eye has to read to
+Two readings with the same name are named once -- `CPU % · °C` rather than
+`CPU % · CPU °C`, because the second CPU is a word the eye has to read to
 learn nothing.
+
+**Divided by whatever divides the numbers.** A label reading `CPU % / °C`
+over a value reading `12 · 63` is two answers to the same question, and the
+one the eye believes is the one in the label.
 */
 func (s Slot) Words() string {
 	if s.Label != "" {
@@ -240,7 +250,7 @@ func (s Slot) Words() string {
 	if other == label {
 		other = ""
 	}
-	return strings.TrimSpace(label+" "+unit) + " / " + strings.TrimSpace(other+" "+otherUnit)
+	return strings.TrimSpace(label+" "+unit) + s.Join() + strings.TrimSpace(other+" "+otherUnit)
 }
 
 // Join is the separator this slot puts between its two values.
@@ -255,15 +265,58 @@ func (s Slot) Join() string {
 Text is the value this slot draws: one reading, or two joined.
 
 The placeholder for a reading the machine did not have is the reading
-package's, per half. A pair with one sensor missing reads `-- / 59`, which
+package's, per half. A pair with one sensor missing reads `-- · 59`, which
 says which half went away -- where dropping to a single placeholder would
 report both as absent on the evidence of one.
+
+This is the value as a *string*, for the CLI and for anything comparing two
+frames. What the panel draws is Fields, which is the same text in boxes that
+do not move.
 */
 func (s Slot) Text(r readings.Reading) string {
 	if s.Second == "" {
 		return r.Text(s.Source)
 	}
 	return r.Text(s.Source) + s.Join() + r.Text(s.Second)
+}
+
+/*
+Field is one piece of a drawn value: the text, and how much room to keep for
+it whatever it happens to say this time.
+
+Chars is a count of characters, turned into pixels by whoever is drawing --
+the digits are tabular in every face the dashboard offers, so a count is a
+width. Zero means the piece is literal and gets exactly what it measures,
+which is what the separator is.
+*/
+type Field struct {
+	Text  string
+	Chars int
+}
+
+/*
+Fields is the value as boxes rather than as a string.
+
+**The reason the panel stops wobbling.** A value drawn to the width of
+whatever it says this time moves every character when the character count
+changes, and the character count changes on every reading that crosses ten or
+a hundred. Each number gets the width it *can* take instead, so the digits sit
+in the same columns from one frame to the next and the assembly's total width
+never depends on the reading.
+
+A field is a minimum. A number wider than its reservation is drawn in full and
+pushes -- one shift at the extreme, rather than a digit lost.
+*/
+func (s Slot) Fields(r readings.Reading) []Field {
+	first := Field{Text: r.Text(s.Source), Chars: readings.Width(s.Source)}
+	if s.Second == "" {
+		return []Field{first}
+	}
+	return []Field{
+		first,
+		{Text: s.Join()},
+		{Text: r.Text(s.Second), Chars: readings.Width(s.Second)},
+	}
 }
 
 // Background kinds.

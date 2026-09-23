@@ -77,6 +77,9 @@ func Shipped() []Dashboard {
 		`load` pairs its readings, because it is the dashboard the pair was
 		wanted for: two rows of four numbers became two rows of two, each
 		saying the load and the temperature of one chip.
+
+		The dividers are the default (spec 042), spelled into the labels so
+		the words above a number agree with what is between them.
 	*/
 	return []Dashboard{
 		{
@@ -97,9 +100,9 @@ func Shipped() []Dashboard {
 			Headline:    Slot{Source: readings.Coolant, Label: "COOLANT °C"},
 			Rings:       []readings.Source{readings.Coolant, readings.CPULoad},
 			Slots: []Slot{
-				{Source: readings.CPULoad, Second: readings.CPUTemp, Label: "CPU % / °C"},
-				{Source: readings.GPULoad, Second: readings.GPUTemp, Label: "GPU % / °C"},
-				{Source: readings.MemUsed, Second: readings.MemBytes, Label: "MEM % / GB"},
+				{Source: readings.CPULoad, Second: readings.CPUTemp, Label: "CPU % · °C"},
+				{Source: readings.GPULoad, Second: readings.GPUTemp, Label: "GPU % · °C"},
+				{Source: readings.MemUsed, Second: readings.MemBytes, Label: "MEM % · GB"},
 				{Source: readings.PumpRPM, Label: "PUMP RPM"},
 			},
 		},
@@ -109,10 +112,10 @@ func Shipped() []Dashboard {
 			Theme:       "amber",
 			Headline:    Slot{Source: readings.Coolant, Label: "COOLANT °C"},
 			Slots: []Slot{
-				{Source: readings.PumpRPM, Second: readings.PumpDuty, Label: "PUMP RPM / %"},
-				{Source: readings.FanRPM, Second: readings.FanDuty, Label: "FANS RPM / %"},
-				{Source: readings.CPUTemp, Second: readings.CPULoad, Label: "CPU °C / %"},
-				{Source: readings.MemUsed, Second: readings.MemBytes, Label: "MEM % / GB"},
+				{Source: readings.PumpRPM, Second: readings.PumpDuty, Label: "PUMP RPM · %"},
+				{Source: readings.FanRPM, Second: readings.FanDuty, Label: "FANS RPM · %"},
+				{Source: readings.CPUTemp, Second: readings.CPULoad, Label: "CPU °C · %"},
+				{Source: readings.MemUsed, Second: readings.MemBytes, Label: "MEM % · GB"},
 			},
 		},
 		{

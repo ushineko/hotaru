@@ -209,6 +209,27 @@ MIT. See [LICENSE](LICENSE).
 
 ## Changelog
 
+### Unreleased
+
+- The big number stops moving while it renders. It was one centred string, so
+  every character shifted when the character count changed -- `9` to `10`,
+  `99` to `100` -- and on a pair both halves moved whenever either did. The Go
+  fonts are tabular, so nothing moves because of *which* digits are drawn;
+  each number is given a field as wide as it can ever need and drawn
+  right-aligned in it, so the digits already there stay put and the new one
+  arrives beside them. Padding the string with spaces would not do it: a space
+  is 44 pixels against a digit's 88 (spec 042, #106).
+
+- A centred pair hugs its separator, growing outward from it, and a paired
+  headline keeps clear of the panel's edges. Both found by rendering it and
+  looking: right-aligning both halves left a blank character each side of the
+  dot, and reserving three characters a side made the assembly wide enough to
+  touch both edges (spec 042, #106).
+
+- **` · ` is the default separator** rather than ` / `. A dashboard that never
+  set one will draw the dot from now on; one that set a separator keeps it.
+  The shipped labels follow (spec 042, #106).
+
 ### 0.1.6 (2026-09-22)
 
 - A dashboard slot can show two readings. CPU load and CPU temperature are one

@@ -73,6 +73,34 @@ func Describe(s Source) (label, unit string) {
 	return string(s), ""
 }
 
+/*
+Width is how many characters to reserve for a source's reading.
+
+The panel redraws every couple of seconds, and a value drawn to the width of
+whatever it happens to say moves every time the character count changes -- `9`
+to `10`, `99` to `100`. Reserving the width it *can* take holds it still.
+
+The widest plausible reading rather than the widest possible one. A field is a
+minimum and not a limit, so being wrong here costs one shift at the extreme
+instead of a layout that cannot hold what it is given: a coolant at 100 °C is
+a machine with a bigger problem than a number that moved.
+
+Here rather than in the renderer because the format that decides it is here.
+Text puts one decimal on a coolant and none on anything else, and a width
+worked out somewhere else would be a second opinion about the same string.
+*/
+func Width(s Source) int {
+	switch s {
+	case Coolant:
+		return 4 // 37.5
+	case PumpRPM, FanRPM:
+		return 4 // 2608
+	case CPUTemp, GPUTemp, CPULoad, GPULoad, PumpDuty, FanDuty, MemUsed, MemBytes:
+		return 3 // 100
+	}
+	return 3
+}
+
 // Reading is what the machine said this time round.
 type Reading struct {
 	values map[Source]float64
