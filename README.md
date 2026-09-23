@@ -209,6 +209,33 @@ MIT. See [LICENSE](LICENSE).
 
 ## Changelog
 
+### Unreleased
+
+- Dragging the colour wheel no longer floods the devices or sticks the window.
+  The picker's throttle measured the gap from the moment a send *started* and
+  then made the send synchronously on the UI thread, so the gap was spent
+  inside the send: hardware slow enough to need spacing got none, and the
+  wheel ran a continuous back-to-back apply loop. The gap is measured from the
+  previous send's completion now, one apply is in flight at a time, colours
+  produced during it collapse to the latest, and the last one is never the one
+  dropped. The sliders and the number boxes went through the same funnel
+  unlimited (spec 040, #100).
+
+- The scenes section's `picker` field was never assigned, so `stopPicking` had
+  been nilling a permanent nil and `Detach` had been doing nothing since the
+  field was added. Both go. `Detach` stays as an empty method because the shell
+  calls it before every rebuild and two things have now been put there by
+  mistake; its comment and a test that holds it empty are the point of it
+  (spec 040, #100).
+
+- Numpad shortcuts do not fire on a machine whose keyboard is shared over
+  deskflow. Everything else about them works: the script loads, the actions
+  register, and invoking one applies the scene. Non-numpad bindings work
+  there. Documented in
+  [docs/hardware.md](docs/hardware.md#the-numpad-over-a-shared-keyboard);
+  forwarded keyboards commonly lose modifier and lock state, which is a class
+  of problem rather than one tool's bug.
+
 ### 0.1.5 (2026-09-22)
 
 - A gallery: [docs/gallery.md](docs/gallery.md), one image per part of the
@@ -245,16 +272,6 @@ MIT. See [LICENSE](LICENSE).
 - A build that is not the release says so: `0.1.3-1a2b3c4-dev` unless HEAD is
   on the version's tag with a clean tree. Packages stamp their own version and
   are unaffected.
-
-### Unreleased
-
-- Numpad shortcuts do not fire on a machine whose keyboard is shared over
-  deskflow. Everything else about them works: the script loads, the actions
-  register, and invoking one applies the scene. Non-numpad bindings work
-  there. Documented in
-  [docs/hardware.md](docs/hardware.md#the-numpad-over-a-shared-keyboard);
-  forwarded keyboards commonly lose modifier and lock state, which is a class
-  of problem rather than one tool's bug.
 
 ### 0.1.3 (2026-09-21)
 

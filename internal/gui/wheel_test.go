@@ -186,3 +186,25 @@ func TestSaturationCanBeTunedWithoutTheRim(t *testing.T) {
 	require.Zero(t, got.G)
 	require.Zero(t, got.B)
 }
+
+func TestThePickerHoldsNothingBack(t *testing.T) {
+	/*
+		The control used to throttle itself, and did it by taking the time
+		before a send it then made synchronously -- so the gap was spent
+		inside the send and slow hardware got no spacing at all.
+
+		The spacing belongs to whatever is driving the hardware, which is the
+		only thing that knows how long a write takes. What the picker owes is
+		every change, at once: four colours chosen is four reports, in order,
+		with none held back for a pause that may never come.
+	*/
+	var picked []string
+	p := gui.NewPicker(gui.ParseColour("#000000"))
+	p.OnPick = func(colour string) { picked = append(picked, colour) }
+
+	want := []string{"#ff0000", "#00ff00", "#0000ff", "#ffffff"}
+	for _, colour := range want {
+		p.Choose(gui.ParseColour(colour))
+	}
+	require.Equal(t, want, picked)
+}

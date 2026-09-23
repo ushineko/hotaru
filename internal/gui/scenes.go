@@ -34,10 +34,6 @@ type ScenesSection struct {
 	draft *Draft
 	// picked is what the next colour lands on: one light, or forty.
 	picked Selection
-	// picker is kept between rebuilds: one replaced under a dragging pointer
-	// loses the drag, and this window rebuilds every two seconds.
-	picker *Picker
-
 	/*
 		scroller is kept for the same kind of reason, and a sharper one.
 
@@ -170,22 +166,22 @@ func (s *ScenesSection) Build(sh *shell.Shell) fyne.CanvasObject {
 	return s.list(sh)
 }
 
-// Detach ends a preview when the section goes away, which is what leaving the
-// editor means: a draft nobody is looking at is not one the hardware should
-// still be showing.
 /*
-Detach drops what belongs to the section on screen.
+Detach does nothing, on purpose, and that is the whole of what it is for.
 
-**It does not end the preview**, and that was a bug worth writing down: the
-shell detaches a section before *every* rebuild, not only when it is replaced,
-so ending a preview here meant a draft went up and came down within one frame.
-The button worked, the lights flashed, and the cause was in a method that looks
-like it runs at the end of something.
+**The shell detaches a section before *every* rebuild**, not only when it is
+replaced, and this window rebuilds every two seconds. So anything ended here is
+ended a couple of times a minute while somebody is working.
 
-A preview ends when somebody dismisses the window that is showing it, or when
-the program stops. Both are explicit.
+It has been the wrong home twice. Ending the preview here put a draft up and
+took it down within one frame -- the button worked, the lights flashed, and the
+cause was in a method that looks like it runs at the end of something. Stopping
+the colour sender here would drop it under a pointer that was still dragging.
+
+Both of those end when somebody dismisses the window showing them, or when the
+program stops. Both are explicit, and neither is a rebuild.
 */
-func (s *ScenesSection) Detach() { s.stopPicking() }
+func (s *ScenesSection) Detach() {}
 
 /*
 Arrive is the navigation coming to this section, which is the only moment the
@@ -688,7 +684,6 @@ func (s *ScenesSection) led(sh *shell.Shell, device api.Device, zone api.Zone,
 		block.Stroke = theme.Color(theme.ColorNamePrimary)
 	}
 	block.OnTapped = func() {
-		s.stopPicking()
 		s.picked.Toggle(spot)
 		sh.Invalidate()
 	}
@@ -702,9 +697,6 @@ func (s *ScenesSection) pick(sh *shell.Shell, spot Spot, label string) fyne.Canv
 		label += "  " + colour
 	}
 	button := widget.NewButton(label, func() {
-		// A fresh picker per selection: one opened on the last spot's colour
-		// would misreport this one.
-		s.stopPicking()
 		s.picked.Toggle(spot)
 		sh.Invalidate()
 	})
@@ -773,20 +765,41 @@ func (s *ScenesSection) pickColour(sh *shell.Shell, current string) {
 	before, had := s.chosen(), s.chosen() != ""
 	picker := NewPicker(parse(opening(current)))
 
-	// Every move goes to the hardware, throttled. The draft carries it so the
-	// preview shows the scene as it would be, not the one colour in isolation.
+	/*
+		The sender's life is the modal's, which is why it is a local.
+
+		**It must not be reachable from a rebuild.** The shell calls Detach
+		before every one, and this window rebuilds every two seconds: a sender
+		kept in a field would be stopped and dropped under a pointer that was
+		still dragging. The modal is the thing with an unmistakable end, and
+		its callback below is that end.
+	*/
+	sender := newLimiter(s.showDraft)
+
+	/*
+		Every move reaches the draft; the limiter decides how many of them
+		reach the hardware.
+
+		The draft is updated here, on the UI thread, because the window reads
+		it -- and the scene handed to the limiter is built here for the same
+		reason. What crosses to the sender is a value, so there is nothing
+		shared to race on. The whole draft rather than the one colour, so the
+		preview shows the scene as it would be rather than a light on its own.
+	*/
 	picker.OnPick = func(colour string) {
 		s.set(colour)
-		s.showDraft()
+		sender.offer(s.draft.Scene(s.draftName()))
 	}
 
 	s.set(picker.Colour())
-	s.showDraft()
+	sender.offer(s.draft.Scene(s.draftName()))
 
 	chooser := dialog.NewCustomConfirm("Choose a colour for "+s.targetName(), "Use it", "Cancel",
 		picker.Object(),
 		func(keep bool) {
-			picker.Stop()
+			// Before the lease goes: an apply still in flight would land after
+			// the release and leave the lights where nothing is holding them.
+			sender.stop()
 			if keep {
 				s.set(picker.Colour())
 			} else {
@@ -811,8 +824,8 @@ lights back, so a picker that released and re-took for every move sent a revert
 to the previous colour a moment ahead of every new one. What that looked like
 was the wheel not working.
 */
-func (s *ScenesSection) showDraft() {
-	if err := s.app.Preview(context.Background(), s.draft.Scene(s.draftName())); err != nil {
+func (s *ScenesSection) showDraft(scene api.Scene) {
+	if err := s.app.Preview(context.Background(), scene); err != nil {
 		s.app.EndPreview()
 	}
 }
@@ -1200,14 +1213,6 @@ func (s *ScenesSection) set(colour string) {
 	}
 }
 
-// stopPicking drops the picker, so the next selection opens a fresh one.
-func (s *ScenesSection) stopPicking() {
-	if s.picker != nil {
-		s.picker.Stop()
-		s.picker = nil
-	}
-}
-
 /*
 preview shows the whole draft, for as long as a modal is open.
 
@@ -1217,7 +1222,7 @@ it gets forgotten -- so the thing holding the lights is a window in front of
 everything else, and dismissing it is the revert.
 */
 func (s *ScenesSection) preview(sh *shell.Shell) {
-	s.showDraft()
+	s.showDraft(s.draft.Scene(s.draftName()))
 	if !s.app.Previewing() {
 		sh.Flash("The service would not show it.", fd.StatusWarn)
 		return
@@ -1398,7 +1403,6 @@ func (s *ScenesSection) actions(sh *shell.Shell) fyne.CanvasObject {
 
 	cancel := widget.NewButton("Close", func() {
 		s.app.EndPreview()
-		s.stopPicking()
 		s.draft = nil
 		s.picked.Clear()
 		sh.Invalidate()
@@ -1425,7 +1429,6 @@ func (s *ScenesSection) save(sh *shell.Shell) {
 				}
 				onScreen(func() {
 					s.app.EndPreview()
-					s.stopPicking()
 					s.draft = nil
 					s.picked.Clear()
 					sh.Flash(entry.Text+" saved.", fd.StatusGood)
