@@ -141,6 +141,18 @@ func Select(s *ScenesSection, spots ...Spot) {
 // SetColour puts a colour on the selection, as the picker does. For tests.
 func SetColour(s *ScenesSection, colour string) { s.set(colour) }
 
+// Choose selects one spot, as clicking it does. For tests.
+func Choose(s *ScenesSection, spot Spot) {
+	s.picked.Clear()
+	s.picked.Toggle(spot)
+}
+
+// DraftColour is what the draft says about one target, or empty. For tests.
+func DraftColour(s *ScenesSection, target string) string {
+	colour, _ := s.draft.Colour(target)
+	return colour
+}
+
 // EditLine selects what one of the scene's own lines names, as its Change
 // button does. For tests.
 func EditLine(s *ScenesSection, target string) {
@@ -620,7 +632,41 @@ func (s *ScenesSection) targets(sh *shell.Shell, device api.Device) []fyne.Canva
 	if len(device.Zones) == 0 {
 		rows = append(rows, lights(device))
 	}
+	if row := s.toggles(sh, device); row != nil {
+		rows = append(rows, row)
+	}
 	return rows
+}
+
+/*
+toggles is the row for the parts of a device that are switches rather than
+decoration: Caps Lock, Num Lock, a keyboard's own indicators.
+
+**They need their own control because they cannot be aimed at.** A hundred-key
+zone is drawn as twenty-four blocks of four or five keys each -- which is the
+right answer for a keyboard nobody wants to click a hundred times, and it
+means Caps Lock is a fifth of a block somebody would be guessing at. Named in
+the rules file, they are one click here.
+
+What colour they take is the scene's, exactly as it is for every other target:
+this draws them selectable and the existing colour flow does the rest. A scene
+that wants them left alone selects nothing and says nothing, and they light
+like the rest of the board.
+
+Empty for a device whose rules name none, which is every device until somebody
+says otherwise.
+*/
+func (s *ScenesSection) toggles(sh *shell.Shell, device api.Device) fyne.CanvasObject {
+	if len(device.Toggles) == 0 {
+		return nil
+	}
+
+	picks := make([]fyne.CanvasObject, 0, len(device.Toggles)+1)
+	picks = append(picks, widgets.Dim("Toggles"))
+	for _, name := range device.Toggles {
+		picks = append(picks, s.pick(sh, NamedPart(device.Name, name), name))
+	}
+	return container.NewHBox(picks...)
 }
 
 /*

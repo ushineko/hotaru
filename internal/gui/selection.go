@@ -22,6 +22,22 @@ type Spot struct {
 	Zone string
 	// First and Last are lights within the zone. Both -1 for the whole zone.
 	First, Last int
+
+	/*
+		Segment names a part the rules file named, and when it is set it is
+		the whole of the spot: the device and this name, and nothing else.
+
+		Stored by name rather than resolved to the lights behind it, so the
+		scene says `keychron/caps` and goes on meaning the Caps Lock key
+		after somebody corrects which LED that is. A range would have to be
+		found again and re-typed.
+	*/
+	Segment string
+}
+
+// NamedPart is a spot covering a segment the rules file named.
+func NamedPart(device, segment string) Spot {
+	return Spot{Device: device, Segment: segment, First: -1, Last: -1}
 }
 
 // WholeDevice is a spot covering everything a device has.
@@ -40,6 +56,8 @@ func Lights(device, zone string, first, last int) Spot {
 // Target is the spot as hotaru writes it, which is what a scene stores.
 func (s Spot) Target() string {
 	switch {
+	case s.Segment != "":
+		return s.Device + "/" + s.Segment
 	case s.Zone == "":
 		return s.Device
 	case s.First < 0:
@@ -53,6 +71,8 @@ func (s Spot) Describe() string {
 	switch {
 	case s.Device == everything:
 		return "everything in scope"
+	case s.Segment != "":
+		return s.Segment
 	case s.Zone == "":
 		return s.Device
 	case s.First < 0:

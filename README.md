@@ -211,6 +211,30 @@ MIT. See [LICENSE](LICENSE).
 
 ### Unreleased
 
+- The window can aim at a keyboard's lock keys. A rule names which of its
+  segments are switches rather than decoration, and the editor gives them a
+  row of their own -- a hundred-key zone is drawn as twenty-four blocks of
+  four or five keys, so Caps Lock was a fifth of a block somebody would be
+  guessing at. The CLI could always address it; the window could not
+  (spec 043, #110).
+
+  The colour is the scene's, not the rule's: one scheme wants the toggles
+  shouting and the next wants them lighting like the rest of the board. The
+  rule says only which lights they are.
+
+  ```yaml
+    - match: "keychron"
+      segments:
+        caps: {zone: "Keyboard", leds: [55, 55]}
+      toggles: [caps]
+  ```
+
+  **Why a colour and not a dark key**: this keyboard paints its lock keys
+  white while they are engaged, over whatever is written, and will not give
+  them up -- deliberately, since an indicator software can switch off is one
+  that will be off when it matters. So hotaru does not try. It gives that
+  white something to be seen against.
+
 - fynedesygn 0.1.39. A top navigation is drawn in the header rather than in a
   strip of its own beneath it, so the window in that shape is a row shorter
   and does not say the program's name twice; and every dialog closes from its

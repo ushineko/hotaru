@@ -225,3 +225,26 @@ func TestTheShippedExampleParsesAndMeansWhatItSays(t *testing.T) {
 	// corrects behaviour, it does not select devices.
 	require.True(t, cfg.InScope("Some Device Nobody Mentioned"))
 }
+
+func TestAToggleMustNameASegmentOfItsOwnRule(t *testing.T) {
+	/*
+		A typo, or a segment renamed with one reference left behind. Caught
+		when the file is read, because a rules file is read once and the
+		editor is drawn every time anything changes.
+	*/
+	cfg, problems, err := config.Load(write(t, `
+devices:
+  - match: keychron
+    segments:
+      caps: {zone: "Keyboard", leds: [55, 55]}
+    toggles: [caps, nope]
+`))
+	require.NoError(t, err)
+	require.NotNil(t, cfg)
+	require.Len(t, problems, 1)
+	require.Contains(t, problems[0].Error(), "nope")
+	require.Contains(t, problems[0].Error(), "caps", "the message does not say what there is")
+
+	require.Equal(t, []string{"caps"}, cfg.Devices[0].Toggles,
+		"the good entry did not survive the bad one")
+}

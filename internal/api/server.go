@@ -784,6 +784,7 @@ func describe(view service.View) Device {
 		device.Segments = append(device.Segments, name)
 	}
 	sortStrings(device.Segments)
+	device.Toggles = append(device.Toggles, view.Rule.Toggles...)
 	return device
 }
 

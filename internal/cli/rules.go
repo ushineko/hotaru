@@ -82,6 +82,13 @@ func yamlFor(cfg *config.Config) string {
 			fmt.Fprintf(&out, "      %s: {zone: %q, leds: [%d, %d]}\n",
 				key(name), segment.Zone, segment.LEDs.First, segment.LEDs.Last)
 		}
+		if len(rule.Toggles) > 0 {
+			// With the note, because a toggle is the one entry here that is
+			// not decoration: somebody reading this later should not have to
+			// work out why two lights get their own control in the window.
+			out.WriteString("    # segments that are switches rather than decoration.\n")
+			fmt.Fprintf(&out, "    toggles: [%s]\n", strings.Join(rule.Toggles, ", "))
+		}
 	}
 	return out.String()
 }
