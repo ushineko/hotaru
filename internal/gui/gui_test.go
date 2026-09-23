@@ -2475,3 +2475,59 @@ func TestTheScreenEditorFitsAWindow(t *testing.T) {
 	require.Less(t, built.MinSize().Width, float32(1000),
 		"a slot row got wide enough to push the editor past a default window")
 }
+
+func TestTheScreenEditorTurnsUnitsOn(t *testing.T) {
+	/*
+		One switch for the screen rather than one per reading. It also changes
+		what the labels say, so the check has to reach the draft and the form
+		has to be rebuilt from it.
+	*/
+	a := test.NewApp()
+	t.Cleanup(a.Quit)
+
+	routes := screenful()
+	routes["POST /"+api.Version+"/dashboards/preview"] = api.PreviewedDashboard{}
+
+	app := gui.New(service(t, routes))
+	opts := app.Options("s")
+	opts.SettingsPath = filepath.Join(t.TempDir(), "gui.yml")
+	sh := shell.Headless(a, opts)
+	app.Refresh(context.Background())
+
+	section := &gui.DashboardsSection{}
+	gui.OpenDashboards(section, app)
+	gui.EditDashboard(section, api.Dashboard{
+		Name: "quiet", Arrangement: "ring",
+		Headline: api.DashboardSlot{Source: "cpu_c"},
+	})
+
+	built := section.Build(sh)
+	section.Settle()
+	window := test.NewWindow(built)
+	t.Cleanup(window.Close)
+	window.Resize(fyne.NewSize(1200, 900))
+
+	require.Contains(t, fynetest.Text(built), "Units")
+	require.False(t, gui.DraftDashboard(section).Units, "units started on")
+
+	var check *widget.Check
+	fynetest.WalkRendered(built, func(o fyne.CanvasObject) bool {
+		if c, ok := o.(*widget.Check); ok && check == nil {
+			check = c
+			return true
+		}
+		return false
+	})
+	require.NotNil(t, check, "the form offers no check to turn units on")
+
+	check.SetChecked(true)
+	section.Settle()
+	require.True(t, gui.DraftDashboard(section).Units, "the check did not reach the draft")
+
+	// And the label placeholder follows: the unit is beside the number now.
+	rebuilt := section.Build(sh)
+	section.Settle()
+	window.SetContent(rebuilt)
+	require.NotNil(t, entryPlaceheld(t, rebuilt, "CPU"),
+		"the label placeholder still carries the unit")
+}

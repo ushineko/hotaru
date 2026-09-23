@@ -23,6 +23,7 @@ func asDashboard(one dashboard.Dashboard) Dashboard {
 		},
 		Headline: asSlot(one.Headline),
 		Caption:  one.Caption,
+		Units:    one.Units,
 		Lettering: DashboardLettering{
 			Font:   one.Lettering.Font,
 			Labels: asText(one.Lettering.Labels),
@@ -61,6 +62,7 @@ func toDashboard(one Dashboard) dashboard.Dashboard {
 		},
 		Headline: toSlot(one.Headline),
 		Caption:  one.Caption,
+		Units:    one.Units,
 		Lettering: dashboard.Lettering{
 			Font:   one.Lettering.Font,
 			Labels: fromText(one.Lettering.Labels),

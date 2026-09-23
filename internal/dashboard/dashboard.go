@@ -61,6 +61,17 @@ type Dashboard struct {
 	// dropped rather than drawn over each other.
 	Slots []Slot `json:"slots,omitempty"`
 
+	/*
+		Units draws what each number is measured in beside it, small, on the
+		line the separator sits on.
+
+		Off by default, which is every dashboard written before spec 044. On,
+		the generated label stops carrying the unit -- it is beside the number
+		now, and a label repeating it is the redundancy the unit line was
+		removed for.
+	*/
+	Units bool `json:"units,omitempty"`
+
 	// Caption is a line of the author's own text. Empty draws nothing and
 	// takes no space.
 	Caption string `json:"caption,omitempty"`
@@ -236,19 +247,32 @@ learn nothing.
 over a value reading `12 · 63` is two answers to the same question, and the
 one the eye believes is the one in the label.
 */
-func (s Slot) Words() string {
+func (s Slot) Words(units bool) string {
 	if s.Label != "" {
 		return s.Label
 	}
 
 	label, unit := readings.Describe(s.Source)
+	if units {
+		// Beside the number now; a label repeating it is the redundancy the
+		// unit line was removed for.
+		unit = ""
+	}
 	if s.Second == "" {
 		return strings.TrimSpace(label + " " + unit)
 	}
 
 	other, otherUnit := readings.Describe(s.Second)
+	if units {
+		otherUnit = ""
+	}
 	if other == label {
 		other = ""
+	}
+	if other == "" && otherUnit == "" {
+		// Two readings of one thing, named once, measured in nothing worth
+		// saying: "CPU" rather than "CPU / ".
+		return strings.TrimSpace(label + " " + unit)
 	}
 	return strings.TrimSpace(label+" "+unit) + s.Join() + strings.TrimSpace(other+" "+otherUnit)
 }
@@ -292,7 +316,31 @@ which is what the separator is.
 type Field struct {
 	Text  string
 	Chars int
+
+	/*
+		Small marks a piece drawn smaller than the number it belongs to: a
+		unit, at the headline's size, would otherwise be as large as the
+		figure it qualifies and read as a second number.
+
+		Centred in the same band as everything else on the line, so it sits
+		where the separator sits, which is where the eye already is.
+	*/
+	Small bool
+
+	// Divider marks the piece between two readings. What is before it grows
+	// leftwards and what is after it grows right, so the two numbers stay
+	// against the thing that separates them.
+	Divider bool
 }
+
+/*
+UnitScale is how large a unit is drawn against the number beside it.
+
+Picked by eye on the panel. Small enough not to compete with the figure,
+large enough to read across a desk -- which is the whole job, and the reason
+this is a number somebody looked at rather than one derived from anything.
+*/
+const UnitScale = 0.45
 
 /*
 Fields is the value as boxes rather than as a string.
@@ -307,16 +355,34 @@ never depends on the reading.
 A field is a minimum. A number wider than its reservation is drawn in full and
 pushes -- one shift at the extreme, rather than a digit lost.
 */
-func (s Slot) Fields(r readings.Reading) []Field {
-	first := Field{Text: r.Text(s.Source), Chars: readings.Width(s.Source)}
+func (s Slot) Fields(r readings.Reading, units bool) []Field {
+	out := []Field{{Text: r.Text(s.Source), Chars: readings.Width(s.Source)}}
+	out = append(out, unitOf(s.Source, units)...)
 	if s.Second == "" {
-		return []Field{first}
+		return out
 	}
-	return []Field{
-		first,
-		{Text: s.Join()},
-		{Text: r.Text(s.Second), Chars: readings.Width(s.Second)},
+
+	out = append(out, Field{Text: s.Join(), Divider: true},
+		Field{Text: r.Text(s.Second), Chars: readings.Width(s.Second)})
+	return append(out, unitOf(s.Second, units)...)
+}
+
+/*
+unitOf is the small piece after a number, or nothing.
+
+Nothing twice over: when the dashboard does not want units, and when the
+reading has none to give. A source measured in no particular thing would
+otherwise reserve a gap after its number for a string that is empty.
+*/
+func unitOf(source readings.Source, units bool) []Field {
+	if !units {
+		return nil
 	}
+	_, unit := readings.Describe(source)
+	if unit == "" {
+		return nil
+	}
+	return []Field{{Text: unit, Small: true}}
 }
 
 // Background kinds.

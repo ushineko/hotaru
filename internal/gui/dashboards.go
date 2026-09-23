@@ -405,10 +405,10 @@ in the editor and the words on the panel cannot drift apart. The window does
 not render -- that is the service's job and deliberately only its job -- but
 what a thing is *called* is the model's, and there is one answer to it.
 */
-func defaultLabel(source, second string) string {
+func defaultLabel(source, second string, units bool) string {
 	return dashboard.Slot{
 		Source: readings.Source(source), Second: readings.Source(second),
-	}.Words()
+	}.Words(units)
 }
 
 /*

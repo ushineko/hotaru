@@ -209,6 +209,26 @@ MIT. See [LICENSE](LICENSE).
 
 ## Changelog
 
+### Unreleased
+
+- A dashboard can show what each number is measured in, beside it. `12% ·
+  63°C` rather than a label reading `CPU % · °C` above a value reading `12 ·
+  63` and an eye that has to pair the halves off in order. One per half,
+  because a pair is exactly the case where the two are measured differently.
+  Drawn small and on the separator's line, because at the headline's size a
+  full-size `%` reads as a second number. Off by default, so nothing anybody
+  has changes (spec 044, #116).
+
+  With units on, a slot with no label of its own stops carrying the unit --
+  it is beside the number now. An author's own label is never touched.
+
+- The stacked rows line their separators up. Each row sized its own first
+  number, so `2709 ·` and `12 ·` put their dots in different columns and four
+  rows read as a table with a bend in it. Every field is now as wide as the
+  widest of that field across every row: one dot column, one right edge, one
+  size. A row with fewer fields aligns from the left, under the other rows'
+  first numbers rather than their second (spec 044, #116).
+
 ### 0.1.8 (2026-09-22)
 
 - The window can aim at a keyboard's lock keys. A rule names which of its
