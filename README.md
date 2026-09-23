@@ -209,6 +209,14 @@ MIT. See [LICENSE](LICENSE).
 
 ## Changelog
 
+### Unreleased
+
+- fynedesygn 0.1.39. A top navigation is drawn in the header rather than in a
+  strip of its own beneath it, so the window in that shape is a row shorter
+  and does not say the program's name twice; and every dialog closes from its
+  corner, which the screen chooser and the colour wheel both get for free.
+  Nothing to set, and the left-hand navigation is unchanged.
+
 ### 0.1.7 (2026-09-22)
 
 - The big number stops moving while it renders. It was one centred string, so
