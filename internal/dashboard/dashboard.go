@@ -343,6 +343,17 @@ this is a number somebody looked at rather than one derived from anything.
 const UnitScale = 0.45
 
 /*
+UnitGap is the space between a number and its unit, as a fraction of the
+number's size.
+
+Spec 044 drew the two as one run and they came out touching; this is the hair
+of space that separates the figure from what it is measured in. Scaled with
+the text, like the unit itself, so it is the same gap wherever it is drawn --
+and, like the unit's size, a number picked by looking at the panel.
+*/
+const UnitGap = 0.06
+
+/*
 Fields is the value as boxes rather than as a string.
 
 **The reason the panel stops wobbling.** A value drawn to the width of

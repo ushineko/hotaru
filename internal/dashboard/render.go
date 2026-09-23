@@ -204,12 +204,38 @@ func drawStacked(p *paint, d Dashboard, r Reading) {
 	slots := fit(d, Stacked)
 	words := make([]string, len(slots))
 	rows := make([][]Field, len(slots))
-	labelWidth := rowLabelWidth
+	labelWidth := 0
 	for i, slot := range slots {
 		words[i] = slot.Words(d.Units)
 		rows[i] = slot.Fields(r, d.Units)
-		labelWidth = max(labelWidth, p.textWidth(words[i], 22, false, p.letters.Labels))
+		labelWidth = max(labelWidth, p.textWidth(words[i], rowLabelPt, false, p.letters.Labels))
 	}
+
+	/*
+		The numbers ask first, and the words take what is left (spec 045).
+
+		The words used to take the wider of their own width and a fixed
+		minimum, and the numbers got the remainder. That made the readings
+		size do nothing: a row with short labels still held 160 pixels of
+		empty column, and one with big labels held 253, so the numbers were
+		fitted to a band of about 120 and came out at the floor whatever the
+		dashboard asked for. A slider connected to nothing.
+
+		So the room is shared out from what the numbers want at the size the
+		author asked for. The words keep what that leaves, never more than
+		they measure and never squeezed below rowLabelFloor -- and they are
+		drawn at a size that fits what they were left, rather than through
+		the numbers beside them.
+
+		A row is still one line and the panel is still 640 wide: when the
+		numbers want more than the row has, they are fitted to it as before.
+		The slider moves them up to that point and no further, which is the
+		honest end of it.
+	*/
+	want := rowValuePt * p.letters.Values.Scale()
+	_, asked := p.columnBoxes(rows, want)
+	labelWidth = shareRow(labelWidth, asked)
+	labelPt := p.wordsAt(words, labelWidth, rowLabelPt)
 
 	left := rowInset + labelWidth + rowGap
 	band := Size - rowInset - left
@@ -224,7 +250,7 @@ func drawStacked(p *paint, d Dashboard, r Reading) {
 		space to the left of their numbers, which is what a table of numbers
 		looks like.
 	*/
-	widths, total, size := p.column(rows, band, rowValuePt*p.letters.Values.Scale())
+	widths, total, size := p.column(rows, band, want)
 
 	/*
 		The column sits against the right edge of the band, and every row
@@ -241,11 +267,23 @@ func drawStacked(p *paint, d Dashboard, r Reading) {
 	for i, slot := range slots {
 		y := stackTop + i*rowHeight
 		reading, known := r.Value(slot.Source)
-		p.labelAt(words[i], rowInset, y, labelWidth, 48, 22, Left)
+		p.labelAt(words[i], rowInset, y, labelWidth, 48, labelPt, Left)
 		p.inColumn(rows[i], widths, start, y, 48, size,
 			gradeOf(slot.Source, reading, known, p.theme),
 			graded(slot.Source, reading, known))
 	}
+}
+
+/*
+shareRow is the word column of a stacked row: what the words measure, less
+whatever the numbers need that the row does not otherwise have.
+
+Never wider than the words are, so short labels stop holding room nothing is
+drawn in, and never narrower than rowLabelFloor, so a dashboard whose numbers
+would take the whole row still has words beside them. See drawStacked.
+*/
+func shareRow(words, asked int) int {
+	return min(words, max(Size-2*rowInset-rowGap-asked, rowLabelFloor))
 }
 
 // drawBig is the headline alone, as large as the panel will take.

@@ -258,7 +258,7 @@ func TestEveryArrangementHoldsStill(t *testing.T) {
 			top: 446, height: 66, left: metricInset, right: metricInset + ringColumn,
 		}},
 		{"a stacked row", plain(Stacked, head, paired), window{
-			top: stackTop, height: 48, left: rowInset + rowLabelWidth, right: Size - rowInset,
+			top: stackTop, height: 48, left: rowInset + rowLabelFloor, right: Size - rowInset,
 		}},
 		{"a grid cell", plain(Grid, head, paired), window{
 			top: gridTop + 30, height: 66, left: gridInset, right: gridInset + gridColumn,

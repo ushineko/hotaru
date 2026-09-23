@@ -3,10 +3,12 @@ package gui_test
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"go/build"
 	"image"
+	"image/color"
 	"image/color/palette"
 	"image/gif"
 	"net/http"
@@ -2530,4 +2532,106 @@ func TestTheScreenEditorTurnsUnitsOn(t *testing.T) {
 	window.SetContent(rebuilt)
 	require.NotNil(t, entryPlaceheld(t, rebuilt, "CPU"),
 		"the label placeholder still carries the unit")
+}
+
+/*
+Show is not Save, and Save is not two buttons.
+
+The editor had `Save` and `Save and show it`, which both wrote the dashboard
+and differed in what happened afterwards -- so the word somebody reaches for
+when they want to look at their work saved it as a side effect. Spec 045 makes
+the second button draw the draft and write nothing, and leaves the editor open
+around it: asking to see a thing is not asking to stop editing it.
+*/
+func TestShowingADraftDrawsItWithoutSavingIt(t *testing.T) {
+	a := test.NewApp()
+	t.Cleanup(a.Quit)
+
+	routes := screenful()
+	routes["POST /"+api.Version+"/dashboards/{name}/preview"] = api.PreviewedDashboard{
+		Image: base64.StdEncoding.EncodeToString(onePixel(t)), Bytes: 42, Floor: 1,
+	}
+	routes["POST /"+api.Version+"/screen"] = struct{}{}
+	routes["PUT /"+api.Version+"/dashboards/{name}"] = struct{}{}
+
+	client, times := counting(t, routes)
+	app := gui.New(client)
+	opts := app.Options("s")
+	opts.SettingsPath = filepath.Join(t.TempDir(), "gui.yml")
+	sh := shell.Headless(a, opts)
+	app.Refresh(context.Background())
+
+	section := &gui.DashboardsSection{}
+	gui.OpenDashboards(section, app)
+	gui.EditDashboard(section, api.Dashboard{Name: "quiet", Arrangement: "stacked"})
+
+	built := section.Build(sh)
+	section.Settle() // the frame the editor draws itself with
+
+	window := test.NewWindow(built)
+	t.Cleanup(window.Close)
+	window.Resize(fyne.NewSize(1200, 900))
+
+	require.Nil(t, fynetest.FindButton(built, "Save and show it"),
+		"the button that saved when it was asked to show is still there")
+	show := fynetest.FindButton(built, "Show")
+	require.NotNil(t, show, "the editor has no Show")
+
+	test.Tap(show)
+	section.Settle()
+
+	require.Eventually(t, func() bool { return times("/"+api.Version+"/screen") > 0 },
+		3*time.Second, 20*time.Millisecond, "nothing was drawn on the panel")
+	require.Zero(t, times("/"+api.Version+"/dashboards/quiet"),
+		"showing the draft saved it")
+	require.True(t, section.Busy(), "showing the draft closed the editor")
+	require.Equal(t, "stacked", gui.DraftDashboard(section).Arrangement,
+		"the draft did not survive being shown")
+}
+
+// And with nothing drawn yet there is nothing to show: an editor whose first
+// preview has not arrived must say so rather than hand the panel an empty
+// frame, which is a blank screen and no reason for it.
+func TestShowingADraftBeforeItIsDrawnSendsNothing(t *testing.T) {
+	a := test.NewApp()
+	t.Cleanup(a.Quit)
+
+	routes := screenful() // no preview route: the frame never arrives
+	routes["POST /"+api.Version+"/screen"] = struct{}{}
+
+	client, times := counting(t, routes)
+	app := gui.New(client)
+	opts := app.Options("s")
+	opts.SettingsPath = filepath.Join(t.TempDir(), "gui.yml")
+	sh := shell.Headless(a, opts)
+	app.Refresh(context.Background())
+
+	section := &gui.DashboardsSection{}
+	gui.OpenDashboards(section, app)
+	gui.EditDashboard(section, api.Dashboard{Name: "quiet", Arrangement: "stacked"})
+
+	built := section.Build(sh)
+	section.Settle()
+
+	window := test.NewWindow(built)
+	t.Cleanup(window.Close)
+	window.Resize(fyne.NewSize(1200, 900))
+
+	test.Tap(fynetest.FindButton(built, "Show"))
+	section.Settle()
+
+	require.Zero(t, times("/"+api.Version+"/screen"),
+		"a frame that does not exist was sent to the panel")
+	require.True(t, section.Busy())
+}
+
+// onePixel is a GIF the size of nothing: the preview's frame has to decode,
+// and what it is a picture of does not matter here.
+func onePixel(t *testing.T) []byte {
+	t.Helper()
+
+	frame := image.NewPaletted(image.Rect(0, 0, 1, 1), color.Palette{color.Black})
+	var out bytes.Buffer
+	require.NoError(t, gif.Encode(&out, frame, nil))
+	return out.Bytes()
 }

@@ -62,7 +62,7 @@ func (d *DashboardsSection) actions(sh *shell.Shell) fyne.CanvasObject {
 	save := widget.NewButtonWithIcon("Save", theme.DocumentSaveIcon(), func() { d.save(sh) })
 	save.Importance = widget.HighImportance
 
-	show := widget.NewButton("Save and show it", func() { d.saveAndShow(sh) })
+	show := widget.NewButton("Show", func() { d.show(sh) })
 	back := widget.NewButton("Cancel", func() {
 		d.editing, d.frame, d.cost = nil, nil, ""
 		sh.Invalidate()
@@ -669,11 +669,7 @@ func (d *DashboardsSection) redraw(sh *shell.Shell) {
 	}()
 }
 
-func (d *DashboardsSection) save(sh *shell.Shell) { d.write(sh, false) }
-
-func (d *DashboardsSection) saveAndShow(sh *shell.Shell) { d.write(sh, true) }
-
-func (d *DashboardsSection) write(sh *shell.Shell, show bool) {
+func (d *DashboardsSection) save(sh *shell.Shell) {
 	if d.name == "" {
 		sh.Flash("It needs a name.", fd.StatusWarn)
 		return
@@ -685,15 +681,46 @@ func (d *DashboardsSection) write(sh *shell.Shell, show bool) {
 		if err := d.app.client.SaveDashboard(ctx, draft); err != nil {
 			return err
 		}
-		if show {
-			if _, err := d.app.client.UseDashboard(ctx, draft.Name); err != nil {
-				return err
-			}
-		}
 		onScreen(func() {
 			d.editing, d.frame, d.cost = nil, nil, ""
 			sh.Flash(draft.Name+" is saved.", fd.StatusGood)
 			sh.Invalidate()
+		})
+		return nil
+	})
+}
+
+/*
+show puts the draft on the panel without writing it anywhere.
+
+The frame in the preview, sent the way a picture is sent: the panel holds it
+until somebody asks for the dashboard back. Nothing is saved, because saving
+is what Save is for -- these were two buttons that both wrote the dashboard
+and differed only in what happened afterwards.
+
+**And the editor stays open.** Somebody who asks to see their work is still
+editing it, and closing the form would cost them their place in it as the
+answer to a question they did not ask.
+*/
+func (d *DashboardsSection) show(sh *shell.Shell) {
+	if d.frame == nil {
+		sh.Flash("There is no frame to show yet.", fd.StatusWarn)
+		return
+	}
+	frame := d.frame.Content()
+
+	sh.Perform("showing the draft", func(ctx context.Context) error {
+		if err := d.app.client.Screen(ctx, api.ScreenRequest{
+			Image: base64.StdEncoding.EncodeToString(frame),
+		}); err != nil {
+			return err
+		}
+		// A still, and said so: the numbers on it do not move, because this
+		// is one frame rather than the dashboard loop drawing. Showing a
+		// dashboard is what sets the panel drawing again.
+		onScreen(func() {
+			sh.Flash("The panel is holding this frame. It is a still: the readings "+
+				"on it will not move until a dashboard is shown.", fd.StatusInfo)
 		})
 		return nil
 	})

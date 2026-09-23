@@ -163,6 +163,40 @@ func (p *paint) textWidth(s string, pt float64, bold bool, style Text) int {
 }
 
 /*
+wordsAt is the size a set of labels is drawn at in the column they were left.
+
+Their own size, unless the widest of them does not fit it -- in which case as
+much of it as does. Shrink only: a label that fits is drawn at exactly what
+the dashboard asked for, so this is invisible until the numbers have taken the
+room (spec 045), and it is what stops a squeezed word being drawn through the
+figure beside it.
+
+The walk down is the one the column uses: advances are near enough linear in
+the point size, so an estimate and a short walk settle it.
+*/
+func (p *paint) wordsAt(words []string, w int, pt float64) float64 {
+	for {
+		widest := 0
+		for _, s := range words {
+			widest = max(widest, p.textWidth(s, pt, false, p.letters.Labels))
+		}
+		if widest <= w || w <= 0 || pt <= minLabelPt {
+			return pt
+		}
+		next := math.Floor(pt * float64(w) / float64(widest))
+		if next >= pt {
+			next = pt - 1
+		}
+		pt = max(next, minLabelPt)
+	}
+}
+
+// minLabelPt is the smallest a squeezed label is drawn. Below it the word is
+// not read across a desk, which is the whole of what a label is for: better a
+// word that reaches the numbers than one nobody can make out.
+const minLabelPt = 12
+
+/*
 label draws one of the words: the dashboard's lettering for labels, and the
 theme's muted colour unless it named one.
 */
@@ -265,7 +299,7 @@ func (p *paint) inColumn(fs []Field, widths []int, x, y, h int, pt float64,
 	at := x
 	for i, f := range fs {
 		w := widths[i]
-		p.write(f.Text, at, y, w, h, sizeOf(f, pt), true, style, c, hug(f))
+		p.writeField(f, at, y, w, h, pt, style, c)
 		at += w
 	}
 }
@@ -294,7 +328,7 @@ func (p *paint) fieldsSized(fs []Field, x, y, w, h int, pt float64, c color.Colo
 	widths, total := p.boxes(fs, pt)
 	place := x + offset(w, total, align)
 	for i, f := range fs {
-		p.write(f.Text, place, y, widths[i], h, sizeOf(f, pt), true, style, c, hug(f))
+		p.writeField(f, place, y, widths[i], h, pt, style, c)
 		place += widths[i]
 	}
 }
@@ -324,17 +358,15 @@ func (p *paint) aroundDivider(fs []Field, divider, x, y, w, h int, pt float64,
 	// next one along begins.
 	place := middle - span/2
 	for i := divider - 1; i >= 0; i-- {
-		size := sizeOf(fs[i], pt)
-		width := p.textWidth(fs[i].Text, size, true, Text{})
+		width := p.run(fs[i], pt)
 		place -= width
-		p.write(fs[i].Text, place, y, width, h, size, true, style, c, Left)
+		p.writeField(fs[i], place, y, width, h, pt, style, c)
 	}
 
 	place = middle - span/2 + span
 	for _, f := range fs[divider+1:] {
-		size := sizeOf(f, pt)
-		width := p.textWidth(f.Text, size, true, Text{})
-		p.write(f.Text, place, y, width, h, size, true, style, c, Left)
+		width := p.run(f, pt)
+		p.writeField(f, place, y, width, h, pt, style, c)
 		place += width
 	}
 }
@@ -393,10 +425,17 @@ because it is a word rather than a number and has no digits to hold still.
 func (p *paint) fieldWidth(f Field, pt float64) int {
 	size := sizeOf(f, pt)
 	if f.Small {
-		return p.textWidth(f.Text, size, true, Text{})
+		return unitGap(f, pt) + p.textWidth(f.Text, size, true, Text{})
 	}
 	digit := p.textWidth("0", size, true, Text{})
 	return max(f.Chars*digit, p.textWidth(f.Text, size, true, Text{}))
+}
+
+// run is how much room a field takes packed against its neighbours, with no
+// reservation: what it measures, and a unit's gap where there is one. The
+// pair packed around a divider is drawn this way -- see aroundDivider.
+func (p *paint) run(f Field, pt float64) int {
+	return unitGap(f, pt) + p.textWidth(f.Text, sizeOf(f, pt), true, Text{})
 }
 
 // sizeOf is the point size one field is drawn at: the line's, or a unit's
@@ -406,6 +445,39 @@ func sizeOf(f Field, pt float64) float64 {
 		return math.Max(pt*UnitScale, minUnitPt)
 	}
 	return pt
+}
+
+/*
+unitGap is the space kept between a number and the unit that qualifies it.
+
+Spec 044 packed the two as one run so that nothing sat between them, which was
+right and a shade too tight: "12%" with the figure and the sign touching reads
+as one token, and the eye takes longer to separate them than it should.
+
+A fraction of the number's size rather than a count of pixels, so the gap is
+the same gap on a stacked row and on the headline. Zero for anything that is
+not a unit: the reserved boxes hold the digits still and a gap inside one
+would be a digit moving.
+*/
+func unitGap(f Field, pt float64) int {
+	if !f.Small {
+		return 0
+	}
+	return int(math.Round(pt * UnitGap))
+}
+
+/*
+writeField draws one field in the box the line gave it.
+
+A unit is set in from the left edge of its box by the gap that belongs to it,
+which is why the box was measured a gap wider: the space lands between the
+figure and the unit rather than after the pair, wherever the field is drawn.
+*/
+func (p *paint) writeField(f Field, x, y, w, h int, pt float64, style Text, c color.Color) {
+	if gap := unitGap(f, pt); gap > 0 {
+		x, w = x+gap, w-gap
+	}
+	p.write(f.Text, x, y, w, h, sizeOf(f, pt), true, style, c, hug(f))
 }
 
 // minUnitPt keeps a unit readable when the line it belongs to has been shrunk
