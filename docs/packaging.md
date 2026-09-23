@@ -236,8 +236,18 @@ breaks, because the site reads it rather than the PKGBUILD.
 
 The ushineko release convention, unchanged:
 
-1. `### Unreleased` in the README changelog becomes `### X.Y.Z (YYYY-MM-DD)`,
-   and the **Version** line is set to match.
+1. One `chore: release X.Y.Z` commit sets the version in **three** places:
+   `### Unreleased` in the README changelog becomes `### X.Y.Z (YYYY-MM-DD)`
+   with the **Version** line to match, `.tag` becomes `X.Y.Z`, and the
+   PKGBUILD's `pkgver` does too with its `sha256sums` back to `SKIP` until
+   the tarball exists.
+
+   All three, because each is read by something different and none of them
+   checks the others: the Makefile stamps the binary from `.tag`,
+   `scripts/update_aur.sh` takes its version from `.tag`, and the AUR builds
+   from `pkgver`. A release that moves the README alone tags a commit whose
+   binaries report the *previous* version -- which is what v0.1.6 did on its
+   first attempt, and why this step now says three.
 2. `go test`, `make lint` and `govulncheck ./...` pass.
 3. The README commit lands on `main`, then the tag `vX.Y.Z` is pushed.
 4. **Every tag gets a GitHub Release**, titled `vX.Y.Z`, notes being that
