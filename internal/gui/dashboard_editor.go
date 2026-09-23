@@ -14,6 +14,7 @@ import (
 	"github.com/ushineko/fynedesygn/shell"
 	"github.com/ushineko/fynedesygn/widgets"
 	"github.com/ushineko/hotaru/internal/api"
+	"github.com/ushineko/hotaru/internal/dashboard"
 )
 
 /*
@@ -145,11 +146,18 @@ func (d *DashboardsSection) headlineField(sh *shell.Shell) fyne.CanvasObject {
 }
 
 /*
-slotRow is one reading and what to call it.
+slotRow is what one place on the panel says: a reading, optionally a second
+one, and what to call the pair.
 
-The label is the dashboard's own word where it has one, and the reading's own
-where it does not -- so somebody who wants "CPU" gets it without typing, and
-somebody who wants "PROC" can have that instead.
+The label is the dashboard's own words where it has them and the readings' own
+where it does not -- so somebody who wants "CPU °C" gets it without typing, and
+somebody who wants "PROC" can have that instead. Since spec 041 the label is
+the only text drawn, so the placeholder carries the unit: what it shows is
+exactly what the panel will draw if nothing is typed over it.
+
+The separator only appears once there is something to separate. A field that
+does nothing until another field is set is a field somebody fills in and then
+wonders about.
 */
 func (d *DashboardsSection) slotRow(sh *shell.Shell, slot *api.DashboardSlot) fyne.CanvasObject {
 	choose := widget.NewSelect(sourceNames(), func(picked string) {
@@ -163,13 +171,71 @@ func (d *DashboardsSection) slotRow(sh *shell.Shell, slot *api.DashboardSlot) fy
 	choose.SetSelected(sourceLabel(slot.Source))
 
 	label := widget.NewEntry()
-	label.SetPlaceHolder(defaultLabel(slot.Source))
+	label.SetPlaceHolder(defaultLabel(slot.Source, slot.Second))
 	label.SetText(slot.Label)
 	label.OnChanged = func(s string) { slot.Label = s }
 	label.OnSubmitted = func(string) { d.redraw(sh) }
 
-	return container.NewBorder(nil, nil, choose, nil, label)
+	controls := []fyne.CanvasObject{choose, d.secondRow(sh, slot)}
+	if slot.Second != "" {
+		controls = append(controls, d.separatorRow(sh, slot))
+	}
+	return container.NewBorder(nil, nil, container.NewHBox(controls...), nil, label)
 }
+
+/*
+secondRow chooses the other half of a pair, or none.
+
+"One reading" rather than "nothing", because nothing is what the ring chooser
+means by it: a ring that is not drawn. This slot is drawn either way, and what
+is being chosen is how much it says.
+*/
+func (d *DashboardsSection) secondRow(sh *shell.Shell, slot *api.DashboardSlot) fyne.CanvasObject {
+	options := append([]string{alone}, sourceNames()...)
+	choose := widget.NewSelect(options, func(picked string) {
+		second := ""
+		if picked != alone {
+			second = sourceOf(picked)
+		}
+		if second == slot.Second {
+			return
+		}
+		slot.Second = second
+		d.redraw(sh)
+	})
+
+	picked := alone
+	if slot.Second != "" {
+		picked = sourceLabel(slot.Second)
+	}
+	choose.SetSelected(picked)
+	return choose
+}
+
+// alone is the second chooser's way of saying this slot draws one number.
+const alone = "one reading"
+
+/*
+separatorRow is what goes between the two values.
+
+The author's, because the label beside it is theirs: somebody writing
+"CPU % / C" wants a slash between the numbers, and the default is that slash
+so that most people never look at this at all.
+*/
+func (d *DashboardsSection) separatorRow(sh *shell.Shell, slot *api.DashboardSlot) fyne.CanvasObject {
+	entry := widget.NewEntry()
+	entry.SetPlaceHolder(dashboard.DefaultSeparator)
+	entry.SetText(slot.Separator)
+	entry.OnChanged = func(s string) { slot.Separator = s }
+	entry.OnSubmitted = func(string) { d.redraw(sh) }
+
+	// Wide enough for a few characters and no wider: it is a slash, not a
+	// sentence, and the label beside it wants the room.
+	return container.NewGridWrap(fyne.NewSize(separatorWidth, entry.MinSize().Height), entry)
+}
+
+// separatorWidth fits " / " and a little either side.
+const separatorWidth = 56
 
 func (d *DashboardsSection) ringFields(sh *shell.Shell, got api.DashboardsResponse) fyne.CanvasObject {
 	room := ringsFor(got, arrangementName(*d.editing))

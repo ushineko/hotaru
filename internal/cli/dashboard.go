@@ -10,6 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/ushineko/hotaru/internal/api"
+	"github.com/ushineko/hotaru/internal/dashboard"
 	yaml "go.yaml.in/yaml/v3"
 )
 
@@ -138,11 +139,17 @@ func themeOf(one api.Dashboard) string {
 
 func slotLine(slot api.DashboardSlot) string {
 	line := slot.Source
+	if slot.Second != "" {
+		// The separator as it will be drawn, so the line reads the way the
+		// panel will: "cpu_pct / cpu_c".
+		join := slot.Separator
+		if join == "" {
+			join = dashboard.DefaultSeparator
+		}
+		line += join + slot.Second
+	}
 	if slot.Label != "" {
 		line += " as " + slot.Label
-	}
-	if slot.Unit != "" {
-		line += " in " + slot.Unit
 	}
 	return line
 }

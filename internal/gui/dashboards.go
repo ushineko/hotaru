@@ -24,6 +24,7 @@ import (
 	"github.com/ushineko/fynedesygn/shell"
 	"github.com/ushineko/fynedesygn/widgets"
 	"github.com/ushineko/hotaru/internal/api"
+	"github.com/ushineko/hotaru/internal/dashboard"
 	"github.com/ushineko/hotaru/internal/readings"
 	xdraw "golang.org/x/image/draw"
 )
@@ -396,10 +397,18 @@ func sourceOf(offered string) string {
 	return offered
 }
 
-// defaultLabel is what a slot draws when it has no label of its own.
-func defaultLabel(source string) string {
-	label, _ := readings.Describe(readings.Source(source))
-	return label
+/*
+defaultLabel is what a slot draws when it has no label of its own.
+
+Asked of the dashboard package rather than worked out here, so the placeholder
+in the editor and the words on the panel cannot drift apart. The window does
+not render -- that is the service's job and deliberately only its job -- but
+what a thing is *called* is the model's, and there is one answer to it.
+*/
+func defaultLabel(source, second string) string {
+	return dashboard.Slot{
+		Source: readings.Source(source), Second: readings.Source(second),
+	}.Words()
 }
 
 /*

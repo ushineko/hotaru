@@ -2336,3 +2336,142 @@ func TestTheWindowCanBeAskedToOpenOnAPart(t *testing.T) {
 	gui.OpenOn(&nothing, "Nowhere")
 	require.Empty(t, nothing.Section)
 }
+
+func TestTheScreenEditorPairsTwoReadingsInOneSlot(t *testing.T) {
+	/*
+		The controls exist and reach the draft: a second reading, a separator
+		once there is something to separate, and back to one reading again.
+
+		A form that drew them and sent the dashboard it started from would
+		look exactly like this one and change nothing, which is why each is
+		asserted against the draft rather than against the screen.
+	*/
+	a := test.NewApp()
+	t.Cleanup(a.Quit)
+
+	routes := screenful()
+	routes["POST /"+api.Version+"/dashboards/preview"] = api.PreviewedDashboard{}
+
+	app := gui.New(service(t, routes))
+	opts := app.Options("s")
+	opts.SettingsPath = filepath.Join(t.TempDir(), "gui.yml")
+	sh := shell.Headless(a, opts)
+	app.Refresh(context.Background())
+
+	section := &gui.DashboardsSection{}
+	gui.OpenDashboards(section, app)
+	gui.EditDashboard(section, api.Dashboard{
+		Name: "quiet", Arrangement: "ring",
+		Headline: api.DashboardSlot{Source: "cpu_pct"},
+	})
+
+	built := section.Build(sh)
+	section.Settle()
+	window := test.NewWindow(built)
+	t.Cleanup(window.Close)
+	window.Resize(fyne.NewSize(1200, 900))
+
+	// Nothing is paired to begin with, and the choosers say so.
+	require.Contains(t, fynetest.Text(built), "one reading")
+	require.Empty(t, gui.DraftDashboard(section).Headline.Second)
+
+	pair := secondChooser(t, built)
+	pair.SetSelected("CPU °C")
+	section.Settle()
+	require.Equal(t, "cpu_c", gui.DraftDashboard(section).Headline.Second,
+		"choosing a second reading did not reach the draft")
+
+	// The separator only appears once there is something to separate, so it
+	// is looked for after the pair is made.
+	built = section.Build(sh)
+	section.Settle()
+	window.SetContent(built)
+
+	separator := entryPlaceheld(t, built, " / ")
+	require.NotNil(t, separator, "a paired slot offers no separator")
+	separator.SetText(" · ")
+	require.Equal(t, " · ", gui.DraftDashboard(section).Headline.Separator)
+
+	// And back to one reading.
+	secondChooser(t, built).SetSelected("one reading")
+	section.Settle()
+	require.Empty(t, gui.DraftDashboard(section).Headline.Second,
+		"a slot could not be put back to one reading")
+}
+
+// secondChooser is the first Select offering "one reading", which is the one
+// that pairs a slot: the ring choosers say "nothing" instead.
+func secondChooser(t *testing.T, built fyne.CanvasObject) *widget.Select {
+	t.Helper()
+	var found *widget.Select
+	fynetest.WalkRendered(built, func(o fyne.CanvasObject) bool {
+		choose, ok := o.(*widget.Select)
+		if !ok || found != nil || len(choose.Options) == 0 || choose.Options[0] != "one reading" {
+			return false
+		}
+		found = choose
+		return true
+	})
+	require.NotNil(t, found, "no chooser offers a second reading")
+	return found
+}
+
+// entryPlaceheld is the first Entry showing this placeholder.
+func entryPlaceheld(t *testing.T, built fyne.CanvasObject, placeholder string) *widget.Entry {
+	t.Helper()
+	var found *widget.Entry
+	fynetest.WalkRendered(built, func(o fyne.CanvasObject) bool {
+		entry, ok := o.(*widget.Entry)
+		if !ok || found != nil || entry.PlaceHolder != placeholder {
+			return false
+		}
+		found = entry
+		return true
+	})
+	return found
+}
+
+func TestTheScreenEditorFitsAWindow(t *testing.T) {
+	/*
+		Two choosers and a separator on every slot row is three controls
+		where there was one, and the editor's controls do not scroll away.
+		Spec 038 records the last form that was built, was correct, and fell
+		off the bottom of a default window.
+	*/
+	a := test.NewApp()
+	t.Cleanup(a.Quit)
+
+	routes := screenful()
+	routes["POST /"+api.Version+"/dashboards/preview"] = api.PreviewedDashboard{}
+
+	app := gui.New(service(t, routes))
+	opts := app.Options("s")
+	opts.SettingsPath = filepath.Join(t.TempDir(), "gui.yml")
+	sh := shell.Headless(a, opts)
+	app.Refresh(context.Background())
+
+	section := &gui.DashboardsSection{}
+	gui.OpenDashboards(section, app)
+	// Stacked: the most slots any arrangement has, each of them paired.
+	edited := api.Dashboard{Name: "cooling", Arrangement: "stacked"}
+	for range 4 {
+		edited.Slots = append(edited.Slots,
+			api.DashboardSlot{Source: "cpu_pct", Second: "cpu_c"})
+	}
+	gui.EditDashboard(section, edited)
+
+	built := section.Build(sh)
+	section.Settle()
+	window := test.NewWindow(built)
+	t.Cleanup(window.Close)
+	window.Resize(fyne.NewSize(1180, 760)) // the shell's default size
+
+	// The shell's default window, less its header, status bar and the
+	// section list: what a section actually gets.
+	const room = 640
+	require.Less(t, built.MinSize().Height, float32(room),
+		"the screen editor needs %.0f pixels of a %d-pixel window before anything scrolls",
+		built.MinSize().Height, room)
+	require.Less(t, built.MinSize().Width, float32(1000),
+		"a slot row got wide enough to push the editor past a default window")
+}

@@ -199,12 +199,21 @@ func TestAHotProcessorIsNotAnAlarm(t *testing.T) {
 func shown(r Reading, tick int) Frame { return Render(Shipped()[0], r, tick, nil) }
 
 /*
-The shipped dashboard is spec 013's screen, to the pixel.
+The shipped dashboard does not move by accident.
 
-A machine that upgrades and touches nothing must see exactly what it saw, so
-the golden frame in testdata was produced by the *previous* renderer -- run
-from a worktree of the commit before this one -- rather than by this one
-saying what it says.
+It held spec 013's screen to the pixel for twenty-odd releases, on spec 023's
+promise that a machine which upgrades and touches nothing sees exactly what it
+saw. **Spec 041 broke that promise on purpose.** Taking the unit line out
+changes the panel, there is no version of that change which leaves the default
+screen alone, and keeping the line alive for the shipped dashboards would have
+kept the promise by keeping the redundancy in the four screens most people are
+looking at.
+
+So the golden was regenerated, once, by this renderer, and the test means what
+it meant before: the default screen is what somebody decided it should be, and
+it does not move again without somebody deciding that too. A failure here is
+either a change worth a line in the changelog or a change nobody intended, and
+both are worth stopping for.
 
 Colours, not palette indices. Making the rings a list added a colour to the
 palette for the outline, which moved every index after it without moving a
@@ -212,8 +221,8 @@ single pixel: comparing `Content` would fail on a screen that is identical,
 which is a test failing for the tidiness of a byte array rather than for
 anything anybody can see.
 */
-func TestTheShippedDashboardIsUnchanged(t *testing.T) {
-	want := decodeFile(t, filepath.Join("testdata", "spec013.gif"))
+func TestTheShippedDashboardDoesNotMoveByAccident(t *testing.T) {
+	want := decodeFile(t, filepath.Join("testdata", "shipped-coolant.gif"))
 	got := decode(t, shown(reading(), 0))
 
 	require.Equal(t, want.Bounds(), got.Bounds())
@@ -221,7 +230,8 @@ func TestTheShippedDashboardIsUnchanged(t *testing.T) {
 		for x := range want.Bounds().Dx() {
 			if want.At(x, y) != got.At(x, y) {
 				require.Failf(t, "the default screen moved",
-					"pixel %d,%d was %v and is %v; spec 023 says it must not move",
+					"pixel %d,%d was %v and is %v; if that was meant, regenerate "+
+						"testdata/shipped-coolant.gif and say so in the changelog",
 					x, y, want.At(x, y), got.At(x, y))
 			}
 		}

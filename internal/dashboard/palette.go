@@ -37,11 +37,31 @@ const (
 	rowInset  = 120
 
 	/*
+		The stacked row's word column, and the gap before the number.
+
+		rowLabelWidth is a minimum rather than a width: a label wider than it
+		pushes the number right instead of being drawn through it. The gap is
+		what keeps "PUMP RPM / %" and "2709 / 90" from touching, which at a
+		fixed band they did to within three pixels.
+	*/
+	rowLabelWidth = 160
+	rowGap        = 24
+
+	// rowValuePt is the size a stacked row's number is drawn at before the
+	// column is fitted. Spec 013's, unchanged.
+	rowValuePt = 34.0
+
+	/*
 		Where the rows go, and how tall each one is.
 
-		A column is 126 tall -- label, value, unit -- and the first version
+		A column was 126 tall -- label, value, unit -- and the first version
 		of the grid stepped by 112, which put one row's unit through the
 		next row's label. Only visible by rendering it and looking.
+
+		The unit is gone (spec 041) and the step is not: 126 is the height a
+		grid of four readings was looked at with, and reclaiming the 26 pixels
+		would move every row on every saved dashboard to buy back space
+		nothing is asking for.
 	*/
 	columnHeight = 126
 	gridTop      = 292

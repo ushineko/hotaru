@@ -67,41 +67,52 @@ one back.
 and touches nothing sees exactly what it saw.
 */
 func Shipped() []Dashboard {
+	/*
+		The labels carry their units since spec 041 took the unit line away.
+
+		"COOLANT" over a number with "°C" beneath it said what it was; these
+		have to say it themselves, and a shipped dashboard that stopped saying
+		what it measured would be the worst advertisement for the change.
+
+		`load` pairs its readings, because it is the dashboard the pair was
+		wanted for: two rows of four numbers became two rows of two, each
+		saying the load and the temperature of one chip.
+	*/
 	return []Dashboard{
 		{
 			Name:        "coolant",
 			Arrangement: Ring,
-			Headline:    Slot{Source: readings.Coolant, Label: "COOLANT"},
+			Headline:    Slot{Source: readings.Coolant, Label: "COOLANT °C"},
 			Rings:       []readings.Source{readings.Coolant},
 			Slots: []Slot{
-				{Source: readings.CPUTemp, Label: "CPU"},
-				{Source: readings.GPUTemp, Label: "GPU"},
-				{Source: readings.PumpRPM, Label: "PUMP"},
+				{Source: readings.CPUTemp, Label: "CPU °C"},
+				{Source: readings.GPUTemp, Label: "GPU °C"},
+				{Source: readings.PumpRPM, Label: "PUMP RPM"},
 			},
 		},
 		{
 			Name:        "load",
 			Arrangement: Grid,
 			Theme:       "ice",
-			Headline:    Slot{Source: readings.Coolant, Label: "COOLANT"},
+			Headline:    Slot{Source: readings.Coolant, Label: "COOLANT °C"},
 			Rings:       []readings.Source{readings.Coolant, readings.CPULoad},
 			Slots: []Slot{
-				{Source: readings.CPULoad, Label: "CPU"},
-				{Source: readings.GPULoad, Label: "GPU"},
-				{Source: readings.CPUTemp, Label: "CPU"},
-				{Source: readings.GPUTemp, Label: "GPU"},
+				{Source: readings.CPULoad, Second: readings.CPUTemp, Label: "CPU % / °C"},
+				{Source: readings.GPULoad, Second: readings.GPUTemp, Label: "GPU % / °C"},
+				{Source: readings.MemUsed, Second: readings.MemBytes, Label: "MEM % / GB"},
+				{Source: readings.PumpRPM, Label: "PUMP RPM"},
 			},
 		},
 		{
 			Name:        "cooling",
 			Arrangement: Stacked,
 			Theme:       "amber",
-			Headline:    Slot{Source: readings.Coolant, Label: "COOLANT"},
+			Headline:    Slot{Source: readings.Coolant, Label: "COOLANT °C"},
 			Slots: []Slot{
-				{Source: readings.PumpRPM, Label: "PUMP"},
-				{Source: readings.PumpDuty, Label: "DUTY"},
-				{Source: readings.FanRPM, Label: "FANS"},
-				{Source: readings.FanDuty, Label: "DUTY"},
+				{Source: readings.PumpRPM, Second: readings.PumpDuty, Label: "PUMP RPM / %"},
+				{Source: readings.FanRPM, Second: readings.FanDuty, Label: "FANS RPM / %"},
+				{Source: readings.CPUTemp, Second: readings.CPULoad, Label: "CPU °C / %"},
+				{Source: readings.MemUsed, Second: readings.MemBytes, Label: "MEM % / GB"},
 			},
 		},
 		{
@@ -109,7 +120,7 @@ func Shipped() []Dashboard {
 			Arrangement: Big,
 			Theme:       "mono",
 			Background:  Background{Kind: Plain},
-			Headline:    Slot{Source: readings.Coolant, Label: "COOLANT"},
+			Headline:    Slot{Source: readings.Coolant, Label: "COOLANT °C"},
 		},
 	}
 }

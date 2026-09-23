@@ -28,12 +28,15 @@ const (
 	PumpDuty Source = "pump_pct"
 	FanRPM   Source = "fan_rpm"
 	FanDuty  Source = "fan_pct"
+	MemUsed  Source = "mem_pct"
+	MemBytes Source = "mem_gb"
 )
 
 // All is every source, in the order a listing shows them: the coolant first,
 // because that is the number the screen was built around.
 var All = []Source{
-	Coolant, CPUTemp, CPULoad, GPUTemp, GPULoad, PumpRPM, PumpDuty, FanRPM, FanDuty,
+	Coolant, CPUTemp, CPULoad, GPUTemp, GPULoad, MemUsed, MemBytes,
+	PumpRPM, PumpDuty, FanRPM, FanDuty,
 }
 
 /*
@@ -54,6 +57,10 @@ func Describe(s Source) (label, unit string) {
 		return "GPU", "°C"
 	case GPULoad:
 		return "GPU", "%"
+	case MemUsed:
+		return "Memory", "%"
+	case MemBytes:
+		return "Memory", "GB"
 	case PumpRPM:
 		return "Pump", "RPM"
 	case PumpDuty:

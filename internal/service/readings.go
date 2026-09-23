@@ -10,9 +10,9 @@ import (
 /*
 Readings are what the machine will say about itself.
 
-Nine numbers from three places: the cooler answers for the coolant, the pump
-and the fans, the kernel for the processor, and the graphics card by whichever
-route it has. Each is taken independently and each can be absent -- a sensor
+Eleven numbers from three places: the cooler answers for the coolant, the pump
+and the fans, the kernel for the processor and for memory, and the graphics
+card by whichever route it has. Each is taken independently and each can be absent -- a sensor
 that has gone away costs its own number rather than stopping the panel,
 because the screen is decorative and the rest are still true.
 
@@ -44,6 +44,10 @@ func (s *Service) Readings(ctx context.Context) readings.Reading {
 	}
 	if card.LoadOK {
 		r.Set(readings.GPULoad, card.Load)
+	}
+	if percent, gigabytes, ok := s.memory.Used(); ok {
+		r.Set(readings.MemUsed, percent)
+		r.Set(readings.MemBytes, gigabytes)
 	}
 	return r
 }
