@@ -2,7 +2,7 @@
 
 *lights, cooler, action!*
 
-**Version**: 0.1.8
+**Version**: 0.1.9
 
 RGB lighting and AIO cooler control for Linux, as a CLI, a user service and a
 desktop GUI. 
@@ -209,7 +209,7 @@ MIT. See [LICENSE](LICENSE).
 
 ## Changelog
 
-### Unreleased
+### 0.1.9 (2026-09-23)
 
 - A dashboard can show what each number is measured in, beside it. `12% ·
   63°C` rather than a label reading `CPU % · °C` above a value reading `12 ·
