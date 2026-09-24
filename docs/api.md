@@ -1,27 +1,27 @@
 # The API
 
-hotaru's service speaks HTTP and JSON over a Unix socket at
-`$XDG_RUNTIME_DIR/hotaru/hotaru.sock`. There is no TCP listener: the socket's
-permissions (`0600`) are the whole authentication story, and adding a port would
-mean inventing an authentication scheme for a program that changes the colour of
-lights.
+hotaru's service serves HTTP and JSON over a Unix socket at
+`$XDG_RUNTIME_DIR/hotaru/hotaru.sock`. It opens no TCP listener. The socket's
+`0600` permissions are the whole of the authentication, and adding a port
+would mean inventing an authentication scheme for a program that changes the
+colour of lights.
 
 **This is an interface, not a convenience.** The CLI is its first client, the
-GUI is its second, and a future Go rewrite of the battery monitor is meant to be
-its third. Changing a field here is a breaking change.
+window is its second, and a future Go rewrite of the battery monitor is
+intended as its third. Changing a field here breaks those clients.
 
-Everything on the wire is something a person could have typed — targets like
-`kraken/fan-top`, colours like `#ff8800` or `red`. Parsing happens on the
-service's side, so a client needs no knowledge of devices at all.
+Everything on the wire is something a person could have typed: targets such as
+`kraken/fan-top`, and colours such as `#ff8800` or `red`. The service parses
+them, so a client needs no knowledge of devices at all.
 
-The transcripts below are recorded, not written by hand: the reads come from a
-live service on the development machine, the write from the test suite against
-the in-memory server. Each one established a behaviour before there was any
-consumer to depend on it, which is the point of recording them.
+Somebody recorded the transcripts below rather than writing them by hand. The
+reads come from a live service on the development machine, and the write comes
+from the test suite against the in-memory server. Each one fixed a behaviour
+before any consumer depended on it, which is why they are recorded here.
 
 ## GET /v1/health
 
-Why nothing is happening, in a sentence meant for a person. Four states with
+Why nothing is happening, in a sentence written for a person. Four states with
 four remedies: `unreachable`, `no-devices`, `none-in-scope`, `healthy`.
 
 ```console
@@ -37,9 +37,9 @@ $ curl -s --unix-socket $XDG_RUNTIME_DIR/hotaru/hotaru.sock http://hotaru/v1/hea
 }
 ```
 
-`health` answers even when nothing else can, which is why it is its own route:
-with no OpenRGB server, `/v1/devices` is a 503 and this still tells you what to
-do about it.
+`health` answers when nothing else can, which is why it is a route of its own.
+With no OpenRGB server, `/v1/devices` returns a 503, and this route still
+tells you what to do about it.
 
 ```json
 {
@@ -54,8 +54,8 @@ do about it.
 
 ## GET /v1/devices
 
-Every device the server knows, with what it is showing and whether hotaru would
-drive it. `in_scope` is here so a listing answers "why did nothing happen to
+Every device the server knows, with what it shows and whether hotaru drives
+it. `in_scope` is here so that one listing answers "why did nothing happen to
 this one?" without a second call.
 
 ```console
@@ -77,21 +77,21 @@ $ curl -s --unix-socket $XDG_RUNTIME_DIR/hotaru/hotaru.sock http://hotaru/v1/dev
 }
 ```
 
-Zones are contiguous runs in device LED order; `first` is counted rather than
-reported, because the protocol gives sizes and leaves offsets implicit. A
-segment named in the rules file appears in `segments`, and a device whose colour
-is re-asserted carries the interval in `reassert`.
+A zone is a contiguous run in device LED order. hotaru counts `first` rather
+than reading it, because the protocol gives sizes and leaves the offsets
+implicit. A segment named in the rules file appears in `segments`. A device
+whose colour hotaru rewrites on a timer carries the interval in `reassert`.
 
 ## POST /v1/lighting/apply
 
-`colour` is everything in scope; `assignments` are the exceptions; `off` turns
-devices off rather than colouring them black, which is a different thing on
-hardware with a backlight. `devices` narrows to particular hardware by name.
+`colour` sets everything in scope. `assignments` are the exceptions. `off`
+turns devices off rather than colouring them black, which is a different thing
+on hardware with a backlight. `devices` narrows the request to named hardware.
 
 `preview` writes without remembering. What it lights is not what the machine
-restores at boot, which is how the mapping wizard can flash colours at somebody
-without the answers becoming their configuration. `hotaru light set --preview`
-is the same thing from the command line.
+restores at boot. That is how the mapping wizard flashes colours at somebody
+without their answers becoming their configuration. `hotaru light set
+--preview` does the same thing from the command line.
 
 ```console
 $ curl -s --unix-socket $XDG_RUNTIME_DIR/hotaru/hotaru.sock \
@@ -122,18 +122,18 @@ $ curl -s --unix-socket $XDG_RUNTIME_DIR/hotaru/hotaru.sock \
 }
 ```
 
-That response is the design in miniature. The first attempt was **accepted and
-not honoured**: the server took the write, and reading the device back found it
-still in Rainbow Wave. Nothing reported an error; only the read-back noticed.
-hotaru moved to the next candidate, confirmed it, and recorded both attempts so
-a user can learn what their hardware does.
+That response is the design in miniature. The device **accepted the first
+attempt and did not honour it**. The server took the write, and reading the
+device back found it still in Rainbow Wave. Nothing reported an error, and
+only the read-back noticed. hotaru moved to the next candidate, confirmed it,
+and recorded both attempts, so that a user learns what their hardware does.
 
-`changed` is how many devices actually changed, so a client exits non-zero
-without counting results itself. **A request that changed nothing does not
-report success** — three devices skipped for three good reasons is still a scene
-that lit nothing.
+`changed` counts the devices that changed, so a client exits non-zero without
+counting the results itself. **A request that changed nothing does not report
+success.** Three devices skipped for three good reasons is still a scene that
+lit nothing.
 
-Each result is one of three things, kept apart deliberately:
+Each result is one of three things, and they are kept apart deliberately:
 
 | Field | Means |
 |---|---|
@@ -144,7 +144,8 @@ Each result is one of three things, kept apart deliberately:
 ## GET /v1/status
 
 What the service *is*, rather than what it can see. `health` answers "why is
-nothing happening"; this answers "what is running, and what does it remember".
+nothing happening". This route answers "what is running, and what does it
+remember".
 
 ```console
 $ curl -s --unix-socket $XDG_RUNTIME_DIR/hotaru/hotaru.sock http://hotaru/v1/status
@@ -157,14 +158,16 @@ $ curl -s --unix-socket $XDG_RUNTIME_DIR/hotaru/hotaru.sock http://hotaru/v1/sta
 }
 ```
 
-`remembered` lists the devices hotaru would put back. Its absence above is a
-fresh install that has been asked for nothing — which is why it restores
-nothing, and why installing hotaru cannot disturb lighting configured elsewhere.
+`remembered` lists the devices hotaru puts back. It is absent above because
+that is a fresh install that nobody has asked for anything. Such an install
+restores nothing, which is why installing hotaru cannot disturb lighting that
+was configured elsewhere.
 
 ## GET /v1/scenes
 
-Every saved scene. A scene is colour assignments addressed at whatever depth
-somebody meant them, an effect per device, and what the cooler's screen shows.
+Every saved scene. A scene holds colour assignments addressed at whatever
+depth somebody meant them, an effect per device, and what the cooler's screen
+shows.
 
 ```console
 $ curl -s --unix-socket … http://hotaru/v1/scenes
@@ -183,15 +186,16 @@ $ curl -s --unix-socket … http://hotaru/v1/scenes
 }
 ```
 
-`screen` is `dashboard`, `readout`, or a path to a GIF. **Absent means the
-scene says nothing about the screen and applying it changes nothing about it**
--- a lighting scene must not take somebody's dashboard away because its author
-never thought about the panel.
+`screen` is `dashboard`, `readout`, or a path to a GIF. **When it is absent,
+the scene says nothing about the screen, and applying it changes nothing about
+the screen.** A lighting scene must not remove somebody's dashboard because
+its author never considered the panel.
 
-`effects` names a mode the device advertises, keyed by any part of the device's
-name. It is preferred, not forced: a mode that cannot carry the frame falls
-through as it always does, and a name the device does not have costs the effect
-rather than the scene and is reported in that device's `problems`.
+`effects` names a mode the device advertises, keyed by any part of the
+device's name. hotaru prefers that mode rather than forcing it. A mode that
+cannot carry the frame falls through as any other does. A name the device does
+not have costs the effect rather than the scene, and appears in that device's
+`problems`.
 
 ## PUT /v1/scenes/{name}
 
@@ -210,8 +214,8 @@ panel.
 
 ## POST /v1/scenes/{name}/apply
 
-Lights a scene. Recorded as what the machine should be showing, so it survives
-a reboot and is re-sent to hardware that forgets.
+Lights a scene. hotaru records it as what the machine should show, so it
+survives a reboot and hotaru writes it again to hardware that forgets.
 
 ```console
 $ curl -s --unix-socket … -X POST http://hotaru/v1/scenes/evening/apply
@@ -237,21 +241,21 @@ $ curl -s --unix-socket … -X POST http://hotaru/v1/scenes/evening/apply
 
 ### Previewing
 
-`{"preview": true}` lights the scene **without meaning it**: nothing is
-recorded, and re-assertion is suspended for the devices it covers so that the
-timer which exists to correct hardware that forgets does not correct the person
-looking at a draft instead.
+`{"preview": true}` lights the scene **without meaning it**. hotaru records
+nothing, and suspends its rewrite timer for the devices the scene covers. That
+timer exists to correct hardware that forgets, and it must not correct the
+person looking at a draft.
 
-A preview is a lease, and it ends when its holder does. Two ways, and a client
-uses whichever it already has:
+A preview is a lease, and it ends when its holder does. There are two ways to
+hold one, and a client uses whichever it already has:
 
-- `{"preview": true, "hold": true}` -- the response is sent as soon as the
-  draft is up and **the request stays open**. The lease is that connection: the
-  socket closing is the client going away, reported by the kernel, with no
-  clock involved. This is what `hotaru scene preview` does, and killing it with
-  `kill -9` puts the lights back.
-- `{"preview": true}` alone -- the lease carries an expiry the holder renews.
-  For a client that cannot sit on a connection.
+- `{"preview": true, "hold": true}` sends the response as soon as the draft is
+  up and **keeps the request open**. The lease is that connection. The kernel
+  reports the socket closing, which is the client going away, and no clock is
+  involved. `hotaru scene preview` works this way, so `kill -9` on it puts the
+  lights back.
+- `{"preview": true}` alone gives the lease an expiry that the holder renews.
+  This is for a client that cannot sit on a connection.
 
 ```console
 $ curl -s --unix-socket … -X POST -d '{"preview":true,"holder":"a shell"}' \
@@ -271,8 +275,9 @@ $ curl -s --unix-socket … -X POST -d '{"preview":true,"holder":"a shell"}' \
 
 No `expires` means the lease is bound to a connection instead.
 
-Devices showing a draft carry it in `GET /v1/devices`, because a device whose
-re-assertion is suspended otherwise looks exactly like one that is behaving:
+A device showing a draft carries that draft in `GET /v1/devices`. Without it,
+a device whose rewrite timer is suspended looks exactly like one that is
+behaving:
 
 ```console
 $ curl -s --unix-socket … http://hotaru/v1/devices
@@ -289,27 +294,27 @@ $ curl -s --unix-socket … http://hotaru/v1/devices
 
 ## POST /v1/preview
 
-Previews a scene **that has no name**: the scene travels in the body rather
-than being named.
+Previews a scene **that has no name**. The scene travels in the body instead.
 
-The editor's route. A draft in a window is not in anybody's scene file, and
-making it one in order to look at it would put a half-finished thing in
-somebody's list and make "saved" stop meaning anything.
+This is the editor's route. A draft in a window is in nobody's scene file, and
+saving it there in order to look at it would put a half-finished thing in
+somebody's list. "Saved" would then mean nothing.
 
 ```console
 $ curl -s --unix-socket … -X POST http://hotaru/v1/preview \
     -d '{"scene":{"assignments":[{"target":"kraken","colour":"#201040"}]},"holder":"an editor"}'
 ```
 
-`hold` behaves as it does on the named route: with it, the request stays open
-and the lease is that connection; without it, the lease carries an expiry to
-renew. Everything else -- suspended re-assertion, the revert, one preview per
-device -- is the same machinery.
+`hold` behaves as it does on the named route. With it, the request stays open
+and the lease is that connection. Without it, the lease carries an expiry to
+renew. Everything else is the same machinery: the suspended rewrite timer, the
+revert, and one preview per device.
 
 ## POST /v1/preview/renew
 
-Pushes a lease's expiry out. `{"token": "…"}`. A lease that has already lapsed
-is not revived -- the devices may belong to somebody else by now.
+Pushes a lease's expiry out. `{"token": "…"}`. hotaru does not revive a lease
+that has already lapsed, because the devices may belong to somebody else by
+now.
 
 ## POST /v1/preview/release
 
@@ -318,31 +323,33 @@ with the same shape as `/v1/reconcile`. `{"token": "…"}`.
 
 ## GET /v1/dashboards
 
-Everything the panel can be asked to draw, which of them it is drawing, and
-what an editor offers: the arrangements with how many readings and rings each
-has room for, and the themes by name. The lists come from here so a window
-does not carry its own copy and show eight of nine after a sensor is added.
+Everything the panel can draw, which one it draws now, and what an editor
+offers. That means the arrangements, with the number of readings and rings
+each has room for, and the themes by name. The lists come from here so that a
+window carries no copy of its own and cannot show eight of nine after somebody
+adds a sensor.
 
 ## PUT /v1/dashboards/{name}
 
 Writes one, replacing any of the same name. Saving over a name hotaru ships
 replaces it for as long as the saved one exists.
 
-Each slot -- the headline and the smaller readings alike -- is a `source`, an
-optional `second`, an optional `separator` and an optional `label`:
+Each slot holds a `source`, an optional `second`, an optional `separator` and
+an optional `label`. The headline and the smaller readings take the same
+shape:
 
 ```json
 {"source": "cpu_pct", "second": "cpu_c", "separator": " / ", "label": "CPU % / °C"}
 ```
 
-A slot with a `second` draws both numbers joined by the separator, which
-defaults to `" / "`. Colour and the headline's ring grade on `source`, so the
-order is the author's choice about what the colour means. An empty `label` is
-the readings' own words carrying what they are measured in -- `CPU °C` for one
-reading, `CPU % / °C` for that pair.
+A slot with a `second` draws both numbers, joined by the separator, which
+defaults to `" / "`. The colour and the headline's ring grade on `source`, so
+the order is the author's choice about what the colour means. An empty `label`
+means the readings' own words, carrying what they are measured in: `CPU °C`
+for one reading, and `CPU % / °C` for that pair.
 
-There is no `unit`: the label is the only text drawn. A saved dashboard
-carrying one keeps it in the file and it is ignored.
+There is no `unit` field. The label is the only text drawn. A saved dashboard
+that carries a `unit` keeps it in the file, and hotaru ignores it.
 
 ## DELETE /v1/dashboards/{name}
 
@@ -356,13 +363,13 @@ Makes it the dashboard the panel draws, and answers with it.
 ## POST /v1/dashboards/{name}/preview
 
 A rendered frame, base64-encoded, with its size and the seconds the panel
-needs between frames that size. With a body, it draws that unsaved edit
-instead of what is stored — which is what an editor with a preview in it
+needs between frames of that size. With a body, it draws that unsaved edit
+instead of the stored dashboard, which is what an editor with a preview in it
 needs. With no body, it draws the stored one.
 
-The service renders rather than the client: the panel takes a 640x640 GIF and
-this is what makes them, and a second renderer would be a second answer about
-what the screen shows.
+The service renders the frame rather than the client. The panel takes a
+640x640 GIF, and this route makes them. A second renderer would be a second
+answer about what the screen shows.
 
 ## GET /v1/readings
 
@@ -384,10 +391,10 @@ $ curl -s --unix-socket … http://hotaru/v1/readings
 
 `known` is the field to read. A sensor that has gone away is absent rather
 than zero, because a pump drawn at 0 RPM is the most alarming number this
-machine can show, on no evidence — so a client shows `text`, which is already
-`--` in that case.
+machine can show, and it would rest on no evidence. A client shows `text`,
+which already reads `--` in that case.
 
-Utilisation is a rate: it is the share of the interval since the last time
+Utilisation is a rate. It is the share of the interval since the last time
 anything asked, which between dashboard ticks is about two seconds.
 
 ## GET /v1/images
@@ -409,19 +416,20 @@ $ curl -s --unix-socket … http://hotaru/v1/images
 }
 ```
 
-`bytes` is worth reading: the panel's refresh floor scales with frame size
-rather than being a rate limit, so a large picture is a slow one.
+Read `bytes`. The panel's refresh floor scales with frame size rather than
+being a fixed rate limit, so a large picture is a slow one.
 
 ## PUT /v1/images/{name}
 
-Converts a picture and keeps it. `{"image": "<base64>"}`, any JPEG, PNG or GIF.
-It is cropped to the middle, scaled to 640x640, and reduced to 256 colours
-chosen from the picture itself. Adding a name that exists replaces it.
+Converts a picture and keeps it. `{"image": "<base64>"}`, as any JPEG, PNG or
+GIF. hotaru crops it to the middle, scales it to 640x640, and reduces it to
+256 colours chosen from the picture itself. A name that already exists is
+replaced.
 
-`{"images": ["<base64>", …]}` instead makes a slideshow out of several: each
-picture held, crossfaded into the next, and the last fading back into the
-first. The fade is shortened until the reel fits the panel's memory, because a
-slideshow missing a photograph is not the one that was asked for.
+`{"images": ["<base64>", …]}` makes a slideshow out of several instead. Each
+picture holds, crossfades into the next, and the last one fades back into the
+first. hotaru shortens the fade until the reel fits the panel's memory,
+because a slideshow missing a photograph is not the one somebody asked for.
 
 ## POST /v1/images/preview
 
@@ -429,9 +437,9 @@ The same conversion, returned rather than kept:
 `{"image": "<base64>", "bytes": 202752, "frames": 1}`.
 
 What a client shows somebody before they decide. A wallpaper is wide and the
-panel is square, so what arrives on the cooler is the middle of the picture —
-and whether that is still the picture they wanted is a question only they can
-answer, in front of the answer.
+panel is square, so the cooler receives the middle of the picture. Only the
+person looking can say whether that is still the picture they wanted, and they
+answer it in front of the result.
 
 ## DELETE /v1/images/{name}
 
@@ -442,13 +450,14 @@ Forgets one.
 Builds a scene whose lights match a stored picture, and keeps it.
 `{"scene": "jovian"}`; the scene comes back in the reply.
 
-Every zone gets a run across the picture rather than one colour for the
-machine: light *i* of *n* takes the *i*th vertical slice, so a ring carries the
-image's own left-to-right sweep. The slice is weighted by how much colour each
-pixel carries -- half of every slice through a photograph is background, and
-averaging it in reads a rust planet as grey-brown -- and the value is lifted to
-something a light can show, because a photograph is mostly shadow. The scene
-names the picture as its screen, so applying it makes the whole machine agree.
+Every zone gets a run across the picture rather than one colour for the whole
+machine. Light *i* of *n* takes the *i*th vertical slice, so a ring carries
+the image's own left-to-right sweep. hotaru weights each slice by how much
+colour its pixels carry. Half of every slice through a photograph is
+background, and averaging that in reads a rust planet as grey-brown. hotaru
+then lifts the value to something a light can show, because a photograph is
+mostly shadow. The scene names the picture as its screen, so applying it makes
+the whole machine agree.
 
 ## POST /v1/images/{name}/show
 
@@ -458,7 +467,7 @@ Puts a stored picture on the panel, taking it from the dashboard.
 ## GET /v1/keys
 
 The shortcuts, what they apply, and what is in the way. The third part is why
-this is one call rather than three: a key bound to a scene that no longer
+this is one call rather than three. A key bound to a scene that no longer
 exists, and a key another program still claims, both look exactly like a
 working binding from anywhere else.
 
@@ -474,13 +483,14 @@ $ curl -s --unix-socket … http://hotaru/v1/keys
 }
 ```
 
-`claimed` is read out of `~/.config/kglobalshortcutsrc`, read-only. KDE keeps an
-entry per registered shortcut and **those entries outlive the program that made
-them**: while one is there, hotaru's own registration succeeds and the key does
-nothing at all. `reserved` sequences are checked as well as bound ones, because
-they are exactly where somebody's own scenes will go next.
+hotaru reads `claimed` out of `~/.config/kglobalshortcutsrc`, and never writes
+that file. KDE keeps one entry per registered shortcut, and **those entries
+outlive the program that made them**. While such an entry is there, hotaru's
+own registration succeeds and the key does nothing at all. hotaru checks the
+`reserved` sequences as well as the bound ones, because that is where
+somebody's own scenes go next.
 
-`desktop`, when present, says why the KWin integration is not running -- no
+`desktop`, when present, says why the KWin integration is not running: no
 session bus, no KWin yet, or another hotaru holding the bus name.
 
 ## POST /v1/keys/bind
@@ -488,27 +498,28 @@ session bus, no KWin yet, or another hotaru holding the bus name.
 `{"key": "Ctrl+Alt+Shift+Num+1", "scene": "evening"}`. An empty scene name
 unbinds the key, including one of the nine shipped ones.
 
-There is no route that clears a claim. The service reads the desktop's file and
-cannot write it -- its unit gives it write access to its own two directories
-and nothing else -- so `hotaru keys release` does the editing in the caller's
-own process, after showing them what is in the way. A GUI does the same.
+No route clears a claim. The service reads the desktop's file and cannot write
+it, because its unit gives it write access to its own two directories and
+nothing else. `hotaru keys release` therefore edits in the caller's own
+process, after showing them what is in the way. The window does the same.
 
 ## The hotkey door
 
-Not HTTP. A KWin script can reach the outside world only through `callDBus`, so
-there is a D-Bus object with exactly one method on the session bus:
+This door is not HTTP. A KWin script reaches the outside world only through
+`callDBus`, so hotaru puts one D-Bus object with exactly one method on the
+session bus:
 
 	org.ushineko.hotaru  /Scenes  org.ushineko.hotaru.Scenes.Apply(scene)
 
-It hands the name to the same service call `POST /v1/scenes/{name}/apply`
-makes. One flow, two doors, and the narrow one exists because KWin gives no
-other.
+It hands the name to the same service call that `POST
+/v1/scenes/{name}/apply` makes. One flow, two doors, and the narrow door
+exists because KWin offers no other.
 
 ## POST /v1/reconcile
 
-Puts the lights back to what was last asked for. Not an apply: nothing here is
-a new user choice, so desired state is unchanged and a re-assert cannot be
-mistaken for an instruction.
+Puts the lights back to what was asked for last. This is not an apply. Nothing
+here is a new user choice, so desired state does not change, and nobody can
+mistake a rewrite for an instruction.
 
 ```console
 $ curl -s --unix-socket … -X POST http://hotaru/v1/reconcile
@@ -518,14 +529,15 @@ $ curl -s --unix-socket … -X POST http://hotaru/v1/reconcile
 }
 ```
 
-`complete: false` with `missing` naming devices is an **unfinished restore**,
-not a failure: OpenRGB enumerates once at server start, and a cold boot has been
-seen finding two devices of six. It retries, and completes when they appear.
+`complete: false`, with `missing` naming devices, is an **unfinished restore**
+rather than a failure. OpenRGB enumerates once at server start, and a cold
+boot has found two devices of six. hotaru retries, and completes when the rest
+appear.
 
 ## POST /v1/reload
 
-Re-reads the rules file, reporting what was wrong with it entry by entry rather
-than refusing the file.
+Reads the rules file again, and reports what is wrong with it entry by entry
+rather than refusing the whole file.
 
 ```console
 $ curl -s --unix-socket … -X POST http://hotaru/v1/reload
@@ -536,8 +548,8 @@ $ curl -s --unix-socket … -X POST http://hotaru/v1/reload
 
 ## POST /v1/lighting/probe
 
-Finds out what each device can actually do: sets modes, reads back which ones
-the device honoured, and puts everything back. A POST because it writes.
+Finds out what each device can do. It sets modes, reads back which ones the
+device honoured, and puts everything back. It is a POST because it writes.
 
 ```console
 $ curl -s --unix-socket … -X POST -d '{"devices":["mm700"]}' http://hotaru/v1/lighting/probe
@@ -560,16 +572,16 @@ $ curl -s --unix-socket … -X POST -d '{"devices":["mm700"]}' http://hotaru/v1/
 }
 ```
 
-Two things that transcript shows. The suggestion is a **comment**: black is off
-for a mousepad and a dead backlight for a keyboard, and nothing in the protocol
-says which this is — so the probe reports what it found and leaves the decision
-to someone who can see the machine.
+That transcript shows two things. First, the suggestion is a **comment**.
+Black is off for a mousepad and a dead backlight for a keyboard, and nothing
+in the protocol says which device this is. The probe reports what it found and
+leaves the decision to somebody who can see the machine.
 
-And what probing cannot do. Run against an ASUS board, it reports that Static
-"took", because the mode change does take — the addressable headers going dark
-is invisible to a read-back. A user with only the probe would never be offered
-the direct-first rule. That is the gap the mapping wizard fills: it asks a
-person to look.
+Second, it shows what probing cannot do. Against an ASUS board it reports that
+Static "took", because the mode change does take. A read-back cannot see the
+addressable headers go dark. A user with only the probe would never receive
+the direct-first rule. The mapping wizard fills that gap by asking a person to
+look.
 
 ## Status codes
 
@@ -579,5 +591,5 @@ person to look.
 | 400 | the request does not decode, or names a colour or target that does not parse. Nothing is written |
 | 503 | no OpenRGB server. The request was fine; the machine is not ready |
 
-A 503 is deliberately not a 500: the client asked for something reasonable and
-the answer is about the machine, not about what was asked.
+A 503 is deliberately not a 500. The client asked for something reasonable,
+and the answer describes the machine rather than the request.
