@@ -1,9 +1,12 @@
 # How this is written
 
 The documents listed in `style_test.go` are written in what this repository
-calls **plain technical English**. The list is short today. A document joins
-it when somebody converts it, so the name in that list means "this file has
-been read against the rules below", not "somebody intends to".
+calls **plain technical English**. Every document in `docs/` is on that list.
+A document joins it when somebody converts it, so a name in that list means
+"this file has been read against the rules below", not "somebody intends to".
+
+The README is not on the list. Its changelog is a record, and the rest of it
+is the page the window renders in its About section.
 
 The rules come from fynedesygn's `docs/style.md`, which takes them from
 ASD-STE100, the Simplified Technical English specification written for
@@ -63,6 +66,7 @@ house voice.
 ## What is checked
 
 `style_test.go` holds the mechanical rules: the sentence ceiling, and a short
-list of words that take a line's length and give nothing back. Everything else
+list of words that take a line's length and give nothing back. It also checks
+that this page still disclaims compliance with STE. Everything else
 on this page is judgement. A test that tried to enforce judgement would fail
 more often than it helped, and somebody would turn it off within a month.

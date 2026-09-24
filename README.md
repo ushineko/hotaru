@@ -219,7 +219,7 @@ MIT. See [LICENSE](LICENSE).
   and a ceiling of thirty words in a sentence. The rules are fynedesygn's,
   which takes them from ASD-STE100 without claiming to comply with it. A
   document opts in by name when somebody has read it against the rules, and
-  `docs/hardware.md` is the first. The specs, this changelog and the doc
+  all six are now on that list. The specs, this changelog and the doc
   comments in the Go source are left as they were written: they carry
   argument and a record, which is the part these rules serve least well. See
   [docs/style.md](docs/style.md).

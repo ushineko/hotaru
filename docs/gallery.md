@@ -1,15 +1,16 @@
 # The window, in pictures
 
-What hotaru's window looks like, one image per part of it. Kept here rather
-than in the README because the README *is* the About section: a gallery of the
-window, inside the window, is a program showing you pictures of itself.
+What hotaru's window looks like, one image per part of it. These images live
+here rather than in the README because the README *is* the About section. A
+gallery of the window, inside the window, shows you pictures of the program
+you are already looking at.
 
-The images are captured by `tools/screenshot.sh`, which starts a window per
-image and grabs it. Nothing is clicked by hand for the set below.
+`tools/screenshot.sh` captures the images. It starts a window per image and
+grabs it. Nobody clicks anything by hand for the set below.
 
 ## The set
 
-Each image is 
+Each image is
 [docs/img/window-&lt;section&gt;.png](img/), in Breeze Dark, at the window's
 default size.
 
@@ -18,8 +19,8 @@ default size.
 ![The Service section: the connection to OpenRGB, the devices it reports, and
 the remedies for a service that is not answering.](img/window-service.png)
 
-Health, what it is connected to, and what to do about it when it is not. The
-remedies name the command rather than the symptom.
+Health, what the service is connected to, and what to do when it is not
+answering. Each remedy names the command to run rather than the symptom.
 
 ### System
 
@@ -27,9 +28,9 @@ remedies name the command rather than the symptom.
 proportional to their LED counts, with the cooler's readings and the scene
 currently loaded.](img/window-system.png)
 
-Every device, with its zones drawn proportionally and in the colours they are
-showing. The cooler's numbers and the display it found are here, and so is
-what is loaded: the scene last applied, and what the panel is drawing.
+Every device, with its zones drawn proportionally and in the colours they
+show. The cooler's numbers and the display it found are here. So is the state:
+the scene applied last, and what the panel draws now.
 
 ### Scenes
 
@@ -37,16 +38,16 @@ what is loaded: the scene last applied, and what the panel is drawing.
 swatch, what it lights and the buttons that apply, edit and delete
 it.](img/window-scenes.png)
 
-The bank, in the order of the keys the scenes sit on. The key is a button:
-it is what somebody recognises a scene by, and it is where they reach to
-change it.
+The bank, in the order of the keys the scenes sit on. The key is a button.
+Somebody recognises a scene by its key, so that is where they reach to change
+it.
 
 ### Pictures
 
 ![The Pictures section: a grid of thumbnails, each with its name, size and
 frame count, and three icons under it.](img/window-pictures.png)
 
-The library, as tiles. A picture is a picture: what tells two of them apart is
+The library, as tiles. A picture is a picture. What tells two of them apart is
 what they look like.
 
 ### Screen
@@ -54,8 +55,8 @@ what they look like.
 ![The Screen section: a table of saved dashboards, each with a thumbnail of
 the frame it draws, its arrangement, theme and background.](img/window-screen.png)
 
-The dashboards the cooler's panel can be asked to draw, each with a picture of
-the frame the service would render for it.
+The dashboards the cooler's panel can draw, each with a picture of the frame
+the service renders for it.
 
 ### Appearance
 
@@ -63,8 +64,8 @@ the frame the service would render for it.
 with the navigation's shape.](img/window-appearance.png)
 
 The same Appearance section every program on fynedesygn has. Fyne draws its
-own widgets, so this is the whole of what makes the window look like it
-belongs on the desktop it is running on.
+own widgets, so this section is the whole of what makes the window match the
+desktop it runs on.
 
 ### About
 
@@ -76,18 +77,19 @@ description of hotaru rather than two.
 
 ## The ones that need a hand
 
-Two states are worth showing and cannot be reached by a flag, because they are
-reached by clicking: the **scene editor** with a light selected, and a chooser
-mid-dialog. For those, open the state and capture the window as it stands:
+Two states are worth showing, and a flag cannot reach either one, because a
+click reaches them: the **scene editor** with a light selected, and a chooser
+part way through a dialog. Open the state yourself and capture the window as
+it stands:
 
 ```console
 $ tools/screenshot.sh --current docs/img/window-editor.png
 $ tools/screenshot.sh --current --with-dialog docs/img/window-effects.png
 ```
 
-`--with-dialog` is for the second one: when a dialog is open it *is* the
-active window, so an active-window grab returns the dialog floating on
-nothing. That mode captures the desktop and crops to the window.
+`--with-dialog` is for the second one. An open dialog *is* the active window,
+so a grab of the active window returns the dialog floating on nothing. That
+mode captures the desktop and crops to the window.
 
 ## Refreshing them
 
@@ -96,20 +98,20 @@ $ make gui                      # the images are of the build, not of the packag
 $ tools/screenshot.sh --all
 ```
 
-It takes about a minute, during which it raises windows and takes over the
-screen. It cannot run while the machine is being used.
+It takes about a minute. It raises windows and takes over the screen for that
+time, so it cannot run while somebody is using the machine.
 
-**The service must be running.** The window is a client; a capture of "the
+**The service must be running.** The window is a client, and a capture of "the
 service is not running" is a screenshot of a machine nobody has. The images
-therefore show this desk's real devices and scenes, which is the point: a
-gallery of invented data is a gallery of a program that was never run.
+therefore show this desk's real devices and scenes, which is the point. A
+gallery of invented data is a gallery of a program nobody ran.
 
 ### Except the picture library
 
-The Pictures image is the one exception, and it is a deliberate one. A picture
-library is somebody's own photographs -- a dog, a family in a car, a
-screenshot of an employer's dashboard -- and this file is published. The grid
-is captured against a library of stock wallpapers instead:
+The Pictures image is the one exception, and it is deliberate. A picture
+library holds somebody's own photographs: a dog, a family in a car, a
+screenshot of an employer's dashboard. This file is published. The capture
+therefore uses a library of stock wallpapers:
 
 ```console
 $ L=~/.local/share/hotaru/images
@@ -118,11 +120,11 @@ $ SETTLE=6 tools/screenshot.sh --section Pictures docs/img/window-pictures.png
 $ rm -rf "$L/images" && mv "$L/images.real" "$L/images"
 ```
 
-The service reads the directory per request, so nothing is restarted and the
+The service reads the directory on each request, so nothing restarts and the
 swap lasts as long as the capture. `--socket` exists for the tidier version of
-this -- a throwaway service with its own library -- and is not used here,
-because a second service on a machine with a cooler is a second writer to the
-same hardware, which is the one thing this program does not allow.
+this, a throwaway service with its own library, and this procedure does not
+use it. A second service on a machine with a cooler is a second writer to the
+same hardware, which is the one thing hotaru does not allow.
 
 Everything visible in that image is a wallpaper: nebulae, a Mandelbrot set, a
 spectrum. The scene *names* in the Scenes image are this desk's own, which is
@@ -131,12 +133,13 @@ a different thing from its photographs.
 ### When to refresh
 
 - **A section changes shape.** A new control, a moved one, a different layout.
-  Not a copy edit.
+  A copy edit does not count.
 - **Before a release that changes the window.** The images are the first thing
-  anybody sees of it, and a stale one is a promise the program does not keep.
-- **When the theme moves.** fynedesygn's default scheme changing makes every
-  image wrong at once.
+  anybody sees of hotaru, and a stale one promises what the program does not
+  do.
+- **When the theme moves.** A change to fynedesygn's default scheme makes
+  every image wrong at once.
 
-And whenever an image changes, **read its alt text again**. That text is the
-only description a screen-reader user gets; a wrong one is worse than none,
-and it is the half of this that rots silently because nobody sees it.
+Whenever an image changes, **read its alt text again**. That text is the only
+description a screen-reader user receives. A wrong one is worse than none, and
+it is the half of this that rots without anybody seeing it.

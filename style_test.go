@@ -26,6 +26,11 @@ reads each one against the rules.
 var converted = []string{
 	filepath.Join("docs", "style.md"),
 	filepath.Join("docs", "hardware.md"),
+	filepath.Join("docs", "packaging.md"),
+	filepath.Join("docs", "migration.md"),
+	filepath.Join("docs", "architecture.md"),
+	filepath.Join("docs", "gallery.md"),
+	filepath.Join("docs", "api.md"),
 }
 
 /*
