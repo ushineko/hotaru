@@ -437,8 +437,19 @@ func (s *ScenesSection) row(sh *shell.Shell, scene api.Scene, key string,
 		somebody has to remember the look of; the picture is the look.
 	*/
 	beside := []fyne.CanvasObject{swatch}
-	if shot := s.sceneShot(cooling, scene.Screen); shot != nil {
-		beside = append(beside, container.NewCenter(shot))
+	if panelDraws(cooling) {
+		/*
+			The cell is there whether or not this scene fills it.
+
+			A row that left it out was a row whose name, facts and buttons
+			all sat 32 pixels to the left of every other row's, so a list
+			mixing scenes with a screen and scenes without read as two lists
+			interleaved. The column is what makes it a table.
+
+			On a machine with no panel there is no column at all, because
+			nothing can fill it on any row.
+		*/
+		beside = append(beside, shotCell(s.sceneShot(scene.Screen)))
 	}
 
 	/*
@@ -468,18 +479,39 @@ func (s *ScenesSection) row(sh *shell.Shell, scene api.Scene, key string,
 }
 
 /*
+panelDraws says whether this machine has somewhere to draw a screen.
+
+A scene is still worth having on a machine that has not -- it is a file, and
+it travels to one with a panel -- but a thumbnail of what it would show there
+is a promise this desk cannot keep, so the column goes away entirely.
+*/
+func panelDraws(cooling api.Cooling) bool {
+	return !cooling.Absent && cooling.Screen != "" && cooling.ScreenDetail == ""
+}
+
+/*
+shotCell holds one row's picture to the column's size, filled or not.
+
+Empty rather than absent when a scene puts nothing on the panel: the cell is
+what keeps every row's name in the same place.
+*/
+func shotCell(shot fyne.CanvasObject) fyne.CanvasObject {
+	if shot == nil {
+		shot = canvas.NewRectangle(color.Transparent)
+	}
+	return container.NewGridWrap(
+		fyne.NewSize(sceneShotSize, sceneShotSize), container.NewCenter(shot))
+}
+
+/*
 sceneShot is a picture of what a scene puts on the panel, or nothing.
 
-Nothing four ways, and each of them is a row that would otherwise carry a
+Nothing three ways, and each of them is a row that would otherwise carry a
 picture of something that is not there:
 
   - The scene says nothing about the screen, or says the cooler's own
     readout. Neither is a picture hotaru drew.
   - It names a picture or a dashboard that has since been deleted.
-  - This machine has no panel to draw on, or cannot reach the one it has.
-    A scene is still worth having on such a machine -- it travels to one
-    with a panel -- but a thumbnail of what it would show there is a
-    promise this desk cannot keep.
   - The list of screens has not arrived yet, which is the first build after
     a cold start.
 
@@ -487,11 +519,8 @@ picture of something that is not there:
 is of that one. It follows the setting rather than the scene, which is what
 the words beside it already say: "the dashboard, whichever is set".
 */
-func (s *ScenesSection) sceneShot(cooling api.Cooling, choice string) fyne.CanvasObject {
+func (s *ScenesSection) sceneShot(choice string) fyne.CanvasObject {
 	if choice == "" || choice == leaveScreen || choice == api.ScreenReadout {
-		return nil
-	}
-	if cooling.Absent || cooling.Screen == "" || cooling.ScreenDetail != "" {
 		return nil
 	}
 

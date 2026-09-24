@@ -16,6 +16,13 @@ picture is the look, and there is room for it on the line.
 ### Where it goes, and how big
 
 Beside the swatch, aligned with it, in the same column pair on every row.
+
+**The column is there whether or not a row fills it.** A row that left the
+picture out was a row whose name, facts and buttons all sat thirty-two pixels
+left of every other row's, so a list mixing scenes that set the screen with
+scenes that do not read as two lists interleaved. On a machine with no panel
+there is no column at all, because nothing can fill it on any row.
+
 Thirty-two pixels square: larger than the eighteen-pixel colour, because a
 colour is one fact and a picture is a photograph somebody has to recognise,
 and smaller than the buttons on the same line, so that no row grows.
@@ -53,8 +60,9 @@ the panel, beside the colour swatch.
 **R2. Nothing is drawn** when the scene puts nothing on the panel, when what
 it names is gone, or when the machine has no panel to draw on.
 
-**R3. No row grows.** The thumbnail is smaller than the buttons already on the
-line.
+**R3. No row grows, and no row shifts.** The thumbnail is smaller than the
+buttons already on the line, and its column is kept on rows that have no
+picture to put in it.
 
 **R4. It costs no fetch of its own**, using the list and the cache the screen
 chooser already warms.
@@ -69,6 +77,8 @@ chooser already warms.
       that cannot be opened all draw none.
 - [x] AC4. The thumbnail is drawn at the scene shot's size rather than the
       Pictures section's, so the row is unchanged in height.
+- [x] AC6. Every row's name starts at the same place on the canvas, whether
+      or not that scene puts anything on the panel.
 - [ ] AC5. Verified on the development machine, in the window.
 
 ## Alternatives Considered

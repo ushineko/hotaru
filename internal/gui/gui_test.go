@@ -2765,3 +2765,38 @@ func TestAMachineWithNoPanelShowsNoThumbnails(t *testing.T) {
 			"a machine that cannot draw showed a thumbnail")
 	}
 }
+
+func TestEveryScenesLineStartsInTheSamePlace(t *testing.T) {
+	/*
+		The bug the column exists for. A row that left the picture out was a
+		row whose name, facts and buttons all sat 32 pixels left of every
+		other row's, so a list mixing scenes that set the screen with scenes
+		that do not read as two lists interleaved.
+	*/
+	routes, picture := sceneRoutes(t)
+	routes["GET /"+api.Version+"/scenes"] = api.ScenesResponse{Scenes: []api.Scene{
+		{Name: "with a picture", Colour: "red", Screen: picture},
+		{Name: "lights only", Colour: "blue"},
+		{Name: "with a dashboard", Colour: "green", Screen: "dashboard:cooling"},
+	}}
+
+	var names []*widget.Label
+	fynetest.WalkRendered(scenesList(t, routes), func(o fyne.CanvasObject) bool {
+		if label, ok := o.(*widget.Label); ok && strings.Contains(label.Text, "with") ||
+			ok && label.Text == "lights only" {
+			names = append(names, label)
+		}
+		return false
+	})
+	require.Len(t, names, 3, "the list does not have the three scenes in it")
+
+	// Where each label lands on the canvas, not inside its own row: a
+	// missing cell moves the row's contents, and every position inside that
+	// row moves with it.
+	at := func(o fyne.CanvasObject) float32 {
+		return fyne.CurrentApp().Driver().AbsolutePositionForObject(o).X
+	}
+	for _, name := range names[1:] {
+		require.Equal(t, at(names[0]), at(name), "%q starts somewhere else", name.Text)
+	}
+}
