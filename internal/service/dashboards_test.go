@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/ushineko/hotaru/internal/dashboard"
+	"github.com/ushineko/hotaru/internal/openrgb"
 	"github.com/ushineko/hotaru/internal/readings"
 	"github.com/ushineko/hotaru/internal/scenes"
 	"github.com/ushineko/hotaru/internal/service"
@@ -142,4 +143,37 @@ func TestADashboardsLetteringIsKept(t *testing.T) {
 	require.Equal(t, want, got.Lettering)
 	require.NotNil(t, got.Lettering.Labels.Outline, "an outline of none came back as not set")
 	require.Zero(t, *got.Lettering.Labels.Outline)
+}
+
+func TestThePreviewIsDrawnWithTheTrailThePanelHas(t *testing.T) {
+	/*
+		The editor draws what the panel draws. A preview rendered without the
+		trail would show an empty band under the headline and somebody would
+		save a dashboard believing that is what their screen looks like.
+
+		The service records every reading it takes, so asking for readings is
+		what fills the history: two buckets apart is a trail of one point,
+		and the window is what the panel is handed.
+	*/
+	svc := service.New(nil, openrgb.NewFake(), "")
+
+	one := dashboard.Dashboard{Headline: dashboard.Slot{Source: readings.CPULoad}}
+	require.Empty(t, svc.Trails(t.Context(), one).Below,
+		"a service that has taken one reading has a trail")
+
+	// A second bucket closes the first.
+	require.Eventually(t, func() bool {
+		return len(svc.Trails(t.Context(), one).Below) > 0
+	}, 3*readings.Bucket, readings.Bucket/5, "no point was ever closed")
+
+	/*
+		And it is the dashboard that says which readings: the half above is
+		empty until somebody asks for one, and asking for one fills it from
+		the same history.
+	*/
+	require.Empty(t, svc.Trails(t.Context(), one).Above, "a trail nobody asked for")
+
+	one.Trail.Above = readings.MemUsed
+	require.NotEmpty(t, svc.Trails(t.Context(), one).Above,
+		"the reading the dashboard asked for above was not drawn")
 }

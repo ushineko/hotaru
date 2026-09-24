@@ -32,7 +32,7 @@ func lettered() Dashboard {
 func drawn(t *testing.T, d Dashboard, r Reading) image.Image {
 	t.Helper()
 
-	frame := Render(d, r, 0, nil)
+	frame := Render(d, r, 0, nil, Trails{})
 	require.NotEmpty(t, frame.GIF, "the frame did not encode")
 
 	first, err := gif.Decode(bytes.NewReader(frame.GIF))
@@ -62,23 +62,23 @@ func TestTheLetteringIsDrawnTheWayItIsAsked(t *testing.T) {
 		like is a judgement and that it is not the 100% one is a fact.
 	*/
 	plain := lettered()
-	was := Render(plain, reading(), 0, nil).Content
+	was := Render(plain, reading(), 0, nil, Trails{}).Content
 
 	bigger := plain
 	bigger.Lettering.Labels.Size = 150
-	require.NotEqual(t, was, Render(bigger, reading(), 0, nil).Content,
+	require.NotEqual(t, was, Render(bigger, reading(), 0, nil, Trails{}).Content,
 		"a bigger label drew the same picture")
 
 	mono := plain
 	mono.Lettering.Font = "mono"
-	require.NotEqual(t, was, Render(mono, reading(), 0, nil).Content,
+	require.NotEqual(t, was, Render(mono, reading(), 0, nil, Trails{}).Content,
 		"another face drew the same picture")
 
 	// An unknown face draws in the default rather than failing, because a
 	// dashboard written by a later version should still light up.
 	later := plain
 	later.Lettering.Font = "a face from 2027"
-	require.Equal(t, was, Render(later, reading(), 0, nil).Content)
+	require.Equal(t, was, Render(later, reading(), 0, nil, Trails{}).Content)
 }
 
 func TestASizeOutsideWhatFitsIsHeldToIt(t *testing.T) {
@@ -176,7 +176,7 @@ func TestAPictureWithManyColoursStillEncodes(t *testing.T) {
 	d.Lettering.Labels.Colour = "#ff00ff"
 	d.Lettering.Values.Colour = "#00ff88"
 
-	frame := Render(d, reading(), 0, noise)
+	frame := Render(d, reading(), 0, noise, Trails{})
 	require.NotEmpty(t, frame.GIF, "the frame did not encode")
 	require.LessOrEqual(t, len(palette(ThemeOf(""), fromPicture(noise), d.Lettering.chosen()...)),
 		MaxColours, "the palette is over what a GIF holds")

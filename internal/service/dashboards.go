@@ -204,6 +204,7 @@ invented numbers does not answer the question somebody is asking, which is
 whether their own numbers fit.
 */
 func (s *Service) RenderDashboard(ctx context.Context, one dashboard.Dashboard) ([]byte, error) {
-	frame := dashboard.Render(one, s.Readings(ctx), 0, s.behind(ctx, one))
+	frame := dashboard.Render(one, s.Readings(ctx), 0, s.behind(ctx, one),
+		s.Trails(ctx, one))
 	return frame.GIF, nil
 }

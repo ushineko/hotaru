@@ -29,6 +29,11 @@ func asDashboard(one dashboard.Dashboard) Dashboard {
 			Labels: asText(one.Lettering.Labels),
 			Values: asText(one.Lettering.Values),
 		},
+		Trail: DashboardTrail{
+			Off:   one.Trail.Off,
+			Below: string(one.Trail.Below),
+			Above: string(one.Trail.Above),
+		},
 	}
 	for _, ring := range one.Rings {
 		out.Rings = append(out.Rings, string(ring))
@@ -67,6 +72,11 @@ func toDashboard(one Dashboard) dashboard.Dashboard {
 			Font:   one.Lettering.Font,
 			Labels: fromText(one.Lettering.Labels),
 			Values: fromText(one.Lettering.Values),
+		},
+		Trail: dashboard.Trail{
+			Off:   one.Trail.Off,
+			Below: readings.Source(one.Trail.Below),
+			Above: readings.Source(one.Trail.Above),
 		},
 	}
 	for _, ring := range one.Rings {

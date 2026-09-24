@@ -214,6 +214,18 @@ MIT. See [LICENSE](LICENSE).
 
 ### Unreleased
 
+- Every screen draws where its readings have been. Five minutes of it, in the
+  band each arrangement leaves empty, as a line with the area under it filled.
+  Each point is the mean of the readings that arrived in its five seconds,
+  because a processor that reads 51, then 82, then 60 within six seconds
+  cannot be drawn from one sample per point. A bucket nothing arrived in is a
+  gap rather than a zero (spec 046, #124).
+
+  The band takes two: one growing from the bottom and one hanging from the
+  top, inverted, so GPU and CPU can share it and be told apart by which way
+  they hang. The editor chooses both, and whether the band is drawn at all. A
+  dashboard that says nothing draws its headline's own reading.
+
 - The documents in `docs/` are being converted to plain technical English:
   plain verbs, the active voice, the simple present, no idiom or metaphor,
   and a ceiling of thirty words in a sentence. The rules are fynedesygn's,

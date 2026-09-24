@@ -53,7 +53,7 @@ indicator that changed every render would also defeat the gate that stops
 hotaru writing when nothing has changed, so it advances only with accepted
 pushes and is not part of what "changed" means.
 */
-func Render(d Dashboard, r Reading, tick int, behind image.Image) Frame {
+func Render(d Dashboard, r Reading, tick int, behind image.Image, trails Trails) Frame {
 	theme := ThemeOf(d.Theme)
 	paint := newPaint(d, theme, behind)
 
@@ -67,6 +67,12 @@ func Render(d Dashboard, r Reading, tick int, behind image.Image) Frame {
 	default:
 		drawRing(paint, d, r)
 	}
+	/*
+		The band every arrangement leaves empty, after the numbers that name
+		it (spec 046). Here rather than in each arrangement, because where it
+		goes is the one thing that differs and bandOf is where that lives.
+	*/
+	paint.drawTrails(d, r, trails)
 	caption(paint, d)
 
 	img := paint.img

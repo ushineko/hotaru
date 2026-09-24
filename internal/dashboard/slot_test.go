@@ -108,13 +108,13 @@ func TestNothingDrawsAUnitLine(t *testing.T) {
 		Background:  Background{Kind: Plain},
 		Headline:    Slot{Source: readings.Coolant, Label: "X"},
 	}
-	plain := decode(t, Render(d, reading(), 0, nil))
+	plain := decode(t, Render(d, reading(), 0, nil, Trails{}))
 
 	// The same screen with the unit spelled into the label draws more ink,
 	// which is the control: if the label were not what is drawn, this would
 	// match.
 	d.Headline.Label = "X °C"
-	spelled := decode(t, Render(d, reading(), 0, nil))
+	spelled := decode(t, Render(d, reading(), 0, nil, Trails{}))
 	require.NotEqual(t, ink(plain), ink(spelled),
 		"the label is not what is drawn")
 
@@ -172,12 +172,12 @@ func TestAPairGradesOnItsFirstReading(t *testing.T) {
 		Arrangement: Big, Background: Background{Kind: Plain},
 		Headline: Slot{Source: readings.Coolant, Second: readings.CPULoad},
 	}
-	require.Positive(t, pixels(decode(t, Render(first, hot, 0, nil)), colCrit),
+	require.Positive(t, pixels(decode(t, Render(first, hot, 0, nil, Trails{})), colCrit),
 		"a hot first reading was not drawn as one")
 
 	second := first
 	second.Headline = Slot{Source: readings.CPULoad, Second: readings.Coolant}
-	require.Zero(t, pixels(decode(t, Render(second, hot, 0, nil)), colCrit),
+	require.Zero(t, pixels(decode(t, Render(second, hot, 0, nil, Trails{})), colCrit),
 		"the colour followed the second reading")
 }
 
@@ -266,7 +266,7 @@ func TestTheStackedRowsAreSetLikeATable(t *testing.T) {
 	r.Set(readings.CPUTemp, 63)
 	r.Set(readings.PumpDuty, 90)
 
-	img := decode(t, Render(d, r, 0, nil))
+	img := decode(t, Render(d, r, 0, nil, Trails{}))
 	rows := fit(d, Stacked)
 	require.Len(t, rows, 2)
 
@@ -425,7 +425,7 @@ func TestTheReadingsSizeMovesTheReadings(t *testing.T) {
 	var tall []int
 	for _, size := range []int{50, 100, 150} {
 		d.Lettering.Values.Size = size
-		tall = append(tall, digitHeight(decode(t, Render(d, reading(), 0, nil)),
+		tall = append(tall, digitHeight(decode(t, Render(d, reading(), 0, nil, Trails{})),
 			stackTop, rowHeight, Size/2))
 	}
 

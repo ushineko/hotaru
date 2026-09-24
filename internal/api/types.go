@@ -356,6 +356,27 @@ type Dashboard struct {
 	// Lettering is how the text is drawn, over what the arrangement and the
 	// theme decided. Empty draws it their way.
 	Lettering DashboardLettering `json:"lettering,omitempty"`
+
+	// Trail is the history drawn in the arrangement's empty band. Absent
+	// draws the headline's own reading, because that is what the band sits
+	// under.
+	Trail DashboardTrail `json:"trail,omitempty"`
+}
+
+/*
+DashboardTrail is what the band draws, and whether it draws anything.
+
+Two readings rather than one: the band has two halves, and `12% · 68°C` can
+draw the share from the bottom and the temperature from the top, each against
+its own scale, told apart by which way it hangs.
+
+Off draws nothing. Below empty is the headline's own reading, and Above empty
+draws nothing there, which leaves the whole band to the one below.
+*/
+type DashboardTrail struct {
+	Off   bool   `json:"off,omitempty"`
+	Below string `json:"below,omitempty"`
+	Above string `json:"above,omitempty"`
 }
 
 // DashboardLettering is a dashboard's typography: the face, and a style for
