@@ -79,6 +79,16 @@ type Dashboard struct {
 	// Lettering is how the words and the numbers are drawn. Empty draws
 	// them the way the arrangement and the theme say.
 	Lettering Lettering `json:"lettering,omitempty"`
+
+	/*
+		Trail is the history drawn in the arrangement's empty band: where the
+		readings have been, under the numbers that say where they are now.
+
+		Absent draws the headline's own reading, because a dashboard written
+		before this existed still has a headline, and the band belongs to the
+		number above it. See Trail.
+	*/
+	Trail Trail `json:"trail,omitempty"`
 }
 
 /*
@@ -452,3 +462,45 @@ number is gone. An outline costs eight offset draws per string and makes the
 text legible over anything.
 */
 func (b Background) Outlined() bool { return b.Kind == Picture }
+
+/*
+Trail is what the band draws, and whether it draws anything.
+
+Two series rather than one, because the band has two halves and a headline is
+usually a pair: `12% · 68°C` draws the share from the bottom and the
+temperature from the top, each against its own scale, told apart by which way
+it hangs rather than by colour.
+
+Empty is the common case, and draws one trace of the headline's own reading.
+*/
+type Trail struct {
+	// Off draws nothing at all. A dashboard that says nothing draws the
+	// trail, so this is how somebody turns it off rather than how they turn
+	// it on.
+	Off bool `json:"off,omitempty"`
+
+	// Below grows from the bottom of the band. Empty is the headline's own
+	// reading, which is what the band sits under.
+	Below readings.Source `json:"below,omitempty"`
+
+	// Above hangs from the top of the band, inverted. Empty draws nothing
+	// there, and the trace below takes the whole band.
+	Above readings.Source `json:"above,omitempty"`
+}
+
+/*
+Sources is what the trail draws, given the headline it sits under.
+
+Both empty draws nothing, which is what Off means and what a headline with no
+reading means: a band under a number that is not there is a trace of nothing.
+*/
+func (t Trail) Sources(headline readings.Source) (below, above readings.Source) {
+	if t.Off {
+		return "", ""
+	}
+	below = t.Below
+	if below == "" {
+		below = headline
+	}
+	return below, t.Above
+}

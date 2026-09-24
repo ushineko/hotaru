@@ -205,6 +205,6 @@ whether their own numbers fit.
 */
 func (s *Service) RenderDashboard(ctx context.Context, one dashboard.Dashboard) ([]byte, error) {
 	frame := dashboard.Render(one, s.Readings(ctx), 0, s.behind(ctx, one),
-		s.history.Trail(one.Headline.Source))
+		s.Trails(ctx, one))
 	return frame.GIF, nil
 }

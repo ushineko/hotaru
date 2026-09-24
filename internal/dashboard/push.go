@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/ushineko/hotaru/internal/cooler"
-	"github.com/ushineko/hotaru/internal/readings"
 )
 
 /*
@@ -74,13 +73,15 @@ type Pusher struct {
 	*/
 	Look func(ctx context.Context) (Dashboard, image.Image)
 	/*
-		Trail is where the dashboard's headline has been, for the stacked
-		arrangement to draw under it (spec 046).
+		Trails is where the dashboard's readings have been, for the band
+		under the numbers (spec 046).
 
-		Asked per cycle like Look, and optional: a pusher without one draws
-		the panel exactly as it drew it before there were any.
+		Asked per cycle like Look, and given the dashboard rather than a
+		source, because which readings the band draws is the dashboard's own
+		decision. Optional: a pusher without one draws the panel exactly as
+		it drew it before there were any.
 	*/
-	Trail func(ctx context.Context, source readings.Source) Trail
+	Trails func(ctx context.Context, d Dashboard) Trails
 	// Report says what went wrong, and is optional.
 	Report func(format string, args ...any)
 
@@ -158,11 +159,11 @@ func (p *Pusher) cycle(ctx context.Context) time.Duration {
 	if p.Look != nil {
 		look, behind = p.Look(ctx)
 	}
-	var trail Trail
-	if p.Trail != nil {
-		trail = p.Trail(ctx, look.Headline.Source)
+	var trails Trails
+	if p.Trails != nil {
+		trails = p.Trails(ctx, look)
 	}
-	frame := Render(look, p.Read(ctx), p.tick, behind, trail)
+	frame := Render(look, p.Read(ctx), p.tick, behind, trails)
 	floor := Floor(len(frame.GIF))
 
 	if p.sent && frame.Content == p.last {

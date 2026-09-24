@@ -59,6 +59,22 @@ of whatever readings arrived inside its bucket.
 a line of equal points is the same picture, so a screen of slow readings
 writes no more often than it did. That is asserted rather than assumed.
 
+### Every arrangement has a band
+
+Each one measured on a rendered frame, by drawing it with every reading it has
+room for and looking for the rows with no ink in the middle of the panel:
+
+| Arrangement | Empty band | Height |
+|---|---|---|
+| `ring` | 309..421, inside the arc | 113 px |
+| `big` | 400..512, under the number | 113 px |
+| `stacked` | 202..295 | 94 px |
+| `grid` | 218..297 | 80 px |
+
+The trace takes the middle of each and leaves air on both sides, because a
+line that reaches either neighbour reads as part of it. Two traces split the
+band, with a gap taken out of both; one takes the whole of it.
+
 ### Five minutes across sixty points
 
 The window is a readability choice rather than a cost one. **Five minutes, in
@@ -69,8 +85,19 @@ readings to average.
 
 ### What it plots, and what it is drawn against
 
-The headline's source, with no new field on the dashboard and no new control
-in the editor. The band belongs to the number above it.
+**Two readings, chosen per dashboard.** The band has two halves: one trace
+grows from the bottom and one hangs from the top, inverted, and which way a
+trace hangs is what tells the two apart on a panel where colour already means
+something else. GPU above and CPU below is the case it was asked for.
+
+The same reading in both halves draws once. It would be two identical shapes,
+each at half the height the first one could have had.
+
+A dashboard that says nothing draws one trace of its headline's own reading,
+because the band sits under that number and a dashboard written before this
+existed still has a headline. `off` is how somebody stops it, which is the
+way round it has to be: absent cannot mean no when every saved dashboard is
+absent.
 
 The vertical scale comes from the reading rather than from a table. A source
 measured in per cent is drawn against 0 to 100, because the eye already knows
@@ -102,8 +129,8 @@ the band fills from the right as the samples arrive.
 
 ## Requirements
 
-**R1. The stacked arrangement draws a trail** of its headline's reading in the
-band between the headline and the rows.
+**R1. Every arrangement draws a trail** in its own empty band, measured on a
+rendered frame rather than derived from the constants that place its numbers.
 
 **R2. The trail is five minutes** of history in five-second buckets, and each
 point is the mean of the readings that arrived in its bucket.
@@ -122,15 +149,20 @@ window's own range, with a minimum span.
 **R7. A trail with fewer than two points draws nothing**, and a partial trail
 draws what it has, against the right-hand edge.
 
-**R8. The other arrangements are unchanged.**
+**R8. The dashboard says what the band draws**: whether it is drawn at all,
+which reading grows from the bottom, and which hangs from the top. Absent is
+one trace of the headline's own reading.
+
+**R9. The same reading in both halves draws once.**
+
+**R10. The editor offers all three**, and the preview redraws.
 
 ## Acceptance Criteria
 
-- [x] AC1. A stacked dashboard whose headline has a trail draws ink in the
-      band between the headline and the rows, and no ink outside it that was
-      not there before.
-- [x] AC2. Ring, Grid and Big render byte-identical frames with and without a
-      trail.
+- [x] AC1. Every arrangement draws ink in its own band and none outside it,
+      asserted per arrangement on the rendered pixels.
+- [x] AC2. A second reading hangs from the top of the band, and the same
+      reading in both halves draws once.
 - [x] AC3. A trail of identical values, advanced by one sample, renders the
       same `Content` hash: the gate still stops the push.
 - [x] AC4. A trail whose values change renders a different `Content` hash.
@@ -145,7 +177,9 @@ draws what it has, against the right-hand edge.
       a million buckets after a machine sleeps for a week.
 - [x] AC10. The history fills from the readings the service already takes,
       and the editor's preview is drawn with the same trail the panel has.
-- [ ] AC11. Verified on the development machine, on the panel.
+- [x] AC11. A dashboard can turn the trail off, name the reading below and
+      name the reading above, and the editor's controls reach the draft.
+- [ ] AC12. Verified on the development machine, on the panel.
 
 ## Alternatives Considered
 
@@ -163,9 +197,11 @@ draws what it has, against the right-hand edge.
 
 ## Risks & Assumptions
 
-- **Every saved stacked dashboard changes appearance.** There is no field to
-  turn this off, which is what "no new configuration" costs. If somebody wants
-  the band empty, that is a field and a spec of its own.
+- **Every saved dashboard changes appearance.** Absent means drawn, so the
+  four screens on this desk gain a trace on upgrade. The alternative was
+  making it opt-in, the way `units` was in spec 044; this went the other way
+  because the band is empty on every arrangement and a feature nobody can see
+  is a feature nobody turns on. `off` is one checkbox away.
 
 - **The trail is empty for the first bucket after a restart**, and partial for
   the first five minutes. It fills from the right. A window opened in that

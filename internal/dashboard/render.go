@@ -53,7 +53,7 @@ indicator that changed every render would also defeat the gate that stops
 hotaru writing when nothing has changed, so it advances only with accepted
 pushes and is not part of what "changed" means.
 */
-func Render(d Dashboard, r Reading, tick int, behind image.Image, trail Trail) Frame {
+func Render(d Dashboard, r Reading, tick int, behind image.Image, trails Trails) Frame {
 	theme := ThemeOf(d.Theme)
 	paint := newPaint(d, theme, behind)
 
@@ -61,12 +61,18 @@ func Render(d Dashboard, r Reading, tick int, behind image.Image, trail Trail) F
 	case Grid:
 		drawGrid(paint, d, r)
 	case Stacked:
-		drawStacked(paint, d, r, trail)
+		drawStacked(paint, d, r)
 	case Big:
 		drawBig(paint, d, r)
 	default:
 		drawRing(paint, d, r)
 	}
+	/*
+		The band every arrangement leaves empty, after the numbers that name
+		it (spec 046). Here rather than in each arrangement, because where it
+		goes is the one thing that differs and bandOf is where that lives.
+	*/
+	paint.drawTrails(d, r, trails)
 	caption(paint, d)
 
 	img := paint.img
@@ -168,19 +174,8 @@ func drawGrid(p *paint, d Dashboard, r Reading) {
 
 // drawStacked is four rows under the headline, with no ring: numbers rather
 // than an instrument.
-func drawStacked(p *paint, d Dashboard, r Reading, trail Trail) {
+func drawStacked(p *paint, d Dashboard, r Reading) {
 	headline(p, d, r, headlineAt{labelY: 60, valueY: 98, valueH: 116, size: 88}, false)
-
-	/*
-		Where the headline has been, in the band between it and the rows
-		(spec 046). The arrangement with no ring is the one with room for it,
-		and the number at the top is what it is a history of: the panel says
-		12% and the trace says whether that is where this machine sits or
-		where it has just arrived.
-	*/
-	value, known := r.Value(d.Headline.Source)
-	p.drawTrail(trail, d.Headline.Source,
-		gradeOf(d.Headline.Source, value, known, p.theme))
 
 	/*
 		The rows are a table, so they are set like one: the words hard left,

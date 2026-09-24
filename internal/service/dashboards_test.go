@@ -157,11 +157,23 @@ func TestThePreviewIsDrawnWithTheTrailThePanelHas(t *testing.T) {
 	*/
 	svc := service.New(nil, openrgb.NewFake(), "")
 
-	require.Empty(t, svc.Trail(t.Context(), readings.CPULoad),
+	one := dashboard.Dashboard{Headline: dashboard.Slot{Source: readings.CPULoad}}
+	require.Empty(t, svc.Trails(t.Context(), one).Below,
 		"a service that has taken one reading has a trail")
 
 	// A second bucket closes the first.
 	require.Eventually(t, func() bool {
-		return len(svc.Trail(t.Context(), readings.CPULoad)) > 0
+		return len(svc.Trails(t.Context(), one).Below) > 0
 	}, 3*readings.Bucket, readings.Bucket/5, "no point was ever closed")
+
+	/*
+		And it is the dashboard that says which readings: the half above is
+		empty until somebody asks for one, and asking for one fills it from
+		the same history.
+	*/
+	require.Empty(t, svc.Trails(t.Context(), one).Above, "a trail nobody asked for")
+
+	one.Trail.Above = readings.MemUsed
+	require.NotEmpty(t, svc.Trails(t.Context(), one).Above,
+		"the reading the dashboard asked for above was not drawn")
 }

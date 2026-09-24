@@ -2512,14 +2512,7 @@ func TestTheScreenEditorTurnsUnitsOn(t *testing.T) {
 	require.Contains(t, fynetest.Text(built), "Units")
 	require.False(t, gui.DraftDashboard(section).Units, "units started on")
 
-	var check *widget.Check
-	fynetest.WalkRendered(built, func(o fyne.CanvasObject) bool {
-		if c, ok := o.(*widget.Check); ok && check == nil {
-			check = c
-			return true
-		}
-		return false
-	})
+	check := checkFor(built, "Units")
 	require.NotNil(t, check, "the form offers no check to turn units on")
 
 	check.SetChecked(true)
@@ -2634,4 +2627,96 @@ func onePixel(t *testing.T) []byte {
 	var out bytes.Buffer
 	require.NoError(t, gif.Encode(&out, frame, nil))
 	return out.Bytes()
+}
+
+/*
+checkFor is the checkbox belonging to a field, by the words beside it.
+
+The form has more than one now -- units, and whether the trail is drawn -- and
+"the first check in the tree" is a test that passes until somebody adds a
+control above the one it meant.
+*/
+func checkFor(o fyne.CanvasObject, name string) *widget.Check {
+	var found, last *widget.Check
+	fynetest.WalkRendered(o, func(child fyne.CanvasObject) bool {
+		switch c := child.(type) {
+		case *widget.Check:
+			last = c
+		case *widget.Label:
+			// The control before the words: a field is a border with its
+			// control as the content, and Fyne walks the content first.
+			if c.Text == name && found == nil {
+				found = last
+				return true
+			}
+		}
+		return false
+	})
+	return found
+}
+
+func TestTheScreenEditorOffersTheTrail(t *testing.T) {
+	/*
+		The band under the numbers is the dashboard's own decision now: drawn
+		or not, and which readings it is a history of. A form that drew the
+		controls and sent the dashboard it started from would look exactly
+		like this one and change nothing, which is why each is asserted
+		against the draft.
+	*/
+	a := test.NewApp()
+	t.Cleanup(a.Quit)
+
+	routes := screenful()
+	routes["POST /"+api.Version+"/dashboards/{name}/preview"] = api.PreviewedDashboard{}
+
+	app := gui.New(service(t, routes))
+	opts := app.Options("s")
+	opts.SettingsPath = filepath.Join(t.TempDir(), "gui.yml")
+	sh := shell.Headless(a, opts)
+	app.Refresh(context.Background())
+
+	section := &gui.DashboardsSection{}
+	gui.OpenDashboards(section, app)
+	gui.EditDashboard(section, api.Dashboard{Name: "quiet", Arrangement: "stacked"})
+
+	built := section.Build(sh)
+	section.Settle()
+	window := test.NewWindow(built)
+	t.Cleanup(window.Close)
+	window.Resize(fyne.NewSize(1200, 900))
+
+	said := fynetest.Text(built)
+	for _, want := range []string{"Trail", "Show", "Below", "Above", "the headline's"} {
+		require.Contains(t, said, want, "the form does not offer %q", want)
+	}
+
+	// Drawn unless somebody says otherwise, so the check starts on and
+	// turning it off is what reaches the draft.
+	show := checkFor(built, "Show")
+	require.NotNil(t, show, "the form offers no check for the trail")
+	require.True(t, show.Checked, "the trail started off")
+
+	show.SetChecked(false)
+	section.Settle()
+	require.True(t, gui.DraftDashboard(section).Trail.Off, "the check did not reach the draft")
+
+	// And the two halves take a reading each.
+	var choosers []*widget.Select
+	fynetest.WalkRendered(built, func(o fyne.CanvasObject) bool {
+		if choose, ok := o.(*widget.Select); ok &&
+			slices.Contains(choose.Options, "the headline's") ||
+			ok && slices.Contains(choose.Options, "nothing") {
+			choosers = append(choosers, choose)
+		}
+		return false
+	})
+	require.Len(t, choosers, 2, "there is not a chooser for each half of the band")
+
+	choosers[0].SetSelected("Coolant °C")
+	choosers[1].SetSelected("GPU °C")
+	section.Settle()
+
+	draft := gui.DraftDashboard(section)
+	require.Equal(t, "coolant", draft.Trail.Below, "the reading below did not reach the draft")
+	require.Equal(t, "gpu_c", draft.Trail.Above, "the reading above did not reach the draft")
 }
