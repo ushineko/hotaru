@@ -214,9 +214,23 @@ func TestAReadingThatDidNotMoveIsNotDrawnAsThoughItDid(t *testing.T) {
 	*/
 	steady := Series{39.0, 39.1, 39.0, 39.1}
 	lo, hi := domain(steady, readings.Coolant)
-	require.InDelta(t, 3.9, hi-lo, 0.01, "the span is not the minimum")
-	require.Less(t, lo, 39.0)
-	require.Greater(t, hi, 39.1)
+	require.InDelta(t, 3.91, hi-lo, 0.01, "the span is not the minimum")
+
+	/*
+		And the invented range runs upwards from the lowest value rather than
+		around it, so a steady reading is a thin line along the floor of the
+		band. Centred put it across the middle with the wash filling half the
+		band, which is a solid bar on every screen of a quiet machine.
+	*/
+	require.Equal(t, 39.0, lo, "the invented range is not anchored at the bottom")
+
+	// Which is what the pixels do with it: the trace sits in the band's
+	// lowest quarter rather than across its middle.
+	d := stacked(readings.Coolant)
+	rows := inked(decode(t, Render(d, reading(), 0, nil, Trails{Below: steady})), 202, 294)
+	require.NotEmpty(t, rows)
+	require.Greater(t, rows[0], stackedTop+3*stackedHeight/4,
+		"a reading that did not move was drawn up the band")
 
 	// And a reading that did move is drawn against what it did.
 	lo, hi = domain(Series{1000, 3000}, readings.PumpRPM)

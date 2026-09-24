@@ -212,8 +212,7 @@ filling the band because it spent five minutes between 2 and 4.
 Everything else is drawn against its own lowest and highest, because a coolant
 temperature lives in a few degrees and a pump in a few thousand revolutions.
 The minimum span stops a reading that did not move from being drawn as though
-it did: a tenth of the highest value, which is scale-free and needs no table
-of what each source does.
+it did.
 */
 func domain(points Series, source readings.Source) (lo, hi float64) {
 	_, unit := readings.Describe(source)
@@ -232,9 +231,22 @@ func domain(points Series, source readings.Source) (lo, hi float64) {
 		return 0, 100
 	}
 
+	/*
+		A reading that did not move has no range, so the band invents one --
+		**upwards from the lowest value it saw**, rather than around it.
+
+		Centred was the first answer and it draws a coolant sitting at 41.2
+		as a line across the middle of the band, with the wash filling half
+		of it: a quiet machine drew a solid bar on every screen. Anchored at
+		the bottom, a steady reading is a thin line along the floor of the
+		band and any movement lifts it off. Nothing happening looks like
+		nothing happening.
+
+		A tenth of the highest value, which is scale-free and needs no table
+		of what each source does.
+	*/
 	if span := math.Abs(hi) / 10; hi-lo < span {
-		middle := (lo + hi) / 2
-		lo, hi = middle-span/2, middle+span/2
+		hi = lo + span
 	}
 	if hi <= lo {
 		return lo, lo + 1
