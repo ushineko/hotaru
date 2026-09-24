@@ -212,6 +212,17 @@ MIT. See [LICENSE](LICENSE).
 
 ## Changelog
 
+### Unreleased
+
+- A pair is fitted to the shape it is drawn in. `48% · 100°C` hung past the
+  headline's inset and into the bezel while `48% · 38°C` sat well inside it:
+  the fit laid every field end to end, and the drawing centres the separator
+  and packs each half outward, so the wider half decides both sides. The two
+  agree only when the halves are the same width. Reserved widths rather than
+  measured ones, so the headline does not change size as a temperature passes
+  a hundred. It costs about two pixels of digit height and cannot overflow at
+  any value this machine can report (#140).
+
 ### 0.1.13 (2026-09-24)
 
 - The cooler is waited for rather than opened once. A `uaccess` udev rule

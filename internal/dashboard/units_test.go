@@ -179,3 +179,68 @@ func TestAUnitDoesNotTouchItsNumber(t *testing.T) {
 	require.Equal(t, unitGap(unit, rowValuePt),
 		p.run(unit, rowValuePt)-p.textWidth(unit.Text, sizeOf(unit, rowValuePt), true, Text{}))
 }
+
+func TestAPairIsFittedToTheShapeItIsDrawnIn(t *testing.T) {
+	/*
+		`48% · 100°C` hung five pixels past the headline's inset and into the
+		bezel, while `48% · 38°C` sat well inside it (#140).
+
+		A pair was fitted with every field laid end to end and drawn anchored
+		on its separator, and the two shapes agree only when the halves are
+		the same width: the separator is centred, so the wider half decides
+		both sides and the assembly needs `separator + 2 * max(left, right)`.
+	*/
+	p := &paint{}
+	lopsided := Slot{Source: readings.CPULoad, Second: readings.CPUTemp}.
+		Fields(cpu(48, 100), true)
+	at, ok := dividerAt(lopsided)
+	require.True(t, ok, "the pair has no separator")
+
+	_, laid := p.boxes(lopsided, 88)
+	require.Greater(t, p.spread(lopsided, at, 88), laid,
+		"the drawn shape is no wider than the one that was fitted; this proves nothing")
+
+	// So the fit is the stricter of the two, and what it settles on fits.
+	size := p.fitted(lopsided, 200, 88, Centre)
+	require.LessOrEqual(t, p.spread(lopsided, at, size), 200,
+		"the pair was fitted to a room it does not fit")
+}
+
+func TestAPairIsTheSameSizeWhateverItSays(t *testing.T) {
+	/*
+		The reservation is what makes an assembly the same width from one
+		frame to the next, so the fit uses it: a headline that shrank as its
+		temperature passed a hundred would be spec 042 undone.
+
+		Asserted on the drawn pixels, because the point size is not a number
+		anybody can read off the panel -- the height of the digits is.
+	*/
+	d := Shipped()[1]
+	d.Arrangement = Stacked
+	d.Units = true
+	d.Background = Background{Kind: Plain}
+	d.Headline = Slot{Source: readings.CPULoad, Second: readings.CPUTemp, Label: "CPU"}
+
+	heights := map[int]bool{}
+	for _, pair := range [][2]float64{{5, 38}, {48, 38}, {48, 100}, {100, 38}, {100, 100}} {
+		img := decode(t, Render(d, cpu(pair[0], pair[1]), 0, nil, Trails{}))
+
+		rows := inked(img, 98, 214)
+		require.NotEmpty(t, rows, "the headline drew nothing")
+		heights[rows[len(rows)-1]-rows[0]] = true
+
+		// And it is inside the panel's inset, which is what #140 was.
+		left, right := inkEdges(img, 98, 214-98)
+		require.GreaterOrEqual(t, left, headlineInset, "%v overflows to the left", pair)
+		require.LessOrEqual(t, right, Size-headlineInset, "%v overflows to the right", pair)
+	}
+	require.Len(t, heights, 1, "the headline changed size with what it said: %v", heights)
+}
+
+// cpu is a reading of the two halves of a processor headline.
+func cpu(share, degrees float64) Reading {
+	var r Reading
+	r.Set(readings.CPULoad, share)
+	r.Set(readings.CPUTemp, degrees)
+	return r
+}

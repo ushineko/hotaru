@@ -225,8 +225,54 @@ stacked column does: one size, or the pieces of one number are drawn at two.
 func (p *paint) fields(fs []Field, x, y, w, h int, pt float64, c color.Color,
 	graded bool, align Align,
 ) {
-	_, _, size := p.fittedBoxes(fs, w, pt*p.letters.Values.Scale())
-	p.fieldsSized(fs, x, y, w, h, size, c, graded, align)
+	p.fieldsSized(fs, x, y, w, h, p.fitted(fs, w, pt*p.letters.Values.Scale(), align),
+		c, graded, align)
+}
+
+/*
+fitted is the largest size at which an assembly fits the room it is given.
+
+**Measured on the layout it will be drawn in**, which is the whole of this.
+A pair anchored on its separator is not the same shape as the same fields laid
+end to end: the separator sits at the centre of the space and each half grows
+outward from it, so the wider half decides both sides. Fitting one shape and
+drawing the other is how "48% · 100°C" came to hang five pixels past the inset
+on a 640-pixel panel, while "48% · 38°C" sat well inside it (#140).
+*/
+func (p *paint) fitted(fs []Field, w int, pt float64, align Align) float64 {
+	at, paired := dividerAt(fs)
+	if !paired || align == Right {
+		_, _, size := p.fittedBoxes(fs, w, pt)
+		return size
+	}
+
+	for size := pt; ; size-- {
+		if p.spread(fs, at, size) <= w || size <= minValuePt {
+			return max(size, minValuePt)
+		}
+	}
+}
+
+/*
+spread is how wide a pair is drawn when it is anchored on its separator.
+
+The separator is centred, so each half has the same room and the wider of the
+two decides how much that is. Reserved widths rather than measured ones,
+because the reservation is what makes the assembly the same width from one
+frame to the next: a headline that shrank as its temperature passed a hundred
+would be spec 042 undone.
+*/
+func (p *paint) spread(fs []Field, divider int, pt float64) int {
+	var left, right int
+	for i, f := range fs {
+		switch {
+		case i < divider:
+			left += p.fieldWidth(f, pt)
+		case i > divider:
+			right += p.fieldWidth(f, pt)
+		}
+	}
+	return p.textWidth(fs[divider].Text, pt, true, Text{}) + 2*max(left, right)
 }
 
 /*
