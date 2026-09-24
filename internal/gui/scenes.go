@@ -226,7 +226,7 @@ func (s *ScenesSection) list(sh *shell.Shell) fyne.CanvasObject {
 
 	rows := make([]fyne.CanvasObject, 0, len(scenes))
 	for _, scene := range scenes {
-		rows = append(rows, s.row(sh, scene, keys[scene.Name]))
+		rows = append(rows, s.row(sh, scene, keys[scene.Name], got.Cooling))
 	}
 
 	/*
@@ -336,7 +336,9 @@ func shifted(key string) bool { return strings.Contains(key, "Shift") }
 
 // row is one scene: what it does, the key that fires it, and the two things
 // worth doing to it here.
-func (s *ScenesSection) row(sh *shell.Shell, scene api.Scene, key string) fyne.CanvasObject {
+func (s *ScenesSection) row(sh *shell.Shell, scene api.Scene, key string,
+	cooling api.Cooling,
+) fyne.CanvasObject {
 	facts := []string{}
 	if scene.Colour != "" {
 		facts = append(facts, scene.Colour)
@@ -427,6 +429,19 @@ func (s *ScenesSection) row(sh *shell.Shell, scene api.Scene, key string) fyne.C
 	swatch.SetMinSize(fyne.NewSize(zoneHeight, zoneHeight))
 
 	/*
+		The colour and the screen, side by side.
+
+		A scene is two things at once on this machine -- what the lights show
+		and what the panel shows -- and the row said the second one in words
+		while saying the first in colour. "screen: berserk-slide" is a name
+		somebody has to remember the look of; the picture is the look.
+	*/
+	beside := []fyne.CanvasObject{swatch}
+	if shot := s.sceneShot(cooling, scene.Screen); shot != nil {
+		beside = append(beside, container.NewCenter(shot))
+	}
+
+	/*
 		The key first, because that is what somebody recognises the scene by:
 		the bank has been on this numpad for two years.
 
@@ -444,12 +459,79 @@ func (s *ScenesSection) row(sh *shell.Shell, scene api.Scene, key string) fyne.C
 		label.Truncation = fyne.TextTruncateEllipsis
 	}
 
-	return listRow([]fyne.CanvasObject{
-		column(sceneKeyWidth, shortcut), swatch,
-		column(sceneNameWidth, title),
-		column(sceneFactsWidth, said),
-	}, buttons...)
+	return listRow(append(
+		[]fyne.CanvasObject{column(sceneKeyWidth, shortcut)},
+		append(beside,
+			column(sceneNameWidth, title),
+			column(sceneFactsWidth, said))...,
+	), buttons...)
 }
+
+/*
+sceneShot is a picture of what a scene puts on the panel, or nothing.
+
+Nothing four ways, and each of them is a row that would otherwise carry a
+picture of something that is not there:
+
+  - The scene says nothing about the screen, or says the cooler's own
+    readout. Neither is a picture hotaru drew.
+  - It names a picture or a dashboard that has since been deleted.
+  - This machine has no panel to draw on, or cannot reach the one it has.
+    A scene is still worth having on such a machine -- it travels to one
+    with a panel -- but a thumbnail of what it would show there is a
+    promise this desk cannot keep.
+  - The list of screens has not arrived yet, which is the first build after
+    a cold start.
+
+`dashboard` on its own is the dashboard the panel is set to, so the picture
+is of that one. It follows the setting rather than the scene, which is what
+the words beside it already say: "the dashboard, whichever is set".
+*/
+func (s *ScenesSection) sceneShot(cooling api.Cooling, choice string) fyne.CanvasObject {
+	if choice == "" || choice == leaveScreen || choice == api.ScreenReadout {
+		return nil
+	}
+	if cooling.Absent || cooling.Screen == "" || cooling.ScreenDetail != "" {
+		return nil
+	}
+
+	got := s.screens()
+	if choice == api.ScreenDashboard {
+		choice = api.ScreenDashboardPrefix + got.active
+	}
+
+	switch {
+	case strings.HasPrefix(choice, api.ScreenDashboardPrefix):
+		for _, one := range got.boards {
+			if one.Name == strings.TrimPrefix(choice, api.ScreenDashboardPrefix) {
+				// Held to this line's size: the Screen section's own picture
+				// is a list thumbnail, which is twice as wide as this row is
+				// tall.
+				return sized(sceneShotSize, dashboardShot(s.app, one))
+			}
+		}
+	default:
+		for _, stored := range got.pictures {
+			if stored.Path == choice {
+				return pictureShotAt(stored, sceneShotSize)
+			}
+		}
+	}
+	return nil
+}
+
+/*
+sceneShotSize is how big the picture is on a scene's line.
+
+Larger than the colour beside it, because a colour is one fact and a picture
+is a photograph somebody has to recognise. Smaller than the buttons on the
+same line, so the rows are exactly as tall as they were.
+*/
+const sceneShotSize = 32
+
+// SceneShotSize is sceneShotSize, for a test that has to tell a scene's
+// thumbnail from a button's icon.
+const SceneShotSize = sceneShotSize
 
 // The scene list's columns. Wide enough for the names and the facts on this
 // desk, and fixed so the buttons are in the same place on every line.

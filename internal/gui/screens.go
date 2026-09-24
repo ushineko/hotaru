@@ -21,6 +21,9 @@ picture are the same kind of answer.
 type screens struct {
 	boards   []api.Dashboard
 	pictures []api.Image
+	// active is the dashboard the panel draws, which is what a scene saying
+	// `dashboard` rather than `dashboard:<name>` puts there.
+	active string
 }
 
 /*
@@ -49,7 +52,7 @@ func (s *ScenesSection) screens() screens {
 func (s *ScenesSection) fetchScreens() screens {
 	var got screens
 	if boards, err := s.app.client.Dashboards(context.Background()); err == nil {
-		got.boards = boards.Dashboards
+		got.boards, got.active = boards.Dashboards, boards.Active
 	}
 	if stored, err := s.app.client.Images(context.Background()); err == nil {
 		got.pictures = stored

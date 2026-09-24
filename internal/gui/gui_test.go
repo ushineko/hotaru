@@ -2635,3 +2635,133 @@ func onePixel(t *testing.T) []byte {
 	require.NoError(t, gif.Encode(&out, frame, nil))
 	return out.Bytes()
 }
+
+/*
+A scene's line shows what it puts on the panel.
+
+The row said it in words -- "screen: berserk-slide" -- which is a name
+somebody has to remember the look of. Beside the colour, the picture is the
+look. Spec 047.
+*/
+func sceneRoutes(t *testing.T) (map[string]any, string) {
+	t.Helper()
+
+	routes := screenful()
+
+	// A real file, because a picture the library lists and the disk does not
+	// have says so in its own square rather than drawing one.
+	picture := filepath.Join(t.TempDir(), "pluto.gif")
+	require.NoError(t, os.WriteFile(picture, onePixel(t), 0o600))
+	routes["GET /"+api.Version+"/cooling"] = api.Cooling{
+		Device: "NZXT Kraken", Coolant: 37.5, PumpRPM: 2608, Screen: "640x640 LCD",
+	}
+	routes["GET /"+api.Version+"/images"] = api.ImagesResponse{Images: []api.Image{
+		{Name: "pluto", Path: picture},
+	}}
+	routes["POST /"+api.Version+"/dashboards/{name}/preview"] = api.PreviewedDashboard{
+		Image: base64.StdEncoding.EncodeToString(onePixel(t)), Bytes: 42, Floor: 1,
+	}
+	// Which dashboard the panel is set to, for a scene that says `dashboard`
+	// rather than naming one.
+	routes["GET /"+api.Version+"/dashboards"] = api.DashboardsResponse{
+		Dashboards: []api.Dashboard{{Name: "cooling"}, {Name: "load"}},
+		Active:     "cooling",
+	}
+	return routes, picture
+}
+
+// scenesList builds the Scenes section's list, which is what carries a row
+// per scene.
+func scenesList(t *testing.T, routes map[string]any) fyne.CanvasObject {
+	t.Helper()
+
+	a := test.NewApp()
+	t.Cleanup(a.Quit)
+
+	app := gui.New(service(t, routes))
+	opts := app.Options("s")
+	opts.SettingsPath = filepath.Join(t.TempDir(), "gui.yml")
+	sh := shell.Headless(a, opts)
+	app.Refresh(context.Background())
+
+	section := &gui.ScenesSection{}
+	gui.OpenEditor(section, app, nil) // no draft: the list rather than the editor
+	built := section.Build(sh)
+
+	window := test.NewWindow(built)
+	t.Cleanup(window.Close)
+	window.Resize(fyne.NewSize(1180, 760))
+	return built
+}
+
+/*
+thumbnails counts the screen pictures drawn under o.
+
+By size, because a button's icon is a picture too: "New scene" and every
+row's delete button draw one, and counting every image in the list counts
+those. A scene's thumbnail is the only thing here held to the scene shot's
+own square.
+*/
+func thumbnails(o fyne.CanvasObject) int {
+	n := 0
+	fynetest.WalkRendered(o, func(child fyne.CanvasObject) bool {
+		if picture, ok := child.(*canvas.Image); ok {
+			if picture.MinSize().Width == gui.SceneShotSize {
+				n++
+			}
+		}
+		return false
+	})
+	return n
+}
+
+func TestASceneShowsWhatItPutsOnThePanel(t *testing.T) {
+	routes, picture := sceneRoutes(t)
+	routes["GET /"+api.Version+"/scenes"] = api.ScenesResponse{Scenes: []api.Scene{
+		{Name: "named", Colour: "red", Screen: "dashboard:cooling"},
+		{Name: "active", Colour: "blue", Screen: "dashboard"},
+		{Name: "a picture", Colour: "blue", Screen: picture},
+	}}
+	require.Equal(t, 3, thumbnails(scenesList(t, routes)),
+		"a scene with something on the panel has no picture beside its colour")
+}
+
+func TestASceneWithNothingOnThePanelShowsNothing(t *testing.T) {
+	/*
+		Three of these are a row that would otherwise carry a picture of
+		something that is not there: a scene that leaves the screen alone, one
+		that asks for the cooler's own readout, and one naming a picture
+		somebody has since deleted.
+	*/
+	routes, _ := sceneRoutes(t)
+	routes["GET /"+api.Version+"/scenes"] = api.ScenesResponse{Scenes: []api.Scene{
+		{Name: "lights only", Colour: "red"},
+		{Name: "readout", Colour: "red", Screen: api.ScreenReadout},
+		{Name: "gone", Colour: "red", Screen: "/home/you/pictures/deleted.gif"},
+		{Name: "no such board", Colour: "red", Screen: "dashboard:deleted"},
+	}}
+	require.Zero(t, thumbnails(scenesList(t, routes)),
+		"a scene with nothing on the panel drew a picture anyway")
+}
+
+func TestAMachineWithNoPanelShowsNoThumbnails(t *testing.T) {
+	/*
+		A scene is still worth having on a machine with nowhere to draw it --
+		it is a file, and it travels. A thumbnail of what it would show there
+		is a promise this desk cannot keep.
+	*/
+	routes, _ := sceneRoutes(t)
+	routes["GET /"+api.Version+"/scenes"] = api.ScenesResponse{Scenes: []api.Scene{
+		{Name: "named", Colour: "red", Screen: "dashboard:cooling"},
+	}}
+
+	for _, cooling := range []api.Cooling{
+		{Absent: true},
+		{Device: "NZXT Kraken", Coolant: 37.5}, // a cooler with no display
+		{Device: "NZXT Kraken", Screen: "640x640 LCD", ScreenDetail: "permission denied"},
+	} {
+		routes["GET /"+api.Version+"/cooling"] = cooling
+		require.Zero(t, thumbnails(scenesList(t, routes)),
+			"a machine that cannot draw showed a thumbnail")
+	}
+}

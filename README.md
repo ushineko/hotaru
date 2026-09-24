@@ -214,6 +214,13 @@ MIT. See [LICENSE](LICENSE).
 
 ### Unreleased
 
+- A scene's line shows what it puts on the panel, beside the colour it puts
+  on the lights. The row said it in words -- `screen: berserk-slide` -- which
+  is a name somebody has to remember the look of. Nothing is drawn for a
+  scene that leaves the screen alone, one that asks for the cooler's own
+  readout, one naming a picture or a dashboard that is gone, or on a machine
+  with no panel to draw on (spec 047).
+
 - The documents in `docs/` are being converted to plain technical English:
   plain verbs, the active voice, the simple present, no idiom or metaphor,
   and a ceiling of thirty words in a sentence. The rules are fynedesygn's,
