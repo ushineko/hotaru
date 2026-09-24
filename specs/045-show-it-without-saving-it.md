@@ -2,7 +2,7 @@
 
 **Issue**: [#120](https://github.com/ushineko/hotaru/issues/120)
 
-## Status: INCOMPLETE
+## Status: COMPLETE
 
 ## Context
 
@@ -93,7 +93,7 @@ and gives the labels what is left.
 - [x] AC7. The shipped dashboards' golden frame is not regenerated: units
       default off, so the gap draws nothing that was not drawn before, and
       none of the shipped dashboards is stacked.
-- [ ] AC8. Verified on the development machine, on the panel.
+- [x] AC8. Verified on the development machine, on the panel.
 
 ## Alternatives Considered
 
