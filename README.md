@@ -2,7 +2,7 @@
 
 *lights, cooler, action!*
 
-**Version**: 0.1.11
+**Version**: 0.1.12
 
 RGB lighting and AIO cooler control for Linux, as a CLI, a user service and a
 desktop GUI. 
@@ -212,7 +212,7 @@ MIT. See [LICENSE](LICENSE).
 
 ## Changelog
 
-### Unreleased
+### 0.1.12 (2026-09-23)
 
 - A trail of a reading that has not moved is drawn along the floor of its
   band rather than across the middle of it. The band invents a range when a
