@@ -416,11 +416,22 @@ number growing left from it and the other growing right. Nothing here reserves
 anything, and nothing needs to: an edge that does not move is an edge that
 does not move, and each number has one against the divider.
 
-That is also what puts a unit against the number it belongs to. Packing
-outward from the middle means "12%" and "63°C" are each drawn as one run,
-where laying them into reserved boxes left a blank column between a figure and
-its own unit -- the number right-aligned in its box and the unit starting at
-the far side.
+That is also what puts a unit against the number it belongs to: each half is
+packed outward from the middle, so a unit begins where its own number ends.
+
+**And each piece takes the room it reserved**, which is what stops the digits
+moving. Packing measured widths gave every number an edge against the divider
+and let its outer edge wander: `8% · 52°C` and `100% · 100°C` put their digits
+in different places, and a panel somebody glances at is a panel whose numbers
+have to be where they were (spec 042). A number is right-aligned in its
+reservation, so its last digit and the unit after it stay put and the slack
+falls where nothing is drawn -- outside the pair on the left, and between the
+separator and the figure on the right.
+
+Spec 044 packed measured runs here because reserved boxes left a blank column
+between a figure and its own unit. They do not any more: a number held against
+the right of its box ends where the unit begins, and the unit's own gap is the
+only space between them.
 */
 func (p *paint) aroundDivider(fs []Field, divider, x, y, w, h int, pt float64,
 	style Text, c color.Color,
@@ -433,14 +444,14 @@ func (p *paint) aroundDivider(fs []Field, divider, x, y, w, h int, pt float64,
 	// next one along begins.
 	place := middle - span/2
 	for i := divider - 1; i >= 0; i-- {
-		width := p.run(fs[i], pt)
+		width := p.fieldWidth(fs[i], pt)
 		place -= width
 		p.writeField(fs[i], place, y, width, h, pt, style, c)
 	}
 
 	place = middle - span/2 + span
 	for _, f := range fs[divider+1:] {
-		width := p.run(f, pt)
+		width := p.fieldWidth(f, pt)
 		p.writeField(f, place, y, width, h, pt, style, c)
 		place += width
 	}
@@ -504,13 +515,6 @@ func (p *paint) fieldWidth(f Field, pt float64) int {
 	}
 	digit := p.textWidth("0", size, true, Text{})
 	return max(f.Chars*digit, p.textWidth(f.Text, size, true, Text{}))
-}
-
-// run is how much room a field takes packed against its neighbours, with no
-// reservation: what it measures, and a unit's gap where there is one. The
-// pair packed around a divider is drawn this way -- see aroundDivider.
-func (p *paint) run(f Field, pt float64) int {
-	return unitGap(f, pt) + p.textWidth(f.Text, sizeOf(f, pt), true, Text{})
 }
 
 // sizeOf is the point size one field is drawn at: the line's, or a unit's

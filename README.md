@@ -220,6 +220,15 @@ MIT. See [LICENSE](LICENSE).
   headline is how the rows under it get room. Unset is the readings' size, so
   nothing anybody has saved changes (spec 048, #144).
 
+- A pair takes the room it reserved, so a third digit moves nothing. `8% ·
+  52°C` and `100% · 100°C` put their separator, their units and their digits
+  in different columns: spec 044 packed the widths it measured rather than
+  the ones it reserved, which held each number's edge against the separator
+  and let everything else wander. A number is held against the right of its
+  reservation now, so the slack falls outside the pair on the left and
+  between the separator and the figure on the right, where nothing is drawn
+  (spec 049, #144).
+
 - Nothing is drawn where the bezel covers it. The frame is square and the
   panel is not: at the height a stacked headline's digits begin, the circle
   allows 461 pixels where the rectangular inset allowed 576, so `48% · 100°C`
