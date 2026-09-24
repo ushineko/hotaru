@@ -2,7 +2,7 @@
 
 *lights, cooler, action!*
 
-**Version**: 0.1.12
+**Version**: 0.1.13
 
 RGB lighting and AIO cooler control for Linux, as a CLI, a user service and a
 desktop GUI. 
@@ -212,7 +212,7 @@ MIT. See [LICENSE](LICENSE).
 
 ## Changelog
 
-### Unreleased
+### 0.1.13 (2026-09-24)
 
 - The cooler is waited for rather than opened once. A `uaccess` udev rule
   grants its ACL to an active seat session, and `enable-linger` starts the
