@@ -1584,16 +1584,44 @@ func (s *ScenesSection) save(sh *shell.Shell) {
 				if err := s.app.client.SaveScene(ctx, s.draft.Scene(entry.Text)); err != nil {
 					return err
 				}
+				/*
+					The preview ends after the save, not before.
+
+					Releasing a lease reconciles the devices it covered back
+					to desired state, and the save is what puts the edit
+					into desired state when this is the scene the machine is
+					showing. Ending the preview first repainted the old
+					colours over the new ones (#134).
+				*/
 				onScreen(func() {
 					s.app.EndPreview()
 					s.draft = nil
 					s.picked.Clear()
-					sh.Flash(entry.Text+" saved.", fd.StatusGood)
+					sh.Flash(saved(entry.Text, s.app.machine.Read().Status.Scene), fd.StatusGood)
 				})
 				return nil
 			})
 		}, sh.Window)
 }
+
+/*
+saved says what happened, which is two different things.
+
+Saving the scene the machine is showing lights it again, so the words say so:
+somebody who has just watched their lights change wants to know that was the
+save and not something else. Saving any other scene writes a file and leaves
+the machine alone, and saying "saved" is the whole of it.
+*/
+func saved(name, applied string) string {
+	if name == applied {
+		return name + " is saved, and the machine follows it."
+	}
+	return name + " is saved."
+}
+
+// Saved is saved, for a test: what the words say is the only outward sign of
+// which of the two things a save did.
+func Saved(name, applied string) string { return saved(name, applied) }
 
 // draftName is what a preview of this draft calls itself in a listing.
 func (s *ScenesSection) draftName() string {

@@ -212,6 +212,20 @@ MIT. See [LICENSE](LICENSE).
 
 ## Changelog
 
+### Unreleased
+
+- Saving a scene lights it again when it is the one the machine is showing.
+  Saving used to write the file and nothing else, so editing the scene on your
+  machine and pressing Save left the lights as they were, and the remedy was
+  to apply another scene and come back. Saving a scene nobody is showing still
+  writes a file and leaves the machine alone. `hotaru scene save` is fixed by
+  the same line, because the join is in the service rather than the window
+  (#134).
+
+  A save over a preview no longer repaints the old colours either. Ending a
+  preview puts the devices back to desired state, and the save is what puts
+  the edit there.
+
 ### 0.1.12 (2026-09-23)
 
 - A trail of a reading that has not moved is drawn along the floor of its

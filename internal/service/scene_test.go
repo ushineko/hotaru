@@ -179,7 +179,7 @@ func TestReleasingAPreviewPutsTheLightsBack(t *testing.T) {
 	draft := blue()
 	draft.Name = "draft"
 	draft.Assignments = []scenes.Assignment{{Target: "Keychron", Colour: "red"}}
-	require.NoError(t, svc.SaveScene(draft))
+	require.NoError(t, svc.SaveScene(t.Context(), draft))
 
 	held, err := svc.PreviewScene(t.Context(), "draft", "a test", false)
 	require.NoError(t, err)
@@ -202,7 +202,7 @@ func TestALapsedPreviewIsEndedByTheLoopThatWouldHaveCorrectedIt(t *testing.T) {
 	require.NoError(t, err)
 
 	draft := scenes.Scene{Name: "draft", Assignments: []scenes.Assignment{{Target: "Keychron", Colour: "red"}}}
-	require.NoError(t, svc.SaveScene(draft))
+	require.NoError(t, svc.SaveScene(t.Context(), draft))
 	held, err := svc.PreviewScene(t.Context(), "draft", "a client that died", false)
 	require.NoError(t, err)
 
@@ -392,7 +392,7 @@ func TestABindingToASceneThatIsNotThereSaysSoBeforeItIsPressed(t *testing.T) {
 	// Otherwise the first anybody hears of it is a key that does nothing,
 	// which is indistinguishable from the key not being registered at all.
 	svc, _ := lit(t)
-	require.NoError(t, svc.SaveScene(scenes.Scene{Name: "evening", Colour: "blue"}))
+	require.NoError(t, svc.SaveScene(t.Context(), scenes.Scene{Name: "evening", Colour: "blue"}))
 	require.NoError(t, svc.Bind("Ctrl+Alt+Shift+Num+1", "evening"))
 	require.NoError(t, svc.DeleteScene("evening"))
 
@@ -512,4 +512,52 @@ func TestAStyleGoesNowhereWhenAScenesNameIsWrong(t *testing.T) {
 	red, err := svc.Scene("red")
 	require.NoError(t, err)
 	require.Empty(t, red.Effects, "a scene was restyled before the run failed")
+}
+
+func TestSavingTheSceneOnTheMachineLightsIt(t *testing.T) {
+	/*
+		Editing the scene that is showing, saving it, and watching the lights
+		stay as they were. Desired state was written by the apply, the file
+		by the save, and nothing joined the two -- so the remedy was to apply
+		another scene and come back, which every user found for themselves.
+
+		Asserted on the server's own frame rather than on the outcome: what
+		is being fixed is what the devices are showing, and an outcome that
+		said "applied" while the board stayed blue is exactly the report this
+		bug hid behind.
+	*/
+	svc, server := lit(t, blue())
+	const board = "ASUS ROG MAXIMUS Z790 HERO"
+
+	_, err := svc.ApplyScene(t.Context(), "blue")
+	require.NoError(t, err)
+	require.Equal(t, "#0000ff", showing(t, server, board)[0].String())
+
+	edited := blue()
+	edited.Assignments[0].Colour = "red"
+	require.NoError(t, svc.SaveScene(t.Context(), edited))
+
+	require.Equal(t, "#ff0000", showing(t, server, board)[0].String(),
+		"saving over the scene on the machine did not light it")
+}
+
+func TestSavingASceneNobodyIsShowingLeavesTheMachineAlone(t *testing.T) {
+	// A draft saved for later must not take the machine: the scene showing
+	// is the one somebody asked for, and this is not it.
+	svc, server := lit(t, blue())
+	const board = "ASUS ROG MAXIMUS Z790 HERO"
+
+	_, err := svc.ApplyScene(t.Context(), "blue")
+	require.NoError(t, err)
+
+	later := scenes.Scene{Name: "for later", Assignments: []scenes.Assignment{
+		{Target: "ASUS", Colour: "red"},
+	}}
+	require.NoError(t, svc.SaveScene(t.Context(), later))
+
+	require.Equal(t, "#0000ff", showing(t, server, board)[0].String(),
+		"saving a scene nobody asked for took the machine")
+
+	// And nothing has been applied but the one that was.
+	require.Equal(t, "blue", svc.Applied())
 }

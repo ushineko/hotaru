@@ -248,7 +248,7 @@ func Handler(svc *service.Service) http.Handler {
 			return
 		}
 		in.Name = r.PathValue("name")
-		if err := svc.SaveScene(fromScene(in)); err != nil {
+		if err := svc.SaveScene(r.Context(), fromScene(in)); err != nil {
 			fail(w, err)
 			return
 		}
@@ -273,7 +273,7 @@ func Handler(svc *service.Service) http.Handler {
 			fail(w, err)
 			return
 		}
-		if err := svc.SaveScene(scene); err != nil {
+		if err := svc.SaveScene(r.Context(), scene); err != nil {
 			fail(w, err)
 			return
 		}
