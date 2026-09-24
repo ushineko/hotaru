@@ -223,10 +223,40 @@ The whole assembly shrinks together when it will not fit, for the reason a
 stacked column does: one size, or the pieces of one number are drawn at two.
 */
 func (p *paint) fields(fs []Field, x, y, w, h int, pt float64, c color.Color,
-	graded bool, align Align,
+	graded bool, align Align, style Text,
 ) {
-	p.fieldsSized(fs, x, y, w, h, p.fitted(fs, w, pt*p.letters.Values.Scale(), align),
-		c, graded, align)
+	p.fieldsSized(fs, x, y, w, h, p.fitted(fs, w, pt*style.Scale(), align),
+		c, graded, align, style)
+}
+
+/*
+headlineRoom is the width the headline has at the height it is drawn.
+
+**The frame is square and the panel is not.** A 640x640 GIF is displayed
+through a round bezel, so the corners are not shown at all and a band high up
+the panel is narrower than one across its middle: at y=98, where a stacked
+headline's digits start, the circle allows 461 pixels where the rectangular
+inset allows 576. Fitting to the inset gave the assembly a hundred and fifteen
+pixels the panel cannot draw, and `48% · 100°C` put 127 inked pixels outside
+the circle while `48% · 38°C` put none (#144).
+
+The tightest row of the band decides, which is the one furthest from the
+centre. Never wider than the inset, because that is a decision somebody made
+by looking at a panel in a case and this is only here to take room away.
+*/
+func headlineRoom(top, height int) (x, w int) {
+	const centre, radius = float64(Size) / 2, float64(Size) / 2
+
+	dy := math.Max(math.Abs(centre-float64(top)), math.Abs(centre-float64(top+height)))
+	if dy >= radius {
+		return headlineInset, Size - 2*headlineInset
+	}
+
+	half := math.Sqrt(radius*radius - dy*dy)
+	if w = int(2 * half); w >= Size-2*headlineInset {
+		return headlineInset, Size - 2*headlineInset
+	}
+	return int(centre - half), w
 }
 
 /*
@@ -358,9 +388,8 @@ row at it; fitting again per row is how a column measured as a table goes back
 to three sizes.
 */
 func (p *paint) fieldsSized(fs []Field, x, y, w, h int, pt float64, c color.Color,
-	graded bool, align Align,
+	graded bool, align Align, style Text,
 ) {
-	style := p.letters.Values
 	if graded {
 		style.Colour = ""
 	}
@@ -387,11 +416,22 @@ number growing left from it and the other growing right. Nothing here reserves
 anything, and nothing needs to: an edge that does not move is an edge that
 does not move, and each number has one against the divider.
 
-That is also what puts a unit against the number it belongs to. Packing
-outward from the middle means "12%" and "63°C" are each drawn as one run,
-where laying them into reserved boxes left a blank column between a figure and
-its own unit -- the number right-aligned in its box and the unit starting at
-the far side.
+That is also what puts a unit against the number it belongs to: each half is
+packed outward from the middle, so a unit begins where its own number ends.
+
+**And each piece takes the room it reserved**, which is what stops the digits
+moving. Packing measured widths gave every number an edge against the divider
+and let its outer edge wander: `8% · 52°C` and `100% · 100°C` put their digits
+in different places, and a panel somebody glances at is a panel whose numbers
+have to be where they were (spec 042). A number is right-aligned in its
+reservation, so its last digit and the unit after it stay put and the slack
+falls where nothing is drawn -- outside the pair on the left, and between the
+separator and the figure on the right.
+
+Spec 044 packed measured runs here because reserved boxes left a blank column
+between a figure and its own unit. They do not any more: a number held against
+the right of its box ends where the unit begins, and the unit's own gap is the
+only space between them.
 */
 func (p *paint) aroundDivider(fs []Field, divider, x, y, w, h int, pt float64,
 	style Text, c color.Color,
@@ -404,14 +444,14 @@ func (p *paint) aroundDivider(fs []Field, divider, x, y, w, h int, pt float64,
 	// next one along begins.
 	place := middle - span/2
 	for i := divider - 1; i >= 0; i-- {
-		width := p.run(fs[i], pt)
+		width := p.fieldWidth(fs[i], pt)
 		place -= width
 		p.writeField(fs[i], place, y, width, h, pt, style, c)
 	}
 
 	place = middle - span/2 + span
 	for _, f := range fs[divider+1:] {
-		width := p.run(f, pt)
+		width := p.fieldWidth(f, pt)
 		p.writeField(f, place, y, width, h, pt, style, c)
 		place += width
 	}
@@ -475,13 +515,6 @@ func (p *paint) fieldWidth(f Field, pt float64) int {
 	}
 	digit := p.textWidth("0", size, true, Text{})
 	return max(f.Chars*digit, p.textWidth(f.Text, size, true, Text{}))
-}
-
-// run is how much room a field takes packed against its neighbours, with no
-// reservation: what it measures, and a unit's gap where there is one. The
-// pair packed around a divider is drawn this way -- see aroundDivider.
-func (p *paint) run(f Field, pt float64) int {
-	return unitGap(f, pt) + p.textWidth(f.Text, sizeOf(f, pt), true, Text{})
 }
 
 // sizeOf is the point size one field is drawn at: the line's, or a unit's

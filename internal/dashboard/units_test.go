@@ -1,6 +1,7 @@
 package dashboard
 
 import (
+	"image"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -173,11 +174,11 @@ func TestAUnitDoesNotTouchItsNumber(t *testing.T) {
 	require.Greater(t, unitGap(unit, 170), unitGap(unit, rowValuePt))
 	require.Zero(t, unitGap(Field{Text: "12", Chars: 2}, rowValuePt))
 
-	// The pair packed around a divider reserves nothing and measures its
-	// own runs, so it carries the gap the same way or "12%" is spaced on a
-	// stacked row and tight on the headline.
+	// A unit's reservation is its gap and its text, wherever it is drawn:
+	// the rows and the pair around a separator lay out the same boxes, or
+	// "12%" would be spaced on a row and tight on the headline.
 	require.Equal(t, unitGap(unit, rowValuePt),
-		p.run(unit, rowValuePt)-p.textWidth(unit.Text, sizeOf(unit, rowValuePt), true, Text{}))
+		p.fieldWidth(unit, rowValuePt)-p.textWidth(unit.Text, sizeOf(unit, rowValuePt), true, Text{}))
 }
 
 func TestAPairIsFittedToTheShapeItIsDrawnIn(t *testing.T) {
@@ -243,4 +244,109 @@ func cpu(share, degrees float64) Reading {
 	r.Set(readings.CPULoad, share)
 	r.Set(readings.CPUTemp, degrees)
 	return r
+}
+
+/*
+inkRuns is where a band's glyphs start and end, in columns.
+
+A run is a stretch of columns that carry ink, so each glyph is one: it is the
+only way to ask "did that move" of a picture rather than of the arithmetic
+that drew it.
+*/
+func inkRuns(img *image.Paletted, top, bottom int) [][2]int {
+	background := img.Pix[0]
+	var runs [][2]int
+	start := -1
+	for x := range img.Bounds().Dx() {
+		ink := false
+		for y := top; y < bottom; y++ {
+			if img.Pix[y*img.Stride+x] != background {
+				ink = true
+				break
+			}
+		}
+		switch {
+		case ink && start == -1:
+			start = x
+		case !ink && start != -1:
+			runs = append(runs, [2]int{start, x - 1})
+			start = -1
+		}
+	}
+	if start != -1 {
+		runs = append(runs, [2]int{start, img.Bounds().Dx() - 1})
+	}
+	return runs
+}
+
+func TestAPairIsPaddedSoAThirdDigitMovesNothing(t *testing.T) {
+	/*
+		`8% · 52°C` and `100% · 100°C` put their separator, their units and
+		their last digits in different places, because a pair packed the
+		widths it measured rather than the ones it reserved: each number had
+		an edge against the divider and its outer edge wandered.
+
+		A panel somebody glances at is a panel whose numbers are where they
+		were (spec 042), so each piece takes the room it reserved and a
+		number is held against the right of it. The slack falls where nothing
+		is drawn: outside the pair on the left, and between the separator and
+		the figure on the right.
+	*/
+	d := Shipped()[1]
+	d.Arrangement = Stacked
+	d.Units = true
+	d.Background = Background{Kind: Plain}
+	d.Headline = Slot{Source: readings.CPULoad, Second: readings.CPUTemp, Label: "CPU"}
+
+	const top, bottom = 98, 214
+	var first [][2]int
+	for _, pair := range [][2]float64{{8, 52}, {48, 52}, {100, 52}, {8, 100}, {100, 100}} {
+		var r Reading
+		r.Set(readings.CPULoad, pair[0])
+		r.Set(readings.CPUTemp, pair[1])
+		runs := inkRuns(decode(t, Render(d, r, 0, nil, Trails{})), top, bottom)
+
+		/*
+			The separator and the two units, which are the same glyphs in
+			every frame and must therefore be in the same columns. The digits
+			are different glyphs with different ink, so their boxes are what
+			hold still and their ink is only nearly equal.
+		*/
+		require.Len(t, runs, len(runs), "the headline drew nothing")
+		fixed := [][2]int{runs[len(runs)-1], runs[len(runs)-2]} // C, then the degree mark
+		if first == nil {
+			first = fixed
+			continue
+		}
+		require.Equal(t, first, fixed, "%v moved the unit", pair)
+	}
+}
+
+func TestTheSeparatorAndUnitsHoldTheirColumns(t *testing.T) {
+	// The same assertion from the other end: what a reader's eye is anchored
+	// on must not move when a reading gains a digit.
+	d := Shipped()[1]
+	d.Arrangement = Stacked
+	d.Units = true
+	d.Background = Background{Kind: Plain}
+	d.Headline = Slot{Source: readings.CPULoad, Second: readings.CPUTemp, Label: "CPU"}
+
+	at := func(share, degrees float64) [][2]int {
+		var r Reading
+		r.Set(readings.CPULoad, share)
+		r.Set(readings.CPUTemp, degrees)
+		return inkRuns(decode(t, Render(d, r, 0, nil, Trails{})), 98, 214)
+	}
+
+	// Three more glyphs: two on the left, from 8 to 100, and one on the
+	// right, from 52 to 100.
+	small, large := at(8, 52), at(100, 100)
+	require.Len(t, small, len(large)-3, "the wider pair does not have three more glyphs")
+
+	// Counting from the separator outward, everything the two share is in
+	// the same column: the separator, the per cent sign, and the units.
+	require.Equal(t, small[len(small)-1], large[len(large)-1], "the unit's last glyph moved")
+	require.Equal(t, small[len(small)-2], large[len(large)-2], "the unit moved")
+	require.Equal(t, small[1], large[3], "the per cent sign moved")
+	require.Equal(t, small[2], large[4], "the separator moved")
 }

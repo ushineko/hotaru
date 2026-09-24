@@ -530,9 +530,59 @@ func (d *DashboardsSection) letteringFields(sh *shell.Shell) fyne.CanvasObject {
 		d.sizeField(sh, "Size", &d.editing.Lettering.Values),
 		d.colourField(sh, "Colour", &d.editing.Lettering.Values),
 		d.edgeField(sh, "Outline", &d.editing.Lettering.Values),
+		widgets.Dim("The big number"),
+		d.headlineSize(sh),
 		widgets.Note("A colour is #rrggbb. The coolant keeps its own green, amber "+
 			"and red: that one means something.", fd.StatusInfo),
 	)
+}
+
+/*
+headlineSize is the big number's own size, over the readings'.
+
+**Its own slider because the proportions are a default, not a rule.** The
+headline is three times its label because somebody looked at a panel in a
+case (spec 037), and a desk two feet away may want the rows bigger and the
+number smaller. Unset follows the readings, which is what every dashboard
+saved before this says.
+*/
+func (d *DashboardsSection) headlineSize(sh *shell.Shell) fyne.CanvasObject {
+	at := &d.editing.Lettering.Headline
+	slider := widget.NewSlider(dashboard.MinSize, dashboard.MaxSize)
+	slider.Step = 5
+	slider.Value = float64(d.editing.Lettering.Values.Size)
+	if slider.Value == 0 {
+		slider.Value = 100
+	}
+	if at.Size != 0 {
+		slider.Value = float64(at.Size)
+	}
+	slider.OnChangeEnded = func(v float64) {
+		at.Size = int(v)
+		d.redraw(sh)
+	}
+
+	return container.NewVBox(
+		field("Size", slider),
+		widgets.Note(headroom(*d.editing), fd.StatusInfo),
+	)
+}
+
+/*
+headroom says when the big number is already as large as the panel takes.
+
+A pair with units reserves two runs, two gaps and a separator, which at the
+arrangement's own size fills the panel between its insets -- so the slider
+moves and the number does not, which is the complaint spec 045 fixed for the
+rows. The panel's limit is the honest answer; being silent about it is not.
+*/
+func headroom(one api.Dashboard) string {
+	if one.Headline.Second == "" {
+		return "The big number's own size, over the readings'. " +
+			"Smaller here gives the rows under it more room."
+	}
+	return "The big number's own size, over the readings'. " +
+		"Two readings side by side already fill the panel, so this one shrinks and does not grow."
 }
 
 // dashboardFonts are the faces the panel can draw in, and fontName is what

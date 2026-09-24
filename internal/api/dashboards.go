@@ -25,9 +25,10 @@ func asDashboard(one dashboard.Dashboard) Dashboard {
 		Caption:  one.Caption,
 		Units:    one.Units,
 		Lettering: DashboardLettering{
-			Font:   one.Lettering.Font,
-			Labels: asText(one.Lettering.Labels),
-			Values: asText(one.Lettering.Values),
+			Font:     one.Lettering.Font,
+			Labels:   asText(one.Lettering.Labels),
+			Values:   asText(one.Lettering.Values),
+			Headline: asText(one.Lettering.Headline),
 		},
 		Trail: DashboardTrail{
 			Off:   one.Trail.Off,
@@ -69,9 +70,10 @@ func toDashboard(one Dashboard) dashboard.Dashboard {
 		Caption:  one.Caption,
 		Units:    one.Units,
 		Lettering: dashboard.Lettering{
-			Font:   one.Lettering.Font,
-			Labels: fromText(one.Lettering.Labels),
-			Values: fromText(one.Lettering.Values),
+			Font:     one.Lettering.Font,
+			Labels:   fromText(one.Lettering.Labels),
+			Values:   fromText(one.Lettering.Values),
+			Headline: fromText(one.Lettering.Headline),
 		},
 		Trail: dashboard.Trail{
 			Off:   one.Trail.Off,

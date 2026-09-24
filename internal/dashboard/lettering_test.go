@@ -5,6 +5,7 @@ import (
 	"image"
 	"image/color"
 	"image/gif"
+	"math"
 	"math/rand/v2"
 	"testing"
 
@@ -180,4 +181,101 @@ func TestAPictureWithManyColoursStillEncodes(t *testing.T) {
 	require.NotEmpty(t, frame.GIF, "the frame did not encode")
 	require.LessOrEqual(t, len(palette(ThemeOf(""), fromPicture(noise), d.Lettering.chosen()...)),
 		MaxColours, "the palette is over what a GIF holds")
+}
+
+func TestTheBigNumberHasASizeOfItsOwn(t *testing.T) {
+	/*
+		One size for every number scaled the arrangement's proportions
+		together, which is what spec 037 chose: the headline is three times
+		its label because somebody looked at a panel in a case. This is for
+		the desk that wants the relationship changed -- a smaller headline so
+		the rows under it can be read (#144).
+	*/
+	d := Shipped()[1]
+	d.Arrangement = Stacked
+	d.Background = Background{Kind: Plain}
+	d.Headline = Slot{Source: readings.CPULoad, Label: "CPU"}
+
+	was := decode(t, Render(d, reading(), 0, nil, Trails{}))
+	head := inked(was, 98, 214)
+	rows := inked(was, 296, 340)
+
+	d.Lettering.Headline.Size = 60
+	now := decode(t, Render(d, reading(), 0, nil, Trails{}))
+	smaller := inked(now, 98, 214)
+	require.Less(t, smaller[len(smaller)-1]-smaller[0], head[len(head)-1]-head[0],
+		"the big number did not shrink")
+
+	// And the rows are exactly where they were: that is the whole point.
+	after := inked(now, 296, 340)
+	require.Equal(t, rows, after, "sizing the big number moved the readings under it")
+}
+
+func TestTheBigNumberFallsBackToTheReadings(t *testing.T) {
+	// Unset is what every dashboard saved before this says, so it must draw
+	// what it drew: the readings' own size, colour and edge.
+	var letters Lettering
+	letters.Values = Text{Size: 120, Colour: "#ff00ff"}
+	require.Equal(t, letters.Values, letters.Big(), "an unset headline is not the readings")
+
+	// Per field, because somebody who set a size has said nothing about a
+	// colour, and the colour they chose for the readings is still theirs.
+	letters.Headline = Text{Size: 60}
+	require.Equal(t, 60, letters.Big().Size)
+	require.Equal(t, "#ff00ff", letters.Big().Colour, "the colour was lost with the size")
+}
+
+func TestNothingIsDrawnWhereThePanelCannotShowIt(t *testing.T) {
+	/*
+		**The frame is square and the panel is not.** A 640x640 GIF is
+		displayed through a round bezel, so a band high up the panel is
+		narrower than one across its middle: at y=98, where a stacked
+		headline's digits start, the circle allows 461 pixels where the
+		rectangular inset allows 576.
+
+		`48% · 100°C` put 127 inked pixels outside the circle and `48% · 38°C`
+		put none, which is why this was a bug that came and went with the
+		temperature (#144).
+	*/
+	var r Reading
+	r.Set(readings.CPULoad, 48)
+	r.Set(readings.CPUTemp, 100)
+	r.Set(readings.PumpRPM, 9999)
+	r.Set(readings.FanRPM, 9999)
+
+	for _, arrangement := range []string{Ring, Grid, Stacked, Big} {
+		for _, headline := range []Slot{
+			{Source: readings.CPULoad, Second: readings.CPUTemp, Label: "CPU"},
+			{Source: readings.PumpRPM, Second: readings.FanRPM, Label: "PUMP"},
+		} {
+			d := Shipped()[1]
+			d.Arrangement = arrangement
+			d.Units = true
+			d.Background = Background{Kind: Plain} // so every inked pixel is text
+			d.Headline = headline
+
+			require.Zero(t, outsideTheCircle(decode(t, Render(d, r, 0, nil, Trails{}))),
+				"%s drew %v where the bezel covers it", arrangement, headline.Words(true))
+		}
+	}
+}
+
+// outsideTheCircle counts the inked pixels a round panel cannot show: the
+// ones beyond the circle inscribed in the frame.
+func outsideTheCircle(img *image.Paletted) int {
+	const centre, radius = float64(Size)/2 - 0.5, float64(Size) / 2
+
+	background := img.Pix[0]
+	n := 0
+	for y := range Size {
+		for x := range Size {
+			if img.Pix[y*img.Stride+x] == background {
+				continue
+			}
+			if math.Hypot(float64(x)-centre, float64(y)-centre) > radius {
+				n++
+			}
+		}
+	}
+	return n
 }

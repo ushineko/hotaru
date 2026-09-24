@@ -212,6 +212,31 @@ MIT. See [LICENSE](LICENSE).
 
 ## Changelog
 
+### Unreleased
+
+- The big number has a size of its own, over the readings'. One size scaled
+  the arrangement's proportions together, which spec 037 chose deliberately;
+  this is for the desk that wants the relationship changed, and shrinking the
+  headline is how the rows under it get room. Unset is the readings' size, so
+  nothing anybody has saved changes (spec 048, #144).
+
+- A pair takes the room it reserved, so a third digit moves nothing. `8% ·
+  52°C` and `100% · 100°C` put their separator, their units and their digits
+  in different columns: spec 044 packed the widths it measured rather than
+  the ones it reserved, which held each number's edge against the separator
+  and let everything else wander. A number is held against the right of its
+  reservation now, so the slack falls outside the pair on the left and
+  between the separator and the figure on the right, where nothing is drawn
+  (spec 049, #144).
+
+- Nothing is drawn where the bezel covers it. The frame is square and the
+  panel is not: at the height a stacked headline's digits begin, the circle
+  allows 461 pixels where the rectangular inset allowed 576, so `48% · 100°C`
+  put 127 inked pixels outside the circle and `48% · 38°C` put none. The
+  headline is fitted to the width its band has inside the circle. A paired
+  stacked headline loses about a sixth of its height, which is the part that
+  was behind the bezel (spec 048, #144).
+
 ### 0.1.14 (2026-09-24)
 
 - A pair is fitted to the shape it is drawn in. `48% · 100°C` hung past the

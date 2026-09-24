@@ -1932,13 +1932,33 @@ func TestTheScreenEditorOffersTheLettering(t *testing.T) {
 		}
 		return false
 	})
-	require.Len(t, sizes, 2, "there is not a size for the words and one for the readings")
+	// The words, the readings, and the big number over the readings, in the
+	// order the form lays them out.
+	require.Len(t, sizes, 3,
+		"there is not a size for the words, one for the readings and one for the big number")
 
 	sizes[0].Value = 140
 	sizes[0].OnChangeEnded(140)
 	section.Settle()
 	require.Equal(t, 140, gui.DraftDashboard(section).Lettering.Labels.Size,
 		"moving the label size changed nothing")
+
+	/*
+		The big number's own size, which is what somebody reaches for to give
+		the rows under it room (#144). Unset follows the readings, so moving
+		it is the only thing that writes it.
+	*/
+	require.Zero(t, gui.DraftDashboard(section).Lettering.Headline.Size,
+		"the big number started with a size of its own")
+
+	sizes[2].Value = 70
+	sizes[2].OnChangeEnded(70)
+	section.Settle()
+	draft := gui.DraftDashboard(section)
+	require.Equal(t, 70, draft.Lettering.Headline.Size,
+		"moving the big number's size changed nothing")
+	require.NotEqual(t, 70, draft.Lettering.Values.Size,
+		"the big number's size was written into the readings'")
 }
 
 func TestOpeningTheScreenEditorAsksForOneFrameAndChangesNothing(t *testing.T) {

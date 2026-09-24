@@ -115,6 +115,18 @@ type Lettering struct {
 	// Labels are the words, Values the readings.
 	Labels Text `json:"labels,omitempty"`
 	Values Text `json:"values,omitempty"`
+
+	/*
+		Headline is the big number alone, over what Values decided.
+
+		Unset is Values, which is what spec 037 chose and what every
+		dashboard saved before this says: the arrangement's proportions are a
+		relationship arrived at by looking at a panel in a case, and scaling
+		them together keeps it. This is for somebody who wants the
+		relationship changed -- a smaller headline so the rows can be read,
+		or a larger one where there is room for it.
+	*/
+	Headline Text `json:"headline,omitempty"`
 }
 
 // Text is one category's lettering.
@@ -503,4 +515,26 @@ func (t Trail) Sources(headline readings.Source) (below, above readings.Source) 
 		below = headline
 	}
 	return below, t.Above
+}
+
+/*
+Big is the lettering the headline is drawn in: its own, falling back to the
+readings' for anything it does not say.
+
+Per field rather than all or nothing. Somebody who sets a size for the big
+number has said nothing about its colour, and the colour they chose for the
+readings is still the colour they chose.
+*/
+func (l Lettering) Big() Text {
+	out := l.Values
+	if l.Headline.Size != 0 {
+		out.Size = l.Headline.Size
+	}
+	if l.Headline.Colour != "" {
+		out.Colour = l.Headline.Colour
+	}
+	if l.Headline.Outline != nil {
+		out.Outline = l.Headline.Outline
+	}
+	return out
 }
