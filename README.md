@@ -2,7 +2,7 @@
 
 *lights, cooler, action!*
 
-**Version**: 0.1.13
+**Version**: 0.1.14
 
 RGB lighting and AIO cooler control for Linux, as a CLI, a user service and a
 desktop GUI. 
@@ -212,7 +212,7 @@ MIT. See [LICENSE](LICENSE).
 
 ## Changelog
 
-### Unreleased
+### 0.1.14 (2026-09-24)
 
 - A pair is fitted to the shape it is drawn in. `48% · 100°C` hung past the
   headline's inset and into the bezel while `48% · 38°C` sat well inside it:
