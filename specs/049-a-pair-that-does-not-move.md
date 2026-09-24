@@ -2,7 +2,7 @@
 
 **Issue**: [#144](https://github.com/ushineko/hotaru/issues/144)
 
-## Status: INCOMPLETE
+## Status: COMPLETE
 
 ## Context
 
@@ -71,7 +71,7 @@ changing place.
       pair lay out the same boxes.
 - [x] AC4. The shipped screen is unchanged: its headline is a single value and
       reserves what it always did.
-- [ ] AC5. Verified on the development machine, on the panel.
+- [x] AC5. Verified on the development machine, on the panel.
 
 ## Alternatives Considered
 

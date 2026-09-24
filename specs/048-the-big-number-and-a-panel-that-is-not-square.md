@@ -2,7 +2,7 @@
 
 **Issue**: [#144](https://github.com/ushineko/hotaru/issues/144)
 
-## Status: INCOMPLETE
+## Status: COMPLETE
 
 ## Context
 
@@ -96,7 +96,7 @@ large as the panel takes.
       it does not write the readings' size.
 - [x] AC5. The shipped screen's golden frame is regenerated deliberately: the
       ring headline's room falls from 576 to 565, which moves it by a pixel.
-- [ ] AC6. Verified on the development machine, on the panel.
+- [x] AC6. Verified on the development machine, on the panel.
 
 ## Alternatives Considered
 
