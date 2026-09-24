@@ -387,6 +387,9 @@ type DashboardLettering struct {
 	Font   string        `json:"font,omitempty"`
 	Labels DashboardText `json:"labels,omitempty"`
 	Values DashboardText `json:"values,omitempty"`
+	// Headline is the big number alone, over what Values decided. Empty is
+	// Values, which is what every dashboard saved before it existed says.
+	Headline DashboardText `json:"headline,omitempty"`
 }
 
 /*

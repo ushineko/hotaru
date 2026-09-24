@@ -223,10 +223,40 @@ The whole assembly shrinks together when it will not fit, for the reason a
 stacked column does: one size, or the pieces of one number are drawn at two.
 */
 func (p *paint) fields(fs []Field, x, y, w, h int, pt float64, c color.Color,
-	graded bool, align Align,
+	graded bool, align Align, style Text,
 ) {
-	p.fieldsSized(fs, x, y, w, h, p.fitted(fs, w, pt*p.letters.Values.Scale(), align),
-		c, graded, align)
+	p.fieldsSized(fs, x, y, w, h, p.fitted(fs, w, pt*style.Scale(), align),
+		c, graded, align, style)
+}
+
+/*
+headlineRoom is the width the headline has at the height it is drawn.
+
+**The frame is square and the panel is not.** A 640x640 GIF is displayed
+through a round bezel, so the corners are not shown at all and a band high up
+the panel is narrower than one across its middle: at y=98, where a stacked
+headline's digits start, the circle allows 461 pixels where the rectangular
+inset allows 576. Fitting to the inset gave the assembly a hundred and fifteen
+pixels the panel cannot draw, and `48% · 100°C` put 127 inked pixels outside
+the circle while `48% · 38°C` put none (#144).
+
+The tightest row of the band decides, which is the one furthest from the
+centre. Never wider than the inset, because that is a decision somebody made
+by looking at a panel in a case and this is only here to take room away.
+*/
+func headlineRoom(top, height int) (x, w int) {
+	const centre, radius = float64(Size) / 2, float64(Size) / 2
+
+	dy := math.Max(math.Abs(centre-float64(top)), math.Abs(centre-float64(top+height)))
+	if dy >= radius {
+		return headlineInset, Size - 2*headlineInset
+	}
+
+	half := math.Sqrt(radius*radius - dy*dy)
+	if w = int(2 * half); w >= Size-2*headlineInset {
+		return headlineInset, Size - 2*headlineInset
+	}
+	return int(centre - half), w
 }
 
 /*
@@ -358,9 +388,8 @@ row at it; fitting again per row is how a column measured as a table goes back
 to three sizes.
 */
 func (p *paint) fieldsSized(fs []Field, x, y, w, h int, pt float64, c color.Color,
-	graded bool, align Align,
+	graded bool, align Align, style Text,
 ) {
-	style := p.letters.Values
 	if graded {
 		style.Colour = ""
 	}

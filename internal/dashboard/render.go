@@ -104,8 +104,16 @@ func headline(p *paint, d Dashboard, r Reading, at headlineAt, ring bool) {
 	}
 
 	p.label(d.Headline.Words(d.Units), 0, at.labelY, Size, 36, 22)
-	p.fields(d.Headline.Fields(r, d.Units), headlineInset, at.valueY, Size-2*headlineInset,
-		at.valueH, at.size, colour, graded(d.Headline.Source, value, known), Centre)
+	/*
+		The big number in its own lettering, which is the readings' unless
+		the dashboard said otherwise (spec 048). Sizing it alone is how
+		somebody gives the rows under it room: the arrangement's proportions
+		are a good default and they are not everybody's panel.
+	*/
+	x, w := headlineRoom(at.valueY, at.valueH)
+	p.fields(d.Headline.Fields(r, d.Units), x, at.valueY, w,
+		at.valueH, at.size, colour, graded(d.Headline.Source, value, known), Centre,
+		p.letters.Big())
 }
 
 /*
@@ -156,7 +164,8 @@ func column(p *paint, slot Slot, r Reading, units bool, x, y, width int) {
 	value, known := r.Value(slot.Source)
 	p.label(slot.Words(units), x, y, width, 28, 16)
 	p.fields(slot.Fields(r, units), x, y+30, width, 66, 34,
-		gradeOf(slot.Source, value, known, p.theme), graded(slot.Source, value, known), Centre)
+		gradeOf(slot.Source, value, known, p.theme), graded(slot.Source, value, known), Centre,
+		p.letters.Values)
 }
 
 // drawGrid is the headline over four readings in two rows of two.

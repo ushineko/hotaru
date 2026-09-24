@@ -212,6 +212,22 @@ MIT. See [LICENSE](LICENSE).
 
 ## Changelog
 
+### Unreleased
+
+- The big number has a size of its own, over the readings'. One size scaled
+  the arrangement's proportions together, which spec 037 chose deliberately;
+  this is for the desk that wants the relationship changed, and shrinking the
+  headline is how the rows under it get room. Unset is the readings' size, so
+  nothing anybody has saved changes (spec 048, #144).
+
+- Nothing is drawn where the bezel covers it. The frame is square and the
+  panel is not: at the height a stacked headline's digits begin, the circle
+  allows 461 pixels where the rectangular inset allowed 576, so `48% · 100°C`
+  put 127 inked pixels outside the circle and `48% · 38°C` put none. The
+  headline is fitted to the width its band has inside the circle. A paired
+  stacked headline loses about a sixth of its height, which is the part that
+  was behind the bezel (spec 048, #144).
+
 ### 0.1.14 (2026-09-24)
 
 - A pair is fitted to the shape it is drawn in. `48% · 100°C` hung past the
