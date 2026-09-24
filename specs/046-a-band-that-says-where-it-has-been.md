@@ -2,7 +2,7 @@
 
 **Issue**: [#124](https://github.com/ushineko/hotaru/issues/124)
 
-## Status: INCOMPLETE
+## Status: COMPLETE
 
 ## Context
 
@@ -179,7 +179,7 @@ one trace of the headline's own reading.
       and the editor's preview is drawn with the same trail the panel has.
 - [x] AC11. A dashboard can turn the trail off, name the reading below and
       name the reading above, and the editor's controls reach the draft.
-- [ ] AC12. Verified on the development machine, on the panel.
+- [x] AC12. Verified on the development machine, on the panel.
 
 ## Alternatives Considered
 

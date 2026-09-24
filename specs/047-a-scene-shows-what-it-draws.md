@@ -2,7 +2,7 @@
 
 **Issue**: [#126](https://github.com/ushineko/hotaru/issues/126)
 
-## Status: INCOMPLETE
+## Status: COMPLETE
 
 ## Context
 
@@ -79,7 +79,7 @@ chooser already warms.
       Pictures section's, so the row is unchanged in height.
 - [x] AC6. Every row's name starts at the same place on the canvas, whether
       or not that scene puts anything on the panel.
-- [ ] AC5. Verified on the development machine, in the window.
+- [x] AC5. Verified on the development machine, in the window.
 
 ## Alternatives Considered
 
