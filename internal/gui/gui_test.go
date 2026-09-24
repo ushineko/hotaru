@@ -2885,3 +2885,15 @@ func TestEveryScenesLineStartsInTheSamePlace(t *testing.T) {
 		require.Equal(t, at(names[0]), at(name), "%q starts somewhere else", name.Text)
 	}
 }
+
+func TestSavingSaysWhetherTheMachineFollowed(t *testing.T) {
+	/*
+		Saving the scene that is showing lights it again (#134), and somebody
+		who has just watched their lights change wants to know that was the
+		save. Saving any other scene writes a file and leaves the machine
+		alone, and saying "saved" is the whole of it.
+	*/
+	require.Contains(t, gui.Saved("evening", "evening"), "follows it")
+	require.NotContains(t, gui.Saved("evening", "morning"), "follows it")
+	require.NotContains(t, gui.Saved("evening", ""), "follows it")
+}

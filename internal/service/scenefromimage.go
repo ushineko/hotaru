@@ -154,7 +154,7 @@ func (s *Service) painted(ctx context.Context, scene scenes.Scene, picture image
 	}
 	scene.Assignments = assignments
 
-	if err := s.SaveScene(scene); err != nil {
+	if err := s.SaveScene(ctx, scene); err != nil {
 		return scenes.Scene{}, err
 	}
 	return scene, nil

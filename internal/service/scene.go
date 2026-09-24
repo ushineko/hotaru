@@ -69,13 +69,51 @@ func (s *Service) Scene(name string) (scenes.Scene, error) {
 	return store.Get(name)
 }
 
-// SaveScene writes a scene, replacing one of the same name.
-func (s *Service) SaveScene(scene scenes.Scene) error {
+/*
+SaveScene writes a scene, replacing one of the same name, and lights it again
+when it is the one the machine is showing.
+
+**Saving used to change the file and nothing else.** Somebody editing the
+scene that is on their machine, saving it, and watching the lights stay as
+they were is what this is for: desired state was written by the apply, the
+file was written by the save, and nothing joined the two. The remedy was to
+apply another scene and come back, which every user found for themselves.
+
+SaveDashboard has done the equivalent since spec 013 -- `redrawPanel`, for the
+same reason in the same words -- and scenes never got it. It is here rather
+than in the window so that `hotaru scene save` is fixed by the same line.
+
+A scene that is not the one showing is written and nothing else: saving a
+draft for later must not take the machine.
+*/
+func (s *Service) SaveScene(ctx context.Context, scene scenes.Scene) error {
 	store, err := s.sceneStore()
 	if err != nil {
 		return err
 	}
-	return store.Save(scene)
+	if err := store.Save(scene); err != nil {
+		return err
+	}
+	s.relight(ctx, scene.Name)
+	return nil
+}
+
+/*
+relight applies a scene again when it is the one somebody last applied.
+
+The failure is reported rather than returned. The save is what the caller
+asked for and it succeeded, and a device that will not take a colour is the
+ordinary outcome every apply already reports per device -- so failing the
+write here would say the scene was not saved, which is untrue and is the one
+thing somebody must be able to rely on.
+*/
+func (s *Service) relight(ctx context.Context, name string) {
+	if name == "" || name != s.Applied() {
+		return
+	}
+	if _, err := s.ApplyScene(ctx, name); err != nil && s.report != nil {
+		s.report("hotaru: lighting %s again after saving it: %v", name, err)
+	}
 }
 
 // DeleteScene removes one.
