@@ -2,8 +2,10 @@ package service
 
 import (
 	"context"
+	"time"
 
 	"github.com/ushineko/hotaru/internal/cooler"
+	"github.com/ushineko/hotaru/internal/dashboard"
 	"github.com/ushineko/hotaru/internal/readings"
 )
 
@@ -49,5 +51,33 @@ func (s *Service) Readings(ctx context.Context) readings.Reading {
 		r.Set(readings.MemUsed, percent)
 		r.Set(readings.MemBytes, gigabytes)
 	}
+
+	// Every reading taken is a reading remembered. See Service.history.
+	s.history.Record(r, time.Now())
 	return r
+}
+
+/*
+Trails is where a dashboard's readings have been, for the band under its
+numbers (spec 046).
+
+Which readings is the dashboard's own decision, so it is asked rather than
+told. Oldest first, and NaN for a bucket the machine had nothing to put in.
+An empty series is a service that started less than a bucket ago, which draws
+nothing rather than a line through one point.
+*/
+func (s *Service) Trails(ctx context.Context, d dashboard.Dashboard) dashboard.Trails {
+	/*
+		A reading first, so that a client asking only for the trail still
+		fills the history. Nothing else would, on a machine whose panel is
+		showing somebody's photograph: the dashboard loop is the usual
+		recorder and it does not run while the screen is held.
+	*/
+	s.Readings(ctx)
+
+	below, above := d.Trail.Sources(d.Headline.Source)
+	return dashboard.Trails{
+		Below: s.history.Trail(below),
+		Above: s.history.Trail(above),
+	}
 }

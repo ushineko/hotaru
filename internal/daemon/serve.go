@@ -185,6 +185,7 @@ func run(cmd *cobra.Command) error {
 			the close it must precede.
 		*/
 		panel := dashboard.NewPusher(owner, svc.Readings)
+		panel.Trails = svc.Trails
 		panel.Look = svc.Look
 		panel.Report = report
 		svc.SetDashboard(panel)

@@ -40,6 +40,8 @@ func (d *DashboardsSection) editor(sh *shell.Shell, got api.DashboardsResponse) 
 		widget.NewSeparator(),
 		d.slotFields(sh, got),
 		widget.NewSeparator(),
+		d.trailFields(sh),
+		widget.NewSeparator(),
 		d.backgroundFields(sh),
 		d.unitsField(sh),
 		d.captionField(sh),
@@ -326,6 +328,77 @@ func (d *DashboardsSection) slotFields(sh *shell.Shell, got api.DashboardsRespon
 	}
 	return container.NewVBox(rows...)
 }
+
+/*
+trailFields are the band under the numbers: whether it is drawn, and which
+readings it is a history of.
+
+Two choosers because the band has two halves. The one below grows from the
+bottom and the one above hangs from the top, which is what tells them apart
+on a panel where colour already means something else.
+
+**"The headline's" rather than a source**, because that is what the band is
+under and what most dashboards want: a trail that follows the big number
+keeps following it when somebody changes what the big number is.
+*/
+func (d *DashboardsSection) trailFields(sh *shell.Shell) fyne.CanvasObject {
+	show := widget.NewCheck("", func(on bool) {
+		if on == !d.editing.Trail.Off {
+			return
+		}
+		d.editing.Trail.Off = !on
+		d.redraw(sh)
+	})
+	show.SetChecked(!d.editing.Trail.Off)
+
+	return container.NewVBox(
+		widgets.Dim("Trail"),
+		field("Show", show),
+		field("Below", d.trailSource(sh, &d.editing.Trail.Below, followHeadline)),
+		field("Above", d.trailSource(sh, &d.editing.Trail.Above, noTrail)),
+		widgets.Note("The band is five minutes of where those readings have been. "+
+			"Two of the same reading draw once: it would be the same shape twice.",
+			fd.StatusInfo),
+	)
+}
+
+/*
+trailSource chooses one half's reading.
+
+`empty` is what an unset half is offered as, and the two halves mean different
+things by it: the one below follows the headline, and the one above draws
+nothing.
+*/
+func (d *DashboardsSection) trailSource(sh *shell.Shell, at *string, empty string) fyne.CanvasObject {
+	options := append([]string{empty}, sourceNames()...)
+	choose := widget.NewSelect(options, func(picked string) {
+		source := ""
+		if picked != empty {
+			source = sourceOf(picked)
+		}
+		// Only when it moved: SetSelected below fires this, and a form that
+		// asked for a frame every time it was built would render one on
+		// every keystroke that rebuilds it.
+		if source == *at {
+			return
+		}
+		*at = source
+		d.redraw(sh)
+	})
+
+	picked := empty
+	if *at != "" {
+		picked = sourceLabel(*at)
+	}
+	choose.SetSelected(picked)
+	return choose
+}
+
+// What the two halves mean by nothing chosen.
+const (
+	followHeadline = "the headline's"
+	noTrail        = "nothing"
+)
 
 func (d *DashboardsSection) backgroundFields(sh *shell.Shell) fyne.CanvasObject {
 	kinds := []string{"starfield", "plain", "picture"}

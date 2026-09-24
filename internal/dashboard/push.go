@@ -72,6 +72,16 @@ type Pusher struct {
 		until the service restarted.
 	*/
 	Look func(ctx context.Context) (Dashboard, image.Image)
+	/*
+		Trails is where the dashboard's readings have been, for the band
+		under the numbers (spec 046).
+
+		Asked per cycle like Look, and given the dashboard rather than a
+		source, because which readings the band draws is the dashboard's own
+		decision. Optional: a pusher without one draws the panel exactly as
+		it drew it before there were any.
+	*/
+	Trails func(ctx context.Context, d Dashboard) Trails
 	// Report says what went wrong, and is optional.
 	Report func(format string, args ...any)
 
@@ -149,7 +159,11 @@ func (p *Pusher) cycle(ctx context.Context) time.Duration {
 	if p.Look != nil {
 		look, behind = p.Look(ctx)
 	}
-	frame := Render(look, p.Read(ctx), p.tick, behind)
+	var trails Trails
+	if p.Trails != nil {
+		trails = p.Trails(ctx, look)
+	}
+	frame := Render(look, p.Read(ctx), p.tick, behind, trails)
 	floor := Floor(len(frame.GIF))
 
 	if p.sent && frame.Content == p.last {

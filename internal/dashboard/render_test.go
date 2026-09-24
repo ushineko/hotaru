@@ -196,7 +196,7 @@ func TestAHotProcessorIsNotAnAlarm(t *testing.T) {
 
 // draw is the shipped dashboard, which is spec 013's screen. Most of these
 // tests are about that screen rather than about choosing another one.
-func shown(r Reading, tick int) Frame { return Render(Shipped()[0], r, tick, nil) }
+func shown(r Reading, tick int) Frame { return Render(Shipped()[0], r, tick, nil, Trails{}) }
 
 /*
 The shipped dashboard does not move by accident.
@@ -265,7 +265,7 @@ func TestTwoRendersAtOnceDoNotCorruptTheFont(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for range 4 {
-				frame := Render(Shipped()[i%len(Shipped())], reading(), i, nil)
+				frame := Render(Shipped()[i%len(Shipped())], reading(), i, nil, Trails{})
 				require.NotEmpty(t, frame.GIF)
 			}
 		}()
