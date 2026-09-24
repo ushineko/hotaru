@@ -151,3 +151,31 @@ func TestARowWithFewerFieldsAlignsFromTheLeft(t *testing.T) {
 	require.GreaterOrEqual(t, widths[0], p.textWidth("40.1", rowValuePt, true, Text{}),
 		"the first column is too narrow for the value that has to sit in it")
 }
+
+/*
+A unit stands a hair off the number it belongs to.
+
+Spec 044 packed the value and its unit as one run so that nothing sat between
+them, which was right and came out a shade too tight: "12%" with the figure
+and the sign touching reads as one token. The gap is a fraction of the
+number's size, so it is the same gap on a stacked row and on the headline.
+*/
+func TestAUnitDoesNotTouchItsNumber(t *testing.T) {
+	p := &paint{}
+	unit := Field{Text: "%", Small: true}
+
+	require.Greater(t, p.fieldWidth(unit, rowValuePt),
+		p.textWidth(unit.Text, sizeOf(unit, rowValuePt), true, Text{}),
+		"the unit's box is exactly its text, so it is drawn against the number")
+
+	// It grows with the text, and it belongs to units alone: a number's box
+	// is its reservation, and a gap inside one would be a digit moving.
+	require.Greater(t, unitGap(unit, 170), unitGap(unit, rowValuePt))
+	require.Zero(t, unitGap(Field{Text: "12", Chars: 2}, rowValuePt))
+
+	// The pair packed around a divider reserves nothing and measures its
+	// own runs, so it carries the gap the same way or "12%" is spaced on a
+	// stacked row and tight on the headline.
+	require.Equal(t, unitGap(unit, rowValuePt),
+		p.run(unit, rowValuePt)-p.textWidth(unit.Text, sizeOf(unit, rowValuePt), true, Text{}))
+}

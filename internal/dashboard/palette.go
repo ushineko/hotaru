@@ -39,13 +39,22 @@ const (
 	/*
 		The stacked row's word column, and the gap before the number.
 
-		rowLabelWidth is a minimum rather than a width: a label wider than it
-		pushes the number right instead of being drawn through it. The gap is
-		what keeps "PUMP RPM / %" and "2709 / 90" from touching, which at a
-		fixed band they did to within three pixels.
+		rowLabelFloor is how far the words can be squeezed and no further:
+		the column is as wide as the widest label until the numbers want the
+		room, and then it gives way down to this (spec 045). It was a
+		*minimum* -- 160 pixels of column whether the labels filled it or not
+		-- which left the numbers fitted to what was left of a band they
+		mostly were not using.
+
+		The gap is what keeps "PUMP RPM · %" and "2709 · 90" from touching,
+		which at a fixed band they did to within three pixels.
 	*/
-	rowLabelWidth = 160
+	rowLabelFloor = 96
 	rowGap        = 24
+
+	// rowLabelPt is the size a stacked row's words are drawn at before the
+	// dashboard's own scale and before the column is fitted.
+	rowLabelPt = 22.0
 
 	// rowValuePt is the size a stacked row's number is drawn at before the
 	// column is fitted. Spec 013's, unchanged.

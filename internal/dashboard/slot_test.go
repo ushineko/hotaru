@@ -228,7 +228,7 @@ func TestAStackedPairStaysInsideItsRow(t *testing.T) {
 		inside it.
 	*/
 	p := &paint{}
-	band := Size - 2*rowInset - rowLabelWidth
+	band := Size - 2*rowInset - rowGap - rowLabelFloor
 
 	// The worst pair this machine can report, at the widths it reserves.
 	worst := reading()
@@ -352,22 +352,37 @@ func TestOneSizeForTheWholeColumn(t *testing.T) {
 	}
 }
 
-func TestAWideLabelPushesTheNumberRatherThanMeetingIt(t *testing.T) {
+func TestAWideLabelIsFittedRatherThanDrawnIntoTheNumber(t *testing.T) {
 	/*
-		The collision justifying created. A label wider than its band
+		The collision justifying created. A label wider than its column
 		overflowed both ways when it was centred and nobody noticed; hard
 		left it overflows one way, into the number -- "PUMP RPM · %" is 208
 		pixels and left three of them.
+
+		The words used to answer that by pushing the numbers right. They
+		yield now (spec 045), so the answer is the other one: a word with
+		less room than it measures is drawn at a size that fits the room,
+		and the gap before the numbers survives either way.
 	*/
 	p := &paint{}
 	long := "PUMP RPM · %"
-	require.Greater(t, p.textWidth(long, 22, false, Text{}), rowLabelWidth,
-		"the label this is about now fits its band; pick a longer one")
+	require.Greater(t, p.textWidth(long, rowLabelPt, false, Text{}), rowLabelFloor,
+		"the label this is about now fits the floor; pick a longer one")
 
-	width := max(rowLabelWidth, p.textWidth(long, 22, false, Text{}))
-	left := rowInset + width + rowGap
-	require.GreaterOrEqual(t, left-(rowInset+p.textWidth(long, 22, false, Text{})), rowGap,
-		"the gap between the words and the numbers was eaten")
+	pt := p.wordsAt([]string{long}, rowLabelFloor, rowLabelPt)
+	require.Less(t, pt, rowLabelPt, "a label with no room for it was drawn at full size")
+	require.Equal(t, minLabelPt, int(pt),
+		"a label this long is held at the floor rather than fitted to nothing")
+
+	// Between full size and the floor it is fitted to the room, and the gap
+	// before the numbers survives.
+	room := 3 * p.textWidth(long, rowLabelPt, false, Text{}) / 4
+	fitted := p.wordsAt([]string{long}, room, rowLabelPt)
+	require.LessOrEqual(t, p.textWidth(long, fitted, false, Text{}), room,
+		"the fitted label still overruns its column, and the gap with it")
+
+	// And one that fits is left exactly as the dashboard asked for it.
+	require.Equal(t, rowLabelPt, p.wordsAt([]string{"CPU"}, rowLabelFloor, rowLabelPt))
 }
 
 func TestOnlyTheStackedRowsAreJustified(t *testing.T) {
@@ -386,4 +401,76 @@ func TestOnlyTheStackedRowsAreJustified(t *testing.T) {
 	// than being silently clipped.
 	require.Equal(t, 0, offset(100, 140, Left))
 	require.Equal(t, -40, offset(100, 140, Right))
+}
+
+/*
+The readings size reaches the readings.
+
+Spec 044 wrote this down as a risk and spec 045 found it: the word column
+took the wider of the widest label and a fixed 160 pixels, the numbers were
+fitted to what was left, and on a stacked dashboard with big labels that was
+a band they could not fit at any size. So they were drawn at the floor at 50%,
+at 100% and at 150% alike, and the slider in the editor did nothing at all.
+
+**Asserted on the pixels**, at the one place the fix can be checked: how tall
+the digits actually come out. Arithmetic about columns would be the same
+arithmetic the drawing does.
+*/
+func TestTheReadingsSizeMovesTheReadings(t *testing.T) {
+	d := Shipped()[1] // `load`: four rows, three of them pairs
+	d.Arrangement = Stacked
+	d.Background = Background{Kind: Plain}
+	d.Lettering.Labels.Size = MaxSize // the case it was found in
+
+	var tall []int
+	for _, size := range []int{50, 100, 150} {
+		d.Lettering.Values.Size = size
+		tall = append(tall, digitHeight(decode(t, Render(d, reading(), 0, nil)),
+			stackTop, rowHeight, Size/2))
+	}
+
+	require.Less(t, tall[0], tall[1], "50%% and 100%% drew the same numbers")
+	require.Less(t, tall[1], tall[2], "100%% and 150%% drew the same numbers")
+}
+
+// digitHeight is how tall the ink is in a band, from x rightwards: the
+// numbers' own column, with the words left out of it.
+func digitHeight(img *image.Paletted, top, height, from int) int {
+	background := img.Pix[0]
+	high, low := -1, -1
+	for y := top; y < top+height; y++ {
+		for x := from; x < img.Bounds().Dx(); x++ {
+			if img.Pix[y*img.Stride+x] == background {
+				continue
+			}
+			if high == -1 {
+				high = y
+			}
+			low = y
+		}
+	}
+	return low - high
+}
+
+/*
+The words yield to the numbers, and only so far.
+
+A row is one line: what the numbers take, the words do not get. They keep
+what they measure while there is room for it -- a short label stops holding a
+column nothing is drawn in -- and they are not squeezed below a floor, because
+a dashboard whose numbers have eaten the words is not a dashboard.
+*/
+func TestTheWordColumnIsWhatTheWordsNeedAndTheNumbersLeave(t *testing.T) {
+	room := Size - 2*rowInset - rowGap
+
+	// Short words keep exactly what they measure, however little the numbers
+	// want: the old minimum held 160 pixels here whatever was drawn in them.
+	require.Equal(t, 90, shareRow(90, 100))
+
+	// Wide words give way to numbers that want the room...
+	require.Equal(t, room-200, shareRow(280, 200))
+
+	// ...down to the floor, and no further.
+	require.Equal(t, rowLabelFloor, shareRow(280, room))
+	require.Equal(t, rowLabelFloor, shareRow(280, 2*room))
 }
