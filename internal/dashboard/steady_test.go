@@ -96,7 +96,7 @@ func steady(t *testing.T, d Dashboard, at window, source readings.Source,
 	for _, v := range values {
 		r := reading()
 		r.Set(source, v)
-		drawn := inkColumns(decode(t, Render(d, r, 0, nil)), at)
+		drawn := inkColumns(decode(t, Render(d, r, 0, nil, nil)), at)
 		require.NotEmpty(t, drawn, "nothing was drawn at %v", v)
 		out = append(out, drawn)
 	}

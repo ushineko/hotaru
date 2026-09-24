@@ -214,6 +214,13 @@ MIT. See [LICENSE](LICENSE).
 
 ### Unreleased
 
+- The stacked screen draws where its headline has been. Five minutes of it,
+  in the band between the big number and the table, as a line with the area
+  under it filled. Each point is the mean of the readings that arrived in its
+  five seconds, because a processor that reads 51, then 82, then 60 within six
+  seconds cannot be drawn from one sample per point. A bucket nothing arrived
+  in is a gap rather than a zero (spec 046, #124).
+
 - The documents in `docs/` are being converted to plain technical English:
   plain verbs, the active voice, the simple present, no idiom or metaphor,
   and a ceiling of thirty words in a sentence. The rules are fynedesygn's,

@@ -49,7 +49,17 @@ type Service struct {
 	processor *readings.CPU
 	// memory is not a rate and keeps nothing, but it lives beside the
 	// processor because both are the kernel answering about itself.
-	memory  *readings.Memory
+	memory *readings.Memory
+	/*
+		history is where every reading has been, which the stacked
+		arrangement draws under its headline (spec 046).
+
+		Filled by whoever takes a reading rather than by a sampler of its
+		own: the dashboard loop reads every one to three seconds and the API
+		reads whenever somebody asks, so the history costs no sensor traffic.
+		See Keep.
+	*/
+	history *readings.History
 	panel   Dashboard
 	scenes  SceneStore
 	images  ImageLibrary
@@ -206,6 +216,7 @@ func New(cfg *config.Config, client openrgb.Client, address string) *Service {
 	return &Service{
 		cfg: cfg, client: client, addr: address,
 		processor: readings.NewCPU(), memory: readings.NewMemory(),
+		history: readings.NewHistory(),
 	}
 }
 
