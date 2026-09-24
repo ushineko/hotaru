@@ -37,7 +37,7 @@ all to keys.
 | **The cooler** | Coolant and CPU temperature, pump and fan speeds, read from the device directly. |
 | **The screen** | The cooler's LCD: its own readout, an image, an animation, or a live dashboard rendered from the telemetry |
 | **Hotkeys** | Scenes on global shortcuts: nine shipped on `Ctrl+Alt+Num1`–`Num9`, the shifted row left free. Only out of the box supported on KDE Plasma through a KWin script. Other desktop environments can have cli commands bound to their native hotkeys if needed. |
-| **A window** | `hotaru-gui`: the machine's devices and zones drawn as a picture of what each is showing, a scene editor you point at a fan, a screen editor, a picture library, and the hotkey binder on the row that shows the key |
+| **A window** | `hotaru-gui`: the machine's devices and zones drawn as a picture of what each is showing. A scene editor you point at a fan, a screen editor, a picture library, and the hotkey binder on the row that shows the key |
 
 ## Install
 
@@ -202,12 +202,29 @@ hotaru is a ground-up rearchitecture. Hardware learnings are carried over.
   section. Kept out of this file on purpose: the About section renders this
   README, and a gallery of the window inside the window is a program showing
   pictures of itself.
+* [docs/style.md](docs/style.md) - how the documents in `docs/` are written,
+  and which of them have been converted. The specs, the changelog below and
+  the doc comments in the Go source are left as they were written.
 
 ## Licence
 
 MIT. See [LICENSE](LICENSE).
 
 ## Changelog
+
+### Unreleased
+
+- The documents in `docs/` are being converted to plain technical English:
+  plain verbs, the active voice, the simple present, no idiom or metaphor,
+  and a ceiling of thirty words in a sentence. The rules are fynedesygn's,
+  which takes them from ASD-STE100 without claiming to comply with it. A
+  document opts in by name when somebody has read it against the rules, and
+  `docs/hardware.md` is the first. The specs, this changelog and the doc
+  comments in the Go source are left as they were written: they carry
+  argument and a record, which is the part these rules serve least well. See
+  [docs/style.md](docs/style.md).
+
+- fynedesygn 0.1.43.
 
 ### 0.1.10 (2026-09-23)
 
