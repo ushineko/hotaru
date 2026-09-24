@@ -212,6 +212,15 @@ MIT. See [LICENSE](LICENSE).
 
 ## Changelog
 
+### Unreleased
+
+- A trail of a reading that has not moved is drawn along the floor of its
+  band rather than across the middle of it. The band invents a range when a
+  reading has none, and centring the invented one put a steady coolant at
+  mid-height with the wash filling half the band: a quiet machine drew a
+  solid bar on every screen. Anchored at the lowest value it saw, a steady
+  reading is a thin line and any movement lifts it off (spec 046, #124).
+
 ### 0.1.11 (2026-09-23)
 
 - Every screen draws where its readings have been. Five minutes of it, in the
