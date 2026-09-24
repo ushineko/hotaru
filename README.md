@@ -2,7 +2,7 @@
 
 *lights, cooler, action!*
 
-**Version**: 0.1.14
+**Version**: 0.1.15
 
 RGB lighting and AIO cooler control for Linux, as a CLI, a user service and a
 desktop GUI. 
@@ -212,7 +212,7 @@ MIT. See [LICENSE](LICENSE).
 
 ## Changelog
 
-### Unreleased
+### 0.1.15 (2026-09-24)
 
 - The big number has a size of its own, over the readings'. One size scaled
   the arrangement's proportions together, which spec 037 chose deliberately;
