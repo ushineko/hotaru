@@ -2,7 +2,7 @@
 
 *lights, cooler, action!*
 
-**Version**: 0.1.9
+**Version**: 0.1.10
 
 RGB lighting and AIO cooler control for Linux, as a CLI, a user service and a
 desktop GUI. 
@@ -208,6 +208,26 @@ hotaru is a ground-up rearchitecture. Hardware learnings are carried over.
 MIT. See [LICENSE](LICENSE).
 
 ## Changelog
+
+### 0.1.10 (2026-09-23)
+
+- The screen editor's second button shows rather than saves. `Save` and `Save
+  and show it` both wrote the dashboard and both closed the editor, so the
+  word somebody reaches for when they want to look at their work saved it as a
+  side effect. `Show` draws the draft on the panel, writes nothing, and leaves
+  the editor open: asking to see a thing is not asking to stop editing it. It
+  is a still, and the editor says so (spec 045, #120).
+
+- The readings size applies to a stacked dashboard's numbers. The word column
+  took the wider of the widest label and a fixed 160 pixels and the numbers
+  were fitted to what was left, which with big labels is a band they cannot
+  fit at any size -- so they were drawn at the floor at 50%, 100% and 150%
+  alike. The numbers ask first now and the words take what is left, down to a
+  floor, drawn at a size that fits it rather than through the figures beside
+  them (spec 045, #120).
+
+- A unit stands a hair off the number it belongs to. Spec 044 packed the two
+  as one run and `12%` came out reading as a single token (spec 045, #120).
 
 ### 0.1.9 (2026-09-23)
 
