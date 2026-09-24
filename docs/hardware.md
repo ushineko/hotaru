@@ -151,6 +151,12 @@ which the panel's bulk endpoint lives. Without that rule `systemd-logind` puts
 no ACL on them, and hotaru finds a cooler it cannot open. The package ships the
 rule. See [docs/packaging.md](packaging.md).
 
+`uaccess` grants that ACL to an **active seat session**, not to the user
+manager that `enable-linger` starts at boot. hotaru therefore starts before
+its own cooler is openable, by sixteen seconds on the machine this was
+measured on. It waits for the device rather than opening it once, so the panel
+arrives when the login does.
+
 ## Not supported, deliberately
 
 - **Fan and pump duty control.** The Commander ST firmware discards duty writes

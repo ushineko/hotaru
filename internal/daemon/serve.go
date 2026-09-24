@@ -156,44 +156,26 @@ func run(cmd *cobra.Command) error {
 	svc.SetQueue(writes)
 	svc.SetEnvironment(environment{})
 
-	/*
-		The cooler, if this machine has one.
-
-		Opened once and owned for the life of the service: it is a handle on a
-		HID endpoint, and two callers on one endpoint interleave control
-		transfers. Absence is ordinary -- most machines have no liquid cooler,
-		and a machine that does may have one hotaru does not recognise -- so
-		it is reported once and everything else carries on.
-	*/
 	report := func(format string, args ...any) { cmd.PrintErrf(format+"\n", args...) }
 
-	if found, err := cooler.Open(ctx); err != nil {
-		cmd.Printf("no cooler telemetry: %v\n", err)
-	} else {
-		owner := cooler.Own(found)
-		svc.SetCooler(owner)
-		cmd.Printf("reading %s at %s\n", found.Device().Name, found.Device().HID)
+	/*
+		The cooler, when it can be opened.
 
-		/*
-			The dashboard, if the cooler has a screen.
+		**A resource that appears**, like the OpenRGB server below, and for a
+		sharper reason than "it might be plugged in later". A `uaccess` udev
+		rule grants its ACL to an active seat session, and `enable-linger`
+		starts this service with the machine -- sixteen seconds before the
+		login that makes the device openable, measured on a cold boot. Opened
+		once, that one failure was permanent: the lights came back and the
+		panel did not, until somebody restarted the service (#136).
 
-			Stopped before the cooler is closed, and deliberately in that
-			order: closing hands the panel back to the firmware's own
-			readout, and a push that arrived afterwards would leave hotaru's
-			last frame on somebody's cooler for as long as the machine stayed
-			off. The defers run bottom-up, so this one is registered after
-			the close it must precede.
-		*/
-		panel := dashboard.NewPusher(owner, svc.Readings)
-		panel.Trails = svc.Trails
-		panel.Look = svc.Look
-		panel.Report = report
-		svc.SetDashboard(panel)
-
-		drawn := make(chan struct{})
-		go func() { defer close(drawn); panel.Run(ctx) }()
-		defer func() { <-drawn; _ = owner.Close() }()
-	}
+		Owned for the life of the service once it is open: it is a handle on
+		a HID endpoint, and two callers on one endpoint interleave control
+		transfers.
+	*/
+	cooled := make(chan struct{})
+	go func() { defer close(cooled); attach(ctx, svc, report) }()
+	defer func() { <-cooled }()
 
 	/*
 		The desktop, if this machine has one.
@@ -239,6 +221,77 @@ type environment struct{}
 
 func (environment) Remedies(ctx context.Context) []string {
 	return systemd.Look(ctx).Remedies()
+}
+
+/*
+attach waits for the cooler, then draws on it until the service stops.
+
+Absence is ordinary -- most machines have no liquid cooler, and a machine that
+does may have one hotaru does not recognise -- so this keeps looking and says
+nothing more after the first time. A machine with none pays a sysfs scan every
+thirty seconds and nothing else.
+*/
+func attach(ctx context.Context, svc *service.Service, report func(string, ...any)) {
+	found := waitForCooler(ctx, cooler.Open, connectBackoff, report)
+	if found == nil {
+		return
+	}
+
+	/*
+		The panel stops before the cooler closes, and deliberately in that
+		order: closing hands the screen back to the firmware's own readout,
+		and a push that arrived afterwards would leave hotaru's last frame on
+		somebody's cooler for as long as the machine stayed off.
+	*/
+	owner := cooler.Own(found)
+	defer func() { _ = owner.Close() }()
+
+	svc.SetCooler(owner)
+	report("reading %s at %s", found.Device().Name, found.Device().HID)
+
+	panel := dashboard.NewPusher(owner, svc.Readings)
+	panel.Trails = svc.Trails
+	panel.Look = svc.Look
+	panel.Report = report
+	svc.SetDashboard(panel)
+	panel.Run(ctx)
+}
+
+/*
+waitForCooler opens the cooler when it can be opened, or gives up when the
+service stops.
+
+`open` and `backoff` are arguments so that a test can drive this without a
+cooler and without waiting seconds for it. The backoff attach hands it is the
+one the OpenRGB server waits on, for the same reason: short enough to catch a
+device that becomes readable moments later at boot, long enough not to be a
+busy loop on a machine that has none.
+*/
+func waitForCooler(ctx context.Context, open func(context.Context) (*cooler.Cooler, error),
+	backoff []time.Duration, report func(string, ...any),
+) *cooler.Cooler {
+	var announced bool
+	for attempt := 0; ; attempt++ {
+		found, err := open(ctx)
+		if err == nil {
+			return found
+		}
+		if ctx.Err() != nil {
+			return nil
+		}
+		if !announced {
+			// Once, not every tick: a machine with no cooler should not have
+			// its journal filled with a fact that is not changing.
+			report("no cooler telemetry yet: %v", err)
+			announced = true
+		}
+
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-time.After(backoff[min(attempt, len(backoff)-1)]):
+		}
+	}
 }
 
 // connectBackoff is how long to wait between attempts to reach OpenRGB, and

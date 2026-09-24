@@ -214,6 +214,15 @@ MIT. See [LICENSE](LICENSE).
 
 ### Unreleased
 
+- The cooler is waited for rather than opened once. A `uaccess` udev rule
+  grants its ACL to an active seat session, and `enable-linger` starts the
+  service with the machine -- sixteen seconds before the login that makes the
+  device openable, on the machine this was found on. Opened once, that
+  failure was permanent: after a reboot the lights came back and the panel
+  did not, until somebody restarted the service. It now keeps looking, on the
+  backoff the OpenRGB server waits on, and says so once rather than every
+  tick (#136).
+
 - Saving a scene lights it again when it is the one the machine is showing.
   Saving used to write the file and nothing else, so editing the scene on your
   machine and pressing Save left the lights as they were, and the remedy was
