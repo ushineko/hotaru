@@ -375,7 +375,7 @@ func (s *Service) covers(ctx context.Context, scene scenes.Scene) ([]string, err
 // by fiddling.
 func (s *Service) SceneFrom(name string, screen string) (scenes.Scene, error) {
 	desired := s.Desired()
-	scene := scenes.Scene{Name: name, Screen: screen, Effects: map[string]string{}}
+	scene := scenes.Scene{Name: name, Screen: screen, Effects: map[string]scenes.Effect{}}
 
 	for _, device := range sorted(desired.Names()) {
 		want := desired.Devices[device]
@@ -390,7 +390,12 @@ func (s *Service) SceneFrom(name string, screen string) (scenes.Scene, error) {
 			Target: device, Colour: c.String(),
 		})
 		if want.Mode != "" {
-			scene.Effects[device] = want.Mode
+			// The mode's own colour and speed come with it: what was applied
+			// is what is saved, and re-deriving either from the frame would
+			// make a saved scene differ from the machine it was saved off.
+			scene.Effects[device] = scenes.Effect{
+				Mode: want.Mode, Colour: want.ModeColour, Speed: want.Speed,
+			}
 		}
 	}
 	if len(scene.Assignments) == 0 {

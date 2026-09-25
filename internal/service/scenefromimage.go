@@ -38,7 +38,7 @@ Nothing is the default, which leaves every device lit with the colours it was
 given.
 */
 func (s *Service) SceneFromImage(
-	ctx context.Context, picture, name string, distance float64, effects map[string]string,
+	ctx context.Context, picture, name string, distance float64, effects map[string]scenes.Effect,
 ) (scenes.Scene, error) {
 	library, err := s.library()
 	if err != nil {
@@ -84,7 +84,7 @@ lights were built from how it looked at the time; `hotaru scene recolour`
 brings them back in line.
 */
 func (s *Service) SceneFromDashboard(
-	ctx context.Context, board, name string, distance float64, effects map[string]string,
+	ctx context.Context, board, name string, distance float64, effects map[string]scenes.Effect,
 ) (scenes.Scene, error) {
 	one, err := s.Dashboard(board)
 	if err != nil {
@@ -153,6 +153,7 @@ func (s *Service) painted(ctx context.Context, scene scenes.Scene, picture image
 		return scenes.Scene{}, err
 	}
 	scene.Assignments = assignments
+	scene = s.representative(ctx, scene)
 
 	if err := s.SaveScene(ctx, scene); err != nil {
 		return scenes.Scene{}, err
@@ -298,4 +299,66 @@ func lit(sampled []color.NRGBA, distance float64) []color.NRGBA {
 // written is a colour as hotaru writes it.
 func written(c color.NRGBA) string {
 	return fmt.Sprintf("#%02x%02x%02x", c.R, c.G, c.B)
+}
+
+/*
+representative gives a one-colour effect the colour of what the picture put on
+that device.
+
+A picture answers "what colour is each light", and a device running a mode
+that shows one colour cannot use that answer: it would be lit in whatever the
+frame reduces to at the write, which is the same number arrived at later and
+invisible in the scene until then. So the reduction is done here and written
+down, where somebody can see it and change it.
+
+Only where the scene does not already name one, and only for a mode that
+cannot take a colour per LED: a device in Direct is painted light by light and
+has nothing to reduce.
+
+An unreachable server or a device that is not there leaves the scene as it is.
+The colours are still what the picture said, and the effect still has spec
+050's fallback underneath it -- this is a better answer, not a required one.
+*/
+func (s *Service) representative(ctx context.Context, scene scenes.Scene) scenes.Scene {
+	if len(scene.Effects) == 0 {
+		return scene
+	}
+	_, client, _ := s.current()
+	if client == nil {
+		return scene
+	}
+	found, err := client.Devices(ctx)
+	if err != nil {
+		return scene
+	}
+
+	resolved, _ := scene.Resolve()
+	cfg := s.config()
+	out := cloneEffects(scene.Effects)
+	for name, effect := range scene.Effects {
+		if !effect.Named() || effect.Colour != "" {
+			continue
+		}
+		for i := range found {
+			device := &found[i]
+			if !strings.Contains(strings.ToLower(device.Name), strings.ToLower(name)) {
+				continue
+			}
+			mode, ok := device.Mode(effect.Mode)
+			if !ok || mode.PerLED {
+				break
+			}
+			// Nothing underneath: the picture gave every light a colour, so a
+			// remembered frame is not what this device is being asked to show.
+			frame, _ := devices.Compose(device, devices.RuleFor(cfg, device.Name), nil,
+				forDevice(resolved, device.Name))
+			if dominant, has := frame.Dominant(); has {
+				effect.Colour = dominant.String()
+				out[name] = effect
+			}
+			break
+		}
+	}
+	scene.Effects = out
+	return scene
 }

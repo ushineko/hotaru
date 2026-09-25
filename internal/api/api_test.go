@@ -33,9 +33,15 @@ func board() devices.Device {
 
 func keyboard() devices.Device {
 	return devices.Device{
-		Name:       "Keychron K4 HE",
-		LEDCount:   2,
-		Modes:      []devices.Mode{{Name: "Direct", PerLED: true}},
+		Name:     "Keychron K4 HE",
+		LEDCount: 2,
+		Modes: []devices.Mode{
+			{Name: "Direct", PerLED: true},
+			// One colour for the whole board, at a speed: the shape of every
+			// reactive mode a keyboard has.
+			{Name: "Solid Reactive", ModeColour: true,
+				Speed: &devices.Speed{Slowest: 0, Fastest: 255, Now: 127}},
+		},
 		Zones:      []devices.Zone{{Name: "Keyboard", First: 0, Count: 2}},
 		ActiveMode: "Direct",
 	}
@@ -263,4 +269,32 @@ func TestASocketPathTooLongForTheKernelSaysThat(t *testing.T) {
 	_, err := api.Listen(t.Context(), long)
 	require.ErrorContains(t, err, "the socket path is")
 	require.ErrorContains(t, err, "limit is")
+}
+
+func TestTheListingSaysWhichModesShowOneColourAndWhichTakeASpeed(t *testing.T) {
+	/*
+		A client drawing an editor has to know before it draws: a colour per
+		light is a control on a device in Direct and a promise the hardware
+		will not keep on the same device in a reactive mode. Asked of the mode
+		rather than of the device, exactly as Dimmable is, because a keyboard
+		is both.
+	*/
+	client := running(t, nil, openrgb.NewFake(board(), keyboard()))
+
+	found, err := client.Devices(t.Context())
+	require.NoError(t, err)
+
+	var keys api.Device
+	for _, device := range found {
+		if device.Name == "Keychron K4 HE" {
+			keys = device
+		}
+	}
+	require.Equal(t, []string{"Solid Reactive"}, keys.OneColour,
+		"Direct takes a colour per light and must not be listed")
+
+	pace, ok := keys.Paced["Solid Reactive"]
+	require.True(t, ok, "the mode's speed range was not published")
+	require.Equal(t, api.Speed{Slowest: 0, Fastest: 255, Now: 127}, pace)
+	require.NotContains(t, keys.Paced, "Direct")
 }

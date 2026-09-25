@@ -119,3 +119,42 @@ func TestASnapshotIsACopyNotAWindowIntoTheStore(t *testing.T) {
 	require.Equal(t, colour.MustParse("red"), held.Devices["One"].Colours[0],
 		"the store's own colours were reachable through the snapshot")
 }
+
+func TestASnapshotKeepsEverythingADeviceWasRecordedWith(t *testing.T) {
+	/*
+		The copy used to list the fields it carried, so a field added to the
+		record was a field dropped from every snapshot of it -- silently, and
+		only visible three layers away as a re-assert putting the right mode
+		back in the wrong colour.
+	*/
+	store, err := state.Open(filepath.Join(t.TempDir(), "state.yml"))
+	require.NoError(t, err)
+
+	speed := 40
+	require.NoError(t, store.Record("Keychron K4 HE", state.Device{
+		Mode:       "Solid Reactive",
+		Colours:    []colour.Colour{colour.MustParse("blue")},
+		ModeColour: "#ff0000",
+		Speed:      &speed,
+	}))
+
+	kept := store.Snapshot().Devices["Keychron K4 HE"]
+	require.Equal(t, "Solid Reactive", kept.Mode)
+	require.Equal(t, "#ff0000", kept.ModeColour)
+	require.NotNil(t, kept.Speed)
+	require.Equal(t, 40, *kept.Speed)
+}
+
+func TestASnapshotsSpeedIsItsOwn(t *testing.T) {
+	// A pointer shared between the snapshot and the record would make reading
+	// the state a way to change it.
+	store, err := state.Open(filepath.Join(t.TempDir(), "state.yml"))
+	require.NoError(t, err)
+
+	speed := 40
+	require.NoError(t, store.Record("Keychron K4 HE", state.Device{Speed: &speed}))
+
+	kept := store.Snapshot().Devices["Keychron K4 HE"]
+	*kept.Speed = 99
+	require.Equal(t, 40, *store.Snapshot().Devices["Keychron K4 HE"].Speed)
+}

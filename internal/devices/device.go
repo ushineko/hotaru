@@ -71,6 +71,29 @@ type Mode struct {
 	// back after a write to a ModeColour mode, the way the buffer is read back
 	// after a write to a PerLED one.
 	Colour colour.Colour
+
+	// Speed is the range this mode runs at, and where in it the mode is now.
+	// Nil for a mode that has no speed, which is most of them.
+	Speed *Speed
+}
+
+/*
+Speed is how fast a mode runs, in the device's own units.
+
+The units are the mode's and are not normalised: a keyboard's reactive modes
+count 0 to 255 and a fan controller's might count 0 to 4, and a percentage
+mapped onto both would be hotaru inventing a scale for hardware that already
+published one.
+
+Slowest is not always the smaller number. Some drivers count down, and they say
+so by reporting a minimum above their maximum, so the pair is named for what it
+means rather than for which end is larger.
+*/
+type Speed struct {
+	Slowest int
+	Fastest int
+	// Now is what the mode holds at the moment.
+	Now int
 }
 
 /*

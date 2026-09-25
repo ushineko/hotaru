@@ -63,13 +63,13 @@ func (s *Service) CopyEffects(from string, to []string) ([]string, error) {
 
 // cloneEffects copies the map, because two scenes sharing one would make an
 // edit to either an edit to both.
-func cloneEffects(in map[string]string) map[string]string {
+func cloneEffects(in map[string]scenes.Effect) map[string]scenes.Effect {
 	if len(in) == 0 {
 		return nil
 	}
-	out := make(map[string]string, len(in))
-	for device, mode := range in {
-		out[device] = mode
+	out := make(map[string]scenes.Effect, len(in))
+	for device, effect := range in {
+		out[device] = effect
 	}
 	return out
 }

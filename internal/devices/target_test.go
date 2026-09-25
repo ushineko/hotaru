@@ -188,6 +188,38 @@ func TestAUniformFrameIsRecognisedSoSimpleDevicesStillWork(t *testing.T) {
 	require.False(t, frame.PerLED())
 }
 
+func TestAFrameOfManyColoursReducesToTheOneMostOfItIs(t *testing.T) {
+	// What a mode that takes one colour is given when a scene names an effect
+	// over a frame of many: the keyboard was mostly red, so the effect is red.
+	red, blue := colour.MustParse("red"), colour.MustParse("blue")
+	frame := devices.Solid(kraken(), red)
+	frame.Colours[0] = blue
+	frame.Colours[1] = blue
+
+	got, ok := frame.Dominant()
+	require.True(t, ok)
+	require.Equal(t, red, got)
+}
+
+func TestAFrameWithNoColoursHasNoDominantOne(t *testing.T) {
+	// A device hotaru has nothing for is an absent answer, not black: sending
+	// black as a mode's colour would turn an effect off and call it applied.
+	_, ok := devices.Frame{Device: "nothing"}.Dominant()
+	require.False(t, ok)
+}
+
+func TestATieGoesToTheColourThatComesFirst(t *testing.T) {
+	// Reducing a frame must not depend on the order a map is walked in.
+	frame := devices.Frame{Device: "two", Colours: []colour.Colour{
+		colour.MustParse("red"), colour.MustParse("blue"),
+	}}
+	for range 20 {
+		got, ok := frame.Dominant()
+		require.True(t, ok)
+		require.Equal(t, colour.MustParse("red"), got)
+	}
+}
+
 func TestTwoFramesAreEqualWhenTheyWouldLookTheSame(t *testing.T) {
 	a := devices.Solid(kraken(), colour.MustParse("red"))
 	b := devices.Solid(kraken(), colour.MustParse("red"))

@@ -24,7 +24,23 @@ and a transcript reads as what someone meant.
 */
 package api
 
-import "time"
+import (
+	"time"
+
+	"github.com/ushineko/hotaru/internal/scenes"
+)
+
+/*
+Effect is what one device should be doing: a mode, and the colour and speed to
+run it at.
+
+An alias rather than a copy of the shape. The wire form is a mode's name on its
+own, or a mapping of mode, colour and speed -- and that form is the scene file's
+too, because the settings codec encodes through these same json tags. Two
+declarations of it would be two places to keep one format, and the first drift
+between them would be silent in a file somebody had already saved.
+*/
+type Effect = scenes.Effect
 
 // Version is the path prefix every route sits under.
 const Version = "v1"
@@ -67,6 +83,39 @@ type Device struct {
 	// Toggles are the segments that are switches rather than decoration, so
 	// an editor can offer them their own control.
 	Toggles []string `json:"toggles,omitempty"`
+
+	/*
+		OneColour is the modes that show a single colour of their own, by name.
+
+		Asked as "can this device show a picture?", the answer depends on which
+		mode it is in, exactly as Dimmable does: a keyboard paints a hundred
+		keys in Direct and shows one colour in Solid Reactive. An editor needs
+		it to stop offering a colour per light that the device will not show.
+	*/
+	OneColour []string `json:"one_colour,omitempty"`
+
+	// Paced is the modes that take a speed, by name, with the range each one
+	// accepts. A client offering a slider needs the bounds from the mode
+	// rather than a number hotaru made up.
+	Paced map[string]Speed `json:"paced,omitempty"`
+}
+
+/*
+Speed is the range a mode accepts, in the device's own units.
+
+Not normalised to a percentage. The numbers come from the mode and go back to
+it, and a "medium" that means 127 on a keyboard and 2 on a fan controller would
+be hotaru inventing a unit for hardware that already has one.
+
+Slowest may be the larger number: some drivers count down. A client that wants
+a slider draws it from Slowest to Fastest and lets the ends mean what they say.
+*/
+type Speed struct {
+	Slowest int `json:"slowest"`
+	Fastest int `json:"fastest"`
+	// Now is what the mode is set to at the moment, so a control opens where
+	// the device already is.
+	Now int `json:"now"`
 }
 
 /*
@@ -555,8 +604,9 @@ type Scene struct {
 	// under the same name replaces it; deleting that one brings it back.
 	Shipped     bool              `json:"shipped,omitempty"`
 	Assignments []SceneAssignment `json:"assignments,omitempty"`
-	// Effects name what each device should be doing, by any part of its name.
-	Effects map[string]string `json:"effects,omitempty"`
+	// Effects name what each device should be doing, by any part of its name:
+	// a mode, with a colour and a speed where somebody has set them.
+	Effects map[string]Effect `json:"effects,omitempty"`
 	/*
 		Distance is how far apart this scene's colours were pushed when it
 		was built from a picture or a dashboard, where 1 is as measured.
@@ -780,7 +830,7 @@ type SceneFromImageRequest struct {
 		caller makes. Empty leaves every device showing the colours it was
 		given, which is what most scenes from a picture want.
 	*/
-	Effects map[string]string `json:"effects,omitempty"`
+	Effects map[string]Effect `json:"effects,omitempty"`
 }
 
 /*

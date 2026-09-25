@@ -2051,7 +2051,7 @@ func TestTheSceneEditorSetsWhatADeviceIsDoing(t *testing.T) {
 		"a new scene starts by telling a device to do something")
 
 	modes.SetSelected("Rainbow Wave")
-	require.Equal(t, "Rainbow Wave", draft.Scene("evening").Effects["NZXT Kraken"],
+	require.Equal(t, "Rainbow Wave", draft.Scene("evening").Effects["NZXT Kraken"].Mode,
 		"choosing a mode did not reach the draft")
 
 	// And taking it back out leaves the scene saying nothing about it.
@@ -2158,7 +2158,7 @@ func TestAStyleIsOfferedToOtherScenesOnlyWhenThereIsOne(t *testing.T) {
 	// A saved scene: offered.
 	section := &gui.ScenesSection{}
 	gui.OpenEditor(section, app, gui.DraftFrom(api.Scene{
-		Name: "evening", Effects: map[string]string{"NZXT Kraken": "Breathing"},
+		Name: "evening", Effects: map[string]api.Effect{"NZXT Kraken": {Mode: "Breathing"}},
 	}))
 	section.Build(sh)
 	gui.ChooseEffects(section, sh, app.Machine())
@@ -2220,7 +2220,7 @@ func TestTheStylePickerListsScenesTheWayTheListDoes(t *testing.T) {
 
 	section := &gui.ScenesSection{}
 	gui.OpenEditor(section, app, gui.DraftFrom(api.Scene{
-		Name: "aardvark", Effects: map[string]string{"NZXT Kraken": "Breathing"},
+		Name: "aardvark", Effects: map[string]api.Effect{"NZXT Kraken": {Mode: "Breathing"}},
 	}))
 	section.Build(sh)
 	gui.ShareStyle(section, sh, app.Machine())
@@ -2916,4 +2916,142 @@ func TestSavingSaysWhetherTheMachineFollowed(t *testing.T) {
 	require.Contains(t, gui.Saved("evening", "evening"), "follows it")
 	require.NotContains(t, gui.Saved("evening", "morning"), "follows it")
 	require.NotContains(t, gui.Saved("evening", ""), "follows it")
+}
+
+// reactive is the machine with a keyboard that has a mode showing one colour
+// at a speed: the case the editor has to draw differently.
+func reactive() map[string]any {
+	routes := healthy()
+	routes["GET /"+api.Version+"/devices"] = api.DevicesResponse{Devices: []api.Device{{
+		Name: "Keychron K4 HE", LEDs: 4, ActiveMode: "Direct", InScope: true,
+		Modes:     []string{"Direct", "Solid Reactive"},
+		OneColour: []string{"Solid Reactive"},
+		Paced:     map[string]api.Speed{"Solid Reactive": {Slowest: 0, Fastest: 255, Now: 127}},
+		Zones:     []api.Zone{{Name: "Keyboard", First: 0, Count: 4}},
+		Colours:   []string{"#ff0000", "#ff0000", "#0000ff", "#0000ff"},
+	}}}
+	return routes
+}
+
+func TestADeviceUnderAOneColourEffectIsDrawnAsOneColour(t *testing.T) {
+	/*
+		The editor's whole idea is "click the thing you want to change", and
+		it is the wrong picture for a device that will show one colour
+		whatever is clicked. Twenty-four blocks honouring none of them is the
+		window promising what the hardware refuses.
+	*/
+	a := test.NewApp()
+	t.Cleanup(a.Quit)
+
+	app := gui.New(service(t, reactive()))
+	opts := app.Options("s")
+	opts.SettingsPath = filepath.Join(t.TempDir(), "gui.yml")
+	sh := shell.Headless(a, opts)
+	app.Refresh(context.Background())
+
+	section := &gui.ScenesSection{}
+	draft := gui.NewDraft()
+	draft.SetEffect("Keychron K4 HE", "Solid Reactive")
+	gui.OpenEditor(section, app, draft)
+
+	built := section.Build(sh)
+	window := test.NewWindow(built)
+	t.Cleanup(window.Close)
+	window.Resize(fyne.NewSize(1200, 900))
+	sh.Window = window
+
+	said := fynetest.Text(built)
+	require.Contains(t, said, "Solid Reactive shows one colour.")
+	require.Contains(t, said, "This device's own colours are kept",
+		"nothing said what happened to the per-key colours")
+	require.NotContains(t, said, "Keyboard · 4",
+		"the zone is still offered for a mode that cannot show it")
+}
+
+func TestTakingTheEffectOffPutsTheLightsBack(t *testing.T) {
+	// The colours were kept in the scene, not hidden away: a person trying a
+	// mode out must find their keys where they left them.
+	a := test.NewApp()
+	t.Cleanup(a.Quit)
+
+	app := gui.New(service(t, reactive()))
+	opts := app.Options("s")
+	opts.SettingsPath = filepath.Join(t.TempDir(), "gui.yml")
+	sh := shell.Headless(a, opts)
+	app.Refresh(context.Background())
+
+	section := &gui.ScenesSection{}
+	draft := gui.NewDraft()
+	draft.Set("Keychron K4 HE/Keyboard[0]", "#00ff00")
+	draft.SetEffect("Keychron K4 HE", "Solid Reactive")
+	gui.OpenEditor(section, app, draft)
+
+	window := test.NewWindow(section.Build(sh))
+	t.Cleanup(window.Close)
+	window.Resize(fyne.NewSize(1200, 900))
+	sh.Window = window
+
+	draft.SetEffect("Keychron K4 HE", "")
+	back := section.Build(sh)
+	require.Contains(t, fynetest.Text(back), "Keyboard · 4", "the lights did not come back")
+
+	kept := draft.Scene("evening")
+	require.Len(t, kept.Assignments, 1, "the scene's own colours were thrown away")
+	require.Equal(t, "#00ff00", kept.Assignments[0].Colour)
+}
+
+func TestTheEffectsChooserPicksAColourWithTheWheel(t *testing.T) {
+	/*
+		The argument for a window at all is that a colour is looked at rather
+		than spelled. A control that is a text box here and a wheel in the
+		editor is two ways to do one thing, with the worse one in the dialog
+		people reach first.
+	*/
+	a := test.NewApp()
+	t.Cleanup(a.Quit)
+
+	app := gui.New(service(t, reactive()))
+	opts := app.Options("s")
+	opts.SettingsPath = filepath.Join(t.TempDir(), "gui.yml")
+	sh := shell.Headless(a, opts)
+	app.Refresh(context.Background())
+
+	section := &gui.ScenesSection{}
+	draft := gui.NewDraft()
+	draft.SetEffect("Keychron K4 HE", "Solid Reactive")
+	gui.OpenEditor(section, app, draft)
+
+	window := test.NewWindow(section.Build(sh))
+	t.Cleanup(window.Close)
+	window.Resize(fyne.NewSize(1200, 900))
+	sh.Window = window
+
+	gui.ChooseEffects(section, sh, app.Machine())
+	shown := window.Canvas().Overlays().Top()
+	require.NotNil(t, shown, "the chooser did not open")
+	require.Contains(t, fynetest.Text(shown), "shows one colour",
+		"the mode's own colour was not offered")
+
+	var typed *widget.Entry
+	fynetest.WalkRendered(shown, func(o fyne.CanvasObject) bool {
+		if entry, ok := o.(*widget.Entry); ok {
+			typed = entry
+			return true
+		}
+		return false
+	})
+	require.Nil(t, typed, "the colour is a box to type a hex value into")
+
+	var choose *widget.Button
+	fynetest.WalkRendered(shown, func(o fyne.CanvasObject) bool {
+		if button, ok := o.(*widget.Button); ok && strings.HasPrefix(button.Text, "Choose") {
+			choose = button
+			return true
+		}
+		return false
+	})
+	require.NotNil(t, choose, "nothing opens a colour picker")
+
+	test.Tap(choose)
+	require.NotNil(t, window.Canvas().Overlays().Top(), "the wheel did not open over the chooser")
 }

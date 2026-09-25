@@ -42,12 +42,12 @@ type Client interface {
 	// Cheaper than a full listing, and a read-back happens after every write.
 	Device(ctx context.Context, name string) (devices.Device, error)
 
-	// SetMode puts a device into a mode, optionally asserting a brightness on
-	// a mode that supports one, and setting the mode's own colour where the
-	// mode takes one. A mode-specific mode set without its colour shows
-	// whatever the vendor last stored in it, which is a write that looks like
-	// a success from every angle the protocol offers -- see spec 009.
-	SetMode(ctx context.Context, device, mode string, brightness *int, c *colour.Colour) error
+	// SetMode puts a device into a mode, with whatever of that mode's own
+	// settings the caller has an opinion about. A mode-specific mode set
+	// without its colour shows whatever the vendor last stored in it, which is
+	// a write that looks like a success from every angle the protocol offers
+	// -- see spec 009.
+	SetMode(ctx context.Context, device, mode string, style Style) error
 
 	// SetFrame writes one colour per LED. The whole device, always: a frame is
 	// the unit precisely so a write cannot land half-applied.
@@ -58,6 +58,31 @@ type Client interface {
 	ProtocolVersion() uint32
 
 	Close() error
+}
+
+/*
+Style is what to write into a mode besides the fact of being in it.
+
+One argument rather than three, because these are the same kind of thing and
+arrive together: a mode's own settings, each nil where the caller has no
+opinion and each written only where the mode advertises it. A device asked for
+a setting its mode does not have is not an error; it is a device that does not
+have it.
+*/
+type Style struct {
+	// Brightness is 0-100, scaled into whatever range the mode advertises.
+	Brightness *int
+	// Colour is the mode's own colour, for a mode that keeps one.
+	Colour *colour.Colour
+	/*
+		Speed is in the device's own units, within the range the mode gives.
+
+		Not scaled, and not guessed at: a range is min to max in numbers the
+		mode itself supplies, and a "medium" that means 127 on a keyboard and
+		2 on a fan controller would be hotaru inventing a unit. Out of range is
+		clamped to the mode's own bounds.
+	*/
+	Speed *int
 }
 
 /*
@@ -72,4 +97,5 @@ const (
 	flagHasBrightness        uint32 = 1 << 4
 	flagHasPerLEDColor       uint32 = 1 << 5
 	flagHasModeSpecificColor uint32 = 1 << 6
+	flagHasSpeed             uint32 = 1 << 0
 )

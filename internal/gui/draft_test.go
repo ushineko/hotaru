@@ -49,7 +49,7 @@ func TestEditingASceneKeepsWhatTheEditorDoesNotEdit(t *testing.T) {
 	original := api.Scene{
 		Name:        "evening",
 		Assignments: []api.SceneAssignment{{Target: "kraken", Colour: "#201040"}},
-		Effects:     map[string]string{"keychron": "Solid Splash"},
+		Effects:     map[string]api.Effect{"keychron": {Mode: "Solid Splash"}},
 		Screen:      "dashboard",
 	}
 
@@ -57,7 +57,7 @@ func TestEditingASceneKeepsWhatTheEditorDoesNotEdit(t *testing.T) {
 	draft.Set("kraken", "#400000")
 	saved := draft.Scene("evening")
 
-	require.Equal(t, "Solid Splash", saved.Effects["keychron"], "the effect was dropped")
+	require.Equal(t, "Solid Splash", saved.Effects["keychron"].Mode, "the effect was dropped")
 	require.Equal(t, "dashboard", saved.Screen, "the screen state was dropped")
 	require.Len(t, saved.Assignments, 1)
 	require.Equal(t, "#400000", saved.Assignments[0].Colour)

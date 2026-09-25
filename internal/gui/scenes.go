@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"image/color"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -717,9 +718,112 @@ func (s *ScenesSection) picture(sh *shell.Shell, got Snapshot) fyne.CanvasObject
 			// would be a control that does nothing.
 			continue
 		}
+		if effect, one := s.oneColour(device); one {
+			cards = append(cards, widgets.Card(device.Name, s.effectColour(sh, device, effect)...))
+			continue
+		}
 		cards = append(cards, widgets.Card(device.Name, s.targets(sh, device)...))
 	}
 	return container.NewVBox(cards...)
+}
+
+/*
+oneColour is this scene's effect for a device, where the effect is a mode that
+can only show one colour.
+
+The question the editor has to ask before it draws a device, because the answer
+decides whether a colour per light is a control or a lie.
+*/
+func (s *ScenesSection) oneColour(device api.Device) (api.Effect, bool) {
+	if s.draft == nil {
+		return api.Effect{}, false
+	}
+	effect := s.draft.Effect(device.Name)
+	if !effect.Named() {
+		return api.Effect{}, false
+	}
+	return effect, slices.Contains(device.OneColour, effect.Mode)
+}
+
+/*
+effectColour is a device under a mode that shows one colour: that colour, and
+the speed the mode runs at.
+
+**In place of its zones and its lights.** The picture is the editor's whole
+idea -- click the thing you want to change -- and it is the wrong picture for
+a device that will show one colour whatever is clicked. Drawing twenty-four
+blocks and honouring none of them is the editor promising what the hardware
+refuses; see spec 051.
+
+**The scene's own colours stay in it.** They are what the device goes back to
+the moment the effect is turned off, and losing a keyboard's hundred keys to a
+mode somebody was trying out is not a trade this window gets to make for them.
+Said in a line under the control, because a person who cannot see their
+colours will otherwise assume they are gone.
+*/
+func (s *ScenesSection) effectColour(sh *shell.Shell, device api.Device, effect api.Effect) []fyne.CanvasObject {
+	current := effect.Colour
+	swatch := canvas.NewRectangle(parse(current))
+	swatch.SetMinSize(fyne.NewSize(zoneHeight*2, zoneHeight))
+
+	said := describe(current)
+	if current == "" {
+		// The fallback, named rather than left blank: "nothing" is a colour
+		// this device will be lit in, and it is not black.
+		said = "the colour most of the scene is"
+	}
+
+	choose := widget.NewButtonWithIcon("Choose a colour", theme.ColorChromaticIcon(), func() {
+		s.pickEffectColour(sh, device.Name, current)
+	})
+	choose.Importance = widget.HighImportance
+
+	back := widget.NewButtonWithIcon("Clear", theme.ContentClearIcon(), func() {
+		s.draft.SetEffectColour(device.Name, "")
+		sh.Invalidate()
+	})
+
+	rows := []fyne.CanvasObject{
+		widgets.Dim(effect.Mode + " shows one colour."),
+		container.NewHBox(swatch, widgets.Dim(said)),
+		container.NewHBox(choose, back),
+	}
+	if pace, ok := device.Paced[effect.Mode]; ok {
+		rows = append(rows, s.effectSpeed(sh, device.Name, effect, pace))
+	}
+	return append(rows, widgets.DimWrapped(
+		"This device's own colours are kept, and come back when the effect is off."))
+}
+
+/*
+effectSpeed is how fast the mode runs, in the device's own units.
+
+Written to the draft as it moves and sent when it is let go: a slider dragged
+across two hundred values is two hundred writes to hardware otherwise, and the
+one that matters is where the finger stopped.
+*/
+func (s *ScenesSection) effectSpeed(sh *shell.Shell, device string,
+	effect api.Effect, pace api.Speed,
+) fyne.CanvasObject {
+	low, high := min(pace.Slowest, pace.Fastest), max(pace.Slowest, pace.Fastest)
+	at := pace.Now
+	if effect.Speed != nil {
+		at = *effect.Speed
+	}
+
+	slider := widget.NewSlider(float64(low), float64(high))
+	slider.Step = 1
+	slider.Value = float64(max(low, min(high, at)))
+	shown := widgets.Dim(fmt.Sprintf("speed %d", int(slider.Value)))
+	slider.OnChanged = func(v float64) {
+		shown.(*widget.Label).SetText(fmt.Sprintf("speed %d", int(v)))
+	}
+	slider.OnChangeEnded = func(v float64) {
+		speed := int(v)
+		s.draft.SetEffectSpeed(device, &speed)
+		sh.Invalidate()
+	}
+	return container.NewBorder(nil, nil, nil, shown, slider)
 }
 
 /*
@@ -920,6 +1024,39 @@ wonder about later.
 */
 func (s *ScenesSection) pickColour(sh *shell.Shell, current string) {
 	before, had := s.chosen(), s.chosen() != ""
+	s.pickInto(sh, "Choose a colour for "+s.targetName(), current, s.set, func() {
+		s.set("")
+		if had {
+			s.set(before)
+		}
+	})
+}
+
+/*
+pickEffectColour is the same wheel for the one colour an effect shows.
+
+The same preview while it is open, because the argument for a wheel is that
+the machine is right there -- and a reactive mode lit in the colour being
+dragged is exactly the thing that cannot be described in a field.
+*/
+func (s *ScenesSection) pickEffectColour(sh *shell.Shell, device, current string) {
+	before := current
+	s.pickInto(sh, "Choose a colour for "+device, current,
+		func(picked string) { s.draft.SetEffectColour(device, picked) },
+		func() { s.draft.SetEffectColour(device, before) })
+}
+
+/*
+pickInto opens the wheel, applies every move through apply, and undoes it with
+revert when the dialog is dismissed.
+
+One opener for the scene's colours and for an effect's, because everything
+about it -- the preview, the lease, the limiter and the life of the sender --
+is the same question with a different destination.
+*/
+func (s *ScenesSection) pickInto(sh *shell.Shell, title, current string,
+	apply func(string), revert func(),
+) {
 	picker := NewPicker(parse(opening(current)))
 
 	/*
@@ -944,27 +1081,24 @@ func (s *ScenesSection) pickColour(sh *shell.Shell, current string) {
 		preview shows the scene as it would be rather than a light on its own.
 	*/
 	picker.OnPick = func(colour string) {
-		s.set(colour)
+		apply(colour)
 		sender.offer(s.draft.Scene(s.draftName()))
 	}
 
-	s.set(picker.Colour())
+	apply(picker.Colour())
 	sender.offer(s.draft.Scene(s.draftName()))
 
-	chooser := dialog.NewCustomConfirm("Choose a colour for "+s.targetName(), "Use it", "Cancel",
+	chooser := dialog.NewCustomConfirm(title, "Use it", "Cancel",
 		picker.Object(),
 		func(keep bool) {
 			// Before the lease goes: an apply still in flight would land after
 			// the release and leave the lights where nothing is holding them.
 			sender.stop()
 			if keep {
-				s.set(picker.Colour())
+				apply(picker.Colour())
 			} else {
 				// Back to what the draft said before the wheel opened.
-				s.set("")
-				if had {
-					s.set(before)
-				}
+				revert()
 			}
 			s.app.EndPreview()
 			sh.Invalidate()
@@ -1048,13 +1182,13 @@ five devices, each with a chooser and a line saying what it is doing now, is
 three hundred pixels of a pane whose job is to stay out of the way. The editor
 already does not fit a default window with the scene's own lines in it.
 */
-func effectsSaid(effects map[string]string) string {
+func effectsSaid(effects map[string]api.Effect) string {
 	switch len(effects) {
 	case 0:
 		return "every device left alone"
 	case 1:
-		for device, mode := range effects {
-			return device + ": " + mode
+		for device, effect := range effects {
+			return device + ": " + effect.Mode
 		}
 	}
 	return fmt.Sprintf("%d devices", len(effects))
@@ -1068,9 +1202,9 @@ and the same shape as the screen chooser next to it: a card that says what is
 set, and a dialog that sets it.
 */
 func (s *ScenesSection) chooseEffects(sh *shell.Shell, got Snapshot) {
-	rows := []fyne.CanvasObject{effectFields(got.Devices,
-		func(device string) string { return s.draft.Effect(device) },
-		func(device, mode string) { s.draft.SetEffect(device, mode) })}
+	rows := []fyne.CanvasObject{effectFields(sh.Window, got.Devices,
+		func(device string) api.Effect { return s.draft.Effect(device) },
+		func(device string, effect api.Effect) { s.draft.SetEffectWhole(device, effect) })}
 
 	/*
 		And the way to stop setting it nine times.

@@ -30,6 +30,7 @@ import (
 	"github.com/ushineko/hotaru/internal/openrgb"
 	"github.com/ushineko/hotaru/internal/queue"
 	"github.com/ushineko/hotaru/internal/readings"
+	"github.com/ushineko/hotaru/internal/scenes"
 	"github.com/ushineko/hotaru/internal/state"
 )
 
@@ -368,7 +369,7 @@ type Request struct {
 		is two different modes in one application. Preferred rather than
 		forced, exactly as Mode is.
 	*/
-	Effects map[string]string
+	Effects map[string]scenes.Effect
 
 	/*
 		Preview writes without remembering.
@@ -496,11 +497,42 @@ func (s *Service) Apply(ctx context.Context, req Request) ([]Result, error) {
 func (s *Service) applyOne(ctx context.Context, client openrgb.Client, cfg *config.Config,
 	device *devices.Device, assignments []devices.Assignment, req Request,
 ) Result {
-	off, preferred, exactly := req.Off, req.Mode, req.Exactly
+	off := req.Off
+	want := preference{mode: req.Mode, exactly: req.Exactly}
 	result := Result{Device: device.Name}
-	if effect := effectFor(req.Effects, device.Name); effect != "" {
-		preferred = effect
-		if _, has := device.Mode(effect); !has {
+	/*
+		insist says the preferred mode is not to be dropped for carrying fewer
+		colours than the frame has.
+
+		An effect is a decision about the device -- "the keyboard ripples under
+		typing" -- and the colours are what it ripples in. Resolution used to
+		read the frame first and discard any mode that could not show every
+		colour in it, so a scene with a colour per key and a reactive effect
+		lit the keys and reported six of six devices lit, with the keyboard
+		sitting in Direct and no mention of the effect anywhere. The frame
+		reduces to one colour (see modeColourFor); the effect does not reduce
+		to anything.
+
+		Mode -- what `--mode` and the wizard set -- keeps the old rule: it is a
+		preference about how to show the colours, and a mode that cannot show
+		them is no use there.
+	*/
+	if effect := effectFor(req.Effects, device.Name); effect.Named() {
+		want.mode, want.insist = effect.Mode, true
+		if effect.Colour != "" {
+			// Named, and unreadable is worth saying: an effect falling back to
+			// the frame's colour because of a typo looks exactly like one that
+			// was never given a colour at all.
+			c, err := colour.Parse(effect.Colour)
+			if err != nil {
+				result.Problems = append(result.Problems,
+					fmt.Sprintf("%s: the effect's colour: %v", device.Name, err))
+			} else {
+				want.colour = &c
+			}
+		}
+		want.speed = effect.Speed
+		if _, has := device.Mode(effect.Mode); !has {
 			/*
 				Reported, and then ignored. A scene naming an effect this
 				device does not have costs the effect and not the scene: the
@@ -510,8 +542,8 @@ func (s *Service) applyOne(ctx context.Context, client openrgb.Client, cfg *conf
 				renders itself will arrive into.
 			*/
 			result.Problems = append(result.Problems,
-				fmt.Sprintf("%s has no effect called %q", device.Name, effect))
-			preferred = req.Mode
+				fmt.Sprintf("%s has no effect called %q", device.Name, effect.Mode))
+			want = preference{mode: req.Mode, exactly: req.Exactly}
 		}
 	}
 	rule := devices.RuleFor(cfg, device.Name)
@@ -535,11 +567,11 @@ func (s *Service) applyOne(ctx context.Context, client openrgb.Client, cfg *conf
 
 	problems := result.Problems
 	result = s.through(ctx, device.Name, func(ctx context.Context) Result {
-		return s.writeFrame(ctx, client, device, frame, off, preferred, exactly, req.Brightness)
+		return s.writeFrame(ctx, client, device, frame, off, want, req.Brightness)
 	})
 	result.Problems = problems
 	if result.Applied && !off && !req.Preview {
-		s.remember(device.Name, result.Mode, frame)
+		s.remember(device.Name, result.Mode, frame, want)
 	}
 	if result.Applied && off && !req.Preview {
 		// A device deliberately turned off has nothing to restore: putting
@@ -550,22 +582,91 @@ func (s *Service) applyOne(ctx context.Context, client openrgb.Client, cfg *conf
 }
 
 /*
-effectFor is the mode a request names for one device.
+modeColourFor is the single colour to put in a mode that carries one.
+
+A mode that keeps its colour in the mode is given the frame's, where the frame
+has one colour to give. Without it the device shows whatever the vendor left
+behind, and writing the buffer afterwards changes nothing it displays -- see
+spec 009.
+
+**A frame of many colours still has an answer**, and it is the one most of the
+frame is. That case arrives when a scene names an effect: a keyboard asked for
+a hundred colours and for Solid Reactive, which cannot show them, so the effect
+is lit in the colour the keyboard mostly was. Sending nothing would light the
+user's chosen effect in the vendor's leftover colour, which is neither what the
+scene says nor anything anybody picked.
+
+Per-LED modes are left alone here: their colour is the frame, written next, and
+the mode's own slot is not what the device reads.
+*/
+func modeColourFor(device *devices.Device, mode string, frame devices.Frame, off bool,
+	named *colour.Colour,
+) *colour.Colour {
+	if off {
+		return nil
+	}
+	if m, ok := device.Mode(mode); ok && !m.PerLED && named != nil {
+		// A scene that names the effect's colour has answered this, and the
+		// frame's reduction is only ever the fallback -- see spec 051.
+		return named
+	}
+	if uniform, ok := frame.Uniform(); ok {
+		return &uniform
+	}
+	if m, ok := device.Mode(mode); ok && m.PerLED {
+		return nil
+	}
+	dominant, ok := frame.Dominant()
+	if !ok {
+		return nil
+	}
+	return &dominant
+}
+
+/*
+preference is what a caller wants written into a device's mode, beyond the
+frame: which mode, how hard to insist on it, and the mode's own settings.
+
+One value rather than five arguments threaded through two callers, and the
+place the difference between an effect and a preferred mode is written down.
+*/
+type preference struct {
+	// mode is the mode to prefer over the resolution order.
+	mode string
+	// exactly stops the fall-through: the answer is about this mode or none.
+	exactly bool
+	/*
+		insist keeps the mode when the frame has more colours than it can show.
+
+		Set for an effect and for a re-assert, not for `--mode`. An effect is a
+		decision about the device and the frame is what gives way; a preferred
+		mode is a preference about the colours, and one that cannot show them
+		is no use. See spec 050.
+	*/
+	insist bool
+	// colour is the effect's own, overriding the frame's reduction.
+	colour *colour.Colour
+	// speed is the mode's, in the device's units, where it advertises a range.
+	speed *int
+}
+
+/*
+effectFor is the effect a request names for one device.
 
 Matched by substring and case-insensitively, the way every device name a person
 types is matched here: a scene says "keychron" and the hardware calls itself
 "Keychron K4 HE".
 */
-func effectFor(effects map[string]string, device string) string {
+func effectFor(effects map[string]scenes.Effect, device string) scenes.Effect {
 	for name, effect := range effects {
-		if name == "" || effect == "" {
+		if name == "" || !effect.Named() {
 			continue
 		}
 		if strings.Contains(strings.ToLower(device), strings.ToLower(name)) {
 			return effect
 		}
 	}
-	return ""
+	return scenes.Effect{}
 }
 
 /*
@@ -598,7 +699,7 @@ Reconciling must not be a second implementation of this: the fall-through, the
 read-back and the reasons a device is skipped are the same facts whoever asked.
 */
 func (s *Service) writeFrame(ctx context.Context, client openrgb.Client,
-	device *devices.Device, frame devices.Frame, off bool, preferred string, exactly bool,
+	device *devices.Device, frame devices.Frame, off bool, want preference,
 	brightness *int,
 ) Result {
 	result := Result{Device: device.Name}
@@ -609,48 +710,44 @@ func (s *Service) writeFrame(ctx context.Context, client openrgb.Client,
 	if brightness != nil {
 		rule.Brightness = brightness
 	}
-	want := devices.Want{Off: off, PerLED: frame.PerLED()}
-	candidates := device.SolidCandidates(rule, want)
-	if preferred != "" {
-		mode, ok := device.Mode(preferred)
+	shape := devices.Want{Off: off, PerLED: frame.PerLED()}
+	candidates := device.SolidCandidates(rule, shape)
+	if want.mode != "" {
+		mode, ok := device.Mode(want.mode)
 		switch {
 		case !ok:
 			result.Skipped = fmt.Sprintf("no mode called %q; it advertises %s",
-				preferred, strings.Join(device.ModeNames(), ", "))
+				want.mode, strings.Join(device.ModeNames(), ", "))
 			return result
-		case want.PerLED && !mode.PerLED && !exactly:
+		case shape.PerLED && !mode.PerLED && !want.exactly && !want.insist:
 			// Asked for a mode that cannot show the frame. Resolution carries
 			// on rather than showing one colour and reporting success.
-		case exactly:
+		case want.exactly:
 			candidates = []string{mode.Name}
 		default:
 			candidates = append([]string{mode.Name}, without(candidates, mode.Name)...)
 		}
 	}
 	if off {
-		if _, err := device.Resolve(rule, want); err != nil {
+		if _, err := device.Resolve(rule, shape); err != nil {
 			result.Skipped = reason(err)
 			return result
 		}
 		candidates = offCandidates(device)
 	}
 	if len(candidates) == 0 {
-		_, err := device.Resolve(rule, want)
+		_, err := device.Resolve(rule, shape)
 		result.Skipped = reason(err)
 		return result
 	}
 
-	// A mode that carries its own colour is given one, where the frame has a
-	// single colour to give. Without it the device shows whatever the vendor
-	// left in the mode, and writing the buffer afterwards changes nothing it
-	// displays -- see spec 009.
-	var modeColour *colour.Colour
-	if uniform, ok := frame.Uniform(); ok && !off {
-		modeColour = &uniform
-	}
-
 	for _, mode := range candidates {
 		attempt := Attempt{Mode: mode}
+		style := openrgb.Style{
+			Brightness: rule.Brightness,
+			Colour:     modeColourFor(device, mode, frame, off, want.colour),
+			Speed:      want.speed,
+		}
 
 		/*
 			The mode packet goes every time, including when the device is
@@ -662,7 +759,7 @@ func (s *Service) writeFrame(ctx context.Context, client openrgb.Client,
 			while the rest of the machine changed colour around them. Measured
 			by building both ways and looking at the case. See spec 010.
 		*/
-		if err := client.SetMode(ctx, device.Name, mode, rule.Brightness, modeColour); err != nil {
+		if err := client.SetMode(ctx, device.Name, mode, style); err != nil {
 			attempt.Why = err.Error()
 			result.Attempts = append(result.Attempts, attempt)
 			continue
@@ -767,18 +864,32 @@ func (s *Service) base(device *devices.Device) []colour.Colour {
 }
 
 // remember records what a user asked for, so it can be put back.
-func (s *Service) remember(name, mode string, frame devices.Frame) {
+func (s *Service) remember(name, mode string, frame devices.Frame, want preference) {
 	s.mu.RLock()
 	recorder := s.recorder
 	s.mu.RUnlock()
 	if recorder == nil {
 		return
 	}
-	_ = recorder.Record(name, state.Device{
+	/*
+		The effect's own colour and speed are remembered with the mode.
+
+		A re-assert re-derives the colour from the frame otherwise, which is
+		the right answer only when nobody named one: a scene whose keyboard
+		ripples blue would come back from a reconcile in the colour most of
+		its keys are. Not remembered when nothing was named, so the fallback
+		stays the fallback.
+	*/
+	kept := state.Device{
 		Mode:    mode,
 		Colours: append([]colour.Colour(nil), frame.Colours...),
 		Applied: time.Now(),
-	})
+		Speed:   want.speed,
+	}
+	if want.colour != nil {
+		kept.ModeColour = want.colour.String()
+	}
+	_ = recorder.Record(name, kept)
 }
 
 func (s *Service) forget(name string) {

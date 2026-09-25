@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 
@@ -92,7 +93,7 @@ func sceneShowCommand() *cobra.Command {
 				cmd.Printf("  %s is %s\n", a.Target, a.Colour)
 			}
 			for _, device := range sortedKeys(scene.Effects) {
-				cmd.Printf("  %s is doing %s\n", device, scene.Effects[device])
+				cmd.Printf("  %s is doing %s\n", device, doing(scene.Effects[device]))
 			}
 			switch scene.Screen {
 			case "":
@@ -138,7 +139,7 @@ the lights are showing now.`,
 				return err
 			}
 
-			scene := api.Scene{Name: args[0], Effects: map[string]string{}}
+			scene := api.Scene{Name: args[0], Effects: map[string]api.Effect{}}
 			for _, arg := range args[1:] {
 				target, colour, ok := strings.Cut(arg, "=")
 				if !ok {
@@ -148,13 +149,8 @@ the lights are showing now.`,
 					api.SceneAssignment{Target: target, Colour: colour})
 			}
 
-			effects, _ := cmd.Flags().GetStringSlice("effect")
-			for _, effect := range effects {
-				device, mode, ok := strings.Cut(effect, "=")
-				if !ok {
-					return fmt.Errorf("%q: an effect is written device=mode", effect)
-				}
-				scene.Effects[device] = mode
+			if err := setEffects(cmd, scene.Effects); err != nil {
+				return err
 			}
 			scene.Screen, _ = cmd.Flags().GetString("screen")
 			scene.Colour, _ = cmd.Flags().GetString("colour")
@@ -174,7 +170,7 @@ the lights are showing now.`,
 	}
 	cmd.Flags().String("colour", "", "one colour across every device in scope")
 	cmd.Flags().Bool("off", false, "turn lighting off rather than colouring it")
-	cmd.Flags().StringSlice("effect", nil, `what a device should be doing: device="Mode Name"`)
+	effectFlag(cmd)
 	cmd.Flags().String("screen", "",
 		`what the cooler's screen shows: "dashboard", "readout", or a path to a GIF`)
 	return cmd
@@ -637,12 +633,80 @@ func effects(scene api.Scene) string {
 	}
 	var out []string
 	for _, device := range sortedKeys(scene.Effects) {
-		out = append(out, device+": "+scene.Effects[device])
+		out = append(out, device+": "+doing(scene.Effects[device]))
 	}
 	return strings.Join(out, ", ")
 }
 
-func sortedKeys(in map[string]string) []string {
+// doing is one effect as a person would read it: the mode, and the colour and
+// speed only where somebody set them, so the common case stays one word.
+func doing(effect api.Effect) string {
+	out := effect.Mode
+	if effect.Colour != "" {
+		out += " in " + effect.Colour
+	}
+	if effect.Speed != nil {
+		out += fmt.Sprintf(" at %d", *effect.Speed)
+	}
+	return out
+}
+
+/*
+setEffects reads the three effect flags into a scene.
+
+Three flags rather than one crowded value. `device="Solid Reactive"` is what
+almost every scene says and stays exactly that; a colour and a speed are named
+separately, for the devices that have somebody's opinion about them.
+
+A colour or a speed for a device with no effect is refused rather than stored:
+it would be a setting for a mode that was never named, sitting in the file
+doing nothing.
+*/
+func setEffects(cmd *cobra.Command, into map[string]api.Effect) error {
+	named, _ := cmd.Flags().GetStringSlice("effect")
+	for _, effect := range named {
+		device, mode, ok := strings.Cut(effect, "=")
+		if !ok {
+			return fmt.Errorf("%q: an effect is written device=mode", effect)
+		}
+		into[device] = api.Effect{Mode: mode}
+	}
+
+	colours, _ := cmd.Flags().GetStringSlice("effect-colour")
+	for _, pair := range colours {
+		device, want, ok := strings.Cut(pair, "=")
+		if !ok {
+			return fmt.Errorf("%q: an effect's colour is written device=colour", pair)
+		}
+		effect, has := into[device]
+		if !has {
+			return fmt.Errorf("%s has no effect to colour; name one with --effect", device)
+		}
+		effect.Colour = want
+		into[device] = effect
+	}
+
+	speeds, _ := cmd.Flags().GetStringSlice("effect-speed")
+	for _, pair := range speeds {
+		device, want, ok := strings.Cut(pair, "=")
+		if !ok {
+			return fmt.Errorf("%q: an effect's speed is written device=number", pair)
+		}
+		effect, has := into[device]
+		if !has {
+			return fmt.Errorf("%s has no effect to pace; name one with --effect", device)
+		}
+		speed, err := strconv.Atoi(want)
+		if err != nil {
+			return fmt.Errorf("%q: a speed is a number in the device's own units", pair)
+		}
+		effect.Speed = &speed
+		into[device] = effect
+	}
+	return nil
+}
+
+func sortedKeys[V any](in map[string]V) []string {
 	out := make([]string, 0, len(in))
 	for key := range in {
 		out = append(out, key)

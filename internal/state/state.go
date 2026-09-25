@@ -47,6 +47,19 @@ type Device struct {
 
 	// Applied is when the user last asked for this.
 	Applied time.Time `json:"applied"`
+
+	/*
+		ModeColour and Speed are the mode's own settings, where a scene named
+		them rather than leaving them to be derived from the frame.
+
+		Kept for the same reason Mode is: a re-assert that re-derived them
+		would put a device back into the right mode with the wrong colour, and
+		the difference between "nobody said" and "somebody said this" is not
+		recoverable from a frame. Empty and nil are "nobody said", which is
+		every device until spec 051.
+	*/
+	ModeColour string `json:"mode_colour,omitempty"`
+	Speed      *int   `json:"speed,omitempty"`
 }
 
 // Frame is the remembered state as a frame.
@@ -162,9 +175,17 @@ func (s *Store) Flush() error {
 func copyOf(in Snapshot) Snapshot {
 	out := Snapshot{Devices: make(map[string]Device, len(in.Devices))}
 	for name, device := range in.Devices {
-		colours := make([]colour.Colour, len(device.Colours))
-		copy(colours, device.Colours)
-		out.Devices[name] = Device{Mode: device.Mode, Colours: colours, Applied: device.Applied}
+		// The whole device, with only the slice replaced. Listing the fields
+		// here instead makes a field added above a field silently dropped in
+		// every snapshot -- which is what happened to the mode's own colour.
+		kept := device
+		kept.Colours = make([]colour.Colour, len(device.Colours))
+		copy(kept.Colours, device.Colours)
+		if device.Speed != nil {
+			speed := *device.Speed
+			kept.Speed = &speed
+		}
+		out.Devices[name] = kept
 	}
 	return out
 }
