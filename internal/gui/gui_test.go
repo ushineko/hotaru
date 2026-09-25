@@ -3055,3 +3055,58 @@ func TestTheEffectsChooserPicksAColourWithTheWheel(t *testing.T) {
 	test.Tap(choose)
 	require.NotNil(t, window.Canvas().Overlays().Top(), "the wheel did not open over the chooser")
 }
+
+func TestTheColourPickedOnTheCardReachesTheScene(t *testing.T) {
+	/*
+		The whole path, because the parts each worked: the wheel writes to the
+		draft, the draft carries the effect, and a scene saved from it has to
+		hold the colour. A scene on this desk was found holding a speed and no
+		colour, which is indistinguishable from a person who never picked one
+		-- so the path is asserted rather than reasoned about.
+	*/
+	a := test.NewApp()
+	t.Cleanup(a.Quit)
+
+	app := gui.New(service(t, reactive()))
+	opts := app.Options("s")
+	opts.SettingsPath = filepath.Join(t.TempDir(), "gui.yml")
+	sh := shell.Headless(a, opts)
+	app.Refresh(context.Background())
+
+	section := &gui.ScenesSection{}
+	draft := gui.NewDraft()
+	draft.SetEffect("Keychron K4 HE", "Solid Reactive")
+	gui.OpenEditor(section, app, draft)
+
+	window := test.NewWindow(section.Build(sh))
+	t.Cleanup(window.Close)
+	window.Resize(fyne.NewSize(1200, 900))
+	sh.Window = window
+
+	choose := buttonSaying(window.Content(), "Choose a colour")
+	require.NotNil(t, choose, "the card offers no colour")
+	test.Tap(choose)
+
+	wheel := window.Canvas().Overlays().Top()
+	require.NotNil(t, wheel, "the wheel did not open")
+	use := buttonSaying(wheel, "Use it")
+	require.NotNil(t, use, "the wheel has no way to keep a colour")
+	test.Tap(use)
+
+	require.NotEmpty(t, draft.Scene("custom1").Effects["Keychron K4 HE"].Colour,
+		"the picked colour never reached the scene")
+}
+
+// buttonSaying finds a button by its text, for the paths that are only worth
+// asserting end to end.
+func buttonSaying(in fyne.CanvasObject, text string) *widget.Button {
+	var found *widget.Button
+	fynetest.WalkRendered(in, func(o fyne.CanvasObject) bool {
+		if button, ok := o.(*widget.Button); ok && button.Text == text {
+			found = button
+			return true
+		}
+		return false
+	})
+	return found
+}
