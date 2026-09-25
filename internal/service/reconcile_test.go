@@ -12,6 +12,7 @@ import (
 	"github.com/ushineko/hotaru/internal/devices"
 	"github.com/ushineko/hotaru/internal/openrgb"
 	"github.com/ushineko/hotaru/internal/queue"
+	"github.com/ushineko/hotaru/internal/scenes"
 	"github.com/ushineko/hotaru/internal/service"
 	"github.com/ushineko/hotaru/internal/state"
 )
@@ -293,4 +294,63 @@ func TestASupersededWriteIsNotAFailure(t *testing.T) {
 	require.False(t, replaced.Applied)
 	require.Empty(t, replaced.Skipped, "superseded is not a device declining to do something")
 	require.NoError(t, replaced.Err, "nor an error")
+}
+
+func TestAnEffectIsPutBackOverAFrameItCannotShow(t *testing.T) {
+	/*
+		Re-assertion restores the mode as well as the colours, and the mode a
+		scene asked for is exactly the one a frame of many colours used to
+		disqualify. A keyboard rippling under typing coming back from a
+		reconcile sitting in Direct is the same bug as the scene never
+		applying it, one reconcile later.
+	*/
+	server := openrgb.NewFake(keyboard())
+	svc := service.New(nil, server, "")
+	svc.SetRecorder(recorder(t))
+
+	_, err := svc.Apply(t.Context(), service.Request{
+		Assignments: solid("Keychron/Keyboard[0]", "blue"),
+		Effects:     map[string]scenes.Effect{"Keychron": {Mode: "Solid Reactive"}},
+	})
+	require.NoError(t, err)
+
+	// Something else moves the keyboard, as a restarted server would.
+	require.NoError(t, server.SetMode(t.Context(), "Keychron K4 HE", "Direct", openrgb.Style{}))
+
+	restore, err := svc.Reconcile(t.Context(), nil)
+	require.NoError(t, err)
+	require.Equal(t, 1, restore.Applied)
+	require.Equal(t, "Solid Reactive", restore.Results[0].Mode,
+		"the effect was resolved away when it was put back")
+}
+
+func TestAnEffectIsPutBackInTheColourItWasGiven(t *testing.T) {
+	/*
+		Re-assertion re-derives the mode's colour from the frame otherwise,
+		which is the right answer only where nobody named one: a keyboard
+		rippling red over mostly-blue keys would come back blue.
+	*/
+	server := openrgb.NewFake(keyboard())
+	svc := service.New(nil, server, "")
+	svc.SetRecorder(recorder(t))
+
+	speed := 40
+	_, err := svc.Apply(t.Context(), service.Request{
+		Assignments: solid("Keychron/Keyboard[0]", "blue"),
+		Effects: map[string]scenes.Effect{
+			"Keychron": {Mode: "Solid Reactive", Colour: "#ff0000", Speed: &speed},
+		},
+	})
+	require.NoError(t, err)
+	require.NoError(t, server.SetMode(t.Context(), "Keychron K4 HE", "Direct", openrgb.Style{}))
+
+	_, err = svc.Reconcile(t.Context(), nil)
+	require.NoError(t, err)
+
+	last := server.Modes[len(server.Modes)-1]
+	require.Equal(t, "Solid Reactive", last.Mode)
+	require.NotNil(t, last.Colour)
+	require.Equal(t, "#ff0000", last.Colour.String(), "the named colour was re-derived from the frame")
+	require.NotNil(t, last.Speed)
+	require.Equal(t, 40, *last.Speed)
 }

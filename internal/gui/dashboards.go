@@ -268,7 +268,7 @@ func (d *DashboardsSection) row(sh *shell.Shell, one api.Dashboard, active bool)
 	*/
 	scene := widget.NewButtonWithIcon("", theme.ColorPaletteIcon(), func() {
 		makeScene(sh, one.Name, one.Name, d.app.machine.Read().Devices,
-			func(ctx context.Context, name string, distance float64, effects map[string]string) (api.Scene, error) {
+			func(ctx context.Context, name string, distance float64, effects map[string]api.Effect) (api.Scene, error) {
 				return d.app.client.SceneFromDashboard(ctx, one.Name, name, distance, effects)
 			})
 	})

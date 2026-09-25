@@ -62,6 +62,7 @@ type ModeWrite struct {
 	Mode       string
 	Brightness *int
 	Colour     *colour.Colour
+	Speed      *int
 }
 
 // NewFake is a server holding these devices.
@@ -109,7 +110,7 @@ func (f *Fake) Device(_ context.Context, name string) (devices.Device, error) {
 }
 
 // SetMode records the write, and applies it unless this device lies about it.
-func (f *Fake) SetMode(_ context.Context, device, mode string, brightness *int, want *colour.Colour) error {
+func (f *Fake) SetMode(_ context.Context, device, mode string, style Style) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.Unreachable != nil {
@@ -123,12 +124,15 @@ func (f *Fake) SetMode(_ context.Context, device, mode string, brightness *int, 
 		if _, ok := f.devices[i].Mode(mode); !ok {
 			return fmt.Errorf("%s has no mode called %q", device, mode)
 		}
-		f.Modes = append(f.Modes, ModeWrite{Device: device, Mode: mode, Brightness: brightness, Colour: want})
+		f.Modes = append(f.Modes, ModeWrite{
+			Device: device, Mode: mode,
+			Brightness: style.Brightness, Colour: style.Colour, Speed: style.Speed,
+		})
 		if lie, ok := f.Lies[f.devices[i].Name]; ok && strings.EqualFold(lie, mode) {
 			return nil // accepted, not honoured: only a read-back can tell
 		}
 		f.devices[i].ActiveMode = mode
-		f.applyModeColour(&f.devices[i], mode, want)
+		f.applyModeColour(&f.devices[i], mode, style.Colour)
 		return nil
 	}
 	return fmt.Errorf("no device called %q", device)

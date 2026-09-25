@@ -36,7 +36,7 @@ time.
 */
 func makeScene(
 	sh *shell.Shell, from, suggest string, devices []api.Device,
-	build func(ctx context.Context, name string, distance float64, effects map[string]string) (api.Scene, error),
+	build func(ctx context.Context, name string, distance float64, effects map[string]api.Effect) (api.Scene, error),
 ) {
 	name := widget.NewEntry()
 	name.SetText(suggest)
@@ -49,7 +49,7 @@ func makeScene(
 		nobody could make here until now. Nothing is the default, which is
 		every light showing the colours the picture gave it.
 	*/
-	effects := map[string]string{}
+	effects := map[string]api.Effect{}
 
 	distance := widget.NewSlider(1, images.MostDistance)
 	distance.Step = 0.1
@@ -64,14 +64,14 @@ func makeScene(
 			"wash on the lights. Push them further apart until the case looks right; "+
 			"you can change it afterwards."),
 		widget.NewSeparator(),
-		effectFields(devices,
-			func(string) string { return "" },
-			func(device, mode string) {
-				if mode == "" {
+		effectFields(sh.Window, devices,
+			func(device string) api.Effect { return effects[device] },
+			func(device string, effect api.Effect) {
+				if !effect.Named() {
 					delete(effects, device)
 					return
 				}
-				effects[device] = mode
+				effects[device] = effect
 			}),
 	)
 

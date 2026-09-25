@@ -250,15 +250,15 @@ func TestASceneFromAPictureCarriesTheEffectsItWasGiven(t *testing.T) {
 	require.Empty(t, plain.Effects, "a scene invented an effect nobody asked for")
 
 	with, err := svc.SceneFromImage(t.Context(), "halves", "rippling", 1,
-		map[string]string{"Keychron": "Typing Heatmap"})
+		map[string]scenes.Effect{"Keychron": {Mode: "Typing Heatmap"}})
 	require.NoError(t, err)
-	require.Equal(t, map[string]string{"Keychron": "Typing Heatmap"}, with.Effects)
+	require.Equal(t, map[string]scenes.Effect{"Keychron": {Mode: "Typing Heatmap"}}, with.Effects)
 	require.NotEmpty(t, with.Assignments, "the colours were lost with the effect added")
 
 	// And it is kept, because the scene is saved on the way out.
 	saved, err := svc.Scene("rippling")
 	require.NoError(t, err)
-	require.Equal(t, "Typing Heatmap", saved.Effects["Keychron"])
+	require.Equal(t, "Typing Heatmap", saved.Effects["Keychron"].Mode)
 }
 
 func TestRecolouringKeepsTheEffects(t *testing.T) {
@@ -267,11 +267,51 @@ func TestRecolouringKeepsTheEffects(t *testing.T) {
 	svc := painting(t)
 
 	_, err := svc.SceneFromImage(t.Context(), "halves", "themed", 1,
-		map[string]string{"Keychron": "Typing Heatmap"})
+		map[string]scenes.Effect{"Keychron": {Mode: "Typing Heatmap"}})
 	require.NoError(t, err)
 
 	again, err := svc.RecolourScene(t.Context(), "themed", 2.5)
 	require.NoError(t, err)
-	require.Equal(t, "Typing Heatmap", again.Effects["Keychron"],
+	require.Equal(t, "Typing Heatmap", again.Effects["Keychron"].Mode,
 		"recolouring dropped what the devices were doing")
+}
+
+func TestASceneFromAPictureGivesAOneColourEffectOneColour(t *testing.T) {
+	/*
+		A picture answers "what colour is each light", and a device running a
+		mode that shows one colour cannot use that answer. Reducing it here
+		rather than at the write puts the number in the scene, where somebody
+		can see it and change it.
+	*/
+	svc := painting(t)
+
+	scene, err := svc.SceneFromImage(t.Context(), "halves", "themed", 1,
+		map[string]scenes.Effect{"Keychron": {Mode: "Solid Reactive"}})
+	require.NoError(t, err)
+
+	effect := scene.Effects["Keychron"]
+	require.Equal(t, "Solid Reactive", effect.Mode)
+	require.NotEmpty(t, effect.Colour, "the effect was left to be reduced at the write")
+}
+
+func TestASceneFromAPictureLeavesAPerLEDEffectAlone(t *testing.T) {
+	// A device in Direct is painted light by light and has nothing to reduce:
+	// giving it one colour would throw the picture away.
+	svc := painting(t)
+
+	scene, err := svc.SceneFromImage(t.Context(), "halves", "themed", 1,
+		map[string]scenes.Effect{"Keychron": {Mode: "Direct"}})
+	require.NoError(t, err)
+
+	require.Empty(t, scene.Effects["Keychron"].Colour)
+}
+
+func TestAColourTheCallerNamedSurvivesTheReduction(t *testing.T) {
+	svc := painting(t)
+
+	scene, err := svc.SceneFromImage(t.Context(), "halves", "themed", 1,
+		map[string]scenes.Effect{"Keychron": {Mode: "Solid Reactive", Colour: "#00ff00"}})
+	require.NoError(t, err)
+
+	require.Equal(t, "#00ff00", scene.Effects["Keychron"].Colour)
 }

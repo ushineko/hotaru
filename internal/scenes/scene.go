@@ -14,6 +14,7 @@ the layer that does the binding. See spec 015.
 package scenes
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -63,17 +64,18 @@ type Scene struct {
 	/*
 		Effects name what each device should be doing, by device name.
 
-		Preferred, never forced. A mode that cannot carry the frame is no use,
-		and showing one colour where three were asked for would be a worse
-		answer than choosing a mode that works -- so an effect that does not
-		fit falls through exactly as hotaru's mode resolution already does.
+		An effect is a decision about the device -- the keyboard ripples under
+		typing -- and the colours are what it ripples in. A mode that cannot
+		show every colour of the frame is written anyway and the frame is what
+		gives way, because there is nothing to fall back to when the mode is
+		the thing being asked for. See spec 050.
 
 		The name is the device's own spelling of a mode it advertises. Effects
 		hotaru renders itself -- a storm across every device at once, which no
 		firmware mode can do because no device knows what the others are
 		showing -- resolve here too, and are their own spec.
 	*/
-	Effects map[string]string `json:"effects,omitempty"`
+	Effects map[string]Effect `json:"effects,omitempty"`
 
 	/*
 		Screen is what the cooler's panel shows: "dashboard", "readout", or a
@@ -184,11 +186,119 @@ func (s Scene) Devices() []string {
 // Effect is the effect named for a device, matched the way device names are
 // matched everywhere else here: case-insensitively, by substring, so a scene
 // can say "keychron" rather than the vendor's full string.
-func (s Scene) Effect(device string) string {
+func (s Scene) Effect(device string) Effect {
 	for name, effect := range s.Effects {
 		if strings.Contains(strings.ToLower(device), strings.ToLower(name)) {
 			return effect
 		}
 	}
-	return ""
+	return Effect{}
+}
+
+/*
+Effect is what one device should be doing, and what it should be doing it in.
+
+**A mode's name on its own is the whole of it for almost every scene**, which
+is why that is still how one is written:
+
+	effects:
+	  Keychron K4 HE: Solid Reactive Multinexus
+
+A mode that shows one colour of its own takes it from the frame otherwise --
+the colour most of the frame is, per spec 050 -- and that is a reduction
+rather than a choice. Somebody who has decided their keyboard ripples blue
+says so:
+
+	effects:
+	  Keychron K4 HE:
+	    mode: Solid Reactive Multinexus
+	    colour: '#0000ff'
+	    speed: 127
+
+Both forms are read, and the short one is written wherever it is sufficient:
+this file is read by people, and a mode's name is a line rather than a block.
+*/
+type Effect struct {
+	// Mode is the device's own spelling of a mode it advertises.
+	Mode string `json:"mode"`
+
+	/*
+		Colour is what a mode that carries its own colour is given.
+
+		Empty is the ordinary case and means the frame decides. A mode that
+		takes a colour per LED ignores this: its colour is the frame, and two
+		answers to one question would make which one won depend on hardware.
+	*/
+	Colour string `json:"colour,omitempty"`
+
+	/*
+		Speed is how fast the mode runs, in the device's own units, for a mode
+		that advertises a range.
+
+		A pointer because zero is a speed -- the slowest one -- and "as fast as
+		the vendor left it" has to be distinguishable from it. Nothing reads
+		back what a speed looks like, so this is written and looked at rather
+		than confirmed.
+	*/
+	Speed *int `json:"speed,omitempty"`
+}
+
+// Named reports whether this effect says anything at all. The zero value is a
+// device a scene is silent about, which is not the same as one set to Direct.
+func (e Effect) Named() bool { return e.Mode != "" }
+
+// bare reports whether the mode's name is the whole of this effect, and so
+// whether it can be written as one.
+func (e Effect) bare() bool { return e.Colour == "" && e.Speed == nil }
+
+// effectForm is the long form, as a plain struct: the type itself cannot be
+// marshalled through the codecs without recursing into its own methods.
+type effectForm struct {
+	Mode   string `json:"mode"`
+	Colour string `json:"colour,omitempty"`
+	Speed  *int   `json:"speed,omitempty"`
+}
+
+/*
+MarshalJSON writes the short form where the mode is the whole of the effect.
+
+JSON rather than YAML, and it covers both: the settings codec encodes through
+JSON, so the json tags name the fields in the file as well as on the wire.
+*/
+func (e Effect) MarshalJSON() ([]byte, error) {
+	var (
+		written []byte
+		err     error
+	)
+	if e.bare() {
+		written, err = json.Marshal(e.Mode)
+	} else {
+		written, err = json.Marshal(effectForm(e))
+	}
+	if err != nil {
+		return nil, fmt.Errorf("write the effect %q: %w", e.Mode, err)
+	}
+	return written, nil
+}
+
+/*
+UnmarshalJSON reads either form.
+
+The short one first, because every scene written before this spec is in it and
+a file somebody cannot read back is not a file -- see the store, which reports
+a scene it cannot parse rather than replacing it.
+*/
+func (e *Effect) UnmarshalJSON(b []byte) error {
+	var mode string
+	if err := json.Unmarshal(b, &mode); err == nil {
+		*e = Effect{Mode: mode}
+		return nil
+	}
+
+	var form effectForm
+	if err := json.Unmarshal(b, &form); err != nil {
+		return fmt.Errorf("an effect is a mode's name, or a mode with a colour and a speed: %w", err)
+	}
+	*e = Effect(form)
+	return nil
 }

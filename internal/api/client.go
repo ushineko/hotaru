@@ -481,7 +481,7 @@ Every light gets the part of the image at its own position in its zone, so a
 run of lights carries the picture's own sweep rather than one averaged colour.
 */
 func (c *Client) SceneFromImage(
-	ctx context.Context, picture, scene string, distance float64, effects map[string]string,
+	ctx context.Context, picture, scene string, distance float64, effects map[string]Effect,
 ) (Scene, error) {
 	var out Scene
 	err := c.do(ctx, http.MethodPost,
@@ -493,7 +493,7 @@ func (c *Client) SceneFromImage(
 // SceneFromDashboard builds a scene whose lights match what a dashboard
 // draws, and which puts that dashboard on the screen.
 func (c *Client) SceneFromDashboard(
-	ctx context.Context, board, scene string, distance float64, effects map[string]string,
+	ctx context.Context, board, scene string, distance float64, effects map[string]Effect,
 ) (Scene, error) {
 	var out Scene
 	err := c.do(ctx, http.MethodPost,

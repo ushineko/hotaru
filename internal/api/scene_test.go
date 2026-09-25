@@ -95,14 +95,14 @@ func TestAScenesRoundTripThroughTheSocket(t *testing.T) {
 	require.NoError(t, client.SaveScene(t.Context(), api.Scene{
 		Name:        "evening",
 		Assignments: []api.SceneAssignment{{Target: "Keychron", Colour: "#201040"}},
-		Effects:     map[string]string{"Keychron": "Direct"},
+		Effects:     map[string]api.Effect{"Keychron": {Mode: "Direct"}},
 		Screen:      api.ScreenDashboard,
 	}))
 
 	saved, err := client.Scenes(t.Context())
 	require.NoError(t, err)
 	mine := byName(t, saved, "evening")
-	require.Equal(t, "Direct", mine.Effects["Keychron"])
+	require.Equal(t, "Direct", mine.Effects["Keychron"].Mode)
 	require.Equal(t, api.ScreenDashboard, mine.Screen)
 	require.False(t, mine.Shipped)
 

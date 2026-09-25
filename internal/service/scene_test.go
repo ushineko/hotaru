@@ -91,7 +91,7 @@ func TestAnEffectIsPreferredForItsOwnDevice(t *testing.T) {
 	// A scene wants the keyboard doing one thing and the board another, which
 	// is why an effect is named per device rather than per request.
 	scene := blue()
-	scene.Effects = map[string]string{"Keychron": "Solid Color"}
+	scene.Effects = map[string]scenes.Effect{"Keychron": {Mode: "Solid Color"}}
 	svc, _ := lit(t, scene)
 
 	done, err := svc.ApplyScene(t.Context(), "blue")
@@ -113,7 +113,7 @@ func TestAnEffectADeviceDoesNotHaveCostsTheEffectNotTheScene(t *testing.T) {
 		did half of what it said.
 	*/
 	scene := blue()
-	scene.Effects = map[string]string{"Keychron": "Storm"}
+	scene.Effects = map[string]scenes.Effect{"Keychron": {Mode: "Storm"}}
 	svc, _ := lit(t, scene)
 
 	done, err := svc.ApplyScene(t.Context(), "blue")
@@ -465,12 +465,12 @@ func TestAStyleIsGivenToOtherScenesWithoutTheirColours(t *testing.T) {
 	svc, _ := lit(t,
 		scenes.Scene{
 			Name: "evening", Colour: "blue",
-			Effects: map[string]string{"Keychron": "Typing Heatmap"},
+			Effects: map[string]scenes.Effect{"Keychron": {Mode: "Typing Heatmap"}},
 		},
 		scenes.Scene{Name: "red", Colour: "red"},
 		scenes.Scene{
 			Name: "green", Colour: "green",
-			Effects: map[string]string{"Keychron": "Direct", "Kraken": "Breathing"},
+			Effects: map[string]scenes.Effect{"Keychron": {Mode: "Direct"}, "Kraken": {Mode: "Breathing"}},
 		},
 	)
 
@@ -481,7 +481,7 @@ func TestAStyleIsGivenToOtherScenesWithoutTheirColours(t *testing.T) {
 	for _, name := range []string{"red", "green"} {
 		scene, err := svc.Scene(name)
 		require.NoError(t, err)
-		require.Equal(t, map[string]string{"Keychron": "Typing Heatmap"}, scene.Effects,
+		require.Equal(t, map[string]scenes.Effect{"Keychron": {Mode: "Typing Heatmap"}}, scene.Effects,
 			"%s did not take the style", name)
 	}
 
@@ -502,7 +502,7 @@ func TestAStyleGoesNowhereWhenAScenesNameIsWrong(t *testing.T) {
 	// Every target is read before any is written: a name that is not there
 	// costs nothing rather than leaving half a bank restyled.
 	svc, _ := lit(t,
-		scenes.Scene{Name: "evening", Effects: map[string]string{"Keychron": "Splash"}},
+		scenes.Scene{Name: "evening", Effects: map[string]scenes.Effect{"Keychron": {Mode: "Splash"}}},
 		scenes.Scene{Name: "red", Colour: "red"},
 	)
 
@@ -560,4 +560,159 @@ func TestSavingASceneNobodyIsShowingLeavesTheMachineAlone(t *testing.T) {
 
 	// And nothing has been applied but the one that was.
 	require.Equal(t, "blue", svc.Applied())
+}
+
+func TestAnEffectSurvivesAFrameItCannotShow(t *testing.T) {
+	/*
+		The bug this is here for: a scene with a colour per key and a reactive
+		effect on the keyboard lit every key, reported the device as applied,
+		and left the keyboard in Direct with the effect nowhere -- because
+		resolution read the frame first and dropped any mode that could not
+		carry every colour in it.
+
+		An effect is a decision about the device, not a preference about how
+		to show the colours, so the frame is what gives way.
+	*/
+	scene := blue()
+	scene.Assignments = append(scene.Assignments,
+		scenes.Assignment{Target: "Keychron/Keyboard[1]", Colour: "red"})
+	scene.Effects = map[string]scenes.Effect{"Keychron": {Mode: "Solid Reactive"}}
+	svc, _ := lit(t, scene)
+
+	done, err := svc.ApplyScene(t.Context(), "blue")
+	require.NoError(t, err)
+
+	var found bool
+	for _, result := range done.Results {
+		if result.Device != "Keychron K4 HE" {
+			continue
+		}
+		found = true
+		require.True(t, result.Applied)
+		require.Equal(t, "Solid Reactive", result.Mode,
+			"the effect was dropped for a frame of more than one colour")
+	}
+	require.True(t, found, "the keyboard was not in the outcome at all")
+}
+
+func TestAnEffectIsLitInTheColourTheSceneMostlyIs(t *testing.T) {
+	/*
+		A mode that keeps its colour in the mode cannot show a frame of many,
+		and the alternative to reducing the frame is the colour the vendor
+		left behind -- which is neither what the scene says nor anything
+		anybody picked.
+	*/
+	scene := blue()
+	scene.Assignments = append(scene.Assignments,
+		scenes.Assignment{Target: "Keychron/Keyboard[1]", Colour: "red"})
+	scene.Effects = map[string]scenes.Effect{"Keychron": {Mode: "Solid Reactive"}}
+	svc, server := lit(t, scene)
+
+	_, err := svc.ApplyScene(t.Context(), "blue")
+	require.NoError(t, err)
+
+	var lit *colour.Colour
+	for _, write := range server.Modes {
+		if write.Device == "Keychron K4 HE" && write.Mode == "Solid Reactive" {
+			lit = write.Colour
+		}
+	}
+	require.NotNil(t, lit, "the effect was set without a colour, so it shows the vendor's")
+	require.Equal(t, "#0000ff", lit.String(),
+		"the effect was not lit in the colour most of the scene is")
+}
+
+func TestAModeIsStillNotForcedOverAFrameItCannotShow(t *testing.T) {
+	// The rule an effect is an exception to, held: --mode is a preference
+	// about how to show the colours, so a mode that cannot show them is no
+	// use and resolution carries on past it.
+	svc, _ := lit(t, blue())
+
+	results, err := svc.Apply(t.Context(), service.Request{
+		Assignments: solid("Keychron/Keyboard[0]", "blue"),
+		Devices:     []string{"Keychron"},
+		Mode:        "Solid Reactive",
+	})
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	require.Equal(t, "Direct", results[0].Mode)
+}
+
+func TestAnEffectIsLitInTheColourTheSceneNames(t *testing.T) {
+	// The reduction is the fallback, never the answer: somebody who has
+	// decided their keyboard ripples red has said so, and the colour most of
+	// the frame is has nothing to do with it.
+	scene := blue()
+	scene.Effects = map[string]scenes.Effect{
+		"Keychron": {Mode: "Solid Reactive", Colour: "#ff0000"},
+	}
+	svc, server := lit(t, scene)
+
+	_, err := svc.ApplyScene(t.Context(), "blue")
+	require.NoError(t, err)
+
+	require.Equal(t, "#ff0000", lastMode(t, server, "Keychron K4 HE", "Solid Reactive").Colour.String(),
+		"the scene's own colour lost to the frame's")
+}
+
+func TestAnEffectWithNoColourStillTakesTheFrames(t *testing.T) {
+	scene := blue()
+	scene.Effects = map[string]scenes.Effect{"Keychron": {Mode: "Solid Reactive"}}
+	svc, server := lit(t, scene)
+
+	_, err := svc.ApplyScene(t.Context(), "blue")
+	require.NoError(t, err)
+
+	require.Equal(t, "#0000ff", lastMode(t, server, "Keychron K4 HE", "Solid Reactive").Colour.String())
+}
+
+func TestAnEffectsSpeedIsWritten(t *testing.T) {
+	speed := 40
+	scene := blue()
+	scene.Effects = map[string]scenes.Effect{"Keychron": {Mode: "Solid Reactive", Speed: &speed}}
+	svc, server := lit(t, scene)
+
+	_, err := svc.ApplyScene(t.Context(), "blue")
+	require.NoError(t, err)
+
+	written := lastMode(t, server, "Keychron K4 HE", "Solid Reactive").Speed
+	require.NotNil(t, written, "the speed was not sent")
+	require.Equal(t, 40, *written)
+}
+
+func TestAnEffectsColourIsUnreadableIsSaidRatherThanIgnored(t *testing.T) {
+	// An effect quietly falling back to the frame because of a typo looks
+	// exactly like one that was never given a colour.
+	scene := blue()
+	scene.Effects = map[string]scenes.Effect{
+		"Keychron": {Mode: "Solid Reactive", Colour: "puce"},
+	}
+	svc, _ := lit(t, scene)
+
+	done, err := svc.ApplyScene(t.Context(), "blue")
+	require.NoError(t, err)
+
+	var said []string
+	for _, result := range done.Results {
+		if result.Device == "Keychron K4 HE" {
+			require.True(t, result.Applied, "the scene was dropped with the colour")
+			said = result.Problems
+		}
+	}
+	require.NotEmpty(t, said)
+	require.Contains(t, said[0], "puce")
+}
+
+// lastMode is the most recent mode write to a device, for asserting what was
+// put into the mode rather than into the buffer.
+func lastMode(t *testing.T, server *openrgb.Fake, device, mode string) openrgb.ModeWrite {
+	t.Helper()
+	var found *openrgb.ModeWrite
+	for i := range server.Modes {
+		if server.Modes[i].Device == device && server.Modes[i].Mode == mode {
+			found = &server.Modes[i]
+		}
+	}
+	require.NotNil(t, found, "%s was never put into %s", device, mode)
+	return *found
 }

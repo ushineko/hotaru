@@ -1,6 +1,7 @@
 package scenes_test
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -17,7 +18,7 @@ func evening() scenes.Scene {
 			{Target: "kraken", Colour: "#8000ff"},
 			{Target: "kraken/fan-top", Colour: "red"},
 		},
-		Effects: map[string]string{"keychron": "Solid Splash"},
+		Effects: map[string]scenes.Effect{"keychron": {Mode: "Solid Splash"}},
 		Screen:  scenes.ScreenDashboard,
 	}
 }
@@ -61,7 +62,7 @@ func TestOneBadLineCostsOneLine(t *testing.T) {
 
 func TestAnEffectIsFoundByTheNameSomebodyWouldType(t *testing.T) {
 	// The device's full name is the vendor's string. A scene says "keychron".
-	require.Equal(t, "Solid Splash", evening().Effect("Keychron K4 HE"))
+	require.Equal(t, "Solid Splash", evening().Effect("Keychron K4 HE").Mode)
 	require.Empty(t, evening().Effect("NZXT Kraken Elite V2"))
 }
 
@@ -216,4 +217,62 @@ func TestAShippedKeyCanBeUnbound(t *testing.T) {
 
 func TestABindingNeedsAKey(t *testing.T) {
 	require.ErrorContains(t, store(t).Bind("", "red"), "needs a key")
+}
+
+func TestASceneWrittenBeforeEffectsHadSettingsStillReads(t *testing.T) {
+	/*
+		Every scene on disk names its effects as a mode and nothing else. A
+		file hotaru cannot read back is a file somebody loses work to, which
+		is why the store reports a bad parse rather than replacing it -- and
+		why the short form is read first here.
+	*/
+	var effect scenes.Effect
+	require.NoError(t, json.Unmarshal([]byte(`"Solid Reactive Multinexus"`), &effect))
+	require.Equal(t, "Solid Reactive Multinexus", effect.Mode)
+	require.Empty(t, effect.Colour)
+	require.Nil(t, effect.Speed)
+}
+
+func TestAnEffectWithSettingsReadsAsAMapping(t *testing.T) {
+	var effect scenes.Effect
+	require.NoError(t, json.Unmarshal(
+		[]byte(`{"mode":"Solid Reactive","colour":"#0000ff","speed":127}`), &effect))
+	require.Equal(t, "Solid Reactive", effect.Mode)
+	require.Equal(t, "#0000ff", effect.Colour)
+	require.NotNil(t, effect.Speed)
+	require.Equal(t, 127, *effect.Speed)
+}
+
+func TestAModeOnItsOwnIsWrittenOnItsOwn(t *testing.T) {
+	// The file is read by people. A mode's name is a line; a mapping of one
+	// key is three, for a scene that had nothing more to say.
+	written, err := json.Marshal(scenes.Effect{Mode: "Direct"})
+	require.NoError(t, err)
+	require.JSONEq(t, `"Direct"`, string(written))
+}
+
+func TestAnEffectWithAColourIsWrittenInFull(t *testing.T) {
+	speed := 40
+	written, err := json.Marshal(scenes.Effect{Mode: "Splash", Colour: "#ff0000", Speed: &speed})
+	require.NoError(t, err)
+	require.JSONEq(t, `{"mode":"Splash","colour":"#ff0000","speed":40}`, string(written))
+}
+
+func TestASpeedOfZeroSurvivesTheRoundTrip(t *testing.T) {
+	// Zero is the slowest speed, not the absence of one. A plain int would
+	// make "as the device has it" and "as slow as it goes" the same scene.
+	slowest := 0
+	written, err := json.Marshal(scenes.Effect{Mode: "Splash", Speed: &slowest})
+	require.NoError(t, err)
+
+	var back scenes.Effect
+	require.NoError(t, json.Unmarshal(written, &back))
+	require.NotNil(t, back.Speed, "the slowest speed was read as no speed")
+	require.Equal(t, 0, *back.Speed)
+}
+
+func TestSomethingThatIsNeitherFormSaysWhatAnEffectIs(t *testing.T) {
+	var effect scenes.Effect
+	err := json.Unmarshal([]byte(`[1,2,3]`), &effect)
+	require.ErrorContains(t, err, "a mode's name")
 }

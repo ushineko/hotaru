@@ -38,6 +38,9 @@ func keyboard() devices.Device {
 		Modes: []devices.Mode{
 			{Name: "Direct", PerLED: true},
 			{Name: "Solid Color"},
+			// One colour for the whole board, and the colour lives in the
+			// mode: the shape of every reactive effect a keyboard has.
+			{Name: "Solid Reactive", ModeColour: true},
 		},
 		Zones:      []devices.Zone{{Name: "Keyboard", First: 0, Count: 2}},
 		ActiveMode: "Solid Color",
@@ -480,11 +483,11 @@ type stuckColour struct {
 	device string
 }
 
-func (s stuckColour) SetMode(ctx context.Context, device, mode string, brightness *int, c *colour.Colour) error {
+func (s stuckColour) SetMode(ctx context.Context, device, mode string, style openrgb.Style) error {
 	if strings.EqualFold(device, s.device) {
-		return s.Fake.SetMode(ctx, device, mode, brightness, nil)
+		style.Colour = nil
 	}
-	return s.Fake.SetMode(ctx, device, mode, brightness, c)
+	return s.Fake.SetMode(ctx, device, mode, style)
 }
 
 func TestTheModePacketIsSentEvenWhenTheDeviceIsAlreadyInThatMode(t *testing.T) {

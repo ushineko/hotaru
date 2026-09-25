@@ -45,6 +45,35 @@ func (f Frame) Uniform() (colour.Colour, bool) {
 	return first, true
 }
 
+/*
+Dominant is the colour most of this frame is, and whether it has one at all.
+
+A mode that takes one colour for the whole device cannot show a frame of a
+hundred, and a scene that names such a mode has still said what it wants that
+device to look like. The most common colour is the honest reduction: a keyboard
+lit blue with a handful of amber keys is a blue keyboard, and the vendor's
+leftover red is not an answer anybody asked for.
+
+Ties go to the colour that appears first, so the reduction of a frame does not
+depend on map order.
+*/
+func (f Frame) Dominant() (colour.Colour, bool) {
+	if len(f.Colours) == 0 {
+		return colour.Colour{}, false
+	}
+	count := map[colour.Colour]int{}
+	for _, c := range f.Colours {
+		count[c]++
+	}
+	best := f.Colours[0]
+	for _, c := range f.Colours {
+		if count[c] > count[best] {
+			best = c
+		}
+	}
+	return best, true
+}
+
 // PerLED reports whether showing this frame needs a mode that accepts a colour
 // per LED — that is, whether it holds more than one colour.
 func (f Frame) PerLED() bool {

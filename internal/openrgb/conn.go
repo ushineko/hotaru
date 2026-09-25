@@ -269,7 +269,7 @@ the device's own definition of it — speed, direction and colour count included
 because a mode is a structure the server round-trips rather than a string it
 looks up. Brightness is asserted only where the mode says it has any.
 */
-func (c *Conn) SetMode(ctx context.Context, device, mode string, brightness *int, want *colour.Colour) error {
+func (c *Conn) SetMode(ctx context.Context, device, mode string, style Style) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -287,8 +287,13 @@ func (c *Conn) SetMode(ctx context.Context, device, mode string, brightness *int
 			continue
 		}
 		wanted := *m
-		if brightness != nil && wanted.ModeFlags&flagHasBrightness != 0 {
-			wanted.ModeBrightness = scaleBrightness(*brightness, m.ModeBrightnessMin, m.ModeBrightnessMax)
+		if style.Brightness != nil && wanted.ModeFlags&flagHasBrightness != 0 {
+			wanted.ModeBrightness = scaleBrightness(*style.Brightness, m.ModeBrightnessMin, m.ModeBrightnessMax)
+		}
+		// A speed is in the mode's own units, so it is clamped rather than
+		// scaled: the range came from this mode and the number is meant for it.
+		if style.Speed != nil && wanted.ModeFlags&flagHasSpeed != 0 {
+			wanted.ModeSpeed = clampSpeed(*style.Speed, m.ModeSpeedMin, m.ModeSpeedMax)
 		}
 		/*
 			A mode that takes its own colour needs it set here. The frame
@@ -300,8 +305,8 @@ func (c *Conn) SetMode(ctx context.Context, device, mode string, brightness *int
 			Only the slots the mode actually has are filled: ModeColorsMin is
 			how many it insists on, and a mode advertising none is left alone.
 		*/
-		if want != nil && wanted.ModeFlags&flagHasModeSpecificColor != 0 {
-			wanted.ModeColors = modeColours(m, *want)
+		if style.Colour != nil && wanted.ModeFlags&flagHasModeSpecificColor != 0 {
+			wanted.ModeColors = modeColours(m, *style.Colour)
 		}
 		req := &sdk.RGBControllerUpdateModeRequest{ModeIdx: int32(i), Mode: &wanted}
 		if err := c.client.RGBControllerUpdateMode(entry.index, req); err != nil {
@@ -433,6 +438,11 @@ func convert(data *sdk.ControllerData) devices.Device {
 			Brightness: mode.ModeFlags&flagHasBrightness != 0,
 			ModeColour: mode.ModeFlags&flagHasModeSpecificColor != 0,
 		}
+		if mode.ModeFlags&flagHasSpeed != 0 {
+			m.Speed = &devices.Speed{
+				Slowest: int(mode.ModeSpeedMin), Fastest: int(mode.ModeSpeedMax), Now: int(mode.ModeSpeed),
+			}
+		}
 		if m.ModeColour && len(mode.ModeColors) > 0 {
 			m.Colour = colour.Colour{R: mode.ModeColors[0].R, G: mode.ModeColors[0].G, B: mode.ModeColors[0].B}
 		}
@@ -506,6 +516,34 @@ A mode declares how many it takes. Most take one; a few take several, and a
 device asked for a solid colour wants all of them the same rather than one set
 and the rest whatever they were.
 */
+/*
+clampSpeed holds a speed inside the range its mode gives.
+
+The bounds can arrive either way round -- OpenRGB has drivers where a smaller
+number is faster, and they say so by giving a min above the max -- so the pair
+is sorted before the number is held between them rather than trusted to be in
+order.
+*/
+func clampSpeed(speed int, low, high uint32) uint32 {
+	first, last := low, high
+	if first > last {
+		first, last = last, first
+	}
+	// Compared in the mode's own width rather than in int, which is 32 bits on
+	// some machines and would turn a large bound negative on the way past.
+	if speed < 0 {
+		return first
+	}
+	switch want := uint64(speed); {
+	case want < uint64(first):
+		return first
+	case want > uint64(last):
+		return last
+	default:
+		return uint32(want) //nolint:gosec // between two uint32s by the cases above
+	}
+}
+
 func modeColours(m *sdk.Mode, c colour.Colour) []sdk.Color {
 	n := len(m.ModeColors)
 	if n < int(m.ModeColorsMin) {

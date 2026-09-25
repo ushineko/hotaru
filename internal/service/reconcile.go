@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ushineko/hotaru/internal/colour"
 	"github.com/ushineko/hotaru/internal/devices"
 	"github.com/ushineko/hotaru/internal/state"
 )
@@ -126,10 +127,22 @@ func (s *Service) Reconcile(ctx context.Context, only []string) (Restore, error)
 			That was invisible while every scene was a solid colour, and wrong
 			as soon as one carries an effect: a keyboard rippling under typing
 			would come back from a re-assert sitting in Direct.
+
+			Insisted on, for the same reason: this mode is one the device took
+			and hotaru recorded, so a frame it cannot show every colour of is
+			not grounds to resolve past it and undo the effect.
+
+			With the mode's own colour and speed where a scene named them, so
+			a re-assert does not put the right mode back in the colour the
+			frame reduces to. See spec 051.
 		*/
-		want := desired.Devices[name]
+		kept := desired.Devices[name]
+		want := preference{mode: kept.Mode, insist: true, speed: kept.Speed}
+		if c, err := colour.Parse(kept.ModeColour); kept.ModeColour != "" && err == nil {
+			want.colour = &c
+		}
 		result := s.through(ctx, device.Name, func(ctx context.Context) Result {
-			return s.writeFrame(ctx, client, device, want.Frame(name), false, want.Mode, false, nil)
+			return s.writeFrame(ctx, client, device, kept.Frame(name), false, want, nil)
 		})
 		if result.Applied {
 			restore.Applied++

@@ -78,6 +78,22 @@ func board() devices.Device {
 	}
 }
 
+// keyboard is a device with a mode that shows one colour at a speed, which is
+// the shape an effect's own settings exist for.
+func keyboard() devices.Device {
+	return devices.Device{
+		Name:     "Keychron K4 HE",
+		LEDCount: 2,
+		Modes: []devices.Mode{
+			{Name: "Direct", PerLED: true},
+			{Name: "Solid Reactive", ModeColour: true,
+				Speed: &devices.Speed{Slowest: 0, Fastest: 255, Now: 127}},
+		},
+		Zones:      []devices.Zone{{Name: "Keyboard", First: 0, Count: 2}},
+		ActiveMode: "Direct",
+	}
+}
+
 // run executes a command against a running service and returns its output.
 func run(t *testing.T, socket string, args ...string) (string, error) {
 	t.Helper()
@@ -427,4 +443,40 @@ func TestASceneFromAPictureTakesAnEffect(t *testing.T) {
 	_, err = run(t, socket, "image", "scene", "wall", "other", "--effect", "rainbow")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "device=mode")
+}
+
+func TestASceneCanNameAnEffectsColourAndSpeed(t *testing.T) {
+	// The reduction is the fallback; a person who has decided their keyboard
+	// ripples blue says so, from the terminal as well as from the window.
+	socket := serving(t, &config.Config{}, openrgb.NewFake(board(), keyboard()))
+
+	_, err := run(t, socket, "scene", "write", "evening", "keychron=blue",
+		"--effect", "keychron=Solid Reactive",
+		"--effect-colour", "keychron=#0000ff",
+		"--effect-speed", "keychron=40")
+	require.NoError(t, err)
+
+	said, err := run(t, socket, "scene", "show", "evening")
+	require.NoError(t, err)
+	require.Contains(t, said, "Solid Reactive in #0000ff at 40")
+}
+
+func TestAnEffectsColourWithoutAnEffectIsRefused(t *testing.T) {
+	// A setting for a mode nobody named is a line in the file that does
+	// nothing, which is worse than a usage error.
+	socket := serving(t, &config.Config{}, openrgb.NewFake(board(), keyboard()))
+
+	_, err := run(t, socket, "scene", "write", "evening", "keychron=blue",
+		"--effect-colour", "keychron=#0000ff")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "--effect")
+}
+
+func TestASpeedThatIsNotANumberSaysSo(t *testing.T) {
+	socket := serving(t, &config.Config{}, openrgb.NewFake(board(), keyboard()))
+
+	_, err := run(t, socket, "scene", "write", "evening", "keychron=blue",
+		"--effect", "keychron=Solid Reactive", "--effect-speed", "keychron=quick")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "a number")
 }

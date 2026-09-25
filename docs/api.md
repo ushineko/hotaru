@@ -71,11 +71,21 @@ $ curl -s --unix-socket $XDG_RUNTIME_DIR/hotaru/hotaru.sock http://hotaru/v1/dev
         { "name": "GPU", "first": 0, "count": 1 }
       ],
       "colours": ["#ff5500"],
+      "one_colour": ["Static"],
+      "paced": { "Rainbow Wave": { "slowest": 0, "fastest": 255, "now": 127 } },
       "in_scope": true
     }
   ]
 }
 ```
+
+`one_colour` and `paced` are asked of the mode rather than of the device,
+exactly as `dimmable` is: a keyboard paints a hundred keys in Direct and shows
+one colour in a reactive mode, and it is the same keyboard. A client drawing an
+editor needs both before it draws, so that a colour per light is offered where
+the device can show one and not where it cannot. `paced` gives each mode's own
+range: the numbers come from the mode and go back to it, and `slowest` may be
+the larger of the two on a driver that counts down.
 
 A zone is a contiguous run in device LED order. hotaru counts `first` rather
 than reading it, because the protocol gives sizes and leaves the offsets
@@ -179,7 +189,14 @@ $ curl -s --unix-socket … http://hotaru/v1/scenes
         { "target": "kraken",   "colour": "#201040" },
         { "target": "keychron", "colour": "#100820" }
       ],
-      "effects": { "keychron": "Solid Splash" },
+      "effects": {
+        "keychron": {
+          "mode": "Solid Reactive",
+          "colour": "#0000ff",
+          "speed": 127
+        },
+        "kraken": "Breathing"
+      },
       "screen": "dashboard"
     }
   ]
@@ -192,10 +209,19 @@ the screen.** A lighting scene must not remove somebody's dashboard because
 its author never considered the panel.
 
 `effects` names a mode the device advertises, keyed by any part of the
-device's name. hotaru prefers that mode rather than forcing it. A mode that
-cannot carry the frame falls through as any other does. A name the device does
-not have costs the effect rather than the scene, and appears in that device's
-`problems`.
+device's name. **Either a mode's name on its own, or an object naming the mode
+with the colour and speed to run it at** -- both forms are read, and the short
+one is written wherever nothing else was set.
+
+An effect is written even when the scene gives that device more colours than
+the mode can show: the mode is the thing being asked for, and the frame is what
+gives way. Such a mode is lit in `colour` where the scene names one and in the
+colour most of the frame is otherwise. `speed` is in the device's own units,
+within the range `paced` gives for that mode, and is ignored by a mode that
+advertises no speed.
+
+A name the device does not have costs the effect rather than the scene, and
+appears in that device's `problems`, as does a colour that will not parse.
 
 ## PUT /v1/scenes/{name}
 

@@ -64,23 +64,77 @@ func DraftFrom(scene api.Scene) *Draft {
 /*
 SetEffect says what a device should be doing with the colours. An empty mode
 takes the effect back out, which is how somebody undoes one.
+
+**The mode alone, keeping whatever colour and speed were already set.** A
+person changing a keyboard from one reactive mode to another has not changed
+their mind about the colour, and making them pick it again would be the
+editor forgetting something it was told.
 */
 func (d *Draft) SetEffect(device, mode string) {
 	if strings.TrimSpace(mode) == "" {
 		delete(d.rest.Effects, device)
 		return
 	}
-	if d.rest.Effects == nil {
-		d.rest.Effects = map[string]string{}
-	}
-	d.rest.Effects[device] = mode
+	effect := d.rest.Effects[device]
+	effect.Mode = mode
+	d.setEffect(device, effect)
 }
 
-// Effect is what this draft says a device should be doing, empty for nothing.
-func (d *Draft) Effect(device string) string { return d.rest.Effects[device] }
+/*
+SetEffectColour is the colour an effect that shows one runs in. Empty gives
+the device back to spec 050's fallback: the colour most of its frame is.
+
+Silently nothing for a device with no effect, because the control that sets
+this is only drawn for a device that has one.
+*/
+func (d *Draft) SetEffectColour(device, colour string) {
+	effect, has := d.rest.Effects[device]
+	if !has {
+		return
+	}
+	effect.Colour = strings.TrimSpace(colour)
+	d.setEffect(device, effect)
+}
+
+// SetEffectSpeed is how fast the effect runs, in the device's own units. A nil
+// speed is "as the device has it", which is not the same as the slowest one.
+func (d *Draft) SetEffectSpeed(device string, speed *int) {
+	effect, has := d.rest.Effects[device]
+	if !has {
+		return
+	}
+	effect.Speed = speed
+	d.setEffect(device, effect)
+}
+
+/*
+SetEffectWhole sets a device's effect and its settings together, for a caller
+holding the whole value -- the chooser dialog, which edits all three.
+
+An effect with no mode takes the device back out, exactly as an empty mode
+does: a colour for a mode nobody named is a setting with nothing to apply to.
+*/
+func (d *Draft) SetEffectWhole(device string, effect api.Effect) {
+	if !effect.Named() {
+		delete(d.rest.Effects, device)
+		return
+	}
+	d.setEffect(device, effect)
+}
+
+func (d *Draft) setEffect(device string, effect api.Effect) {
+	if d.rest.Effects == nil {
+		d.rest.Effects = map[string]api.Effect{}
+	}
+	d.rest.Effects[device] = effect
+}
+
+// Effect is what this draft says a device should be doing. The zero value is a
+// device it says nothing about.
+func (d *Draft) Effect(device string) api.Effect { return d.rest.Effects[device] }
 
 // Effects are every device this draft says something about.
-func (d *Draft) Effects() map[string]string { return d.rest.Effects }
+func (d *Draft) Effects() map[string]api.Effect { return d.rest.Effects }
 
 // Set gives a target a colour. An empty colour removes it, which is how
 // somebody takes an exception back out of a scene.

@@ -3,10 +3,10 @@ package cli
 import (
 	"fmt"
 	"os"
-	"strings"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
+	"github.com/ushineko/hotaru/internal/api"
 )
 
 /*
@@ -168,21 +168,22 @@ than one the image answers. The same spelling as `hotaru scene write
 func effectFlag(cmd *cobra.Command) {
 	cmd.Flags().StringSlice("effect", nil,
 		`what a device should be doing: device="Mode Name"`)
+	cmd.Flags().StringSlice("effect-colour", nil,
+		`the colour an effect that shows one runs in: device="#0000ff"`)
+	cmd.Flags().StringSlice("effect-speed", nil,
+		`how fast an effect runs, in the device's own units: device=127`)
 }
 
-// effectsFlag reads the flag into the map a scene keeps.
-func effectsFlag(cmd *cobra.Command) (map[string]string, error) {
-	given, _ := cmd.Flags().GetStringSlice("effect")
-	if len(given) == 0 {
-		return nil, nil
+// effectsFlag reads the flags into the map a scene keeps. Nil where nothing
+// was asked for, so a scene from a picture carries no effects at all rather
+// than an empty map somebody has to read past in the file.
+func effectsFlag(cmd *cobra.Command) (map[string]api.Effect, error) {
+	out := map[string]api.Effect{}
+	if err := setEffects(cmd, out); err != nil {
+		return nil, err
 	}
-	out := map[string]string{}
-	for _, one := range given {
-		device, mode, ok := strings.Cut(one, "=")
-		if !ok {
-			return nil, fmt.Errorf("%q: an effect is written device=mode", one)
-		}
-		out[device] = mode
+	if len(out) == 0 {
+		return nil, nil
 	}
 	return out, nil
 }

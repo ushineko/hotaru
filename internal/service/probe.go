@@ -8,6 +8,7 @@ import (
 	"github.com/ushineko/hotaru/internal/colour"
 
 	"github.com/ushineko/hotaru/internal/devices"
+	"github.com/ushineko/hotaru/internal/openrgb"
 )
 
 /*
@@ -116,7 +117,7 @@ func (s *Service) probeOne(ctx context.Context, client openrgbClient, device *de
 			result.PerLED = m.PerLED
 		}
 
-		if err := client.SetMode(ctx, device.Name, mode, nil, nil); err != nil {
+		if err := client.SetMode(ctx, device.Name, mode, openrgb.Style{}); err != nil {
 			finding.Modes = append(finding.Modes, result)
 			continue
 		}
@@ -142,7 +143,8 @@ func (s *Service) probeOne(ctx context.Context, client openrgbClient, device *de
 			held := m.Colour
 			was = &held
 		}
-		if err := client.SetMode(ctx, device.Name, before.ActiveMode, nil, was); err != nil && finding.Err == nil {
+		style := openrgb.Style{Colour: was}
+		if err := client.SetMode(ctx, device.Name, before.ActiveMode, style); err != nil && finding.Err == nil {
 			finding.Err = fmt.Errorf("could not put %s back into %s: %w", device.Name, before.ActiveMode, err)
 		}
 	}
@@ -218,7 +220,7 @@ func lower(in []string) []string {
 // openrgbClient is the part of the OpenRGB client this file uses, named so the
 // signature above does not import the package for one type.
 type openrgbClient interface {
-	SetMode(ctx context.Context, device, mode string, brightness *int, c *colour.Colour) error
+	SetMode(ctx context.Context, device, mode string, style openrgb.Style) error
 	SetFrame(ctx context.Context, device string, frame devices.Frame) error
 	Device(ctx context.Context, name string) (devices.Device, error)
 }

@@ -767,6 +767,20 @@ func describe(view service.View) Device {
 		if mode.Brightness {
 			device.Dimmable = append(device.Dimmable, mode.Name)
 		}
+		// A mode that shows one colour of its own, which is what makes an
+		// editor's colour-per-light picture a promise the device will not
+		// keep. Asked of the mode, never of the device: a keyboard is both.
+		if mode.ModeColour && !mode.PerLED {
+			device.OneColour = append(device.OneColour, mode.Name)
+		}
+		if mode.Speed != nil {
+			if device.Paced == nil {
+				device.Paced = map[string]Speed{}
+			}
+			device.Paced[mode.Name] = Speed{
+				Slowest: mode.Speed.Slowest, Fastest: mode.Speed.Fastest, Now: mode.Speed.Now,
+			}
+		}
 	}
 	for _, zone := range view.Device.Zones {
 		device.Zones = append(device.Zones, Zone{
