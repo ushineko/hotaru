@@ -716,3 +716,51 @@ func lastMode(t *testing.T, server *openrgb.Fake, device, mode string) openrgb.M
 	require.NotNil(t, found, "%s was never put into %s", device, mode)
 	return *found
 }
+
+func TestAModeThatShowsOneColourIsAssertedAgainAfterTheFrame(t *testing.T) {
+	/*
+		Coming from a per-LED mode, the first mode packet does not stick on
+		real hardware: a keyboard in Direct sent Solid Reactive, its colour and
+		then a hundred per-key colours displayed the keys, while every
+		read-back said the mode was active and held the colour it was given.
+		Going from one such mode to another was always right, which is what
+		says it is the transition rather than the buffer.
+	*/
+	scene := blue()
+	scene.Effects = map[string]scenes.Effect{"Keychron": {Mode: "Solid Reactive"}}
+	svc, server := lit(t, scene)
+
+	// From a per-LED mode, which is the transition that loses it.
+	require.NoError(t, server.SetMode(t.Context(), "Keychron K4 HE", "Direct", openrgb.Style{}))
+	before := len(server.Modes)
+
+	_, err := svc.ApplyScene(t.Context(), "blue")
+	require.NoError(t, err)
+
+	var asserted int
+	for _, write := range server.Modes[before:] {
+		if write.Device == "Keychron K4 HE" && write.Mode == "Solid Reactive" {
+			asserted++
+		}
+	}
+	require.Equal(t, 2, asserted,
+		"the mode was not asserted again after the frame, so the transition loses its colour")
+}
+
+func TestAPerLEDModeIsWrittenOnce(t *testing.T) {
+	// The extra packet is for the modes that cannot show a frame. A device in
+	// Direct is showing the frame, and sending its mode twice is two writes
+	// where one says everything.
+	svc, server := lit(t, blue())
+
+	_, err := svc.ApplyScene(t.Context(), "blue")
+	require.NoError(t, err)
+
+	var written int
+	for _, write := range server.Modes {
+		if write.Device == "Keychron K4 HE" && write.Mode == "Direct" {
+			written++
+		}
+	}
+	require.Equal(t, 1, written)
+}

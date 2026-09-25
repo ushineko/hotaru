@@ -772,6 +772,40 @@ func (s *Service) writeFrame(ctx context.Context, client openrgb.Client,
 				result.Attempts = append(result.Attempts, attempt)
 				continue
 			}
+			/*
+				And the mode again, for a mode that shows one colour of its
+				own.
+
+				**Coming from a per-LED mode, the first packet does not stick.**
+				A keyboard in Direct sent Solid Reactive, its colour, and then
+				a hundred per-key colours displayed the keys rather than the
+				effect's colour -- while every read-back said the mode was
+				active and held the colour it was given. Going from one such
+				mode to another was always right, which is what says it is the
+				transition and not the buffer: a frame written to a device
+				already in the mode changes nothing it shows, measured with a
+				scene whose buffer and mode colour were deliberately different.
+
+				The reading that fits every observation: the packet carries the
+				mode and its colour together, and the keyboard takes the two as
+				separate operations -- entering the mode, and colouring it. It
+				honours the colour when it is already in the mode, and loses it
+				when it is arriving. Sending the same packet a second time
+				makes the second one the already-in-the-mode case, which is the
+				one that works.
+
+				This is spec 010's rule -- send the packet even when it looks
+				redundant -- arriving at the same place from the other side.
+				One packet, and only for the modes that cannot show a frame
+				anyway.
+			*/
+			if m, known := device.Mode(mode); known && !m.PerLED {
+				if err := client.SetMode(ctx, device.Name, mode, style); err != nil {
+					attempt.Why = err.Error()
+					result.Attempts = append(result.Attempts, attempt)
+					continue
+				}
+			}
 		}
 
 		// The write is not finished until the device agrees it happened.
