@@ -2,7 +2,7 @@
 
 *lights, cooler, action!*
 
-**Version**: 0.1.16
+**Version**: 0.1.17
 
 RGB lighting and AIO cooler control for Linux, as a CLI, a user service and a
 desktop GUI. 
@@ -211,6 +211,20 @@ hotaru is a ground-up rearchitecture. Hardware learnings are carried over.
 MIT. See [LICENSE](LICENSE).
 
 ## Changelog
+
+### 0.1.17 (2026-09-25)
+
+- An effect's colour survives arriving from an all-lit scene. Between two
+  scenes that both name an effect it was right; coming from a scene where the
+  keyboard was in Direct, the mode was entered and its colour was not, and
+  nothing hotaru could read said so -- the mode read back as active holding
+  the colour it was given. A scene built to disagree with itself (every key
+  blue in the buffer, green in the mode's colour slot) showed green, so the
+  buffer was never the cause and the transition was: the packet carries the
+  mode and its colour together, and the keyboard honours the colour only when
+  it is already in the mode. The packet goes again after the frame now, which
+  makes the second one that case. Spec 010 from the other side, and only for
+  the modes that cannot show a frame (spec 052, #153).
 
 ### 0.1.16 (2026-09-25)
 
