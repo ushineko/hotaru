@@ -2,7 +2,7 @@
 
 *lights, cooler, action!*
 
-**Version**: 0.1.15
+**Version**: 0.1.16
 
 RGB lighting and AIO cooler control for Linux, as a CLI, a user service and a
 desktop GUI. 
@@ -211,6 +211,37 @@ hotaru is a ground-up rearchitecture. Hardware learnings are carried over.
 MIT. See [LICENSE](LICENSE).
 
 ## Changelog
+
+### 0.1.16 (2026-09-25)
+
+- An effect a scene names is applied even when the scene gives that device a
+  colour per LED. Resolution read the frame first and discarded every mode
+  that could not carry it, so a keyboard asked for a hundred colours and a
+  reactive mode was lit in the colours, reported as applied, and left in
+  Direct with the effect nowhere. An effect is a decision about the device and
+  the colours are what it runs in, so the frame is what gives way -- reduced
+  to the colour most of it is. Re-assertion had the same hole one step later
+  (spec 050, #148).
+
+- An effect has a colour and a speed of its own. A mode that shows one colour
+  was lit in whatever the frame reduced to, which is a reduction and not a
+  choice; a scene can name both now, in the file, the CLI (`--effect-colour`,
+  `--effect-speed`) and the API. `Device: Mode` still means what it meant and
+  is still what gets written where nothing else was set, so scenes on disk are
+  unchanged (spec 051, #149).
+
+- The editor offers one colour for a device under a one-colour effect, in
+  place of its zones and its lights, and a speed where the mode has one.
+  Drawing a hundred keys as targets for a mode that shows one of them is a
+  promise the hardware refuses. The scene's own colours are kept and come back
+  when the effect comes off, and "Make a scene" gives such a device one
+  representative colour from the picture (spec 051, #149).
+
+- Desired state keeps everything a device was recorded with. The snapshot
+  copied devices field by field, so a field added to the record was dropped
+  from every copy of it: the mode's own colour and speed were remembered and
+  then lost, and a re-assert put the right mode back in the wrong colour
+  (spec 051, #149).
 
 ### 0.1.15 (2026-09-24)
 
