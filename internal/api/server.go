@@ -695,8 +695,14 @@ func Handler(svc *service.Service) http.Handler {
 			return
 		}
 
-		outcome, err := svc.Preview(r.Context(), fromScene(in.Scene),
-			holderOf(SceneRequest{Holder: in.Holder}, r), in.Hold)
+		/*
+			A token makes this a change to the draft already up.
+
+			The same route because it is the same sentence -- this scene is
+			what the preview shows -- and both halves go through the one
+			light() that knows what an effect is.
+		*/
+		outcome, err := preview(r, svc, in)
 		if err != nil {
 			fail(w, err)
 			return
@@ -971,6 +977,20 @@ func kept(svc *service.Service, name string, in ImageRequest) (images.Image, err
 // asScene is a saved scene on the wire.
 // asRenamed is what a rename changed, on the wire. The line is rendered here
 // rather than by each caller, so the CLI and the window say it the same way.
+/*
+preview puts a draft up, or changes the one that is up.
+
+Split out of the route so the two are visibly one operation: a client that has
+a lease says so with a token, and everything else about the call is the same.
+*/
+func preview(r *http.Request, svc *service.Service, in DraftRequest) (service.SceneOutcome, error) {
+	if in.Token != "" {
+		return svc.Redraft(r.Context(), in.Token, fromScene(in.Scene))
+	}
+	return svc.Preview(r.Context(), fromScene(in.Scene),
+		holderOf(SceneRequest{Holder: in.Holder}, r), in.Hold)
+}
+
 func asRenamed(r service.Renamed) Renamed {
 	return Renamed{
 		From: r.From, To: r.To,

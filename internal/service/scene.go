@@ -198,6 +198,39 @@ func (s *Service) Preview(ctx context.Context, scene scenes.Scene, holder string
 }
 
 /*
+Redraft makes an existing preview show a different scene.
+
+**The one way an editor changes what is on the hardware.** It used to write
+the draft through the plain colour path instead, because taking the lease
+again for every keystroke would release it first and flash the previous
+colours back -- and that path has no effects in it, so every change to a draft
+quietly put the keyboard into Direct. A scene became lights by two different
+routes, one of which did not know what an effect was; see spec 054.
+
+So the lease is taken once and this replaces what it is showing, through the
+same light() every other scene goes through. Devices the edited scene has
+started naming are taken into the lease, because an editor that added the
+keyboard to a scene means the keyboard.
+*/
+func (s *Service) Redraft(ctx context.Context, token string, scene scenes.Scene) (SceneOutcome, error) {
+	covered, err := s.covers(ctx, scene)
+	if err != nil {
+		return SceneOutcome{}, err
+	}
+	lease, err := s.Extend(token, covered)
+	if err != nil {
+		return SceneOutcome{}, err
+	}
+
+	outcome, err := s.light(ctx, scene, Request{Preview: true})
+	if err != nil {
+		return SceneOutcome{}, err
+	}
+	outcome.Lease = lease
+	return outcome, nil
+}
+
+/*
 PreviewScene lights a scene without meaning it.
 
 Not recorded, not reconciled over, and held by whoever asked for it. connection

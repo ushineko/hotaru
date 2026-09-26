@@ -358,6 +358,19 @@ $ curl -s --unix-socket … -X POST http://hotaru/v1/preview \
     -d '{"scene":{"assignments":[{"target":"kraken","colour":"#201040"}]},"holder":"an editor"}'
 ```
 
+With `token`, this changes the draft a preview is already showing rather than
+taking a second lease. An editor takes the lease once and then says what the
+draft is now on every change, because taking it again would release it first
+and flash the previous colours back. Devices the edited scene has started
+naming are taken into the lease; one held by somebody else is refused, exactly
+as a new lease is.
+
+It is the same route because it is the same sentence -- this scene is what the
+preview shows -- and a scene becoming lights by a second route is how a
+scene's effects get left behind. `POST /v1/lighting/apply` carries colours and
+not effects, and is for `hotaru light set` and the wizard rather than for
+scenes.
+
 `hold` behaves as it does on the named route. With it, the request stays open
 and the lease is that connection. Without it, the lease carries an expiry to
 renew. Everything else is the same machinery: the suspended rewrite timer, the

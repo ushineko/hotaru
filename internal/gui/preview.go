@@ -18,6 +18,9 @@ be forgotten about by an editor that ended badly.
 type preview struct {
 	mu      sync.Mutex
 	release func()
+	// token is the lease, so a change to the draft is a change to this
+	// preview rather than a second one.
+	token string
 }
 
 /*
@@ -29,16 +32,21 @@ put the lights back, so every colour went to the hardware with a revert to the
 previous one a moment ahead of it. What somebody saw was the colour flashing
 back -- the picker looking broken while doing exactly what it was told.
 
-So the first call takes the lease, and every call after it writes the draft
-through the ordinary apply path with Preview set: not recorded, and not
-reconciled over either, because the lease this window is still holding is what
-keeps re-assertion off those devices.
+So the first call takes the lease, and every call after it says what the draft
+is now under that same lease: not recorded, and not reconciled over either,
+because the lease this window is still holding is what keeps re-assertion off
+those devices.
 */
 func (a *App) Preview(ctx context.Context, scene api.Scene) error {
 	if a.Previewing() {
 		return a.update(ctx, scene)
 	}
+	return a.hold(ctx, scene)
+}
 
+// hold puts a draft up and keeps the lease, which is the first call and the
+// one that has nothing to change yet.
+func (a *App) hold(_ context.Context, scene api.Scene) error {
 	/*
 		Deliberately not the caller's context.
 
@@ -47,13 +55,16 @@ func (a *App) Preview(ctx context.Context, scene api.Scene) error {
 		so holding on it put the draft up and took it down again within a
 		millisecond -- the button worked perfectly and the lights never moved.
 	*/
-	_, release, err := a.client.HoldDraft(context.Background(), scene, "hotaru-gui")
+	held, release, err := a.client.HoldDraft(context.Background(), scene, "hotaru-gui")
 	if err != nil {
 		return err
 	}
 
 	a.preview.mu.Lock()
 	a.preview.release = release
+	if held.Preview != nil {
+		a.preview.token = held.Preview.Token
+	}
 	a.preview.mu.Unlock()
 	return nil
 }
@@ -61,16 +72,27 @@ func (a *App) Preview(ctx context.Context, scene api.Scene) error {
 /*
 update writes a draft to the devices this window already holds.
 
-An ordinary apply with Preview set: nothing is recorded, and nothing will
-correct it while the lease stands. One request, no lease churn, and no revert
-in between.
+**Through the same door a named scene goes through.** It used to build a
+colours-only request and send it to the plain lighting route, which has no
+effects in it at all -- so every change to a draft put the keyboard into
+Direct, and the effect only ever came back when something applied a saved
+scene. One scene, two ways of becoming lights, and only one of them knew what
+an effect was. See spec 054.
+
+The lease is named rather than re-taken, so nothing is released and no
+previous colours flash back on the way.
 */
 func (a *App) update(ctx context.Context, scene api.Scene) error {
-	request := api.ApplyRequest{Colour: scene.Colour, Preview: true, Off: scene.Off}
-	for _, assignment := range scene.Assignments {
-		request.Assignments = append(request.Assignments, api.Assignment(assignment))
+	a.preview.mu.Lock()
+	token := a.preview.token
+	a.preview.mu.Unlock()
+
+	if token == "" {
+		// A hold that came back without one. Nothing to change; the draft
+		// goes up the way anything else does.
+		return a.hold(ctx, scene)
 	}
-	_, err := a.client.Apply(ctx, request)
+	_, err := a.client.Redraft(ctx, token, scene)
 	return err
 }
 
@@ -92,7 +114,7 @@ has to be remembered in four places is a rule that will be forgotten in one.
 func (a *App) EndPreview() {
 	a.preview.mu.Lock()
 	release := a.preview.release
-	a.preview.release = nil
+	a.preview.release, a.preview.token = nil, ""
 	a.preview.mu.Unlock()
 
 	if release != nil {

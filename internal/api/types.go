@@ -742,6 +742,18 @@ type DraftRequest struct {
 	Hold bool `json:"hold,omitempty"`
 	// Holder is who to name in a listing.
 	Holder string `json:"holder,omitempty"`
+
+	/*
+		Token makes this a change to a preview already up, rather than a new
+		one.
+
+		An editor takes the lease once and then says "the draft is this now"
+		on every change: re-taking it would release it first and flash the
+		previous colours back. A field rather than a route of its own,
+		because it is the same sentence -- this is the draft -- and a second
+		route is a second place for a scene to become lights. See spec 054.
+	*/
+	Token string `json:"token,omitempty"`
 }
 
 // PreviewRequest renews or releases a lease by token.

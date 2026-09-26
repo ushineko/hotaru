@@ -426,6 +426,20 @@ func (c *Client) HoldDraft(ctx context.Context, scene Scene, holder string) (Sce
 		DraftRequest{Scene: scene, Hold: true, Holder: holder})
 }
 
+/*
+Redraft changes what a preview already up is showing.
+
+For an editor: the lease is taken once and this says what the draft is now, so
+nothing is released and no previous colours flash back on the way. It goes
+through the same path a named scene does, effects and all.
+*/
+func (c *Client) Redraft(ctx context.Context, token string, scene Scene) (SceneResponse, error) {
+	var out SceneResponse
+	err := c.do(ctx, http.MethodPost, "/"+Version+"/preview",
+		DraftRequest{Scene: scene, Token: token}, &out)
+	return out, err
+}
+
 // PreviewDraft previews an unnamed scene under a lease the caller renews, for
 // a client that cannot hold a connection open.
 func (c *Client) PreviewDraft(ctx context.Context, scene Scene, holder string) (SceneResponse, error) {
