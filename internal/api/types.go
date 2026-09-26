@@ -773,6 +773,40 @@ type ImagesResponse struct {
 }
 
 /*
+NameRequest is the new name, for a rename or a clone.
+
+One request type for both and for all three kinds of thing, because "what
+should it be called" is one question however it is asked. See spec 053.
+*/
+type NameRequest struct {
+	To string `json:"to"`
+}
+
+/*
+Renamed is what a rename changed besides the thing itself.
+
+The counts are the point. A rename carries its references with it -- the keys
+bound to a scene, the scenes naming a screen, the screens drawing a picture --
+and a caller who is not told how many were rewritten has been asked to trust
+that they were.
+*/
+type Renamed struct {
+	From string `json:"from"`
+	To   string `json:"to"`
+
+	Scenes  int `json:"scenes,omitempty"`
+	Screens int `json:"screens,omitempty"`
+	Keys    int `json:"keys,omitempty"`
+
+	// Active says the renamed screen was the one the panel draws.
+	Active bool `json:"active,omitempty"`
+
+	// Changed is the counts in a line, or empty when nothing else moved.
+	// Rendered by the service so both shells say it the same way.
+	Changed string `json:"changed,omitempty"`
+}
+
+/*
 ImageRequest adds a picture, base64-encoded.
 
 The same shape the screen route uses, for the same reason: this is JSON and a

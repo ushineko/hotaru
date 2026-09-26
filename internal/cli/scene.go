@@ -30,7 +30,7 @@ func sceneCommand() *cobra.Command {
 	cmd.AddCommand(sceneListCommand(), sceneShowCommand(), sceneWriteCommand(),
 		sceneApplyCommand(), scenePreviewCommand(), sceneSaveCommand(),
 		sceneRecolourCommand(), sceneStyleCommand(), sceneAdoptCommand(),
-		sceneDeleteCommand())
+		sceneRenameCommand(), sceneDeleteCommand())
 	return cmd
 }
 

@@ -147,6 +147,49 @@ func (l *Library) Remove(name string) error {
 	return nil
 }
 
+/*
+Rename moves a stored picture to another name.
+
+The file itself, not a copy: a rename that re-encoded would put the picture
+through the quantiser a second time, and the second pass is a picture that
+looks slightly worse for no reason anybody asked for.
+
+Refused onto a name that is taken. Overwriting would be a delete nobody typed,
+and the caller renaming `wallpaper` to `aurora` on a machine that already has
+an `aurora` has made a mistake worth hearing about.
+*/
+func (l *Library) Rename(from, to string) (Image, error) {
+	from, to = clean(from), clean(to)
+	if from == "" || to == "" {
+		return Image{}, fmt.Errorf("a rename needs both names")
+	}
+	if from == to {
+		return Image{}, fmt.Errorf("%s is already called that", from)
+	}
+	if _, err := os.Stat(l.path(from)); err != nil {
+		return Image{}, fmt.Errorf("no picture called %q", from)
+	}
+	if _, err := os.Stat(l.path(to)); err == nil {
+		return Image{}, fmt.Errorf("there is already a picture called %q", to)
+	}
+	if err := os.Rename(l.path(from), l.path(to)); err != nil {
+		return Image{}, fmt.Errorf("rename %s: %w", from, err)
+	}
+
+	info, err := os.Stat(l.path(to))
+	if err != nil {
+		return Image{}, fmt.Errorf("rename %s: %w", from, err)
+	}
+	return Image{
+		Name: to, Path: l.path(to), Bytes: info.Size(),
+		Frames: frames(l.path(to)), Added: info.ModTime(),
+	}, nil
+}
+
+// Path is where a name is kept, which a scene names and a rename has to know
+// both halves of.
+func (l *Library) Path(name string) string { return l.path(clean(name)) }
+
 // Read is a stored image's bytes, for sending to the panel.
 func (l *Library) Read(name string) ([]byte, error) {
 	body, err := os.ReadFile(l.path(clean(name))) //nolint:gosec // a name this package cleaned

@@ -23,7 +23,7 @@ func imageCommand() *cobra.Command {
 		Short: "Pictures for the cooler's screen",
 	}
 	cmd.AddCommand(imageListCommand(), imageAddCommand(), imageSceneCommand(),
-		imageShowCommand(), imageRemoveCommand())
+		imageShowCommand(), imageRenameCommand(), imageRemoveCommand())
 	return cmd
 }
 

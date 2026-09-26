@@ -31,7 +31,8 @@ func dashboardCommand() *cobra.Command {
 	cmd.AddCommand(
 		dashboardListCommand(), dashboardShowCommand(), dashboardSaveCommand(),
 		dashboardUseCommand(), dashboardSceneCommand(),
-		dashboardPreviewCommand(), dashboardDeleteCommand(),
+		dashboardPreviewCommand(), dashboardRenameCommand(),
+		dashboardCloneCommand(), dashboardDeleteCommand(),
 	)
 	return cmd
 }

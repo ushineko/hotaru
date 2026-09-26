@@ -151,10 +151,15 @@ func (p *PicturesSection) Build(sh *shell.Shell) fyne.CanvasObject {
 	)
 }
 
-// The tile, and what it holds: the picture, its name, and the three things
-// worth doing with it.
+/*
+The tile, and what it holds: the picture, its name, and the four things worth
+doing with it.
+
+Wide enough for the row of icons under the name, which is what sets it: at
+150 the fourth one hung over the edge. See TestAPictureTileHoldsItsOwnButtons.
+*/
 const (
-	tileWide = 150
+	tileWide = 168
 	tileTall = 215
 )
 
@@ -194,13 +199,15 @@ func (p *PicturesSection) tile(sh *shell.Shell, image api.Image) fyne.CanvasObje
 	*/
 	show := widget.NewButtonWithIcon("", theme.VisibilityIcon(), func() { p.show(sh, image) })
 	lights := widget.NewButtonWithIcon("", theme.ColorPaletteIcon(), func() { p.scene(sh, image) })
+	rename := widget.NewButtonWithIcon("", theme.DocumentCreateIcon(), func() { p.rename(sh, image) })
 	forget := widget.NewButtonWithIcon("", theme.DeleteIcon(), func() { p.forget(sh, image) })
-	for _, button := range []*widget.Button{show, lights, forget} {
+	for _, button := range []*widget.Button{show, lights, rename, forget} {
 		button.Importance = widget.LowImportance
 	}
 	actions := container.NewHBox(
 		widgets.WithTip(show, "Show it on the panel"),
 		widgets.WithTip(lights, "Make a scene from it"),
+		widgets.WithTip(rename, "Rename it"),
 		widgets.WithTip(forget, "Remove it"),
 	)
 
@@ -216,7 +223,7 @@ func (p *PicturesSection) forget(sh *shell.Shell, image api.Image) {
 			return err
 		}
 		onScreen(func() {
-			imagecache.Shared.Forget(thumbKey(image))
+			forgetThumbnail(image)
 			sh.Invalidate()
 		})
 		return nil
