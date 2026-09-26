@@ -764,3 +764,167 @@ func TestAPerLEDModeIsWrittenOnce(t *testing.T) {
 	}
 	require.Equal(t, 1, written)
 }
+
+/*
+A mode that shows one colour is sent a buffer of that colour.
+
+**The keyboard displays the buffer, not the mode's colour.** Spec 052 read it
+the other way and sent the mode packet twice to make the colour stick; both
+packets were right and the device was never looking at them. Measured on the
+hardware: a scene with an effect colour of #67798c and seventy per-key
+assignments around #8c6f6a read back in the right mode holding the right mode
+colour, and showed the buffer's red.
+
+So the two are made to agree, and it stops mattering which one the firmware
+reads. See spec 055.
+*/
+func TestAModeThatShowsOneColourIsSentABufferOfThatColour(t *testing.T) {
+	svc, server := lit(t, scenes.Scene{
+		Name: "evening",
+		// The shape that broke it: per-key colours nothing like the effect's.
+		Assignments: []scenes.Assignment{{Target: "Keychron", Colour: "#8c6f6a"}},
+		Effects: map[string]scenes.Effect{
+			"Keychron": {Mode: "Solid Reactive", Colour: "#67798c"},
+		},
+	})
+
+	_, err := svc.ApplyScene(context.Background(), "evening")
+	require.NoError(t, err)
+
+	frame, ok := server.Showing("Keychron K4 HE")
+	require.True(t, ok)
+	require.NotEmpty(t, frame.Colours)
+	for i, c := range frame.Colours {
+		require.Equal(t, "#67798c", c.String(),
+			"LED %d holds the scene's colour rather than the effect's", i)
+	}
+}
+
+/*
+And the scene's own colours are still what is remembered.
+
+The buffer is what the device is shown while a mode that cannot display those
+colours is running; desired state is what somebody asked for, and is what the
+lights go back to when the effect comes off.
+*/
+func TestTheSceneKeepsItsColoursWhileTheEffectShowsItsOwn(t *testing.T) {
+	svc, _ := lit(t, scenes.Scene{
+		Name:        "evening",
+		Assignments: []scenes.Assignment{{Target: "Keychron", Colour: "#8c6f6a"}},
+		Effects: map[string]scenes.Effect{
+			"Keychron": {Mode: "Solid Reactive", Colour: "#67798c"},
+		},
+	})
+
+	_, err := svc.ApplyScene(context.Background(), "evening")
+	require.NoError(t, err)
+
+	kept := svc.Desired().Devices["Keychron K4 HE"]
+	require.NotEmpty(t, kept.Colours)
+	require.Equal(t, "#8c6f6a", kept.Colours[0].String(),
+		"the scene's colours were overwritten by the effect's")
+	require.Equal(t, "#67798c", kept.ModeColour, "and the effect's colour is kept too")
+}
+
+/*
+A per-LED mode is untouched by any of this: the buffer is what it shows, and
+a scene's colours are what go in it.
+*/
+func TestAPerLEDModeStillGetsTheScenesOwnColours(t *testing.T) {
+	svc, server := lit(t, scenes.Scene{
+		Name:        "evening",
+		Assignments: []scenes.Assignment{{Target: "Keychron", Colour: "#8c6f6a"}},
+	})
+
+	_, err := svc.ApplyScene(context.Background(), "evening")
+	require.NoError(t, err)
+
+	frame, ok := server.Showing("Keychron K4 HE")
+	require.True(t, ok)
+	require.Equal(t, "#8c6f6a", frame.Colours[0].String())
+}
+
+/*
+The order the three packets go in, which is the whole of spec 056.
+
+**Measured with hotaru out of the loop.** Driving the keyboard from OpenRGB's
+own CLI: arriving at a reactive mode from Direct with its colour shows red,
+and the identical command sent again -- already in the mode -- shows the
+colour. Spec 052 knew that and sent the packet twice; it did not help, because
+the frame went between them, and a frame landing in between puts the device
+back in the arriving state. Moving the frame ahead of both is the only
+difference between the sequence that failed and the one that worked.
+*/
+func TestAModeThatShowsOneColourTakesTheFrameBeforeTheMode(t *testing.T) {
+	svc, server := lit(t, scenes.Scene{
+		Name:        "evening",
+		Assignments: []scenes.Assignment{{Target: "Keychron", Colour: "#8c6f6a"}},
+		Effects: map[string]scenes.Effect{
+			"Keychron": {Mode: "Solid Reactive", Colour: "#67798c"},
+		},
+	})
+
+	_, err := svc.ApplyScene(context.Background(), "evening")
+	require.NoError(t, err)
+
+	require.Equal(t,
+		[]string{"frame", "mode:Solid Reactive", "mode:Solid Reactive"},
+		server.Sequence,
+		"the frame must go first, and nothing between the two mode packets")
+}
+
+/*
+A per-LED mode keeps the order it has always had: the mode, then the frame.
+
+On an NZXT cooler the mode packet is what commits the frame, so it goes first
+and goes every time (spec 010). Nothing measured about the keyboard changes
+that, and this is here so the reordering cannot quietly spread to it.
+*/
+func TestAPerLEDModeTakesTheModeBeforeTheFrame(t *testing.T) {
+	svc, server := lit(t, scenes.Scene{
+		Name:        "evening",
+		Assignments: []scenes.Assignment{{Target: "Keychron", Colour: "#8c6f6a"}},
+	})
+
+	_, err := svc.ApplyScene(context.Background(), "evening")
+	require.NoError(t, err)
+	require.Equal(t, []string{"mode:Direct", "frame"}, server.Sequence)
+}
+
+/*
+A mode that shows one colour is asked twice when it reports the old one.
+
+**Measured on the keyboard, arriving from Direct.** The same three packets
+read back as Direct with no pause and as the mode asked for with one, and a
+pause before the read alone is enough -- so the writes land and the device is
+merely slow to say so. Believing the first answer made resolution fall
+through to Direct and abandon the effect, which is how spec 056's reordering
+first showed up as a worse bug than the one it fixed.
+*/
+func TestASlowModeIsAskedAgainRatherThanAbandoned(t *testing.T) {
+	svc, server := lit(t, scenes.Scene{
+		Name:        "evening",
+		Assignments: []scenes.Assignment{{Target: "Keychron", Colour: "#8c6f6a"}},
+		Effects: map[string]scenes.Effect{
+			"Keychron": {Mode: "Solid Reactive", Colour: "#67798c"},
+		},
+	})
+	// The device takes the mode and reports the old one on the first read,
+	// which is what the keyboard does arriving from a per-LED mode.
+	server.Slow = map[string]int{"Keychron K4 HE": 2}
+
+	out, err := svc.ApplyScene(context.Background(), "evening")
+	require.NoError(t, err)
+
+	var seen bool
+	for _, r := range out.Results {
+		if r.Device != "Keychron K4 HE" {
+			continue
+		}
+		seen = true
+		require.True(t, r.Applied)
+		require.Equal(t, "Solid Reactive", r.Mode,
+			"the effect was abandoned because the device was slow to report it")
+	}
+	require.True(t, seen, "the keyboard was not in the results")
+}

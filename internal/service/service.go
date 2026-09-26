@@ -750,15 +750,63 @@ func (s *Service) writeFrame(ctx context.Context, client openrgb.Client,
 		}
 
 		/*
-			The mode packet goes every time, including when the device is
-			already in that mode.
+			A mode that shows one colour of its own takes the frame first,
+			then the mode twice; everything else takes the mode, then the
+			frame.
 
-			It looks redundant and is not. On an NZXT cooler it is what
-			commits the frame: with the packet suppressed, the ring and the
-			fans ignored every write and kept whatever they were showing,
-			while the rest of the machine changed colour around them. Measured
-			by building both ways and looking at the case. See spec 010.
+			**Measured on the hardware, with hotaru out of the loop.** Driving
+			the keyboard from OpenRGB's own CLI: arriving at a reactive mode
+			from Direct with its colour shows red, and the identical command
+			sent again -- now already in the mode -- shows the colour. That is
+			spec 052's asymmetry, reproduced without any of hotaru's code in
+			the way, and it is why the packet goes twice.
+
+			Spec 052 already sent it twice and it did not help, because hotaru
+			wrote the frame *between* the two: a frame landing in between puts
+			the device back in the arriving state, so the second packet was
+			never the already-in-the-mode case the fix depended on. Moving the
+			frame ahead of both is the only difference between the sequence
+			that failed and the one that worked, and it was confirmed on the
+			keyboard coming off a per-LED mode.
+
+			The frame still goes, in the colour the mode is showing (see
+			below), so the buffer and the mode agree whichever the firmware
+			reads.
+
+			For every other mode the order is unchanged and deliberate: the
+			mode packet goes first and goes every time, including when the
+			device is already in that mode. On an NZXT cooler it is what
+			commits the frame -- with it suppressed, the ring and the fans
+			ignored every write while the rest of the machine changed colour
+			around them. See spec 010, and spec 056 for the reordering.
 		*/
+		oneColour := false
+		if m, known := device.Mode(mode); known && !m.PerLED {
+			oneColour = true
+		}
+
+		/*
+			The buffer is written in the colour the mode is showing.
+
+			The scene's own colours are not lost: they are what is recorded as
+			desired state, so they are there for the moment the effect comes
+			off. What changes is only what is put in the device's buffer while
+			a mode that cannot show them is running.
+		*/
+		written := frame
+		if oneColour && style.Colour != nil {
+			written = devices.Solid(device, *style.Colour)
+		}
+
+		// The frame, where it goes before the mode.
+		if oneColour && !isOffMode(mode) {
+			if err := client.SetFrame(ctx, device.Name, written); err != nil {
+				attempt.Why = err.Error()
+				result.Attempts = append(result.Attempts, attempt)
+				continue
+			}
+		}
+
 		if err := client.SetMode(ctx, device.Name, mode, style); err != nil {
 			attempt.Why = err.Error()
 			result.Attempts = append(result.Attempts, attempt)
@@ -766,45 +814,22 @@ func (s *Service) writeFrame(ctx context.Context, client openrgb.Client,
 		}
 		attempt.Accepted = true
 
-		if !isOffMode(mode) {
-			if err := client.SetFrame(ctx, device.Name, frame); err != nil {
+		switch {
+		case isOffMode(mode):
+			// Nothing to show, and nothing to commit.
+		case oneColour:
+			// The second one, which is the already-in-the-mode case and is
+			// what makes the colour stick.
+			if err := client.SetMode(ctx, device.Name, mode, style); err != nil {
 				attempt.Why = err.Error()
 				result.Attempts = append(result.Attempts, attempt)
 				continue
 			}
-			/*
-				And the mode again, for a mode that shows one colour of its
-				own.
-
-				**Coming from a per-LED mode, the first packet does not stick.**
-				A keyboard in Direct sent Solid Reactive, its colour, and then
-				a hundred per-key colours displayed the keys rather than the
-				effect's colour -- while every read-back said the mode was
-				active and held the colour it was given. Going from one such
-				mode to another was always right, which is what says it is the
-				transition and not the buffer: a frame written to a device
-				already in the mode changes nothing it shows, measured with a
-				scene whose buffer and mode colour were deliberately different.
-
-				The reading that fits every observation: the packet carries the
-				mode and its colour together, and the keyboard takes the two as
-				separate operations -- entering the mode, and colouring it. It
-				honours the colour when it is already in the mode, and loses it
-				when it is arriving. Sending the same packet a second time
-				makes the second one the already-in-the-mode case, which is the
-				one that works.
-
-				This is spec 010's rule -- send the packet even when it looks
-				redundant -- arriving at the same place from the other side.
-				One packet, and only for the modes that cannot show a frame
-				anyway.
-			*/
-			if m, known := device.Mode(mode); known && !m.PerLED {
-				if err := client.SetMode(ctx, device.Name, mode, style); err != nil {
-					attempt.Why = err.Error()
-					result.Attempts = append(result.Attempts, attempt)
-					continue
-				}
+		default:
+			if err := client.SetFrame(ctx, device.Name, written); err != nil {
+				attempt.Why = err.Error()
+				result.Attempts = append(result.Attempts, attempt)
+				continue
 			}
 		}
 
@@ -816,8 +841,38 @@ func (s *Service) writeFrame(ctx context.Context, client openrgb.Client,
 			result.Err = err
 			return result
 		}
+		/*
+			A mode that shows one colour is asked a second time if it says it
+			is still in the old one.
+
+			**It reports the old mode if you ask straight away.** Measured on
+			the keyboard, arriving from Direct: the same three packets read
+			back as Direct with no pause, and as the mode asked for with one
+			-- and a pause before the *read* alone is enough. The writes land
+			either way; the device is slow to say so.
+
+			Without this the read-back was evidence of a mode that had not
+			taken, so resolution fell through to the next candidate and the
+			effect was abandoned for Direct. The device ended up in the mode
+			hotaru had decided against, showing the scene's own colours.
+
+			Asked again rather than always waited for, because the ordinary
+			write path does not sleep and a delay every device pays for one
+			device's slowness is the wrong trade. Only a disagreement costs
+			anything, and only for a mode that shows one colour. See spec 056.
+		*/
+		if oneColour && !strings.EqualFold(after.ActiveMode, mode) {
+			if !pause(ctx, settleDelay) {
+				result.Err = ctx.Err()
+				return result
+			}
+			if again, err := client.Device(ctx, device.Name); err == nil {
+				after = again
+			}
+		}
+
 		attempt.Active = after.ActiveMode
-		attempt.Showing = showing(after, frame)
+		attempt.Showing = showing(after, written)
 
 		if !attempt.Showing && strings.EqualFold(after.ActiveMode, mode) {
 			/*
@@ -831,8 +886,8 @@ func (s *Service) writeFrame(ctx context.Context, client openrgb.Client,
 				CLI, which sends the two as separate commands with a round
 				trip between them, lights hardware that hotaru could not.
 			*/
-			if again := s.settle(ctx, client, device.Name, frame); again != nil {
-				attempt.Showing = showing(*again, frame)
+			if again := s.settle(ctx, client, device.Name, written); again != nil {
+				attempt.Showing = showing(*again, written)
 				attempt.Settled = attempt.Showing
 			}
 		}
@@ -960,6 +1015,17 @@ Long enough for an SMBus device, short enough that a person setting a colour
 does not notice. Only ever paid by a device that did not show the first frame.
 */
 const settleDelay = 120 * time.Millisecond
+
+// pause waits, and says whether it got to the end rather than being
+// cancelled. A write that is being given up on should not still sleep.
+func pause(ctx context.Context, d time.Duration) bool {
+	select {
+	case <-ctx.Done():
+		return false
+	case <-time.After(d):
+		return true
+	}
+}
 
 // settle writes the frame once more, after a pause, and reads the device back.
 func (s *Service) settle(ctx context.Context, client openrgb.Client,
