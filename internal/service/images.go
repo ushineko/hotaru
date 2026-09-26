@@ -24,6 +24,10 @@ type ImageLibrary interface {
 	All() ([]images.Image, error)
 	Remove(name string) error
 	Read(name string) ([]byte, error)
+	// Rename moves one, and Path is where a name is kept: a scene keeps the
+	// path rather than the name, so a rename has to know both halves of it.
+	Rename(from, to string) (images.Image, error)
+	Path(name string) string
 }
 
 // SetImages gives the service somewhere to keep pictures.

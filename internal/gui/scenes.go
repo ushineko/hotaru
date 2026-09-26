@@ -390,6 +390,14 @@ func (s *ScenesSection) row(sh *shell.Shell, scene api.Scene, key string,
 	*/
 	buttons := []fyne.CanvasObject{apply, edit}
 	if !scene.Shipped {
+		// Renaming is a saved scene's alone, for the reason deleting is: a
+		// shipped scene's name is a string in the binary, and there is
+		// nothing in a file to move.
+		rename := widget.NewButtonWithIcon("", theme.DocumentCreateIcon(), func() {
+			s.rename(sh, scene)
+		})
+		buttons = append(buttons, rename)
+
 		forget := widget.NewButtonWithIcon("", theme.DeleteIcon(), func() {
 			dialog.ShowConfirm("Delete "+scene.Name+"?", "", func(yes bool) {
 				if !yes {

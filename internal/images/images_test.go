@@ -356,3 +356,70 @@ func moving(t *testing.T, count int) []byte {
 	require.NoError(t, gif.EncodeAll(&out, animation))
 	return out.Bytes()
 }
+
+func TestRenamingMovesTheFileRatherThanConvertingItAgain(t *testing.T) {
+	/*
+		The bytes have to be the same bytes.
+
+		A rename that re-encoded would put the picture through the quantiser
+		a second time, and what comes out is a picture that looks slightly
+		worse for a reason nobody asked for. The file moves; nothing is
+		decoded.
+	*/
+	l := library(t)
+	stored, err := l.Add("wallpaper", wallpaper(t, 1920, 1080))
+	require.NoError(t, err)
+	before, err := l.Read("wallpaper")
+	require.NoError(t, err)
+
+	moved, err := l.Rename("wallpaper", "aurora")
+	require.NoError(t, err)
+	require.Equal(t, "aurora", moved.Name)
+	require.Equal(t, l.Path("aurora"), moved.Path)
+	require.Equal(t, stored.Frames, moved.Frames)
+
+	after, err := l.Read("aurora")
+	require.NoError(t, err)
+	require.Equal(t, before, after, "the same bytes under another name")
+
+	_, err = l.Read("wallpaper")
+	require.Error(t, err, "and nothing under the old one")
+}
+
+func TestRenamingOntoATakenNameIsRefused(t *testing.T) {
+	// Overwriting would be a delete nobody typed, and the picture being
+	// overwritten is the one somebody would miss.
+	l := library(t)
+	_, err := l.Add("one", wallpaper(t, 400, 400))
+	require.NoError(t, err)
+	_, err = l.Add("two", wallpaper(t, 400, 400))
+	require.NoError(t, err)
+
+	_, err = l.Rename("one", "two")
+	require.Error(t, err)
+
+	all, err := l.All()
+	require.NoError(t, err)
+	require.Len(t, all, 2, "both are still there")
+}
+
+func TestRenamingSomethingThatIsNotThereSaysSo(t *testing.T) {
+	// Unlike removing, where the caller wanted it gone and it is gone. A
+	// rename of nothing leaves the caller believing a name exists.
+	l := library(t)
+	_, err := l.Rename("never-existed", "something")
+	require.Error(t, err)
+}
+
+func TestARenamedNameIsCleanedLikeAnyOther(t *testing.T) {
+	// The same rule that makes a name safe to use as a filename, applied at
+	// the one other place a name arrives.
+	l := library(t)
+	_, err := l.Add("one", wallpaper(t, 400, 400))
+	require.NoError(t, err)
+
+	moved, err := l.Rename("one", "../Escaped Name")
+	require.NoError(t, err)
+	require.Equal(t, "escaped-name", moved.Name)
+	require.Equal(t, filepath.Dir(l.Path("one")), filepath.Dir(moved.Path))
+}

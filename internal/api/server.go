@@ -43,16 +43,20 @@ func Routes() []string {
 		"DELETE /" + Version + "/scenes/{name}",
 		"POST /" + Version + "/scenes/{name}/apply",
 		"POST /" + Version + "/scenes/{name}/capture",
+		"POST /" + Version + "/scenes/{name}/rename",
 		"GET /" + Version + "/readings",
 		"GET /" + Version + "/dashboards",
 		"PUT /" + Version + "/dashboards/{name}",
 		"DELETE /" + Version + "/dashboards/{name}",
 		"POST /" + Version + "/dashboards/{name}/use",
 		"POST /" + Version + "/dashboards/{name}/preview",
+		"POST /" + Version + "/dashboards/{name}/rename",
+		"POST /" + Version + "/dashboards/{name}/clone",
 		"GET /" + Version + "/images",
 		"POST /" + Version + "/images/preview",
 		"PUT /" + Version + "/images/{name}",
 		"DELETE /" + Version + "/images/{name}",
+		"POST /" + Version + "/images/{name}/rename",
 		"POST /" + Version + "/images/{name}/scene",
 		"POST /" + Version + "/dashboards/{name}/scene",
 		"POST /" + Version + "/scenes/{name}/recolour",
@@ -263,6 +267,28 @@ func Handler(svc *service.Service) http.Handler {
 		w.WriteHeader(http.StatusNoContent)
 	})
 
+	/*
+		A rename, which is a rename plus every reference to the old name.
+
+		A verb on a sub-path rather than a PUT to the new name, because that
+		is how every other operation here that is not CRUD is spelled --
+		`/use`, `/apply`, `/capture` -- and because the response is what the
+		rename changed rather than the thing renamed.
+	*/
+	mux.HandleFunc("POST /"+Version+"/scenes/{name}/rename", func(w http.ResponseWriter, r *http.Request) {
+		var in NameRequest
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			write(w, http.StatusBadRequest, Error{Error: "that request does not decode", Detail: err.Error()})
+			return
+		}
+		out, err := svc.RenameScene(r.PathValue("name"), in.To)
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		write(w, http.StatusOK, asRenamed(out))
+	})
+
 	mux.HandleFunc("POST /"+Version+"/scenes/{name}/capture", func(w http.ResponseWriter, r *http.Request) {
 		var in CaptureRequest
 		if r.Body != nil {
@@ -359,6 +385,41 @@ func Handler(svc *service.Service) http.Handler {
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
+	})
+
+	mux.HandleFunc("POST /"+Version+"/dashboards/{name}/rename", func(w http.ResponseWriter, r *http.Request) {
+		var in NameRequest
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			write(w, http.StatusBadRequest, Error{Error: "that request does not decode", Detail: err.Error()})
+			return
+		}
+		out, err := svc.RenameDashboard(r.PathValue("name"), in.To)
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		write(w, http.StatusOK, asRenamed(out))
+	})
+
+	/*
+		A copy of a screen under another name.
+
+		Shipped ones included, which is the one way to start from one: the
+		copy is in somebody's file and is not shipped, and it is not put on
+		the panel, because copying a screen is not asking to see it.
+	*/
+	mux.HandleFunc("POST /"+Version+"/dashboards/{name}/clone", func(w http.ResponseWriter, r *http.Request) {
+		var in NameRequest
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			write(w, http.StatusBadRequest, Error{Error: "that request does not decode", Detail: err.Error()})
+			return
+		}
+		one, err := svc.CloneDashboard(r.PathValue("name"), in.To)
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		write(w, http.StatusOK, asDashboard(one))
 	})
 
 	mux.HandleFunc("POST /"+Version+"/dashboards/{name}/use", func(w http.ResponseWriter, r *http.Request) {
@@ -491,6 +552,20 @@ func Handler(svc *service.Service) http.Handler {
 		w.WriteHeader(http.StatusNoContent)
 	})
 
+	mux.HandleFunc("POST /"+Version+"/images/{name}/rename", func(w http.ResponseWriter, r *http.Request) {
+		var in NameRequest
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			write(w, http.StatusBadRequest, Error{Error: "that request does not decode", Detail: err.Error()})
+			return
+		}
+		out, err := svc.RenameImage(r.PathValue("name"), in.To)
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		write(w, http.StatusOK, asRenamed(out))
+	})
+
 	mux.HandleFunc("POST /"+Version+"/images/{name}/scene", func(w http.ResponseWriter, r *http.Request) {
 		var in SceneFromImageRequest
 		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
@@ -620,8 +695,14 @@ func Handler(svc *service.Service) http.Handler {
 			return
 		}
 
-		outcome, err := svc.Preview(r.Context(), fromScene(in.Scene),
-			holderOf(SceneRequest{Holder: in.Holder}, r), in.Hold)
+		/*
+			A token makes this a change to the draft already up.
+
+			The same route because it is the same sentence -- this scene is
+			what the preview shows -- and both halves go through the one
+			light() that knows what an effect is.
+		*/
+		outcome, err := preview(r, svc, in)
 		if err != nil {
 			fail(w, err)
 			return
@@ -894,6 +975,30 @@ func kept(svc *service.Service, name string, in ImageRequest) (images.Image, err
 }
 
 // asScene is a saved scene on the wire.
+// asRenamed is what a rename changed, on the wire. The line is rendered here
+// rather than by each caller, so the CLI and the window say it the same way.
+/*
+preview puts a draft up, or changes the one that is up.
+
+Split out of the route so the two are visibly one operation: a client that has
+a lease says so with a token, and everything else about the call is the same.
+*/
+func preview(r *http.Request, svc *service.Service, in DraftRequest) (service.SceneOutcome, error) {
+	if in.Token != "" {
+		return svc.Redraft(r.Context(), in.Token, fromScene(in.Scene))
+	}
+	return svc.Preview(r.Context(), fromScene(in.Scene),
+		holderOf(SceneRequest{Holder: in.Holder}, r), in.Hold)
+}
+
+func asRenamed(r service.Renamed) Renamed {
+	return Renamed{
+		From: r.From, To: r.To,
+		Scenes: r.Scenes, Screens: r.Screens, Keys: r.Keys,
+		Active: r.Active, Changed: r.Changed(),
+	}
+}
+
 func asScene(scene scenes.Scene) Scene {
 	out := Scene{
 		Name: scene.Name, Colour: scene.Colour, Off: scene.Off,

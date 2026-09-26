@@ -114,6 +114,52 @@ func (s *Service) Renew(token string) error {
 }
 
 /*
+Extend brings a live lease up to date with the devices its scene now names.
+
+An editor that adds the keyboard to a draft means the keyboard, and a lease
+that did not follow would leave the reconciler free to correct a device the
+window is in the middle of showing somebody.
+
+Devices held by somebody else are refused, exactly as taking a lease is: one
+device, one preview, whether the second claim arrives as a new lease or as a
+draft that grew into it.
+*/
+func (s *Service) Extend(token string, devices []string) (*Lease, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	now := time.Now()
+	s.sweep(now)
+
+	var found *Lease
+	for _, lease := range s.leases {
+		if lease.Token == token {
+			found = lease
+			break
+		}
+	}
+	if found == nil {
+		return nil, fmt.Errorf("no preview with that token; it may have expired")
+	}
+	for _, device := range devices {
+		if held, ok := s.leases[device]; ok && held.Token != token {
+			return nil, fmt.Errorf("%s is showing a preview held by %s", device, held.Holder)
+		}
+	}
+
+	for _, device := range devices {
+		if _, ok := s.leases[device]; !ok {
+			s.leases[device] = found
+			found.Devices = append(found.Devices, device)
+		}
+	}
+	if !found.Expires.IsZero() {
+		found.Expires = now.Add(PreviewFor)
+	}
+	return found, nil
+}
+
+/*
 Release ends a preview and puts the hardware back to what was asked for.
 
 The reverting is the point. Dropping the lease alone would leave the draft on

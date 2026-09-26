@@ -274,6 +274,24 @@ func (d *DashboardsSection) row(sh *shell.Shell, one api.Dashboard, active bool)
 	})
 
 	/*
+		A copy under another name, and a new name for this one.
+
+		Cloning is offered on every row, shipped ones included: it is how
+		somebody starts from a shipped screen. Renaming is not, for the same
+		reason deleting is not -- a shipped screen's name is a string in the
+		binary and there is nothing in a file to move.
+	*/
+	copied := widget.NewButtonWithIcon("", theme.ContentCopyIcon(), func() {
+		d.clone(sh, one)
+	})
+	rename := widget.NewButtonWithIcon("", theme.DocumentCreateIcon(), func() {
+		d.rename(sh, one)
+	})
+	if one.Shipped {
+		rename.Disable()
+	}
+
+	/*
 		The delete button is always in the row, and disabled where there is
 		nothing to delete.
 
@@ -312,7 +330,7 @@ func (d *DashboardsSection) row(sh *shell.Shell, one api.Dashboard, active bool)
 		column(factWidth, widgets.Dim(arrangementName(one))),
 		column(factWidth, widgets.Dim(themeName(one))),
 		column(behindWide, behind),
-	}, use, edit, scene, forget)
+	}, use, edit, scene, copied, rename, forget)
 }
 
 // blank is a new screen: the shape of the one hotaru ships, because a form

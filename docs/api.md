@@ -232,6 +232,33 @@ without its name, which comes from the path.
 
 Removes one. Deleting a scene that is not there is not an error.
 
+## POST /v1/scenes/{name}/rename
+
+Renames a scene, and repoints every key bound to it. The body is
+`{"to": "dusk"}`.
+
+A rename is a rename plus every reference to the old name. A key names the
+scene it fires, and the script installed into the desktop carries the name
+rather than the key, so a rename that left the binding behind would leave a
+keypress firing a scene that is not there.
+
+The reply says what else changed:
+
+```console
+$ curl -s --unix-socket … -X POST -d '{"to":"dusk"}' \
+    http://hotaru/v1/scenes/evening/rename
+{
+  "from": "evening",
+  "to": "dusk",
+  "keys": 1,
+  "changed": "1 key updated"
+}
+```
+
+A shipped scene cannot be renamed: its name is in the binary, and there is
+nothing in a file to move. Renaming onto a name that is taken is refused, and
+nothing is written.
+
 ## POST /v1/scenes/{name}/capture
 
 Saves what the lights are showing now, under a name, from desired state. The
@@ -331,6 +358,19 @@ $ curl -s --unix-socket … -X POST http://hotaru/v1/preview \
     -d '{"scene":{"assignments":[{"target":"kraken","colour":"#201040"}]},"holder":"an editor"}'
 ```
 
+With `token`, this changes the draft a preview is already showing rather than
+taking a second lease. An editor takes the lease once and then says what the
+draft is now on every change, because taking it again would release it first
+and flash the previous colours back. Devices the edited scene has started
+naming are taken into the lease; one held by somebody else is refused, exactly
+as a new lease is.
+
+It is the same route because it is the same sentence -- this scene is what the
+preview shows -- and a scene becoming lights by a second route is how a
+scene's effects get left behind. `POST /v1/lighting/apply` carries colours and
+not effects, and is for `hotaru light set` and the wizard rather than for
+scenes.
+
 `hold` behaves as it does on the named route. With it, the request stays open
 and the lease is that connection. Without it, the lease carries an expiry to
 renew. Everything else is the same machinery: the suspended rewrite timer, the
@@ -385,6 +425,26 @@ back.
 ## POST /v1/dashboards/{name}/use
 
 Makes it the dashboard the panel draws, and answers with it.
+
+## POST /v1/dashboards/{name}/rename
+
+Renames a dashboard, rewrites every scene naming it, and follows the panel
+when it was the one being drawn. The body is `{"to": "ours"}`, and the reply
+is the same shape as a scene rename.
+
+A scene spells a particular dashboard as `dashboard:<name>`. That is the
+reference a rename has to carry, or the scene puts up a dashboard that is no
+longer there.
+
+## POST /v1/dashboards/{name}/clone
+
+Copies a dashboard under another name, and answers with the copy. The body is
+`{"to": "mine"}`.
+
+The shipped ones can be cloned, which is how somebody starts from one. The
+copy is in the file and is not shipped, so it can be edited, renamed and
+deleted. It is not put on the panel: copying a dashboard is not asking to see
+it.
 
 ## POST /v1/dashboards/{name}/preview
 
@@ -470,6 +530,20 @@ answer it in front of the result.
 ## DELETE /v1/images/{name}
 
 Forgets one.
+
+## POST /v1/images/{name}/rename
+
+Renames a stored picture, and everything that names it. The body is
+`{"to": "aurora"}`, and the reply is the same shape as a scene rename.
+
+Two references move with it. A scene keeps the path, because it is what the
+panel is handed; a dashboard keeps the name, because a background is chosen
+from the library. A rename that moved only the file would show up later as a
+scene with no picture and a dashboard with a plain colour where a photograph
+was.
+
+The name is cleaned before it becomes a filename, so the reply carries the
+name as stored.
 
 ## POST /v1/images/{name}/scene
 

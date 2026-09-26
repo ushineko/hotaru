@@ -200,6 +200,27 @@ func (c *Client) DeleteDashboard(ctx context.Context, name string) error {
 	return c.do(ctx, http.MethodDelete, "/"+Version+"/dashboards/"+url.PathEscape(name), nil, nil)
 }
 
+/*
+RenameDashboard moves a screen and everything that named it.
+
+The result is what else changed: the scenes rewritten, and whether the panel
+followed.
+*/
+func (c *Client) RenameDashboard(ctx context.Context, name, to string) (Renamed, error) {
+	var out Renamed
+	err := c.do(ctx, http.MethodPost,
+		"/"+Version+"/dashboards/"+url.PathEscape(name)+"/rename", NameRequest{To: to}, &out)
+	return out, err
+}
+
+// CloneDashboard copies a screen under another name, shipped ones included.
+func (c *Client) CloneDashboard(ctx context.Context, name, to string) (Dashboard, error) {
+	var out Dashboard
+	err := c.do(ctx, http.MethodPost,
+		"/"+Version+"/dashboards/"+url.PathEscape(name)+"/clone", NameRequest{To: to}, &out)
+	return out, err
+}
+
 // UseDashboard makes one the dashboard the panel draws.
 func (c *Client) UseDashboard(ctx context.Context, name string) (Dashboard, error) {
 	var out Dashboard
@@ -257,6 +278,14 @@ func (c *Client) SaveScene(ctx context.Context, scene Scene) error {
 // DeleteScene removes one.
 func (c *Client) DeleteScene(ctx context.Context, name string) error {
 	return c.do(ctx, http.MethodDelete, "/"+Version+"/scenes/"+url.PathEscape(name), nil, nil)
+}
+
+// RenameScene moves a scene and repoints every key bound to it.
+func (c *Client) RenameScene(ctx context.Context, name, to string) (Renamed, error) {
+	var out Renamed
+	err := c.do(ctx, http.MethodPost,
+		"/"+Version+"/scenes/"+url.PathEscape(name)+"/rename", NameRequest{To: to}, &out)
+	return out, err
 }
 
 /*
@@ -397,6 +426,20 @@ func (c *Client) HoldDraft(ctx context.Context, scene Scene, holder string) (Sce
 		DraftRequest{Scene: scene, Hold: true, Holder: holder})
 }
 
+/*
+Redraft changes what a preview already up is showing.
+
+For an editor: the lease is taken once and this says what the draft is now, so
+nothing is released and no previous colours flash back on the way. It goes
+through the same path a named scene does, effects and all.
+*/
+func (c *Client) Redraft(ctx context.Context, token string, scene Scene) (SceneResponse, error) {
+	var out SceneResponse
+	err := c.do(ctx, http.MethodPost, "/"+Version+"/preview",
+		DraftRequest{Scene: scene, Token: token}, &out)
+	return out, err
+}
+
 // PreviewDraft previews an unnamed scene under a lease the caller renews, for
 // a client that cannot hold a connection open.
 func (c *Client) PreviewDraft(ctx context.Context, scene Scene, holder string) (SceneResponse, error) {
@@ -472,6 +515,14 @@ func (c *Client) AddSlideshow(ctx context.Context, name string, sources [][]byte
 // RemoveImage forgets one.
 func (c *Client) RemoveImage(ctx context.Context, name string) error {
 	return c.do(ctx, http.MethodDelete, "/"+Version+"/images/"+url.PathEscape(name), nil, nil)
+}
+
+// RenameImage moves a picture, and every scene and screen that named it.
+func (c *Client) RenameImage(ctx context.Context, name, to string) (Renamed, error) {
+	var out Renamed
+	err := c.do(ctx, http.MethodPost,
+		"/"+Version+"/images/"+url.PathEscape(name)+"/rename", NameRequest{To: to}, &out)
+	return out, err
 }
 
 /*
