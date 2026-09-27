@@ -33,8 +33,18 @@ func reactiveScene(name string) scenes.Scene {
 	}
 }
 
-// wantOrder is what a mode that shows one colour of its own must receive.
-var wantOrder = []string{"frame", "mode:Solid Reactive", "mode:Solid Reactive"}
+/*
+arrivingOrder is what a device arriving at a colour-carrying mode receives:
+the mode, the frame, and the mode again once it has entered it.
+
+heldOrder is what a device already in that mode receives. One packet, because
+it took the colour on the first one -- which is spec 052's finding and is why
+re-applying the scene the machine is showing costs nothing.
+*/
+var (
+	arrivingOrder = []string{"mode:Solid Reactive", "frame", "mode:Solid Reactive"}
+	heldOrder     = []string{"mode:Solid Reactive", "frame"}
+)
 
 func TestEveryPathToTheHardwareWritesTheSameOrder(t *testing.T) {
 	ctx := context.Background()
@@ -43,17 +53,20 @@ func TestEveryPathToTheHardwareWritesTheSameOrder(t *testing.T) {
 		svc, server := lit(t, reactiveScene("evening"))
 		_, err := svc.ApplyScene(ctx, "evening")
 		require.NoError(t, err)
-		require.Equal(t, wantOrder, server.Sequence)
+		require.Equal(t, arrivingOrder, server.Sequence)
 	})
 
 	t.Run("previewed from an editor", func(t *testing.T) {
 		svc, server := lit(t)
 		_, err := svc.Preview(ctx, reactiveScene(""), "editor", false)
 		require.NoError(t, err)
-		require.Equal(t, wantOrder, server.Sequence)
+		require.Equal(t, arrivingOrder, server.Sequence)
 	})
 
 	t.Run("changed under a lease the editor holds", func(t *testing.T) {
+		// The draft put the device in the mode, so changing it finds it
+		// already there: one packet, and no pause, on every keystroke an
+		// editor sends.
 		svc, server := lit(t)
 		up, err := svc.Preview(ctx, reactiveScene(""), "editor", false)
 		require.NoError(t, err)
@@ -61,7 +74,7 @@ func TestEveryPathToTheHardwareWritesTheSameOrder(t *testing.T) {
 
 		_, err = svc.Redraft(ctx, up.Lease.Token, reactiveScene(""))
 		require.NoError(t, err)
-		require.Equal(t, wantOrder, server.Sequence)
+		require.Equal(t, heldOrder, server.Sequence)
 	})
 
 	t.Run("applied while the window holds a preview", func(t *testing.T) {
@@ -77,9 +90,14 @@ func TestEveryPathToTheHardwareWritesTheSameOrder(t *testing.T) {
 
 		_, err = svc.ApplyScene(ctx, "evening")
 		require.NoError(t, err)
-		require.Equal(t, wantOrder, server.Sequence)
+		require.Equal(t, arrivingOrder, server.Sequence)
 	})
 
+	// The re-assert is the one case where the device is already in the mode,
+	// so it is the one that writes fewer packets. Asserted rather than
+	// glossed over: it is the same code reaching the same conclusion, and a
+	// re-assert that wrote twice would be a pause nobody asked for on a loop
+	// that runs for as long as the machine is on.
 	t.Run("re-asserted after a preview is released", func(t *testing.T) {
 		svc, server := lit(t, reactiveScene("evening"))
 		_, err := svc.ApplyScene(ctx, "evening")
@@ -88,8 +106,8 @@ func TestEveryPathToTheHardwareWritesTheSameOrder(t *testing.T) {
 
 		_, err = svc.Reconcile(ctx, []string{"Keychron K4 HE"})
 		require.NoError(t, err)
-		require.Equal(t, wantOrder, server.Sequence,
-			"a re-assert reaches the device differently from an apply")
+		require.Equal(t, heldOrder, server.Sequence,
+			"a re-assert of a device already in the mode should not write it twice")
 	})
 }
 

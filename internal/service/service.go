@@ -780,42 +780,14 @@ func (s *Service) writeFrame(ctx context.Context, client openrgb.Client,
 			ignored every write while the rest of the machine changed colour
 			around them. See spec 010, and spec 056 for the reordering.
 		*/
-		one, known := device.Mode(mode)
-		oneColour := known && !one.PerLED
-
 		/*
 			commits is a mode that carries a colour of its own, and arriving
-			is the device not being in it yet. Together they are the only
-			case that needs the pause below.
-
-			A mode that is neither per-LED nor colour-carrying has no colour
-			to lose, and a device already in the mode took the colour on the
-			first packet -- which is the whole finding of spec 052.
+			is the device not being in it yet. Together they are the one case
+			that needs the second mode packet below.
 		*/
+		one, known := device.Mode(mode)
 		commits := known && one.ModeColour
 		arriving := !strings.EqualFold(device.ActiveMode, mode)
-
-		/*
-			The buffer is written in the colour the mode is showing.
-
-			The scene's own colours are not lost: they are what is recorded as
-			desired state, so they are there for the moment the effect comes
-			off. What changes is only what is put in the device's buffer while
-			a mode that cannot show them is running.
-		*/
-		written := frame
-		if oneColour && style.Colour != nil {
-			written = devices.Solid(device, *style.Colour)
-		}
-
-		// The frame, where it goes before the mode.
-		if oneColour && !isOffMode(mode) {
-			if err := client.SetFrame(ctx, device.Name, written); err != nil {
-				attempt.Why = err.Error()
-				result.Attempts = append(result.Attempts, attempt)
-				continue
-			}
-		}
 
 		if err := client.SetMode(ctx, device.Name, mode, style); err != nil {
 			attempt.Why = err.Error()
@@ -824,40 +796,49 @@ func (s *Service) writeFrame(ctx context.Context, client openrgb.Client,
 		}
 		attempt.Accepted = true
 
-		switch {
-		case isOffMode(mode):
-			// Nothing to show, and nothing to commit.
-		case oneColour:
-			/*
-				The second one, which is the already-in-the-mode case and is
-				what makes the colour stick.
-
-				**It has to arrive after the device has finished entering the
-				mode.** Measured on the keyboard, driving it from OpenRGB with
-				hotaru out of the loop: hotaru's exact three packets sent back
-				to back show the previous colour, and the identical packets
-				with a pause between the two mode writes show the right one.
-				A pause after the frame instead does nothing, so it is the gap
-				between the mode packets and not the frame that matters.
-				120ms was enough; 300ms was no better.
-
-				Only when arriving, and only for a mode carrying its own
-				colour. A device already in the mode took the colour on the
-				first packet, and a mode with no colour of its own has nothing
-				to commit -- so the ordinary write path still does not wait.
-				See spec 057.
-			*/
-			if commits && arriving && !pause(ctx, settleDelay) {
-				result.Err = ctx.Err()
-				return result
-			}
-			if err := client.SetMode(ctx, device.Name, mode, style); err != nil {
+		if !isOffMode(mode) {
+			if err := client.SetFrame(ctx, device.Name, frame); err != nil {
 				attempt.Why = err.Error()
 				result.Attempts = append(result.Attempts, attempt)
 				continue
 			}
-		default:
-			if err := client.SetFrame(ctx, device.Name, written); err != nil {
+		}
+
+		/*
+			And the mode again, once the device has finished entering it, for
+			a mode that carries a colour of its own.
+
+			**The packet carries the mode and its colour together, and the
+			device takes them as two operations.** It honours the colour when
+			it is already in the mode and loses it when it is arriving, so the
+			second packet is the already-in-the-mode case and is what makes
+			the colour stick.
+
+			**The gap is the part that took four attempts to find.** Sent back
+			to back the second packet is no better than the first: measured on
+			the keyboard, driving it from OpenRGB with none of hotaru's code in
+			the way, the same packets showed the previous colour with no gap
+			and the right one with 120ms between them. A gap after the frame
+			instead changes nothing, so it is the device finishing the mode
+			change that is being waited for and not the buffer.
+
+			Nothing else in the sequence matters, and three things that looked
+			like they did were each ruled out by sending the packets by hand:
+			the frame's position, the frame's contents, and the speed field.
+			See spec 057, and specs 052, 055 and 056 for the readings it
+			replaces.
+
+			The cost is scoped by the same measurement. A device already in
+			the mode took the colour on the first packet; a mode with no
+			colour of its own has nothing to commit. So the ordinary write
+			path still does not wait, which is spec 010 AC7.
+		*/
+		if commits && arriving && !isOffMode(mode) {
+			if !pause(ctx, settleDelay) {
+				result.Err = ctx.Err()
+				return result
+			}
+			if err := client.SetMode(ctx, device.Name, mode, style); err != nil {
 				attempt.Why = err.Error()
 				result.Attempts = append(result.Attempts, attempt)
 				continue
@@ -872,38 +853,8 @@ func (s *Service) writeFrame(ctx context.Context, client openrgb.Client,
 			result.Err = err
 			return result
 		}
-		/*
-			A mode that shows one colour is asked a second time if it says it
-			is still in the old one.
-
-			**It reports the old mode if you ask straight away.** Measured on
-			the keyboard, arriving from Direct: the same three packets read
-			back as Direct with no pause, and as the mode asked for with one
-			-- and a pause before the *read* alone is enough. The writes land
-			either way; the device is slow to say so.
-
-			Without this the read-back was evidence of a mode that had not
-			taken, so resolution fell through to the next candidate and the
-			effect was abandoned for Direct. The device ended up in the mode
-			hotaru had decided against, showing the scene's own colours.
-
-			Asked again rather than always waited for, because the ordinary
-			write path does not sleep and a delay every device pays for one
-			device's slowness is the wrong trade. Only a disagreement costs
-			anything, and only for a mode that shows one colour. See spec 056.
-		*/
-		if oneColour && !strings.EqualFold(after.ActiveMode, mode) {
-			if !pause(ctx, settleDelay) {
-				result.Err = ctx.Err()
-				return result
-			}
-			if again, err := client.Device(ctx, device.Name); err == nil {
-				after = again
-			}
-		}
-
 		attempt.Active = after.ActiveMode
-		attempt.Showing = showing(after, written)
+		attempt.Showing = showing(after, frame, style.Colour)
 
 		if !attempt.Showing && strings.EqualFold(after.ActiveMode, mode) {
 			/*
@@ -917,8 +868,8 @@ func (s *Service) writeFrame(ctx context.Context, client openrgb.Client,
 				CLI, which sends the two as separate commands with a round
 				trip between them, lights hardware that hotaru could not.
 			*/
-			if again := s.settle(ctx, client, device.Name, written); again != nil {
-				attempt.Showing = showing(*again, written)
+			if again := s.settle(ctx, client, device.Name, frame); again != nil {
+				attempt.Showing = showing(*again, frame, style.Colour)
 				attempt.Settled = attempt.Showing
 			}
 		}
@@ -1087,7 +1038,7 @@ Static reports its mode's colour rather than its buffer, and a device that
 reports nothing at all is simply not saying -- neither is evidence of a failed
 write, and treating them as one would fail every write to hardware that works.
 */
-func showing(after devices.Device, frame devices.Frame) bool {
+func showing(after devices.Device, frame devices.Frame, want *colour.Colour) bool {
 	mode, known := after.Mode(after.ActiveMode)
 	if !known {
 		return true // not a question this device can answer
@@ -1107,11 +1058,24 @@ func showing(after devices.Device, frame devices.Frame) bool {
 		the device is actually displaying.
 	*/
 	if mode.ModeColour {
-		want, uniform := frame.Uniform()
+		/*
+			Checked against the colour that was asked for, not the frame's.
+
+			A mode carrying its own colour is showing that colour, and where
+			a scene named one the frame is somebody's per-key colours which
+			it was never going to display. Comparing the two said "not
+			showing" on every apply of an effect with a colour, which cost a
+			settle -- a sleep and a second frame -- for a device that was
+			doing exactly what it was told.
+		*/
+		if want != nil {
+			return mode.Colour == *want
+		}
+		got, uniform := frame.Uniform()
 		if !uniform {
 			return true // a frame this mode was never going to show
 		}
-		return mode.Colour == want
+		return mode.Colour == got
 	}
 	return true
 }

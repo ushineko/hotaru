@@ -37,6 +37,29 @@ it. F says hotaru's existing `settleDelay` is long enough.
 
 The speed field was a suspect and is innocent: every variant carried it.
 
+### What else was ruled out
+
+Three further variants, each sent by hand and looked at:
+
+| | change | keyboard |
+|---|---|---|
+| G | the scene's own mixed colours in the buffer, not the effect's | right |
+| H | the original order -- mode, then frame -- with the gap | right |
+| READ | the mode read back immediately after the second packet, five times | correct every time |
+
+So the buffer's contents do not matter, the frame's position does not matter,
+and the device does not need asking twice once there is a gap. Spec 055's
+rewrite of the buffer and spec 056's reordering and re-read were all reverted
+on the strength of this, leaving the gap as the only change.
+
+**Reverting spec 055 exposed one thing it had been masking.** A mode carrying
+its own colour was checked for "is it showing what it was sent" against the
+*frame's* uniform colour, which an effect with a colour of its own never
+matches -- so every apply of such a scene concluded the device was not showing
+its frame and paid for a settle: a sleep and a second frame write. It is
+checked against the colour that was asked for now, which is what the device is
+actually displaying.
+
 ### Why spec 056 read it wrong
 
 Spec 056 measured three sequences and concluded a pause was needed only before
@@ -93,6 +116,16 @@ colour on the first packet.
 - [x] AC6. Verified by looking at the keyboard: `attackiq` then `custom1`
       through hotaru leaves it in Solid Reactive Multinexus showing `#fffffc`,
       which is what the scene asks for.
+- [x] AC7. Nothing from the superseded attempts is left in the code: the
+      buffer holds the scene's own colours
+      (`TestTheBufferHoldsTheScenesOwnColours`), the mode goes again after
+      the frame rather than before it
+      (`TestAModeWithAColourOfItsOwnIsWrittenAgainAfterTheFrame`), and the
+      fake's slow-reporting knob is gone with the re-read it existed for.
+- [x] AC8. A device already in the mode is not written twice and does not
+      wait (`TestEveryPathToTheHardwareWritesTheSameOrder`, the re-assert and
+      draft cases), so the re-assert loop and an editor's keystrokes cost
+      nothing.
 
 ## Alternatives Considered
 
@@ -103,9 +136,15 @@ colour on the first packet.
 - **Pausing for every non-per-LED mode**, which is the guard spec 052 used. It
   puts a pause on a plain solid-colour scene, which is most scenes, and
   `TestTheOrdinaryWritePathDoesNotWait` rejects it.
-- **Dropping spec 056's re-read** now that the pause makes a stale mode less
-  likely. It guards a different failure and costs nothing when it does not
-  fire.
+- **Keeping spec 056's re-read** as insurance. With the gap the device
+  reported correctly five times out of five, and a device slower than the gap
+  would lose its colour rather than its mode -- so the re-read guards a case
+  that can no longer arise while looking like it guards the reported one.
+  Removed rather than left to be believed.
+- **Keeping spec 055's buffer rewrite** because it was part of the sequence
+  first confirmed on the hardware. Variant G isolated it and the buffer turned
+  out not to matter, so keeping it would mean the device no longer holding
+  what the scene says for no reason at all.
 
 ## Risks & Assumptions
 
