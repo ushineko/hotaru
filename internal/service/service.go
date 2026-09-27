@@ -780,10 +780,20 @@ func (s *Service) writeFrame(ctx context.Context, client openrgb.Client,
 			ignored every write while the rest of the machine changed colour
 			around them. See spec 010, and spec 056 for the reordering.
 		*/
-		oneColour := false
-		if m, known := device.Mode(mode); known && !m.PerLED {
-			oneColour = true
-		}
+		one, known := device.Mode(mode)
+		oneColour := known && !one.PerLED
+
+		/*
+			commits is a mode that carries a colour of its own, and arriving
+			is the device not being in it yet. Together they are the only
+			case that needs the pause below.
+
+			A mode that is neither per-LED nor colour-carrying has no colour
+			to lose, and a device already in the mode took the colour on the
+			first packet -- which is the whole finding of spec 052.
+		*/
+		commits := known && one.ModeColour
+		arriving := !strings.EqualFold(device.ActiveMode, mode)
 
 		/*
 			The buffer is written in the colour the mode is showing.
@@ -818,8 +828,29 @@ func (s *Service) writeFrame(ctx context.Context, client openrgb.Client,
 		case isOffMode(mode):
 			// Nothing to show, and nothing to commit.
 		case oneColour:
-			// The second one, which is the already-in-the-mode case and is
-			// what makes the colour stick.
+			/*
+				The second one, which is the already-in-the-mode case and is
+				what makes the colour stick.
+
+				**It has to arrive after the device has finished entering the
+				mode.** Measured on the keyboard, driving it from OpenRGB with
+				hotaru out of the loop: hotaru's exact three packets sent back
+				to back show the previous colour, and the identical packets
+				with a pause between the two mode writes show the right one.
+				A pause after the frame instead does nothing, so it is the gap
+				between the mode packets and not the frame that matters.
+				120ms was enough; 300ms was no better.
+
+				Only when arriving, and only for a mode carrying its own
+				colour. A device already in the mode took the colour on the
+				first packet, and a mode with no colour of its own has nothing
+				to commit -- so the ordinary write path still does not wait.
+				See spec 057.
+			*/
+			if commits && arriving && !pause(ctx, settleDelay) {
+				result.Err = ctx.Err()
+				return result
+			}
 			if err := client.SetMode(ctx, device.Name, mode, style); err != nil {
 				attempt.Why = err.Error()
 				result.Attempts = append(result.Attempts, attempt)
