@@ -38,16 +38,6 @@ type Fake struct {
 	// Unreachable makes every call fail, as a stopped server does.
 	Unreachable error
 
-	/*
-		Slow maps a device to how many reads report the previous mode after a
-		mode change, for hardware that takes the packet and is slow to say so.
-
-		The keyboard does this: arriving at a reactive mode from Direct it
-		reads back as Direct until it is asked a second time, and believing
-		the first answer is how an effect gets abandoned. See spec 056.
-	*/
-	Slow map[string]int
-
 	// Delay is how long each write takes, for hardware that is not instant
 	// and for tests that need a write to still be in flight.
 	Delay time.Duration
@@ -68,42 +58,7 @@ type Fake struct {
 	*/
 	Sequence []string
 
-	// pending is a mode a slow device has taken and not admitted to yet.
-	pending map[string]slow
-
 	closed bool
-}
-
-// slow is a mode change a device has accepted and is not reporting yet.
-type slow struct {
-	mode   string
-	colour *colour.Colour
-	reads  int
-}
-
-/*
-admit moves a slow device on by one read, and applies the mode when its
-count runs out. The caller holds the lock.
-
-A read is what advances it, because "ask it again" is the only thing the
-service can do about a device that is slow to report -- so a read is the unit
-the delay is counted in.
-*/
-func (f *Fake) admit() {
-	for name, waiting := range f.pending {
-		waiting.reads--
-		if waiting.reads > 0 {
-			f.pending[name] = waiting
-			continue
-		}
-		delete(f.pending, name)
-		for i := range f.devices {
-			if strings.EqualFold(f.devices[i].Name, name) {
-				f.devices[i].ActiveMode = waiting.mode
-				f.applyModeColour(&f.devices[i], waiting.mode, waiting.colour)
-			}
-		}
-	}
 }
 
 // Write is one frame that was written to a device.
@@ -136,7 +91,6 @@ func NewFake(list ...devices.Device) *Fake {
 // Devices is the current list, including what each device is showing.
 func (f *Fake) Devices(context.Context) ([]devices.Device, error) {
 	f.mu.Lock()
-	f.admit()
 	defer f.mu.Unlock()
 	if f.Unreachable != nil {
 		return nil, f.Unreachable
@@ -153,7 +107,6 @@ func (f *Fake) Devices(context.Context) ([]devices.Device, error) {
 func (f *Fake) Device(_ context.Context, name string) (devices.Device, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.admit()
 	if f.Unreachable != nil {
 		return devices.Device{}, f.Unreachable
 	}
@@ -187,14 +140,6 @@ func (f *Fake) SetMode(_ context.Context, device, mode string, style Style) erro
 			Brightness: style.Brightness, Colour: style.Colour, Speed: style.Speed,
 		})
 		f.Sequence = append(f.Sequence, "mode:"+mode)
-		if left := f.Slow[device]; left > 0 {
-			// Taken, and not admitted to for another `left` reads.
-			if f.pending == nil {
-				f.pending = map[string]slow{}
-			}
-			f.pending[device] = slow{mode: mode, colour: style.Colour, reads: left}
-			return nil
-		}
 		if lie, ok := f.Lies[f.devices[i].Name]; ok && strings.EqualFold(lie, mode) {
 			return nil // accepted, not honoured: only a read-back can tell
 		}

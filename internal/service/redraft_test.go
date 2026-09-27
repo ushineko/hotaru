@@ -83,11 +83,15 @@ func TestADraftAndASavedSceneWriteTheSameThing(t *testing.T) {
 	_, err := applied.ApplyScene(context.Background(), "evening")
 	require.NoError(t, err)
 
+	/*
+		Both from the same starting point: the device is in a per-LED mode
+		and arriving at the effect. A redraft onto a device already showing
+		the effect writes one packet rather than two (spec 057), so comparing
+		a first apply against a second draft would be comparing two different
+		questions.
+	*/
 	drafted, draftServer := lit(t)
-	up, err := drafted.Preview(context.Background(), reactive(""), "editor", false)
-	require.NoError(t, err)
-	draftServer.Modes = nil
-	_, err = drafted.Redraft(context.Background(), up.Lease.Token, reactive(""))
+	_, err = drafted.Preview(context.Background(), reactive(""), "editor", false)
 	require.NoError(t, err)
 
 	want := modesFor(appliedServer, "Keychron K4 HE")
