@@ -2,7 +2,7 @@
 
 *lights, cooler, action!*
 
-**Version**: 0.1.17
+**Version**: 0.1.18
 
 RGB lighting and AIO cooler control for Linux, as a CLI, a user service and a
 desktop GUI. 
@@ -211,6 +211,44 @@ hotaru is a ground-up rearchitecture. Hardware learnings are carried over.
 MIT. See [LICENSE](LICENSE).
 
 ## Changelog
+
+### 0.1.18 (2026-09-26)
+
+- Scenes, screens and pictures can be renamed, and a screen can be copied
+  under another name. A name in hotaru is a key -- the map key in `scenes.yml`,
+  the map key in `dashboards.yml`, the filename in the image directory -- so
+  changing one by hand lost whatever pointed at the old name, silently. A
+  rename now carries its references with it and says how many it moved: the
+  keys bound to a scene, the scenes naming a screen, the screen the panel
+  draws, and a picture's path in every scene and background that names it.
+  Shipped entries are refused, because their names are in the binary; cloning
+  a screen is what to do with one instead, and is the same dozen decisions
+  with a different picture behind them (spec 053, [#157](https://github.com/ushineko/hotaru/issues/157)).
+
+- A draft being edited changes through the same path a saved scene applies
+  through. The window took a preview lease once and then wrote each change to
+  the plain lighting route, which has no effects in it at all, so the first
+  change to any draft took a keyboard out of its effect and into Direct --
+  invisibly, because a keyboard in Direct lit in the scene's colours looks
+  like one doing what it was told (spec 054, [#158](https://github.com/ushineko/hotaru/issues/158)).
+
+- An effect's colour survives arriving from an all-lit scene. The packet
+  carries the mode and its colour together and the device takes them as two
+  operations, so it keeps the colour when it is already in the mode and loses
+  it when it is arriving -- which is why the mode is written twice. The second
+  packet only works with a gap before it, and finding that took sending
+  hotaru's own packets from outside hotaru, one variable at a time, and
+  looking at the keyboard after each: the frame's position, the frame's
+  contents and the speed field all looked like the cause and were each ruled
+  out. Three earlier attempts are reverted with it. A device already in the
+  mode is written once and does not wait, so the re-assert loop and an
+  editor's keystrokes cost nothing (spec 057, [#162](https://github.com/ushineko/hotaru/issues/162)).
+
+- A mode showing a colour of its own is asked whether it is displaying the
+  colour it was given, rather than the colour of a frame it was never going to
+  show. Every apply of an effect with a colour concluded the device was not
+  showing its frame and paid for a settle -- a pause and a second write --
+  for hardware doing exactly what it was told (spec 057).
 
 ### 0.1.17 (2026-09-25)
 
