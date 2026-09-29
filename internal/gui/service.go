@@ -82,10 +82,51 @@ func (s *ServiceSection) Build(sh *shell.Shell) fyne.CanvasObject {
 	})
 	reconcile.Importance = widget.MediumImportance
 
+	/*
+		The other button is the one for hardware that moved.
+
+		Separated from "Put the lights back" because they are not neighbouring
+		strengths of the same action: one writes to the devices the server
+		knows about, and the other tells the server to find out what the
+		devices are. Reaching for the first when the second is needed is what
+		this whole section exists to stop.
+	*/
+	rescan := widget.NewButtonWithIcon("Look for replugged devices", theme.MediaReplayIcon(), func() {
+		// The label is the progress report. The server does not stop on
+		// request -- ten seconds has been measured -- and a button that sat
+		// there looking pressed for that long would read as a hung window.
+		sh.Perform("restarting the OpenRGB server, this takes a few seconds", func(ctx context.Context) error {
+			done, err := s.app.client.Rescan(ctx)
+			if err != nil {
+				return err
+			}
+			if !done.Complete {
+				onScreen(func() {
+					sh.Flash(fmt.Sprintf("the server found %d device(s), restored %d; still waiting for %v",
+						done.Devices, done.Applied, done.Missing), fd.StatusWarn)
+				})
+				return nil
+			}
+			onScreen(func() {
+				sh.Flash(fmt.Sprintf("the server found %d device(s) and restored %d.",
+					done.Devices, done.Applied), fd.StatusGood)
+			})
+			return nil
+		})
+	})
+	rescan.Importance = widget.MediumImportance
+
 	return container.NewVBox(
 		title("The service"),
 		widgets.Card("Health", rows...),
 		widgets.Card("Desired state", reconcile),
+		widgets.Card("Replugged hardware",
+			widgets.Note("OpenRGB looks for hardware once, when it starts. A device unplugged and "+
+				"plugged back in since then stays in the list and cannot be lit, because the "+
+				"connection it had points at something that is gone. Restarting the server is the "+
+				"only way it finds the device again.", fd.StatusInfo),
+			rescan,
+		),
 	)
 }
 

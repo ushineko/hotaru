@@ -10,6 +10,7 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"time"
 
@@ -201,12 +202,13 @@ func run(cmd *cobra.Command) error {
 	// The OpenRGB server is a resource that appears, not a dependency that is
 	// satisfied: it may start after this does, or never. Connecting happens in
 	// the background and keeps trying, so the API is up either way.
-	go func() {
-		connect(ctx, svc, address, report)
-		// Restoring waits for a server rather than being ordered after one:
-		// there is no unit to order against, and "started" is not "ready".
-		(&Reconciler{Service: svc, Report: report}).Run(ctx)
-	}()
+	//
+	// And it is a resource that can disappear again. A server that restarts --
+	// upgraded, crashed, or bounced to pick up a device that was replugged --
+	// leaves a socket that no amount of retrying reaches, so this is a loop
+	// rather than two statements: Run returns when the server goes, and the
+	// next turn redials and restores exactly as the first one did. See spec 058.
+	go supervise(ctx, svc, address, report, dialOpenRGB, DefaultEvery)
 
 	return api.Serve(ctx, listener, svc)
 }
@@ -221,6 +223,24 @@ type environment struct{}
 
 func (environment) Remedies(ctx context.Context) []string {
 	return systemd.Look(ctx).Remedies()
+}
+
+/*
+Bounce restarts the server's unit, where it is one this user can restart.
+
+The translation between what the machine says and what the service can act on
+lives here, so that the service never learns what systemd is and the systemd
+package never learns what a service error looks like.
+*/
+func (environment) Bounce(ctx context.Context) error {
+	facts := systemd.Look(ctx)
+	if err := systemd.Bounce(ctx, facts); err != nil {
+		if errors.Is(err, systemd.ErrNotRestartable) {
+			return &service.NotOurs{Command: facts.RestartCommand()}
+		}
+		return err
+	}
+	return nil
 }
 
 /*
@@ -301,13 +321,56 @@ var connectBackoff = []time.Duration{
 	time.Second, 2 * time.Second, 5 * time.Second, 15 * time.Second, 30 * time.Second,
 }
 
-func connect(ctx context.Context, svc *service.Service, address string, report func(string, ...any)) {
+/*
+dialer is how a server is reached, a seam so a test can hand back something
+that is not a socket. The production one is dialOpenRGB and there is no other.
+*/
+type dialer func(ctx context.Context, address string) (openrgb.Client, error)
+
+func dialOpenRGB(ctx context.Context, address string) (openrgb.Client, error) {
+	conn, err := openrgb.Dial(ctx, address)
+	if err != nil {
+		// Returned as a nil interface rather than a typed nil pointer, which
+		// is not the same thing to anything that compares against nil.
+		return nil, err
+	}
+	return conn, nil
+}
+
+/*
+supervise keeps the service attached to whatever server is running.
+
+Connect, restore, re-assert; and when that returns because the server went
+away, do it again. The second turn is the whole point: before it, an OpenRGB
+restart left the service holding a socket to a process that no longer existed,
+and the only way back was to restart the service too.
+*/
+func supervise(ctx context.Context, svc *service.Service, address string,
+	report func(string, ...any), dial dialer, every time.Duration,
+) {
+	for ctx.Err() == nil {
+		connect(ctx, svc, address, report, dial)
+		// Restoring waits for a server rather than being ordered after one:
+		// there is no unit to order against, and "started" is not "ready".
+		(&Reconciler{Service: svc, Report: report, Every: every}).Run(ctx)
+	}
+}
+
+func connect(ctx context.Context, svc *service.Service, address string, report func(string, ...any), dial dialer) {
 	var announced bool
+	// Said on every connection after the first, because a server that came
+	// back is news in a way that a server that is still there is not.
+	reconnecting := svc.Gone()
 	for attempt := 0; ; attempt++ {
-		conn, err := openrgb.Dial(ctx, address)
+		conn, err := dial(ctx, address)
 		if err == nil {
 			svc.SetClient(conn)
-			report("connected to the OpenRGB server at %s (protocol %d)", address, conn.ProtocolVersion())
+			if reconnecting {
+				report("the OpenRGB server at %s came back (protocol %d); putting the lights back",
+					address, conn.ProtocolVersion())
+			} else {
+				report("connected to the OpenRGB server at %s (protocol %d)", address, conn.ProtocolVersion())
+			}
 			return
 		}
 		if ctx.Err() != nil {

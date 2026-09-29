@@ -3110,3 +3110,31 @@ func buttonSaying(in fyne.CanvasObject, text string) *widget.Button {
 	})
 	return found
 }
+
+/*
+TestTheWindowOffersTheBounceAndSaysWhatItIsFor is spec 058 AC8, the window's
+share of it.
+
+A button labelled only "rescan" would be a button nobody presses, because the
+situation it fixes does not look like a fault: the device is listed, the count
+is right, and the lights simply do not change. The note is the half that makes
+the button findable.
+*/
+func TestTheWindowOffersTheBounceAndSaysWhatItIsFor(t *testing.T) {
+	routes := healthy()
+	routes["GET /"+api.Version+"/health"] = api.Health{
+		State:  "stale",
+		Detail: "the OpenRGB server is still addressing Keychron K4 HE at a connection that has gone.",
+		Remedies: []string{
+			"Have the server look again with `hotaru light rescan`.",
+		},
+		Devices: 6, InScope: 6,
+	}
+
+	said := screen(t, service(t, routes), "Service")
+	require.Contains(t, said, "stale")
+	require.Contains(t, said, "Keychron K4 HE", "the device that moved was not named")
+	require.Contains(t, said, "Look for replugged devices", "the window offers no way to bounce the server")
+	require.Contains(t, said, "unplugged and",
+		"the window does not say what the button is for, which is the half that makes it findable")
+}

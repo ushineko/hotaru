@@ -221,11 +221,32 @@ func New(cfg *config.Config, client openrgb.Client, address string) *Service {
 	}
 }
 
-// SetClient swaps the connection, for a server that came back.
+// SetClient swaps the connection, for a server that came back. The one being
+// replaced is hung up on: a reconnection that left the old socket open would
+// leak one per restart, and the server counts its clients.
 func (s *Service) SetClient(client openrgb.Client) {
 	s.mu.Lock()
+	old := s.client
 	s.client = client
 	s.mu.Unlock()
+
+	if old != nil && old != client {
+		_ = old.Close()
+	}
+}
+
+/*
+Gone is whether the server has stopped answering, rather than any one call
+having failed.
+
+Nil is not gone. A service that has never had a server is waiting for one,
+which is the unreachable state and has its own remedy; this is the narrower
+thing the daemon acts on, a connection that worked and then did not.
+*/
+func (s *Service) Gone() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.client != nil && s.client.Gone()
 }
 
 // SetRulesPath is where the rules file lives, so the service can re-read it

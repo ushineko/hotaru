@@ -14,15 +14,17 @@ import (
 Every call that touches a device or a socket takes a context.
 
 Not a style preference: a write to a sleeping wireless device can block, and a
-shell that cannot give up is one a user has to kill. The two methods without a
-context are the two that ask the client about itself rather than about the
-hardware.
+shell that cannot give up is one a user has to kill. The methods without a
+context are the ones that ask the client about itself rather than about the
+hardware: the version it agreed, hanging up, and whether the server it was
+attached to has gone. None of the three reaches the socket, so there is nothing
+to give up on.
 */
 func TestEveryDeviceCallCanBeGivenUpOn(t *testing.T) {
 	client := reflect.TypeOf((*openrgb.Client)(nil)).Elem()
 	contextType := reflect.TypeOf((*context.Context)(nil)).Elem()
 
-	local := map[string]bool{"ProtocolVersion": true, "Close": true}
+	local := map[string]bool{"ProtocolVersion": true, "Close": true, "Gone": true}
 
 	for i := range client.NumMethod() {
 		method := client.Method(i)

@@ -68,6 +68,7 @@ func Routes() []string {
 		"POST /" + Version + "/preview/renew",
 		"POST /" + Version + "/preview/release",
 		"POST /" + Version + "/reconcile",
+		"POST /" + Version + "/rescan",
 		"POST /" + Version + "/reload",
 	}
 }
@@ -760,6 +761,27 @@ func Handler(svc *service.Service) http.Handler {
 		write(w, http.StatusOK, out)
 	})
 
+	/*
+		Bouncing the server is the one request that changes the machine.
+
+		It is a POST somebody makes deliberately, for the case nothing else
+		reaches: a device unplugged and plugged back in, which the server
+		cannot see until it enumerates again. See spec 058.
+	*/
+	mux.HandleFunc("POST /"+Version+"/rescan", func(w http.ResponseWriter, r *http.Request) {
+		done, err := svc.Rescan(r.Context())
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		write(w, http.StatusOK, RescanResponse{
+			Devices:  done.Devices,
+			Applied:  done.Applied,
+			Missing:  done.Missing,
+			Complete: len(done.Missing) == 0,
+		})
+	})
+
 	mux.HandleFunc("POST /"+Version+"/reload", func(w http.ResponseWriter, _ *http.Request) {
 		problems, err := svc.Reload()
 		if err != nil {
@@ -919,6 +941,14 @@ func fail(w http.ResponseWriter, err error) {
 	var down *service.Unreachable
 	if errors.As(err, &down) {
 		write(w, http.StatusServiceUnavailable, Error{Error: err.Error()})
+		return
+	}
+	// A server this user may not restart is 409: the request was understood
+	// and refused by the machine's arrangement, not by anything being broken.
+	// The body carries the command they would type instead.
+	var notOurs *service.NotOurs
+	if errors.As(err, &notOurs) {
+		write(w, http.StatusConflict, Error{Error: err.Error()})
 		return
 	}
 	write(w, http.StatusInternalServerError, Error{Error: err.Error()})

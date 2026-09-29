@@ -24,8 +24,21 @@ const (
 	// did -- OpenRGB enumerates once, at startup.
 	StateNoDevices State = "no-devices"
 	// StateNoneInScope is hardware present with the rules file excluding all
-	// of it: a configuration problem, and the only one of the four that is.
+	// of it: a configuration problem, and the only one of the five that is.
 	StateNoneInScope State = "none-in-scope"
+	/*
+		StateStale is a server answering, listing the device, and holding a
+		dead connection to it -- unplugged and plugged back in since the server
+		started. The listing is identical to a working one, which is why it
+		needs a state of its own rather than showing up as healthy.
+
+		The one state the service does not decide. Telling it apart means
+		reading the server's descriptors, which has to happen in the same mount
+		namespace as the server, and this service is sandboxed away from it --
+		so the clients reach this verdict and the name lives here so they agree
+		on how to spell it. See internal/stale and spec 058.
+	*/
+	StateStale State = "stale"
 	// StateHealthy is hotaru seeing devices it is allowed to drive.
 	StateHealthy State = "healthy"
 )
@@ -55,6 +68,16 @@ than run on one.
 */
 type Environment interface {
 	Remedies(ctx context.Context) []string
+
+	/*
+		Bounce restarts the OpenRGB server.
+
+		The one thing hotaru does to a machine rather than about it, and it
+		happens only when somebody asks. A server this user may not restart
+		returns *NotOurs carrying the command they would type instead, which
+		is an answer rather than a failure.
+	*/
+	Bounce(ctx context.Context) error
 }
 
 // SetEnvironment gives health somewhere to get its remedies.
@@ -65,9 +88,7 @@ func (s *Service) SetEnvironment(e Environment) {
 }
 
 func (s *Service) remedies(ctx context.Context) []string {
-	s.mu.RLock()
-	env := s.env
-	s.mu.RUnlock()
+	env := s.environment()
 	if env == nil {
 		return nil
 	}

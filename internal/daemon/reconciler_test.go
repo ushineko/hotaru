@@ -60,6 +60,13 @@ func (l *lines) report(format string, _ ...any) {
 	l.said = append(l.said, format)
 }
 
+// all is a copy of what was said, for asserting that something was.
+func (l *lines) all() []string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return append([]string(nil), l.said...)
+}
+
 func (l *lines) count() int {
 	l.mu.Lock()
 	defer l.mu.Unlock()

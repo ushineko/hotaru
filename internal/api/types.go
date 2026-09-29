@@ -342,6 +342,20 @@ type RestoreResponse struct {
 	Complete bool     `json:"complete"`
 }
 
+/*
+RescanResponse is the body of POST /v1/rescan.
+
+Devices is what the server found the second time. That is the number the whole
+operation is about: a server that has re-detected its hardware holds live
+connections to it, where before it held one to a device that had gone.
+*/
+type RescanResponse struct {
+	Devices  int      `json:"devices"`
+	Applied  int      `json:"applied"`
+	Missing  []string `json:"missing,omitempty"`
+	Complete bool     `json:"complete"`
+}
+
 // ReloadResponse is the body of POST /v1/reload: what was wrong with the rules
 // file, entry by entry.
 type ReloadResponse struct {
