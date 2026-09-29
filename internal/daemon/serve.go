@@ -10,6 +10,7 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"time"
 
@@ -222,6 +223,40 @@ type environment struct{}
 
 func (environment) Remedies(ctx context.Context) []string {
 	return systemd.Look(ctx).Remedies()
+}
+
+/*
+Stale asks the machine what the server has open.
+
+Not known on most machines, and that is not a failure: a server running as root
+or started by hand cannot have its descriptors read by this user. It reports
+nothing rather than guessing, and health then says exactly what it said before
+any of this existed.
+*/
+/*
+Bounce restarts the server's unit, where it is one this user owns.
+
+The translation between what the machine says and what the service can act on
+lives here, so that the service never learns what systemd is and the systemd
+package never learns what a service error looks like.
+*/
+func (environment) Bounce(ctx context.Context) error {
+	facts := systemd.Look(ctx)
+	if err := systemd.Bounce(ctx, facts); err != nil {
+		if errors.Is(err, systemd.ErrNotRestartable) {
+			return &service.NotOurs{Command: facts.RestartCommand()}
+		}
+		return err
+	}
+	return nil
+}
+
+func (environment) Stale(ctx context.Context) (moved []string, stale bool) {
+	held := systemd.Held(ctx)
+	if !held.Known {
+		return nil, false
+	}
+	return held.Orphaned, held.Deleted
 }
 
 /*

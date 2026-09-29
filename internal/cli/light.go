@@ -36,7 +36,8 @@ func lightCommand() *cobra.Command {
 		Use:   "light",
 		Short: "Lighting",
 	}
-	cmd.AddCommand(listCommand(), setCommand(), offCommand(), healthCommand(), probeCommand(), mapCommand())
+	cmd.AddCommand(listCommand(), setCommand(), offCommand(), healthCommand(), probeCommand(), mapCommand(),
+		rescanCommand())
 	return cmd
 }
 

@@ -60,6 +60,18 @@ threshold. It needs the server's PID and a readable `/proc/<pid>/fd`, which
 holds for a user unit and does not for a root-owned system unit or a server
 somebody started by hand. Where it cannot look, it says nothing.
 
+### A server answers before it is ready
+
+Found by running the finished command on the machine, on 28 Sep. The first
+rescan reported "the server found 0 devices; restored 0" while the lights were
+visibly coming back: a restarted OpenRGB answers a device listing before it has
+finished enumerating, and answers it with an empty list and no error.
+
+This is spec 033's observation from a new direction -- the reconciler already
+retries a restore for it, because a cold boot was once seen finding two devices
+of six. A reply is not readiness, so the bounce settles for what the server has
+rather than sampling it once.
+
 ### What this changes about the systemd package
 
 `internal/systemd` opens by saying hotaru does not fix anything there, because
@@ -111,23 +123,28 @@ says what it is for: a device that has been unplugged and plugged back in.
       alone brought the service back by itself --
       "the OpenRGB server at 127.0.0.1:6742 came back ... putting the lights
       back", then "restored 6 devices", with nothing restarting hotaru.
-- [ ] AC2. A server holding a hidraw descriptor marked `(deleted)` reports the
+- [x] AC2. A server holding a hidraw descriptor marked `(deleted)` reports the
       stale state, not the healthy one (`TestADeletedHandleIsNotHealthy`).
-- [ ] AC3. A live device node with no descriptor in the server is named in the
+- [x] AC3. A live device node with no descriptor in the server is named in the
       state (`TestTheStaleStateNamesTheDeviceThatMoved`).
-- [ ] AC4. An unreadable PID, an absent unit, and a non-systemd machine each
+- [x] AC4. An unreadable PID, an absent unit, and a non-systemd machine each
       report what they report now, with no stale claim
       (`TestWhatItCannotSeeItDoesNotClaim`).
-- [ ] AC5. Node mtimes moving without a re-attach does not produce a stale
+- [x] AC5. Node mtimes moving without a re-attach does not produce a stale
       claim -- the Sep 25 case, as a test
       (`TestATouchedNodeIsNotAReplug`).
-- [ ] AC6. The bounce restarts the unit, re-dials, reconciles, and reports the
-      device count (`TestRescanBouncesTheServerAndRestores`).
-- [ ] AC7. A unit that needs root to restart reports the command instead of
+- [x] AC6. The bounce restarts the unit, re-dials, reconciles, and reports the
+      device count (`TestRescanBouncesTheServerAndRestores`, with
+      `TestARescanWaitsForDevicesThatHaveNotEnumeratedYet` for the enumeration
+      lag below). Confirmed on the development machine on 28 Sep:
+      `hotaru light rescan` reported "the server found 6 devices; restored 6"
+      in 24 seconds.
+- [x] AC7. A unit that needs root to restart reports the command instead of
       attempting it (`TestAUnitItCannotRestartIsAdvice`).
-- [ ] AC8. `light health`, the API, and the window all offer it, and the
+- [x] AC8. `light health`, the API, and the window all offer it, and the
       window carries the note (`TestRescanIsOfferedEverywhereHealthIs`).
-- [ ] AC9. Verified on the development machine, against real hardware: replug
+- [ ] AC9. **Outstanding -- needs a replug to confirm the stale half.**
+      Verified on the development machine, against real hardware: replug
       the keyboard, confirm `light health` reports it stale and names it, run
       the bounce, and confirm the keyboard takes a colour again -- the sequence
       that was done by hand on Sep 27.

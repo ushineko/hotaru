@@ -12,7 +12,20 @@ that lighting is not.
 */
 package systemd
 
-import "context"
+import (
+	"context"
+	"errors"
+)
+
+/*
+ErrNotRestartable is the server being one this user cannot bounce: a system
+unit, a server started by hand, or a machine without systemd.
+
+Not a failure of the operation so much as the operation not applying. The
+caller's move is to offer RestartCommand, which is a sentence somebody can act
+on, rather than to report that something went wrong.
+*/
+var ErrNotRestartable = errors.New("this OpenRGB server is not one hotaru can restart")
 
 // Facts are what could be done about an unreachable OpenRGB server.
 type Facts struct {
@@ -64,6 +77,24 @@ func (f Facts) Remedies() []string {
 	return out
 }
 
+/*
+RestartCommand is what a person would type to bounce the server themselves.
+
+Offered whether or not hotaru can do it: a system unit needs root, and asking
+for a password from a lighting daemon is not a thing this program does. See
+spec 058 R7.
+*/
+func (f Facts) RestartCommand() string {
+	if f.User {
+		return "systemctl --user restart " + f.Unit
+	}
+	return "sudo systemctl restart " + f.Unit
+}
+
+// Restartable is whether hotaru could do it without asking for a password.
+// A system unit is somebody's to restart deliberately, not this program's.
+func (f Facts) Restartable() bool { return f.Installed && f.User }
+
 func (f Facts) startCommand() string {
 	if f.User {
 		return "systemctl --user start " + f.Unit
@@ -74,6 +105,20 @@ func (f Facts) startCommand() string {
 // Look reports what this machine offers. A machine that cannot be asked
 // returns zero facts, and the remedies are then silent rather than wrong.
 func Look(ctx context.Context) Facts { return look(ctx) }
+
+/*
+Bounce restarts the OpenRGB server, and is the one thing in this package that
+changes the machine rather than describing it.
+
+The package's rule is unchanged where it was written for: nothing here enables
+a unit, turns on lingering, or decides at boot on somebody's behalf. That is
+configuration, and it stays theirs. This is a restart asked for by a person
+running a command whose whole purpose is to perform one, which is a different
+question from whether a program should quietly reconfigure a machine.
+
+Only a user unit. A system one needs root, and RestartCommand says so instead.
+*/
+func Bounce(ctx context.Context, f Facts) error { return bounce(ctx, f) }
 
 // unit is one OpenRGB unit this machine has, and whether it is running.
 type unit struct {
@@ -109,3 +154,44 @@ func choose(seen []unit, lingering bool) Facts {
 	}
 	return facts
 }
+
+/*
+Handles are what the running server has open, for telling a device that moved
+from one that was never there.
+
+OpenRGB detects hardware once, when it starts. A device unplugged and plugged
+back in since then leaves it holding a descriptor for a node the kernel has
+removed, while the device itself is on a new node the server knows nothing
+about. Neither the device count nor the scope changes, so the listing looks
+exactly as it always did and every write goes nowhere. See spec 058.
+*/
+type Handles struct {
+	// Deleted is whether the server holds a descriptor for a device node that
+	// has been removed. Exact rather than inferred: a node is deleted or it is
+	// not, and this is the fact the state rests on.
+	Deleted bool
+
+	// Orphaned are the names of devices present with no descriptor in the
+	// server at all. The same fault from the other side, and the only side
+	// that can say which device it was -- a deleted node has no name left.
+	//
+	// A device with several nodes counts as held if the server holds any of
+	// them: a keyboard offering two interfaces, with the server driving one,
+	// is a working keyboard and not an orphan.
+	Orphaned []string
+
+	// Known is whether any of this could be looked at. A server started by
+	// hand, or one running as root, cannot be inspected by this user, and
+	// saying nothing is the honest answer rather than a guess.
+	Known bool
+}
+
+/*
+Held is what the OpenRGB server on this machine has open.
+
+Not known is the ordinary answer on most machines. The Arch package ships a
+system unit, whose descriptors belong to root, and a server somebody started
+themselves has no unit to find a PID through. Both return zero facts, and the
+health state then says what it has always said.
+*/
+func Held(ctx context.Context) Handles { return held(ctx) }

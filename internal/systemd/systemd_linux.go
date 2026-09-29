@@ -94,7 +94,13 @@ The arguments are built from this file's own constants and the USER
 environment variable, which is read for a name and never for a command.
 */
 func systemctl(ctx context.Context, args ...string) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, askTimeout)
+	return systemctlFor(ctx, askTimeout, args...)
+}
+
+// systemctlFor is systemctl with a deadline of its own, because asking a
+// question and waiting out a restart are not the same length of operation.
+func systemctlFor(ctx context.Context, timeout time.Duration, args ...string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	// G204: the program is a literal and every argument is built from this

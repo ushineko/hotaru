@@ -107,6 +107,14 @@ func (c *Client) Status(ctx context.Context) (Status, error) {
 	return out, err
 }
 
+// Rescan restarts the OpenRGB server so it detects hardware again, and puts
+// the lights back on what it finds.
+func (c *Client) Rescan(ctx context.Context) (RescanResponse, error) {
+	var out RescanResponse
+	err := c.do(ctx, http.MethodPost, "/"+Version+"/rescan", struct{}{}, &out)
+	return out, err
+}
+
 // Reconcile puts the lights back to what was last asked for.
 func (c *Client) Reconcile(ctx context.Context) (RestoreResponse, error) {
 	var out RestoreResponse

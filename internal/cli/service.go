@@ -254,3 +254,61 @@ func coolingCommand() *cobra.Command {
 	withJSON(cmd)
 	return cmd
 }
+
+/*
+rescanCommand bounces the OpenRGB server so it looks at the hardware again.
+
+Here rather than at the top level because it is what a person reaches for after
+`light health` says a device has moved, and because what it fixes is lighting.
+It is the only command that restarts something, and it does it because it was
+asked to by name.
+*/
+func rescanCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "rescan",
+		Short: "Restart the OpenRGB server so it sees replugged devices, then put the lights back",
+		Long: `Restart the OpenRGB server so it detects the hardware again.
+
+OpenRGB detects devices once, when it starts. A device unplugged and plugged
+back in since then is still in its list, and still has the connection it had
+before -- which now goes nowhere, so the device is shown as present and cannot
+be lit. Nothing but a restart recovers it.
+
+This takes a few seconds: the server does not stop immediately, and the lights
+go back on once it has found everything.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			client, err := client(cmd)
+			if err != nil {
+				return err
+			}
+
+			// Said before rather than after, because the wait is long enough
+			// that silence reads as a command that has hung.
+			if !asJSON(cmd) {
+				cmd.Println("restarting the OpenRGB server; this takes a few seconds...")
+			}
+
+			out, err := client.Rescan(cmd.Context())
+			if err != nil {
+				return quiet(err)
+			}
+			if asJSON(cmd) {
+				return emit(cmd, out)
+			}
+
+			switch {
+			case out.Complete && out.Applied == 0:
+				cmd.Printf("the server found %d devices; nothing was waiting to be put back\n", out.Devices)
+			case out.Complete:
+				cmd.Printf("the server found %d devices; restored %d\n", out.Devices, out.Applied)
+			default:
+				cmd.Printf("the server found %d devices; restored %d, still waiting for %s\n",
+					out.Devices, out.Applied, strings.Join(out.Missing, ", "))
+			}
+			return nil
+		},
+	}
+	withJSON(cmd)
+	return cmd
+}

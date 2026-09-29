@@ -63,9 +63,23 @@ func TestAServerThatStopsAnsweringIsUnreachableNotEmpty(t *testing.T) {
 }
 
 // A machine that offers a way out says so, and says it as a command.
-type machine struct{ says []string }
+type machine struct {
+	says []string
+	// moved and holding are what this machine's OpenRGB has open: the names of
+	// devices it holds no descriptor for, and whether one it does hold has
+	// been removed underneath it.
+	moved   []string
+	holding bool
+	// bounce is what restarting the server does on this machine: nil for one
+	// that restarts, *service.NotOurs for one this user may not.
+	bounce error
+}
 
 func (m machine) Remedies(context.Context) []string { return m.says }
+
+func (m machine) Stale(context.Context) ([]string, bool) { return m.moved, m.holding }
+
+func (m machine) Bounce(context.Context) error { return m.bounce }
 
 func TestHealthCarriesWhatAPersonCouldDoAboutIt(t *testing.T) {
 	svc := service.New(nil, nil, "127.0.0.1:6742")

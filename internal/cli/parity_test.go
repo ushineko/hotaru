@@ -75,6 +75,7 @@ func TestEveryRouteTheServiceServesIsReachableFromTheCommandLine(t *testing.T) {
 		{"preview", "renew", "nosuchtoken"},
 		{"preview", "release", "nosuchtoken"},
 		{"reconcile"},
+		{"light", "rescan"},
 		{"reload"},
 	} {
 		// Errors are fine here: a command that ran and reported something
