@@ -2,7 +2,7 @@
 
 *lights, cooler, action!*
 
-**Version**: 0.1.18
+**Version**: 0.1.19
 
 RGB lighting and AIO cooler control for Linux, as a CLI, a user service and a
 desktop GUI. 
@@ -211,6 +211,41 @@ hotaru is a ground-up rearchitecture. Hardware learnings are carried over.
 MIT. See [LICENSE](LICENSE).
 
 ## Changelog
+
+### 0.1.19 (2026-09-29)
+
+- A device unplugged and plugged back in can be recovered, and says so rather
+  than leaving somebody to work it out. OpenRGB detects hardware once, when it
+  starts, so a device replugged since then leaves the server holding a
+  connection to a node the kernel has removed: it stays in the listing with its
+  LED count and its modes, every write succeeds, and nothing lights. Health
+  reported `6 of 6 devices are in scope` for as long as it went unnoticed.
+  There is now a state for it that names the device, and
+  `hotaru light rescan` -- in the window as "Look for replugged devices" --
+  restarts the server and puts the lights back
+  (spec 058, [#167](https://github.com/ushineko/hotaru/issues/167)).
+
+- The service reconnects to a server that went away. It retried only until its
+  first success and then stopped watching, so any OpenRGB restart -- an
+  upgrade, a crash, the bounce above -- left it holding a socket to a process
+  that no longer existed, and recovering meant restarting hotaru as well as
+  the server. A connection now knows when it has gone, which is the socket
+  rather than the answer: a missing device, an absent mode and a frame of the
+  wrong length are answers, and all three are left alone (spec 058).
+
+- A system unit is bounced where this user already holds that one command
+  without a password, and gets the command to type where they do not. Nothing
+  in this asks for a password, at a terminal that may be nobody's (spec 058).
+
+- Telling a dead connection apart is done by the command line and the window
+  rather than by the service, which is the one verdict about the machine that
+  is not the service's. Reading another process's descriptors has to happen in
+  that process's mount namespace, and the service runs sandboxed into one of
+  its own -- where the descriptor directory lists every entry and then refuses
+  to resolve any of them. The first attempt took that for an answer and
+  reported that it had looked and found nothing wrong. The unit is unchanged:
+  the six options that would have to go to make it work there include the one
+  whose comment records it catching an earlier bug (spec 058).
 
 ### 0.1.18 (2026-09-26)
 
