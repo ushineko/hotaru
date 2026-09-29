@@ -189,6 +189,35 @@ func (f *Fake) ProtocolVersion() uint32 {
 	return f.version
 }
 
+/*
+Vanish makes the server stop answering, the way a process that has exited does.
+
+Unreachable can be set directly while nothing is using the fake. This is for
+the other case -- taking the server away from something already talking to it,
+which is the only interesting moment to take it away -- and it takes the lock
+that every read of the field already holds.
+*/
+func (f *Fake) Vanish(err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.Unreachable = err
+}
+
+/*
+Gone is whether Unreachable is the socket rather than an answer.
+
+Through the same test the hardware path uses, so a test saying the server went
+away sets Unreachable to what a vanished server actually returns -- EPIPE, a
+reset, an unexpected EOF -- rather than to a sentinel that only the fake
+understands. An Unreachable that is some other error is a server that is
+answering badly, which is not this.
+*/
+func (f *Fake) Gone() bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return isGone(f.Unreachable)
+}
+
 // Close marks the fake closed; using it afterwards is a test's own bug.
 func (f *Fake) Close() error {
 	f.mu.Lock()

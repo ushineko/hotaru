@@ -46,11 +46,19 @@ var (
 )
 
 /*
-Run restores, then keeps re-asserting, until the context is cancelled.
+Run restores, then keeps re-asserting, until the context is cancelled or the
+server goes away.
 
 With nothing recorded there is nothing to restore and nothing to re-assert, and
 this loop costs a timer. That is the inert rule at run time: a fresh install
 starts every mechanism and writes to no device.
+
+Returning on a departed server is what makes reconnecting possible. Neither
+loop can make progress against a socket whose peer has gone, and retrying one
+forever is how a replugged device used to need the service restarted by hand.
+The caller dials again and calls this again; restoring then happens for the
+same reason it happens at boot, because a server that has just enumerated has
+every device in its power-on state. See spec 058.
 */
 func (r *Reconciler) Run(ctx context.Context) {
 	r.restore(ctx)
@@ -67,6 +75,11 @@ func (r *Reconciler) restore(ctx context.Context) {
 		got, err := r.Service.Reconcile(ctx, nil)
 		switch {
 		case err != nil:
+			// A server that has gone is not a server that is late. Retrying
+			// cannot reach it, so this hands back to the caller to redial.
+			if r.Service.Gone() {
+				return
+			}
 			// No server yet. The connector reports that; saying it twice from
 			// two goroutines helps nobody.
 		case got.Complete():
@@ -105,6 +118,13 @@ func (r *Reconciler) reassert(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case now := <-ticker.C:
+			// Checked here rather than after a failed write, so a machine with
+			// nothing recorded -- which never writes, and so never sees an
+			// error -- still notices that the server it is attached to is not
+			// the one running now.
+			if r.Service.Gone() {
+				return
+			}
 			/*
 				Lapsed previews first.
 

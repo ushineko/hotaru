@@ -2,10 +2,13 @@ package openrgb
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"net"
 	"strings"
 	"sync"
+	"syscall"
 
 	sdk "github.com/csutorasa/go-openrgb-sdk"
 	"github.com/ushineko/hotaru/internal/colour"
@@ -30,6 +33,13 @@ type Conn struct {
 	client  *sdk.Client
 	address string
 	version uint32
+
+	// gone is whether this connection has failed at the connection level.
+	// Sticky, because a socket whose peer has gone does not come back: the
+	// server that answers next is a different process with its own
+	// enumeration, reached by dialling again. Guarded by mu, which every
+	// exchange already holds.
+	gone bool
 }
 
 /*
@@ -84,6 +94,52 @@ func (c *Conn) Close() error {
 }
 
 /*
+Gone is whether the server this was connected to has stopped answering.
+
+Distinct from any one call failing. A device that is not there, a mode a device
+does not have, a frame of the wrong length: those are answers, and the
+connection is fine. This is the other kind -- the socket itself -- and it is
+the one that cannot be retried, only redialled.
+
+Sticky by design. Asking "is it back" of a dead connection has no useful answer,
+because the server that comes back is a new process; the caller's move is to
+dial again and replace this.
+*/
+func (c *Conn) Gone() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.gone
+}
+
+/*
+noteLocked records a connection-level failure, and leaves every other kind
+alone. The caller holds mu.
+
+The test is the error chain rather than the text of it: every exchange in this
+file wraps the SDK's error with %w, and the three that do not are about a
+device, a mode and an LED count -- none of which are the socket.
+*/
+func (c *Conn) noteLocked(err error) {
+	if !c.gone && isGone(err) {
+		c.gone = true
+	}
+}
+
+// isGone is whether an error is the socket rather than the answer. Shared with
+// the fake, so a test that says "the server went away" means by this what the
+// hardware path means by it.
+func isGone(err error) bool {
+	if err == nil {
+		return false
+	}
+	return errors.Is(err, syscall.EPIPE) ||
+		errors.Is(err, syscall.ECONNRESET) ||
+		errors.Is(err, net.ErrClosed) ||
+		errors.Is(err, io.EOF) ||
+		errors.Is(err, io.ErrUnexpectedEOF)
+}
+
+/*
 Devices lists what the server has, in its order.
 
 Duplicate names collapse to their first occurrence. A server that has rescanned
@@ -91,9 +147,11 @@ lists every device twice, and addressing the second copy means sending every
 command to the same hardware twice — which is visible as a device that takes
 two writes to change, and invisible as anything else.
 */
-func (c *Conn) Devices(ctx context.Context) ([]devices.Device, error) {
+func (c *Conn) Devices(ctx context.Context) (found []devices.Device, err error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	// Registered after the unlock, so it runs before it and still holds mu.
+	defer func() { c.noteLocked(err) }()
 	return c.list(ctx)
 }
 
@@ -216,9 +274,10 @@ Device reads one controller by name.
 Used to confirm a write landed: a device can accept a mode and not honour it, so
 the active mode is read back and compared. A zero exit code establishes nothing.
 */
-func (c *Conn) Device(ctx context.Context, name string) (devices.Device, error) {
+func (c *Conn) Device(ctx context.Context, name string) (found devices.Device, err error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	defer func() { c.noteLocked(err) }()
 
 	entry, err := c.find(ctx, name)
 	if err != nil {
@@ -269,9 +328,10 @@ the device's own definition of it — speed, direction and colour count included
 because a mode is a structure the server round-trips rather than a string it
 looks up. Brightness is asserted only where the mode says it has any.
 */
-func (c *Conn) SetMode(ctx context.Context, device, mode string, style Style) error {
+func (c *Conn) SetMode(ctx context.Context, device, mode string, style Style) (err error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	defer func() { c.noteLocked(err) }()
 
 	entry, err := c.find(ctx, device)
 	if err != nil {
@@ -324,9 +384,10 @@ The whole device in one exchange. A frame is the unit everywhere above this for
 reasons that are about scenes and reconciliation, and it happens to be what the
 protocol wants too.
 */
-func (c *Conn) SetFrame(ctx context.Context, device string, frame devices.Frame) error {
+func (c *Conn) SetFrame(ctx context.Context, device string, frame devices.Frame) (err error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	defer func() { c.noteLocked(err) }()
 
 	entry, err := c.find(ctx, device)
 	if err != nil {

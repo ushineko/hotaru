@@ -57,6 +57,13 @@ type Client interface {
 	// reports so a mismatch is visible rather than mysterious.
 	ProtocolVersion() uint32
 
+	// Gone is whether the server has stopped answering this connection, as
+	// opposed to any one call failing. A server that restarts -- an upgrade, a
+	// crash, a bounce to pick up a replugged device -- leaves a socket that
+	// cannot be retried, only redialled, and the daemon watches this to know
+	// when to do that. See spec 058.
+	Gone() bool
+
 	Close() error
 }
 
