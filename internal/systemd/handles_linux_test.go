@@ -64,3 +64,53 @@ func TestOnlyARemovedDescriptorCounts(t *testing.T) {
 	require.Equal(t, "Keychron Keychron K4 HE", hidName(dir+"/uevent"))
 	require.Empty(t, hidName(dir+"/absent"), "a node that cannot be identified is not reasoned about")
 }
+
+/*
+Three machines, three answers.
+
+A user unit is this user's own. A system unit is root's, and reachable only
+where somebody has already granted this user the command without a password --
+which is their decision, made before hotaru ever ran. Everything else gets the
+command to type, because a daemon that stopped to ask for a password would be
+asking at a terminal nobody is watching.
+*/
+func TestHowAUnitGetsRestartedDependsOnWhoseItIs(t *testing.T) {
+	user := Facts{Installed: true, Unit: "openrgb-server.service", User: true}
+	system := Facts{Installed: true, Unit: "openrgb.service"}
+
+	t.Run("a user unit needs nothing", func(t *testing.T) {
+		privileged, args, ok := restartPlan(user, false)
+		require.True(t, ok)
+		require.False(t, privileged, "a user unit was escalated for no reason")
+		require.Equal(t, []string{"--user", "restart", "openrgb-server.service"}, args)
+	})
+
+	t.Run("a system unit with passwordless root is ours to bounce", func(t *testing.T) {
+		privileged, args, ok := restartPlan(system, true)
+		require.True(t, ok)
+		require.True(t, privileged)
+		require.Equal(t, []string{"-n", "systemctl", "restart", "openrgb.service"}, args)
+		require.Contains(t, args, "-n", "a bounce must never be able to sit on a password prompt")
+	})
+
+	t.Run("a system unit without it is advice", func(t *testing.T) {
+		_, _, ok := restartPlan(system, false)
+		require.False(t, ok, "a unit needing a password was going to be restarted anyway")
+		require.Equal(t, "sudo systemctl restart openrgb.service", system.RestartCommand(),
+			"the command offered instead has to be the one that works")
+	})
+
+	t.Run("nothing installed is nothing to restart", func(t *testing.T) {
+		_, _, ok := restartPlan(Facts{}, true)
+		require.False(t, ok)
+	})
+}
+
+// Whatever else changes, the bounce never prompts: -n is not optional.
+func TestABounceNeverAsksForAPassword(t *testing.T) {
+	source, err := os.ReadFile("bounce_linux.go")
+	require.NoError(t, err)
+	require.NotContains(t, string(source), "askpass")
+	require.Contains(t, string(source), `"-n", "true"`,
+		"the probe for passwordless root must itself be unable to prompt")
+}

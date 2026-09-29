@@ -19,7 +19,8 @@ import (
 
 /*
 ErrNotRestartable is the server being one this user cannot bounce: a system
-unit, a server started by hand, or a machine without systemd.
+unit on a machine where root would ask for a password, a server started by
+hand, or a machine without systemd.
 
 Not a failure of the operation so much as the operation not applying. The
 caller's move is to offer RestartCommand, which is a sentence somebody can act
@@ -80,9 +81,11 @@ func (f Facts) Remedies() []string {
 /*
 RestartCommand is what a person would type to bounce the server themselves.
 
-Offered whether or not hotaru can do it: a system unit needs root, and asking
-for a password from a lighting daemon is not a thing this program does. See
-spec 058 R7.
+Offered whether or not hotaru can do it. Where it can -- a user unit, or a
+system one this user already holds passwordless root over -- it does it and
+this is never seen. Where it cannot, this is the whole of the help available,
+because a lighting daemon that stopped to ask for a password would be asking
+at a terminal nobody is looking at. See spec 058 R7.
 */
 func (f Facts) RestartCommand() string {
 	if f.User {
@@ -91,9 +94,33 @@ func (f Facts) RestartCommand() string {
 	return "sudo systemctl restart " + f.Unit
 }
 
-// Restartable is whether hotaru could do it without asking for a password.
-// A system unit is somebody's to restart deliberately, not this program's.
-func (f Facts) Restartable() bool { return f.Installed && f.User }
+/*
+restartPlan is how this unit would be bounced, and whether it can be.
+
+Three machines, three answers. A user unit is this user's own and needs nothing.
+A system unit needs root, which is reachable only where somebody has already
+decided it should be: `sudo -n` succeeds when this user has been granted the
+command without a password, and fails instantly rather than prompting when they
+have not. Anything else cannot be restarted from here, and gets the command
+instead.
+
+Pure, and separate from running it, because which of the three a machine is is
+the part worth being sure about.
+*/
+func restartPlan(f Facts, sudo bool) (privileged bool, args []string, ok bool) {
+	switch {
+	case !f.Installed:
+		return false, nil, false
+	case f.User:
+		return false, []string{"--user", "restart", f.Unit}, true
+	case sudo:
+		// -n again at the point of use: this must never be the thing that
+		// blocks a lighting daemon on a password prompt nobody can see.
+		return true, []string{"-n", "systemctl", "restart", f.Unit}, true
+	default:
+		return false, nil, false
+	}
+}
 
 func (f Facts) startCommand() string {
 	if f.User {

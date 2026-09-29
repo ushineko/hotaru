@@ -10,18 +10,24 @@ import (
 /*
 NotOurs is an OpenRGB server this user is not in a position to restart.
 
-A system unit needs root, and a lighting daemon asking for a password is not a
-thing this program does; a server somebody started by hand has no unit to
-restart at all. Neither is a failure, so this carries the command a person
-would type instead. See spec 058 R7.
+Reached only after asking. A user unit is this user's own, and a system unit on
+a machine where they already hold passwordless root is bounced too -- so this
+is the third case: root is needed and would ask for a password, at a terminal
+that may be nobody's. A server started by hand has no unit to restart at all.
+
+Neither is a failure, so this says what the person can do instead, and what
+they could change if they would rather not do it by hand. See spec 058 R7.
 */
 type NotOurs struct{ Command string }
 
 func (e *NotOurs) Error() string {
 	if e.Command == "" {
-		return "this OpenRGB server is not one hotaru can restart"
+		return "no OpenRGB service was found to restart. " +
+			"If the server was started by hand, stop it and start it again, and it will find the device"
 	}
-	return "this OpenRGB server is not one hotaru can restart. Bounce it yourself with `" + e.Command + "`"
+	return "the OpenRGB server runs as a system service, so restarting it needs root, " +
+		"and hotaru will not stop to ask for a password. Bounce it with `" + e.Command + "`. " +
+		"If this user is granted that one command without a password, hotaru will do it from here"
 }
 
 /*

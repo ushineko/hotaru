@@ -113,6 +113,29 @@ func systemctlFor(ctx context.Context, timeout time.Duration, args ...string) (s
 	return string(out), nil
 }
 
+/*
+sudoFor runs something as root, and only ever with -n in the arguments the
+caller built.
+
+A third function with a literal name, for the reason the other two have one:
+there is no path by which a program name could come from anywhere but this
+file. What it is asked to run comes from restartPlan, which builds it from a
+unit name this package chose from its own candidate list.
+*/
+func sudoFor(ctx context.Context, timeout time.Duration, args ...string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	// G204: the program is a literal and every argument is built from this
+	// package's own constants. There is no shell, so an argument is one argv
+	// element whatever it contains.
+	out, err := exec.CommandContext(ctx, "sudo", args...).Output() //nolint:gosec
+	if err != nil {
+		return "", err //nolint:wrapcheck // the caller only asks whether it worked
+	}
+	return string(out), nil
+}
+
 func loginctl(ctx context.Context, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, askTimeout)
 	defer cancel()

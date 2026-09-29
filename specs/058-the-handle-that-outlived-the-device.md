@@ -105,9 +105,13 @@ no unit at all degrades to the advice that is there now, and never to a guess.
 **R6. One command does the bounce**: restart the server's unit, wait for it to
 listen, re-dial, reconcile, and report what it did.
 
-**R7. It runs only when asked.** Detecting a stale handle names the command; it
-does not run it. A unit the user cannot restart without root reports that,
-with the command, rather than prompting.
+**R7. It runs only when asked, and it asks the machine before giving up.**
+Detecting a stale handle names the command; it does not run it. A user unit is
+this user's own. A system unit is root's, and is bounced too where this user
+already holds that command without a password -- `sudo -n`, which does the real
+thing minus the prompt and fails instantly rather than waiting. Only where root
+would actually ask does it hand back the command, with what to change if they
+would rather not do it by hand. Nothing here ever prompts.
 
 **R8. It is reachable from the CLI, the API, and the window**, and the window
 says what it is for: a device that has been unplugged and plugged back in.
@@ -139,8 +143,11 @@ says what it is for: a device that has been unplugged and plugged back in.
       lag below). Confirmed on the development machine on 28 Sep:
       `hotaru light rescan` reported "the server found 6 devices; restored 6"
       in 24 seconds.
-- [x] AC7. A unit that needs root to restart reports the command instead of
-      attempting it (`TestAUnitItCannotRestartIsAdvice`).
+- [x] AC7. A user unit, a system unit with passwordless root, and a system
+      unit without it are told apart, and only the last is advice
+      (`TestHowAUnitGetsRestartedDependsOnWhoseItIs`,
+      `TestAUnitItCannotRestartIsAdvice`). The bounce can never prompt
+      (`TestABounceNeverAsksForAPassword`).
 - [x] AC8. `light health`, the API, and the window all offer it, and the
       window carries the note (`TestRescanIsOfferedEverywhereHealthIs`).
 - [ ] AC9. **Outstanding -- needs a replug to confirm the stale half.**
@@ -174,9 +181,17 @@ says what it is for: a device that has been unplugged and plugged back in.
   AC3 has to be confirmed per device class on real hardware, and R4's naming
   is a refinement of R3, which rests only on the `(deleted)` marker.
 - **`/proc/<pid>/fd` is readable for a user unit and not for a root system
-  unit.** The Arch package ships a system unit, so the check is unavailable to
-  the most common installation, which is what R5 is for. This is a diagnosis
-  that improves on the machines it can see and regresses none.
+  unit.** The Arch package ships a system unit, so *detection* is unavailable
+  to the most common installation, which is what R5 is for. The bounce is not
+  bound by the same limit: a machine granting this user passwordless root over
+  the command is bounced normally, and one that does not gets the command. So
+  on a packaged install the button still works; it is the automatic noticing
+  that goes quiet. This is a diagnosis that improves on the machines it can see
+  and regresses none.
+- **Running `sudo` at all is new for this program.** Only ever `sudo -n`, only
+  ever to restart a unit this package chose from its own candidate list, never
+  through a shell, and never in a way that can block. Whether it is permitted
+  at all was decided by whoever configured the machine, before hotaru ran.
 - **A restart drops all lighting briefly**, including devices that were fine.
   R2 puts it back; R7 keeps the timing the user's choice.
 - **The server does not stop on SIGTERM.** Observed on 28 Sep: systemd waited
