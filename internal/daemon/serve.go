@@ -226,15 +226,7 @@ func (environment) Remedies(ctx context.Context) []string {
 }
 
 /*
-Stale asks the machine what the server has open.
-
-Not known on most machines, and that is not a failure: a server running as root
-or started by hand cannot have its descriptors read by this user. It reports
-nothing rather than guessing, and health then says exactly what it said before
-any of this existed.
-*/
-/*
-Bounce restarts the server's unit, where it is one this user owns.
+Bounce restarts the server's unit, where it is one this user can restart.
 
 The translation between what the machine says and what the service can act on
 lives here, so that the service never learns what systemd is and the systemd
@@ -249,14 +241,6 @@ func (environment) Bounce(ctx context.Context) error {
 		return err
 	}
 	return nil
-}
-
-func (environment) Stale(ctx context.Context) (moved []string, stale bool) {
-	held := systemd.Held(ctx)
-	if !held.Known {
-		return nil, false
-	}
-	return held.Orphaned, held.Deleted
 }
 
 /*

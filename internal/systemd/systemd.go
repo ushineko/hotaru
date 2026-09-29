@@ -216,9 +216,39 @@ type Handles struct {
 /*
 Held is what the OpenRGB server on this machine has open.
 
-Not known is the ordinary answer on most machines. The Arch package ships a
-system unit, whose descriptors belong to root, and a server somebody started
-themselves has no unit to find a PID through. Both return zero facts, and the
-health state then says what it has always said.
+Not known is the ordinary answer on plenty of machines. A system unit's
+descriptors belong to root; a server somebody started by hand has no unit to
+find a PID through; and a caller inside a mount namespace is refused every
+link it tries to read. All of them return zero facts, and the caller then says
+what it would have said before any of this existed.
+
+Asking costs several subprocesses, because finding the unit and its PID is a
+question for systemd. A caller doing this on a timer should use ServerPID once
+and HeldBy after that.
 */
-func Held(ctx context.Context) Handles { return held(ctx) }
+func Held(ctx context.Context) Handles {
+	pid, ok := ServerPID(ctx)
+	if !ok {
+		return Handles{}
+	}
+	return HeldBy(pid)
+}
+
+/*
+ServerPID is the process the OpenRGB server is running as.
+
+The expensive half: it asks systemd which unit this machine has and what it is
+running as, which is four or five subprocesses. The answer changes only when
+the server restarts.
+*/
+func ServerPID(ctx context.Context) (int, bool) { return serverPID(ctx) }
+
+/*
+HeldBy is what one process has open, by PID.
+
+The cheap half, and the one worth repeating: /proc only, no subprocesses, so a
+window polling every couple of seconds can afford to ask. A PID that is not an
+OpenRGB server -- gone, or reused by something else since it was looked up --
+is not known rather than wrong.
+*/
+func HeldBy(pid int) Handles { return heldBy(pid) }

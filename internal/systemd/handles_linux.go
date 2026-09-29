@@ -4,6 +4,7 @@ package systemd
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -29,21 +30,42 @@ exceptional: no unit on this machine, a unit that is not running, a PID that
 belongs to root, a /proc entry that vanished while being read. None of them is
 evidence of a stale handle, and none is worth a remedy.
 */
-func held(ctx context.Context) Handles {
+func serverPID(ctx context.Context) (int, bool) {
 	facts := look(ctx)
 	if !facts.Installed || !facts.Active {
-		return Handles{}
+		return 0, false
 	}
-	pid, ok := mainPID(ctx, facts.Unit, facts.User)
-	if !ok {
-		return Handles{}
-	}
+	return mainPID(ctx, facts.Unit, facts.User)
+}
 
+func heldBy(pid int) Handles {
+	if !isServer(pid) {
+		return Handles{}
+	}
 	open, deleted, ok := descriptors(pid)
 	if !ok {
 		return Handles{}
 	}
 	return Handles{Deleted: deleted, Orphaned: orphaned(open), Known: true}
+}
+
+/*
+isServer is whether this PID is still the OpenRGB server.
+
+A PID looked up a minute ago may have exited, and the number may since belong
+to something else this user is running. Reading what it calls itself is cheaper
+than asking systemd again and rules out reporting one program's descriptors as
+another's.
+*/
+func isServer(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	name, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "comm")) //nolint:gosec // built here
+	if err != nil {
+		return false
+	}
+	return strings.Contains(strings.ToLower(strings.TrimSpace(string(name))), "openrgb")
 }
 
 // mainPID is the process the unit is running as, through the same systemctl
@@ -74,10 +96,17 @@ func mainPID(ctx context.Context, unit string, user bool) (int, bool) {
 descriptors is which device nodes the process holds, and whether any of them
 has been removed underneath it.
 
-Unreadable means a process this user does not own -- a root system unit, which
-is what the distribution package installs -- and that is reported as not known
-rather than as nothing held. The difference matters: nothing held would read as
-every device being an orphan.
+Two ways to see nothing, and they must not be confused. A process this user
+does not own cannot be listed at all. A process that can be listed but whose
+links cannot be resolved is the more dangerous one: the directory answers, every
+entry is there, and reading any of them is refused -- which, taken at face
+value, looks exactly like a server holding no devices and nothing deleted.
+
+That is what a mount namespace does. A caller under systemd's ProtectSystem,
+ProtectHome or PrivateTmp gets a full listing and permission denied on every
+link, measured on the machine this was written for. Reporting "looked, found
+nothing wrong" from there would be the worst answer available, so a refusal to
+resolve is not known.
 */
 func descriptors(pid int) (open map[string]bool, deleted, known bool) {
 	dir := filepath.Join("/proc", strconv.Itoa(pid), "fd")
@@ -86,23 +115,42 @@ func descriptors(pid int) (open map[string]bool, deleted, known bool) {
 		return nil, false, false
 	}
 
-	open = make(map[string]bool, len(entries))
+	paths := make([]string, 0, len(entries))
 	for _, entry := range entries {
-		// A descriptor can close between the listing and the read, which is a
-		// descriptor this process no longer holds and not an error.
-		target, err := os.Readlink(filepath.Join(dir, entry.Name()))
+		paths = append(paths, filepath.Join(dir, entry.Name()))
+	}
+	return resolve(paths, os.Readlink)
+}
+
+/*
+resolve turns descriptors into the device nodes behind them.
+
+Separated from finding them so that being refused -- the case that matters, and
+the one a machine only produces from inside a mount namespace -- can be put in
+a test rather than reasoned about.
+*/
+func resolve(paths []string, readlink func(string) (string, error)) (open map[string]bool, deleted, known bool) {
+	open = make(map[string]bool, len(paths))
+	for _, path := range paths {
+		target, err := readlink(path)
 		if err != nil {
+			// Refused is this process being unable to see, which is not a
+			// fact about the server. Gone is a descriptor closed between the
+			// listing and the read, which is ordinary and skipped.
+			if errors.Is(err, os.ErrPermission) {
+				return nil, false, false
+			}
 			continue
 		}
-		path, gone := strings.CutSuffix(target, deletedMark)
-		if !strings.HasPrefix(path, devNode+"hidraw") {
+		node, gone := strings.CutSuffix(target, deletedMark)
+		if !strings.HasPrefix(node, devNode+"hidraw") {
 			continue
 		}
 		if gone {
 			deleted = true
 			continue
 		}
-		open[path] = true
+		open[node] = true
 	}
 	return open, deleted, true
 }

@@ -55,6 +55,13 @@ func TestTheClientCommandsCannotReachADevice(t *testing.T) {
 		shortcut file is not a device write, and it happens here precisely
 		because the service must not be able to do it -- its unit gives it
 		write access to its own two directories and nothing else.
+
+		internal/stale is here for the same reason and the same shape of
+		reason. Telling whether the server still has a connection to the
+		hardware means reading its descriptors, which has to be done from the
+		server's own mount namespace -- and the service's sandbox puts it
+		outside one. So the client looks, and looking is not writing: that
+		package reads /proc and /sys and can reach no device from either.
 	*/
 	for _, imported := range append(pkg.Imports, pkg.TestImports...) {
 		for _, banned := range forbidden {

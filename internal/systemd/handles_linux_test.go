@@ -114,3 +114,55 @@ func TestABounceNeverAsksForAPassword(t *testing.T) {
 	require.Contains(t, string(source), `"-n", "true"`,
 		"the probe for passwordless root must itself be unable to prompt")
 }
+
+/*
+A refusal to read a descriptor is not a report that nothing is wrong.
+
+The bug this is here for was found on the machine, on 29 Sep, with a keyboard
+actually replugged and the server actually holding a removed descriptor. From
+inside the service's sandbox the directory listed all forty-two entries and
+every single readlink came back permission denied -- so the first version saw
+no deleted node, no held node, and announced `healthy: 6 of 6` with complete
+confidence while the keyboard sat dead.
+
+Listing is not reading. Any mount namespace does this: ProtectSystem,
+ProtectHome, PrivateTmp and ProtectControlGroups each produce it on their own,
+measured one at a time.
+*/
+func TestALinkItMayNotReadIsNotAnAnswer(t *testing.T) {
+	paths := []string{"/proc/1/fd/0", "/proc/1/fd/1"}
+
+	refused := func(string) (string, error) { return "", os.ErrPermission }
+	_, deleted, known := resolve(paths, refused)
+	require.False(t, known, "being refused every descriptor was reported as having looked")
+	require.False(t, deleted)
+
+	// A descriptor that closes between the listing and the read is ordinary,
+	// and must not take the whole answer down with it.
+	raced := func(path string) (string, error) {
+		if path == "/proc/1/fd/0" {
+			return "", os.ErrNotExist
+		}
+		return "/dev/hidraw9", nil
+	}
+	open, _, known := resolve(paths, raced)
+	require.True(t, known, "one closed descriptor was mistaken for not being allowed to look")
+	require.Equal(t, map[string]bool{"/dev/hidraw9": true}, open)
+}
+
+// The deleted marker is what the whole state rests on, so it is read exactly.
+func TestTheDeletedMarkerIsWhatCounts(t *testing.T) {
+	links := map[string]string{
+		"a": "/dev/hidraw17 (deleted)",
+		"b": "/dev/hidraw9",
+		"c": "/run/user/1000/hotaru/hotaru.sock",
+		"d": "/dev/hidraw6",
+	}
+	open, deleted, known := resolve([]string{"a", "b", "c", "d"},
+		func(p string) (string, error) { return links[p], nil })
+
+	require.True(t, known)
+	require.True(t, deleted, "a removed device node was not noticed")
+	require.Equal(t, map[string]bool{"/dev/hidraw9": true, "/dev/hidraw6": true}, open,
+		"a deleted node must not count as held, and a socket is not a device")
+}

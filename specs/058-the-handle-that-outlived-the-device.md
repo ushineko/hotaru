@@ -2,7 +2,26 @@
 
 **Issue**: [#167](https://github.com/ushineko/hotaru/issues/167)
 
-## Status: INCOMPLETE
+## Status: COMPLETE
+
+## Executive Summary
+
+A device unplugged and plugged back in left the OpenRGB server writing to a
+connection that no longer existed: the device stayed in the listing, health
+read `6 of 6 devices are in scope`, and nothing lit. The service now notices
+the server going away and reconnects on its own, the clients notice a dead
+connection and name the device holding it, and `hotaru light rescan` -- in the
+window as "Look for replugged devices" -- restarts the server and puts the
+lights back.
+
+Look first at `internal/stale`, and at why the check lives in the clients
+rather than in the service: the service's sandbox makes reading another
+process's descriptors impossible, and relaxing it would have cost six hardening
+options including one this repository records catching a real bug. Second at
+`Conn.Gone` and the supervision loop in `internal/daemon/serve.go`, which is
+what makes any OpenRGB restart survivable. Three things here were found by
+running the code against the hardware and could not have been found otherwise;
+each is written up where it was found.
 
 ## Context
 
@@ -72,6 +91,35 @@ retries a restore for it, because a cold boot was once seen finding two devices
 of six. A reply is not readiness, so the bounce settles for what the server has
 rather than sampling it once.
 
+### The service cannot do the looking
+
+Found with a keyboard actually replugged, on 29 Sep, with everything above
+written and passing. `light health` said `healthy: 6 of 6` while the server
+held `fd 31 -> /dev/hidraw17 (deleted)`.
+
+Reading another process's descriptors has to be done from that process's mount
+namespace. The service runs in its own, and every systemd option that remounts
+anything creates one -- measured here one at a time, each sufficient on its
+own:
+
+```
+baseline, NoNewPrivileges, SystemCallFilter, RestrictNamespaces   deleted=true
+PrivateTmp, ProtectSystem, ProtectHome, ProtectControlGroups,
+ProtectKernelTunables, ProtectKernelModules                       deleted=false
+```
+
+The first version reported `known=true` from in there, because the directory
+listed all forty-two entries and only the readlinks were refused. So it
+announced that it had looked and found nothing wrong, which is the worst answer
+available. Listing is not reading, and a refused link is now not known.
+
+**The clients do the looking instead.** Both are ordinary processes of the
+user's, in the user's namespace. Relaxing the unit was the alternative and was
+rejected: the six options that would have to go include the one whose comment
+in that unit records it catching a real bug (spec 016), and this state is a
+convenience rather than a repair -- the bounce fixes the machine, and the
+bounce works from inside the sandbox untouched.
+
 ### What this changes about the systemd package
 
 `internal/systemd` opens by saying hotaru does not fix anything there, because
@@ -99,8 +147,12 @@ name matches an in-scope device, for which the server holds no descriptor, is
 the device that moved. Without that, the state still reports that something
 moved.
 
-**R5. Where it cannot look, it says nothing.** No PID, no readable `/proc`, or
-no unit at all degrades to the advice that is there now, and never to a guess.
+**R5. Where it cannot look, it says nothing.** No PID, no unit, a PID that is
+not the server any more, or a descriptor it is refused: each degrades to the
+advice that is there now and never to a guess. Being refused every link is
+**not** "looked, found nothing" -- that distinction is the whole of this
+requirement, and getting it wrong is what made the first version claim an
+all-clear it could not back.
 
 **R6. One command does the bounce**: restart the server's unit, wait for it to
 listen, re-dial, reconcile, and report what it did.
@@ -150,11 +202,27 @@ says what it is for: a device that has been unplugged and plugged back in.
       (`TestABounceNeverAsksForAPassword`).
 - [x] AC8. `light health`, the API, and the window all offer it, and the
       window carries the note (`TestRescanIsOfferedEverywhereHealthIs`).
-- [ ] AC9. **Outstanding -- needs a replug to confirm the stale half.**
-      Verified on the development machine, against real hardware: replug
-      the keyboard, confirm `light health` reports it stale and names it, run
-      the bounce, and confirm the keyboard takes a colour again -- the sequence
-      that was done by hand on Sep 27.
+- [x] AC9. Verified on the development machine, against real hardware, on
+      29 Sep. The keyboard replugged and the server left holding
+      `fd 31 -> /dev/hidraw17 (deleted)`:
+
+      ```
+      $ hotaru light health
+      stale: the OpenRGB server is still addressing Keychron K4 HE at a
+      connection that has gone. ...
+        Have the server look again with `hotaru light rescan`. ...
+        127.0.0.1:6742, protocol 3, 6 devices, 6 in scope
+
+      $ hotaru light rescan
+      the server found 6 devices; restored 6          (17 seconds)
+
+      $ hotaru light health
+      healthy: 6 of 6 devices are in scope
+      ```
+
+      The device was picked out of six the server listed and eleven the kernel
+      had. `6 devices, 6 in scope` on the stale line is the listing that read
+      as healthy all evening.
 
 ## Alternatives Considered
 
@@ -164,6 +232,12 @@ says what it is for: a device that has been unplugged and plugged back in.
   server's enumeration is the stale thing; re-dialling the same process gains
   nothing for a device that moved. It is necessary, and it is not sufficient,
   which is why R1 and R6 are both here.
+- **Relaxing the service's sandbox** so it could read the descriptors itself,
+  keeping all of health in one place. Six options would have to go, including
+  `ProtectHome=read-only`, whose comment in that unit records it catching the
+  attempt to edit the desktop's own shortcut file (spec 016). A guardrail that
+  has already caught a real bug is worth more than being told about a fault
+  whose repair works without it.
 - **Bouncing automatically on detection.** The state is detectable, so a
   program could act on it unasked. Rejected for the reason the systemd package
   was written the way it was: a restart drops every other device's lighting for
@@ -180,14 +254,21 @@ says what it is for: a device that has been unplugged and plugged back in.
   controller that opens, writes, and closes would read as stale while working.
   AC3 has to be confirmed per device class on real hardware, and R4's naming
   is a refinement of R3, which rests only on the `(deleted)` marker.
-- **`/proc/<pid>/fd` is readable for a user unit and not for a root system
-  unit.** The Arch package ships a system unit, so *detection* is unavailable
-  to the most common installation, which is what R5 is for. The bounce is not
-  bound by the same limit: a machine granting this user passwordless root over
-  the command is bounced normally, and one that does not gets the command. So
-  on a packaged install the button still works; it is the automatic noticing
-  that goes quiet. This is a diagnosis that improves on the machines it can see
-  and regresses none.
+- **Health is now decided in two places**, and that is the price of keeping the
+  unit hardened. Four states are the service's, reached from the connection it
+  holds; this one is the clients', reached by looking at the machine. A reader
+  expecting one answer from one place will not find it, which is why
+  `internal/stale` opens by saying so.
+- **Detection is still unavailable where the server runs as root.** A system
+  unit's descriptors belong to root, and no client of the user's can read them.
+  The bounce is not bound by the same limit -- a machine granting this user
+  passwordless root over the command is bounced normally -- so on a packaged
+  install the button works and the automatic noticing goes quiet. This improves
+  the machines it can see and regresses none.
+- **Both clients now spawn subprocesses to answer health.** Finding the PID is
+  several `systemctl` calls, so it is found once and reused while it stays an
+  OpenRGB server; the repeated part is a `/proc` read. The window asks every
+  two seconds and must not be running `systemctl` at that rate.
 - **Running `sudo` at all is new for this program.** Only ever `sudo -n`, only
   ever to restart a unit this package chose from its own candidate list, never
   through a shell, and never in a way that can block. Whether it is permitted
