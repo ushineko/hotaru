@@ -3,6 +3,7 @@ package service_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	hw "github.com/ushineko/hotaru/internal/cooler" // `cooler` is a fixture in this package
@@ -26,6 +27,7 @@ func (p *panel) Show(context.Context, []byte) error         { p.shown++; return 
 func (p *panel) Readout(context.Context) error              { p.readouts++; return p.refuse }
 func (p *panel) Appearance(context.Context, int, int) error { return nil }
 func (p *panel) Panel() (string, error)                     { return "640x640 LCD", p.wrong }
+func (p *panel) Floor(int) time.Duration                    { return 2 * time.Second }
 
 // dashboard records whether it has been asked to stand down.
 type screenAuthor struct {

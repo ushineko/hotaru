@@ -13,11 +13,12 @@ keyboard's colour, so can hotaru. If OpenRGB cannot see the device, neither
 can hotaru, and no configuration changes that. This is also why installing
 hotaru installs OpenRGB: the lighting support lives there.
 
-The cooler is the exception, and the only place where hotaru carries a driver
-of its own. It writes NZXT's protocol directly over `/dev/hidraw` and usbfs,
-with no Python, no subprocess and no cgo. That gives a short device list
-rather than a borrowed one. See
-[spec 012](../specs/012-the-cooler-without-liquidctl.md).
+The cooler is the exception. hotaru writes NZXT's protocol directly over
+`/dev/hidraw` and usbfs, with no Python, no subprocess and no cgo. That gives a
+short device list rather than a borrowed one. See
+[spec 012](../specs/012-the-cooler-without-liquidctl.md). The driver is the
+`nzxt` package of [sanshoku](https://github.com/ushineko/sanshoku), which was
+hotaru's own code until spec 059.
 
 ## Tested
 
@@ -128,11 +129,16 @@ frame, and hotaru reports that rather than approximating it. hotaru talks to
 the running OpenRGB *server*, so lighting needs `openrgb` installed **and** its
 server running.
 
-**Cooler telemetry: hotaru itself.** The kernel has no driver for recent NZXT
-coolers. `nzxt-kraken3` matches 2007, 2014, 3008, 300C and 300E, so a Kraken
-Elite V2 has no hwmon node and `sensors` reports nothing at all. hotaru reads
-the device over `/dev/hidraw`, which costs about two milliseconds and starts no
-processes.
+**Cooler telemetry: hotaru itself, through sanshoku.** The kernel has no
+driver for recent NZXT coolers. `nzxt-kraken3` matches 2007, 2014, 3008, 300C
+and 300E, so a Kraken Elite V2 has no hwmon node and `sensors` reports nothing
+at all. hotaru reads the device over `/dev/hidraw`, which costs about two
+milliseconds and starts no processes. sanshoku's
+[support table](https://github.com/ushineko/sanshoku/blob/main/docs/devices.md)
+lists the coolers its `nzxt` driver speaks to. Its
+[contention page](https://github.com/ushineko/sanshoku/blob/main/docs/contention.md)
+records what sharing the node does. Status is safe to read from two programs at
+once, and the usbfs claim keeps a second program off the panel.
 
 **The panel: hotaru itself, on coolers that have one.** The Kraken Z and Elite
 families store images in sixteen buckets of their own memory. Most coolers
@@ -140,7 +146,8 @@ have nothing of the kind. The firmware does not retain a still picture, so
 hotaru sends one-frame GIFs.
 
 **Temperatures: the kernel.** The CPU package comes from `coretemp`, read by
-label. The graphics card comes from `amdgpu` or `nouveau` where they are
+label. An AMD processor is read from `k10temp` or `zenpower`, in the order
+sanshoku's `hwmon.CPU` gives. The graphics card comes from `amdgpu` or `nouveau` where they are
 present. NVIDIA's own driver registers no hwmon, so that card's number comes
 from `nvidia-smi`. This is why `nvidia-utils` is an `optdepends` rather than a
 dependency: a machine without it shows a placeholder rather than an error.

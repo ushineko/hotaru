@@ -3,10 +3,12 @@ package api_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"github.com/ushineko/hotaru/internal/api"
@@ -14,6 +16,28 @@ import (
 	"github.com/ushineko/hotaru/internal/openrgb"
 	"github.com/ushineko/hotaru/internal/service"
 )
+
+/*
+fakeCooler is the service's Cooler with nothing under it. What is tested here
+is the API's reading of an answer; the adapter and the device are tested in
+internal/cooler.
+*/
+type fakeCooler struct {
+	err error
+}
+
+func (f fakeCooler) Status(context.Context) (cooler.Status, error) {
+	if f.err != nil {
+		return cooler.Status{}, f.err
+	}
+	return cooler.Status{Coolant: 37.5, PumpRPM: 2608, PumpDuty: 81, FanRPM: 1190, FanDuty: 51, Taken: time.Now()}, nil
+}
+func (fakeCooler) Device() cooler.Device                      { return cooler.Device{Name: "fake cooler"} }
+func (fakeCooler) Show(context.Context, []byte) error         { return nil }
+func (fakeCooler) Readout(context.Context) error              { return nil }
+func (fakeCooler) Appearance(context.Context, int, int) error { return nil }
+func (fakeCooler) Panel() (string, error)                     { return "640x640 LCD", nil }
+func (fakeCooler) Floor(int) time.Duration                    { return 2 * time.Second }
 
 func ask(t *testing.T, svc *service.Service, path string) api.Cooling {
 	t.Helper()
@@ -29,7 +53,7 @@ func ask(t *testing.T, svc *service.Service, path string) api.Cooling {
 
 func TestTheCoolerIsServedFromTheService(t *testing.T) {
 	svc := service.New(nil, openrgb.NewFake(), "")
-	svc.SetCooler(cooler.Own(cooler.NewWithFake(cooler.NewFake())))
+	svc.SetCooler(fakeCooler{})
 
 	got := ask(t, svc, "/"+api.Version+"/cooling")
 	require.False(t, got.Absent)
@@ -58,10 +82,8 @@ func TestAMachineWithNoCoolerAnswersRatherThanFailing(t *testing.T) {
 func TestACoolerThatWillNotAnswerIsNamedRatherThanHidden(t *testing.T) {
 	// Present and silent is a different problem from absent, and the device
 	// name is the first thing somebody needs in order to chase it.
-	silent := cooler.NewFake()
-	silent.Silent = true
 	svc := service.New(nil, openrgb.NewFake(), "")
-	svc.SetCooler(cooler.Own(cooler.NewWithFake(silent)))
+	svc.SetCooler(fakeCooler{err: errors.New("no 7501 reply: none in 12 reports")})
 
 	got := ask(t, svc, "/"+api.Version+"/cooling")
 	require.True(t, got.Absent)
@@ -77,7 +99,7 @@ func TestCoolingIsReachableThroughTheClient(t *testing.T) {
 	require.NoError(t, err)
 
 	svc := service.New(nil, openrgb.NewFake(), "")
-	svc.SetCooler(cooler.Own(cooler.NewWithFake(cooler.NewFake())))
+	svc.SetCooler(fakeCooler{})
 
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan error, 1)

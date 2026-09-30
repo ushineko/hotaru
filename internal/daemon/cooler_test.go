@@ -3,12 +3,16 @@ package daemon_test
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 	"github.com/ushineko/hotaru/internal/cooler"
+	"github.com/ushineko/hotaru/internal/cooler/coolertest"
 	"github.com/ushineko/hotaru/internal/daemon"
+	"github.com/ushineko/hotaru/internal/openrgb"
+	"github.com/ushineko/hotaru/internal/service"
 )
 
 // quick is a backoff a test can wait on.
@@ -30,7 +34,7 @@ func TestTheCoolerIsWaitedForRatherThanOpenedOnce(t *testing.T) {
 		if attempts < 4 {
 			return nil, denied
 		}
-		return cooler.NewWithFake(cooler.NewFake()), nil
+		return cooler.New(coolertest.New()), nil
 	}
 
 	var said []string
@@ -68,4 +72,66 @@ func TestWaitingForTheCoolerEndsWithTheService(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("waiting for the cooler did not end with the service")
 	}
+}
+
+func TestACoolerThatGoesIsDetachedAndFoundAgain(t *testing.T) {
+	/*
+		Spec 059 R3. An unplugged cooler answers ErrGone. Before, the service
+		held the dead handle until somebody restarted it; now it lets go,
+		reports absence as it does on a machine with none, waits with the
+		same backoff, and attaches whatever the next open finds -- with a
+		dashboard pusher of its own, because the last one may have stopped
+		for good on a panel it could not claim.
+	*/
+	first := coolertest.NewPanel()
+	first.GoneOnce = true
+	second := coolertest.NewPanel()
+	second.Reading.Coolant = 41
+
+	var mu sync.Mutex
+	opens := 0
+	open := func(context.Context) (*cooler.Cooler, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		opens++
+		switch opens {
+		case 1:
+			return cooler.New(first), nil
+		case 2:
+			return nil, cooler.ErrNoCooler // unplugged: the wait is the same one
+		default:
+			return cooler.New(second), nil
+		}
+	}
+
+	svc := service.New(nil, openrgb.NewFake(), "")
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		daemon.Attach(ctx, svc, open, quick, func(string, ...any) {})
+	}()
+
+	// The first dashboard frame reads the cooler, which has gone.
+	require.Eventually(t, first.Closed, 2*time.Second, 5*time.Millisecond,
+		"a cooler that had gone was not closed")
+
+	require.Eventually(t, func() bool {
+		status, _, err := svc.Cooling(t.Context())
+		return err == nil && status.Coolant == 41
+	}, 2*time.Second, 5*time.Millisecond, "the cooler that came back was not attached")
+
+	// R3.2: the dashboard is drawn on the cooler that came back.
+	require.Eventually(t, func() bool { return second.Images() > 0 }, 2*time.Second, 5*time.Millisecond,
+		"the pusher did not start again on the re-attached cooler")
+
+	mu.Lock()
+	require.Equal(t, 3, opens, "it did not look for the cooler again through open")
+	mu.Unlock()
+
+	cancel()
+	<-done
+	require.True(t, second.Closed(), "stopping the service left the cooler open")
+	_, _, err := svc.Cooling(t.Context())
+	require.ErrorIs(t, err, cooler.ErrNoCooler, "a stopped attachment left the cooler set")
 }

@@ -6,21 +6,8 @@ import (
 	"time"
 
 	"github.com/ushineko/hotaru/internal/readings"
+	"github.com/ushineko/sanshoku/hwmon"
 )
-
-/*
-GPUSensors are the kernel's ways of knowing a graphics card's temperature, in
-the order they are tried.
-
-AMD labels its sensors; nouveau exposes one unlabelled temperature. NVIDIA's
-proprietary driver registers no hwmon at all, which is why there is a fallback
-below rather than a longer list here.
-*/
-var GPUSensors = []Sensor{
-	{Chip: "amdgpu", Label: "edge"},
-	{Chip: "amdgpu"},
-	{Chip: "nouveau"},
-}
 
 /*
 Graphics reads the card's temperature in degrees and its utilisation as a
@@ -41,11 +28,9 @@ rather than a zero. See spec 013.
 */
 func Graphics(ctx context.Context) Card {
 	var card Card
-	for _, sensor := range GPUSensors {
-		if t, err := sensor.Temperature(); err == nil {
-			card.Temperature, card.TemperatureOK = float64(t), true
-			break
-		}
+	// The kernel's ways, in sanshoku's order: amdgpu, then nouveau.
+	if _, t, err := hwmon.First(hwmon.Root, hwmon.GPU); err == nil {
+		card.Temperature, card.TemperatureOK = t, true
 	}
 	if load, ok := readings.Busy(); ok {
 		card.Load, card.LoadOK = load, true

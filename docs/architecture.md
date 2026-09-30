@@ -40,7 +40,7 @@ flowchart TB
 
     subgraph backends["Backends"]
         ORGB["OpenRGB server<br/>SDK protocol, TCP 6742<br/>systemd --user, enumeration gate"]
-        COOL["Cooler driver · in hotaru<br/>/dev/hidraw + usbfs<br/>NZXT protocol, no cgo"]
+        COOL["Cooler · sanshoku nzxt driver<br/>/dev/hidraw + usbfs<br/>NZXT protocol, no cgo"]
         HWMON["Kernel sensors<br/>/sys/class/hwmon by label<br/>nvidia-smi where there is none"]
     end
 
@@ -226,7 +226,10 @@ them.
   colour channels and nothing else, and liquidctl, which used to fill the gap,
   exposes no colour channels for this model at all. Reading the cooler
   directly removed a Python interpreter and a subprocess per reading from the
-  service, and took a reading from 105 ms to about two (spec 012).
+  service, and took a reading from 105 ms to about two (spec 012). The driver
+  is the `nzxt` package of [sanshoku](https://github.com/ushineko/sanshoku),
+  which hayami also uses. `internal/cooler` adapts it to the service (spec 059).
+  A cooler that goes away is let go and waited for again.
 - **One writer per file.** The rules belong to the user, and hotaru never
   rewrites them. hotaru writes the scenes, because the window edits them.
   Desired state lives outside the config directory. The window's own file
