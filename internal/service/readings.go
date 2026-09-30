@@ -34,8 +34,8 @@ func (s *Service) Readings(ctx context.Context) readings.Reading {
 		r.Set(readings.FanRPM, float64(status.FanRPM))
 		r.Set(readings.FanDuty, float64(status.FanDuty))
 	}
-	if t, err := cooler.CPUPackage.Temperature(); err == nil {
-		r.Set(readings.CPUTemp, float64(t))
+	if t, err := cooler.Processor(); err == nil {
+		r.Set(readings.CPUTemp, t)
 	}
 	if load, ok := s.processor.Load(); ok {
 		r.Set(readings.CPULoad, load)

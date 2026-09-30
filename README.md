@@ -194,6 +194,11 @@ controller and a hotkey host. It was big and ugly, and this is not.
 
 hotaru is a ground-up rearchitecture. Hardware learnings are carried over.
 
+The cooler driver hotaru wrote for itself (spec 012) now lives in
+[sanshoku](https://github.com/ushineko/sanshoku), a Go module of device
+drivers shared with hayami. hotaru reads and draws on the Kraken through its
+`nzxt` package (spec 059).
+
 ## Documentation
 
 * specs - design decisions and feature development.
@@ -211,6 +216,25 @@ hotaru is a ground-up rearchitecture. Hardware learnings are carried over.
 MIT. See [LICENSE](LICENSE).
 
 ## Changelog
+
+### Unreleased
+
+- The cooler is driven through [sanshoku](https://github.com/ushineko/sanshoku)
+  rather than hotaru's own copy of the driver. The protocol, the node search,
+  the panel claim, the image placement and the push floor moved there with
+  their measurements, and hayami reads the same cooler through the same code.
+  `internal/cooler` is now an adapter of under two hundred lines, and the
+  dashboard asks the panel for its push floor rather than keeping the table
+  itself (spec 059, [#169](https://github.com/ushineko/hotaru/issues/169)).
+
+- A cooler unplugged while the service runs is let go and found again. The
+  service used to hold the dead handle until it was restarted; now the device
+  reports that it has gone, the cooler is detached as absent, and the same
+  wait that finds it at boot finds it again, with the dashboard drawing on it
+  once more (spec 059).
+
+- The CPU temperature is read from sanshoku's list of sensors, which adds
+  AMD's `k10temp` and `zenpower` after Intel's `coretemp` (spec 059).
 
 ### 0.1.19 (2026-09-29)
 

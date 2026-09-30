@@ -9,43 +9,18 @@ import (
 	"github.com/ushineko/hotaru/internal/cooler"
 )
 
-/*
-Floor is the shortest interval at which a frame of a given size appears.
-
-Measured on the development machine by pushing a frame repeatedly and watching
-an indicator that advances on every update:
-
-	frame                         1 s      1.5 s   2 s     3 s
-	5 KB, seven-segment digits    lands
-	8 KB, flat background         never    skips   lands
-	21 KB, full starfield                          lands   lands
-
-It is a settling time that scales with frame size, not a size limit. The device
-accepts every transfer either way -- the HID exchange succeeds, the bulk write
-completes, the bucket switch returns success -- and the screen simply does not
-change. So the floor is checked against the encoded length rather than assumed,
-which means somebody who adds a gradient later raises it without touching a
-line of this file. See spec 013.
-
-Nothing in the protocol announces any of this. Another cooler will have its own
-floor, and pushing too fast is invisible, which is the worst failure mode
-available: every write reports success and the panel quietly stops updating.
-*/
-func Floor(size int) time.Duration {
-	switch {
-	case size <= 6*1024:
-		return time.Second
-	case size <= 24*1024:
-		return 2 * time.Second
-	}
-	// Beyond anything measured. Extrapolating downwards would be a guess that
-	// looks like a fact on a screen nobody is watching closely.
-	return 3 * time.Second
-}
-
 // Panel is the screen, as much of it as pushing needs.
 type Panel interface {
 	Show(ctx context.Context, gif []byte) error
+	/*
+		Floor is the shortest interval at which a frame of this many bytes
+		appears. It is the device's, because pushing faster is invisible:
+		every write reports success and the panel stops updating. The
+		pusher asks it for every frame, so a heavier design raises it
+		without touching this file. See spec 013 and sanshoku's nzxt driver,
+		which carries the measurements.
+	*/
+	Floor(size int) time.Duration
 }
 
 /*
@@ -164,7 +139,7 @@ func (p *Pusher) cycle(ctx context.Context) time.Duration {
 		trails = p.Trails(ctx, look)
 	}
 	frame := Render(look, p.Read(ctx), p.tick, behind, trails)
-	floor := Floor(len(frame.GIF))
+	floor := p.Panel.Floor(len(frame.GIF))
 
 	if p.sent && frame.Content == p.last {
 		return floor

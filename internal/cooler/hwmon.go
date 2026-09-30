@@ -1,79 +1,18 @@
 package cooler
 
 import (
-	"fmt"
-	"os"
-	"path/filepath"
-	"strconv"
-	"strings"
+	"github.com/ushineko/sanshoku/hwmon"
 )
 
 /*
-Sensor is one labelled temperature the kernel already exposes.
+Processor is the CPU's temperature in degrees, from the kernel.
 
-peripheral-battery-monitor asked OpenLinkHub over HTTP for the CPU package
-temperature, because that is what Python could reach. The kernel has it in a
-file: `coretemp` for the package, `nct6798` for the board, `corsairpsu` for the
-supply. So OpenLinkHub stops being a dependency of hotaru -- see spec 012.
-
-Read by **label**, never by hwmon index. The numbers move between boots, and a
+Read by label, never by hwmon index: the numbers move between boots, and a
 program that remembers hwmon5 reports the wrong chip's temperature after a
-reboot rather than failing.
+reboot rather than failing. sanshoku's hwmon.CPU is the list of sensors tried,
+Intel's package temperature first and AMD's after it.
 */
-type Sensor struct {
-	Chip  string // the hwmon name, e.g. "coretemp"
-	Label string // e.g. "Package id 0"; empty means the chip's first temperature
-}
-
-// CPUPackage is the reading the dashboard shows and the Python got from a
-// daemon.
-var CPUPackage = Sensor{Chip: "coretemp", Label: "Package id 0"}
-
-// Temperature reads one labelled sensor, in degrees.
-func (s Sensor) Temperature() (int, error) { return s.read("/sys/class/hwmon") }
-
-func (s Sensor) read(root string) (int, error) {
-	chips, err := filepath.Glob(filepath.Join(root, "hwmon*"))
-	if err != nil {
-		return 0, fmt.Errorf("look for sensors: %w", err)
-	}
-	for _, chip := range chips {
-		name, err := os.ReadFile(filepath.Join(chip, "name")) //nolint:gosec // sysfs
-		if err != nil || strings.TrimSpace(string(name)) != s.Chip {
-			continue
-		}
-		/*
-			A chip with one temperature need not label it: nouveau exposes
-			temp1_input and nothing else. Naming the sensor is still how it
-			is found -- the chip is the name here rather than the index.
-		*/
-		if s.Label == "" {
-			return milli(filepath.Join(chip, "temp1_input"))
-		}
-		labels, err := filepath.Glob(filepath.Join(chip, "temp*_label"))
-		if err != nil {
-			return 0, fmt.Errorf("look inside %s: %w", s.Chip, err)
-		}
-		for _, label := range labels {
-			b, err := os.ReadFile(label) //nolint:gosec // sysfs
-			if err != nil || strings.TrimSpace(string(b)) != s.Label {
-				continue
-			}
-			return milli(strings.TrimSuffix(label, "_label") + "_input")
-		}
-	}
-	return 0, fmt.Errorf("no sensor %q on %s", s.Label, s.Chip)
-}
-
-// milli reads a hwmon temperature, which is thousandths of a degree.
-func milli(path string) (int, error) {
-	b, err := os.ReadFile(path) //nolint:gosec // sysfs
-	if err != nil {
-		return 0, fmt.Errorf("read %s: %w", path, err)
-	}
-	n, err := strconv.Atoi(strings.TrimSpace(string(b)))
-	if err != nil {
-		return 0, fmt.Errorf("read %s: %w", path, err)
-	}
-	return n / 1000, nil
+func Processor() (float64, error) {
+	_, degrees, err := hwmon.First(hwmon.Root, hwmon.CPU)
+	return degrees, err //nolint:wrapcheck // hwmon names every sensor it looked for
 }

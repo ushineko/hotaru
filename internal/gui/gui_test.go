@@ -48,11 +48,12 @@ func TestTheWindowCannotReachADevice(t *testing.T) {
 	require.NoError(t, err)
 
 	forbidden := []string{
-		"internal/openrgb", // the hardware
-		"internal/service", // the thing that drives it
-		"internal/devices", // and the knowledge of how
-		"internal/cooler",  // including the one over hidraw
-		"internal/desktop", // and the keys
+		"internal/openrgb",  // the hardware
+		"internal/service",  // the thing that drives it
+		"internal/devices",  // and the knowledge of how
+		"internal/cooler",   // including the one over hidraw
+		"ushineko/sanshoku", // and the library under it
+		"internal/desktop",  // and the keys
 	}
 	for _, imported := range pkg.Imports {
 		for _, banned := range forbidden {

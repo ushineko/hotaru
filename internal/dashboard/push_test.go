@@ -19,6 +19,15 @@ type panel struct {
 	mu     sync.Mutex
 	frames [][]byte
 	err    error
+	// asked is the size of every frame the floor was asked for.
+	asked []int
+}
+
+func (p *panel) Floor(size int) time.Duration {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.asked = append(p.asked, size)
+	return 1500 * time.Millisecond
 }
 
 func (p *panel) Show(_ context.Context, gif []byte) error {
@@ -133,20 +142,21 @@ func TestSomebodyElseCanHaveTheScreen(t *testing.T) {
 	<-stopped
 }
 
-func TestThePushFloorFollowsTheFrame(t *testing.T) {
+func TestThePushFloorIsThePanels(t *testing.T) {
 	/*
-		Measured, not chosen: a frame that never appears at one second appears
-		reliably at two, and nothing in the protocol says so. The table lives
-		in Floor's comment; this is the part that would notice somebody
-		editing it by accident.
+		Measured, not chosen, and a property of the device: a frame pushed
+		faster than its floor is accepted and never appears. The numbers are
+		sanshoku's nzxt driver's now (spec 059); what the pusher owes the
+		panel is to ask it about the frame it is about to send, every time,
+		and to wait what it is told.
 	*/
-	require.Equal(t, time.Second, Floor(5*1024))
-	require.Equal(t, 2*time.Second, Floor(8*1024))
-	require.Equal(t, 2*time.Second, Floor(21*1024))
-	require.Equal(t, 3*time.Second, Floor(64*1024))
+	screen := &panel{}
+	p := pusher(screen, reading())
 
-	// And the floor that matters is the one this design actually asks for.
-	require.Equal(t, 2*time.Second, Floor(len(shown(reading(), 0).GIF)))
+	wait := p.cycle(context.Background())
+	require.Equal(t, 1500*time.Millisecond, wait)
+	require.Equal(t, []int{len(screen.frames[0])}, screen.asked,
+		"the floor was not asked about the frame that was pushed")
 }
 
 func TestRenderingDoesNotGrowPerFrame(t *testing.T) {
@@ -166,6 +176,8 @@ func TestRenderingDoesNotGrowPerFrame(t *testing.T) {
 // refusing is a panel that will not take a picture, the way one held by
 // another program or one this user may not open will not.
 type refusing struct{ tries int }
+
+func (*refusing) Floor(int) time.Duration { return time.Second }
 
 func (r *refusing) Show(context.Context, []byte) error {
 	r.tries++

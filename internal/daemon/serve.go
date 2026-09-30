@@ -170,12 +170,12 @@ func run(cmd *cobra.Command) error {
 		once, that one failure was permanent: the lights came back and the
 		panel did not, until somebody restarted the service (#136).
 
-		Owned for the life of the service once it is open: it is a handle on
-		a HID endpoint, and two callers on one endpoint interleave control
-		transfers.
+		Held while it is there: sanshoku's driver owns the handle and
+		serialises every exchange on it. A cooler that goes away is let go
+		and waited for again (spec 059).
 	*/
 	cooled := make(chan struct{})
-	go func() { defer close(cooled); attach(ctx, svc, report) }()
+	go func() { defer close(cooled); attach(ctx, svc, cooler.Open, connectBackoff, report) }()
 	defer func() { <-cooled }()
 
 	/*
@@ -244,37 +244,71 @@ func (environment) Bounce(ctx context.Context) error {
 }
 
 /*
-attach waits for the cooler, then draws on it until the service stops.
+attach waits for the cooler, then draws on it until the service stops, and
+looks for it again if it goes away.
 
 Absence is ordinary -- most machines have no liquid cooler, and a machine that
 does may have one hotaru does not recognise -- so this keeps looking and says
 nothing more after the first time. A machine with none pays a sysfs scan every
 thirty seconds and nothing else.
+
+A cooler that goes away (sanshoku.ErrGone) is detached, as absence, and the
+same wait finds it again: before spec 059 the service held a dead handle until
+somebody restarted it.
 */
-func attach(ctx context.Context, svc *service.Service, report func(string, ...any)) {
-	found := waitForCooler(ctx, cooler.Open, connectBackoff, report)
-	if found == nil {
-		return
+func attach(ctx context.Context, svc *service.Service, open func(context.Context) (*cooler.Cooler, error),
+	backoff []time.Duration, report func(string, ...any),
+) {
+	for {
+		found := waitForCooler(ctx, open, backoff, report)
+		if found == nil {
+			return
+		}
+		if !serveCooler(ctx, svc, found, report) {
+			return
+		}
 	}
+}
 
-	/*
-		The panel stops before the cooler closes, and deliberately in that
-		order: closing hands the screen back to the firmware's own readout,
-		and a push that arrived afterwards would leave hotaru's last frame on
-		somebody's cooler for as long as the machine stayed off.
-	*/
-	owner := cooler.Own(found)
-	defer func() { _ = owner.Close() }()
+/*
+serveCooler gives the service one open cooler and draws the dashboard on it,
+until the service stops or the cooler goes. It reports whether it went.
 
-	svc.SetCooler(owner)
+The panel stops before the cooler closes, and deliberately in that order:
+closing hands the screen back to the firmware's own readout, and a push that
+arrived afterwards would leave hotaru's last frame on somebody's cooler for as
+long as the machine stayed off. The pusher is made afresh for each cooler,
+because one that stopped on a panel it could not claim stays stopped.
+*/
+func serveCooler(ctx context.Context, svc *service.Service, found *cooler.Cooler, report func(string, ...any)) bool {
+	drawing, stop := context.WithCancel(ctx)
+	defer stop()
+
+	svc.SetCooler(found)
 	report("reading %s at %s", found.Device().Name, found.Device().HID)
 
-	panel := dashboard.NewPusher(owner, svc.Readings)
+	panel := dashboard.NewPusher(found, svc.Readings)
 	panel.Trails = svc.Trails
 	panel.Look = svc.Look
 	panel.Report = report
 	svc.SetDashboard(panel)
-	panel.Run(ctx)
+
+	drawn := make(chan struct{})
+	go func() { defer close(drawn); panel.Run(drawing) }()
+
+	gone := false
+	select {
+	case <-ctx.Done():
+	case <-found.Gone():
+		gone = true
+	}
+	stop()
+	<-drawn
+
+	svc.SetDashboard(nil)
+	svc.SetCooler(nil)
+	_ = found.Close()
+	return gone
 }
 
 /*

@@ -1,143 +1,198 @@
+// Package cooler is the liquid cooler, through sanshoku: a sanshoku.Device in,
+// the service's Cooler out. The protocol, the node search, the usbfs claim, the
+// placement and the push floor are sanshoku's nzxt driver, which is this
+// package's old code ported with its measurements (hotaru spec 059).
 package cooler
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"image/gif"
+	"sync"
 	"time"
+
+	"github.com/ushineko/sanshoku"
+	"github.com/ushineko/sanshoku/cooling"
+	"github.com/ushineko/sanshoku/nzxt"
+	"github.com/ushineko/sanshoku/screen"
 )
 
-/*
-transport is the control channel, so tests need no hardware.
+// Status is what the cooler reports about itself.
+type Status = cooling.Status
 
-Only the matched exchanges are on it. A method that simply read the next report
-would be the shape of the bug spec 012 records, and leaving it out of the
-interface is cheaper than remembering not to call it.
-*/
-type transport interface {
-	tell(data ...byte) error
-	ask(ctx context.Context, data ...byte) ([]byte, error)
-	await(ctx context.Context, a, b byte) ([]byte, error)
-	Close() error
+// Device is one cooler, for reporting. HID is the control node; USB, the
+// panel's usbfs node, is empty because sanshoku does not report it. Screen is
+// the panel in the words the window shows, empty for none.
+type Device struct {
+	Product        uint16
+	Name, HID, USB string
+	Screen         string
 }
 
-/*
-Cooler is one liquid cooler, open.
-
-One owner. The service holds it in a single goroutine with a single-slot
-mailbox, the way lighting does, so nothing here locks: two callers writing to
-one HID endpoint is a corruption risk and not a contention problem.
-*/
-type Cooler struct {
-	device Device
-	t      transport
+// sentinel is an error that is another underneath without saying so.
+type sentinel struct {
+	text  string
+	under error
 }
 
-// Open finds a supported cooler and opens its control channel.
+func (s sentinel) Error() string { return s.text }
+func (s sentinel) Unwrap() error { return s.under }
+
+// ErrNoCooler is a machine with no cooler this package drives, and ErrNoScreen
+// a cooler whose panel cannot be driven. Both are ordinary states, not failures.
+var (
+	ErrNoCooler error = sentinel{"no supported liquid cooler", sanshoku.ErrAbsent}
+	ErrNoScreen error = sentinel{"no screen on this cooler", screen.ErrNoPanel}
+)
+
+// Open finds a supported cooler and opens it. Every candidate is tried, since
+// only one of a device's nodes answers. A node this user may not open is
+// reported as that, naming the udev rule, rather than as absence (#136).
 func Open(ctx context.Context) (*Cooler, error) {
-	candidates, err := Find()
-	if err != nil {
-		return nil, err
-	}
-	return pick(ctx, candidates, func(path string) (transport, error) { return openHID(path) })
-}
-
-/*
-pick opens the candidate that answers.
-
-Sysfs cannot tell one of a device's hidraw nodes from another, and the wrong
-one is silent: a program that chose by glob order would work on the machine it
-was written on and stop working when something else was plugged in. So each
-candidate is asked for a status reading, with a short deadline, and the one
-that replies is the cooler.
-
-Asking is safe because the candidates are already filtered to a known vendor
-and product -- nothing here writes to hardware it has not identified -- and it
-is decisive because a mismatched device answers with its own prefix. A Corsair
-power supply, asked this on the development machine, replied `74 96`, which is
-not a status reply and is rejected as one.
-*/
-func pick(ctx context.Context, candidates []Device, dial func(string) (transport, error)) (*Cooler, error) {
-	var last error
-	for _, device := range candidates {
-		t, err := dial(device.HID)
-		if err != nil {
-			last = fmt.Errorf("%s at %s: %w", device.Name, device.HID, err)
-			continue
+	found, err := sanshoku.Scan(ctx, nzxt.Driver{})
+	var denied error
+	for _, candidate := range found {
+		dev, failed := candidate.Open(ctx)
+		switch {
+		case failed == nil:
+			return New(dev), nil
+		case sanshoku.IsPermission(failed):
+			denied = fmt.Errorf("%w: %s at %s may not be opened by this user; "+
+				"packaging/60-hotaru.rules grants it to the seat: %w",
+				sanshoku.ErrUnavailable, candidate.Name, candidate.Path, failed)
+		default:
+			err = failed
 		}
-		c := &Cooler{device: device, t: t}
-		probe, cancel := context.WithTimeout(ctx, probeTimeout)
-		_, err = c.Status(probe)
-		cancel()
-		if err == nil {
-			return c, nil
-		}
-		last = fmt.Errorf("%s at %s did not answer: %w", device.Name, device.HID, err)
-		_ = t.Close()
 	}
-	if last == nil {
+	switch {
+	case denied != nil:
+		return nil, denied
+	case err == nil:
 		return nil, ErrNoCooler
+	case errors.Is(err, sanshoku.ErrAbsent), errors.Is(err, sanshoku.ErrUnsupported):
+		return nil, fmt.Errorf("%w: %w", ErrNoCooler, err)
 	}
-	return nil, last
+	return nil, fmt.Errorf("look for a cooler: %w", err)
 }
 
-/*
-probeTimeout bounds asking one candidate whether it is the cooler.
-
-The right node answers in about a millisecond. The wrong one never answers at
-all, and without a bound that is a program that hangs at startup rather than
-one that reports no cooler.
-*/
-const probeTimeout = 500 * time.Millisecond
-
-// Device is what was found, for reporting.
-func (c *Cooler) Device() Device { return c.device }
-
-// Close releases the control channel.
-func (c *Cooler) Close() error { return c.t.Close() }
-
-/*
-exchanges is how many times a question is asked before giving up on it.
-
-Not for a device that is slow -- a read already waits -- but for one whose
-replies somebody else is reading. The OpenRGB server holds this same hidraw
-node open on the development machine, and a report it reads is a report hotaru
-does not: the reply to a status request simply does not arrive.
-
-	openrgb  576461  fd 26u  /dev/hidraw7
-	hotaru  1056349  fd  3u  /dev/hidraw7
-
-peripheral-battery-monitor documented the same hazard and could only serialise
-its own calls; so can hotaru. Asking again is the whole mitigation, and it is
-enough because losing a reply is occasional rather than persistent.
-
-It lives here rather than in the transport so that every transport gets it,
-including the one tests use -- a retry the fake cannot exercise is a retry
-nobody has checked.
-*/
-const exchanges = 3
-
-// exchange asks a question, and asks again if the answer went astray.
-func (c *Cooler) exchange(ctx context.Context, data ...byte) ([]byte, error) {
-	var last error
-	for range exchanges {
-		reply, err := c.t.ask(ctx, data...)
-		if err == nil {
-			return reply, nil
-		}
-		if ctx.Err() != nil {
-			return nil, err
-		}
-		last = err
-	}
-	return nil, last
+// Cooler is one open cooler, as the service sees it. The driver owns the
+// handle, its mutex and its freshness; this adds the service's errors and the
+// one fact the daemon needs, that the device has gone.
+type Cooler struct {
+	dev    sanshoku.Device
+	source cooling.Source // nil for a device that reports no status
+	panel  screen.Panel   // nil for a device without one
+	once   sync.Once
+	gone   chan struct{}
+	mu     sync.Mutex
+	wrong  error // why the panel could not be drawn on, once something tried
 }
 
-/*
-tell sends a command the device does not answer.
+// New adapts an open device. Open calls it; a test hands it a fake.
+func New(dev sanshoku.Device) *Cooler {
+	c := &Cooler{dev: dev, gone: make(chan struct{})}
+	c.source, _ = dev.(cooling.Source)
+	c.panel, _ = dev.(screen.Panel)
+	return c
+}
 
-Most of this protocol is question and answer, and a few commands are not:
-brightness and orientation are written and acknowledged by nothing. Waiting for
-a reply to one of those times out after the full deadline, which reads as a
-device that has stopped talking.
-*/
-func (c *Cooler) tell(data ...byte) error { return c.t.tell(data...) }
+// Status is the cooler's reading, taken now or within the driver's freshness.
+func (c *Cooler) Status(ctx context.Context) (Status, error) {
+	if c.source == nil {
+		return Status{}, ErrNoCooler
+	}
+	s, err := c.source.Status(ctx)
+	return s, c.check(err)
+}
+
+// Device is what is being read, for reporting.
+func (c *Cooler) Device() Device {
+	id := c.dev.Identity()
+	d := Device{Product: id.Product, Name: id.Name, HID: id.Path}
+	if c.panel != nil {
+		w, h := c.panel.Size()
+		d.Screen = fmt.Sprintf("%dx%d LCD", w, h)
+	}
+	return d
+}
+
+// Show puts a GIF on the screen; the firmware keeps no still picture (spec 012).
+func (c *Cooler) Show(ctx context.Context, data []byte) error {
+	return c.draw(func(p screen.Panel) error {
+		g, err := gif.DecodeAll(bytes.NewReader(data))
+		if err != nil {
+			return fmt.Errorf("that is not a GIF: %w", err)
+		}
+		return p.Image(ctx, g) //nolint:wrapcheck // the driver names the device
+	})
+}
+
+// Readout hands the screen back to the cooler's own display.
+func (c *Cooler) Readout(ctx context.Context) error {
+	return c.draw(func(p screen.Panel) error { return p.Readout(ctx) })
+}
+
+// Appearance sets brightness and orientation, which the device keeps.
+func (c *Cooler) Appearance(ctx context.Context, brightness, degrees int) error {
+	return c.draw(func(p screen.Panel) error { return p.Appearance(ctx, brightness, degrees) })
+}
+
+// Panel is the screen this cooler has, and why it cannot be drawn on: the
+// error appears the first time a draw finds the panel cannot be claimed.
+func (c *Cooler) Panel() (string, error) {
+	if c.panel == nil {
+		return "", ErrNoScreen
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.Device().Screen, c.wrong
+}
+
+// Floor is how long the panel needs between frames this size; zero for none.
+func (c *Cooler) Floor(size int) time.Duration {
+	if c.panel == nil {
+		return 0
+	}
+	return c.panel.Floor(size)
+}
+
+// Close closes the device, handing the panel back if anything drew on it.
+func (c *Cooler) Close() error {
+	if err := c.dev.Close(); err != nil {
+		return fmt.Errorf("close the cooler: %w", err)
+	}
+	return nil
+}
+
+// Gone is closed when the device has gone away. The adapter is closed by then.
+func (c *Cooler) Gone() <-chan struct{} { return c.gone }
+
+// draw is one panel call. No panel, or one that will not be claimed, is
+// ErrNoScreen, as a machine without one; the reason is kept for the window.
+func (c *Cooler) draw(call func(screen.Panel) error) error {
+	if c.panel == nil {
+		return ErrNoScreen
+	}
+	err := call(c.panel)
+	if errors.Is(err, screen.ErrNoPanel) {
+		err = fmt.Errorf("%w: %w", ErrNoScreen, err)
+		c.mu.Lock()
+		c.wrong = err
+		c.mu.Unlock()
+	}
+	return c.check(err)
+}
+
+// check closes the adapter, once, on a device that has gone away, so the
+// daemon can look for it again rather than hold a dead handle.
+func (c *Cooler) check(err error) error {
+	if errors.Is(err, sanshoku.ErrGone) {
+		c.once.Do(func() {
+			_ = c.dev.Close()
+			close(c.gone)
+		})
+	}
+	return err
+}

@@ -12,7 +12,6 @@ import (
 
 	"github.com/ushineko/hotaru/internal/colour"
 	"github.com/ushineko/hotaru/internal/cooler"
-	"github.com/ushineko/hotaru/internal/dashboard"
 	"github.com/ushineko/hotaru/internal/devices"
 	"github.com/ushineko/hotaru/internal/images"
 	"github.com/ushineko/hotaru/internal/readings"
@@ -467,10 +466,13 @@ func Handler(svc *service.Service) http.Handler {
 			fail(w, err)
 			return
 		}
+		// The floor is the panel's. A machine with no cooler has none to
+		// report, and says zero.
+		floor, _ := svc.Floor(len(frame))
 		write(w, http.StatusOK, PreviewedDashboard{
 			Image: base64.StdEncoding.EncodeToString(frame),
 			Bytes: len(frame),
-			Floor: dashboard.Floor(len(frame)).Seconds(),
+			Floor: floor.Seconds(),
 		})
 	})
 

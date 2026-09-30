@@ -136,6 +136,9 @@ type Cooler interface {
 	// Panel is what screen this cooler has, and why it cannot be drawn on.
 	// Both empty is a panel nothing has needed yet.
 	Panel() (string, error)
+	// Floor is how long the panel needs between frames of this many bytes,
+	// which is a property of the device rather than of the dashboard.
+	Floor(size int) time.Duration
 }
 
 /*
@@ -188,6 +191,23 @@ func (s *Service) Panel() (string, error) {
 		return "", cooler.ErrNoCooler
 	}
 	return c.Panel()
+}
+
+/*
+Floor is how long the cooler's panel needs between frames of this many bytes.
+
+A machine with no cooler has no panel and no floor, and says so as
+ErrNoCooler.
+*/
+func (s *Service) Floor(size int) (time.Duration, error) {
+	s.mu.RLock()
+	c := s.cooler
+	s.mu.RUnlock()
+
+	if c == nil {
+		return 0, cooler.ErrNoCooler
+	}
+	return c.Floor(size), nil
 }
 
 /*

@@ -27,3 +27,11 @@ func WaitForCooler(ctx context.Context, open func(context.Context) (*cooler.Cool
 ) *cooler.Cooler {
 	return waitForCooler(ctx, open, backoff, report)
 }
+
+// Attach is attach, for a test: a cooler that goes away is the behaviour,
+// and a test that could not unplug one would be a test of nothing.
+func Attach(ctx context.Context, svc *service.Service, open func(context.Context) (*cooler.Cooler, error),
+	backoff []time.Duration, report func(string, ...any),
+) {
+	attach(ctx, svc, open, backoff, report)
+}
