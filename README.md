@@ -210,6 +210,9 @@ drivers shared with hayami. hotaru reads and draws on the Kraken through its
 * [docs/style.md](docs/style.md) - how the documents in `docs/` are written,
   and which of them have been converted. The specs, the changelog below and
   the doc comments in the Go source are left as they were written.
+* [docs/credits.md](docs/credits.md) - the projects the device protocols were
+  learned from and the libraries the program is built on, with their
+  licences.
 
 ## Licence
 
@@ -218,6 +221,10 @@ MIT. See [LICENSE](LICENSE).
 ## Changelog
 
 ### Unreleased
+
+- `docs/credits.md`: the projects the device protocols were learned from
+  (liquidctl, OpenRGB, the kernel) and the libraries the program is built on,
+  with their licences.
 
 - The cooler is driven through [sanshoku](https://github.com/ushineko/sanshoku)
   rather than hotaru's own copy of the driver. The protocol, the node search,
