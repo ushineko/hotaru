@@ -491,6 +491,12 @@ func convert(data *sdk.ControllerData) devices.Device {
 		Type:     fmt.Sprintf("%d", data.Type),
 		LEDCount: len(data.Leds),
 	}
+	// The server names each light ("Key: Escape"). Kept because a scene
+	// written against a device's OpenRGB listing is carried to the canvas
+	// device that draws the same hardware by these names (spec 060).
+	for _, led := range data.Leds {
+		device.LEDNames = append(device.LEDNames, clean(led.LedName))
+	}
 
 	for i, mode := range data.Modes {
 		m := devices.Mode{

@@ -401,3 +401,34 @@ func TestAFullRestoreRedrawsACanvasAndANamedOneDoesNot(t *testing.T) {
 	require.NoError(t, err)
 	d.frames(t, 2)
 }
+
+func TestAScenePaintedOnTheTwinLightsTheCanvas(t *testing.T) {
+	// A picture scene written before the canvas existed colours the OpenRGB
+	// listing light by light. hotaru does not write that listing any more,
+	// so the colours are carried to the canvas by key name -- the listing
+	// numbers its lights the other way round here, so an index would land
+	// on the wrong key.
+	listing := twin()
+	listing.LEDNames = []string{"light 6", "light 5", "light 4", "light 3", "light 2", "light 1"}
+	svc := service.New(nil, openrgb.NewFake(listing, board()), "")
+	svc.SetRecorder(recorder(t))
+	d := attachDrawn(t, svc)
+
+	results, err := svc.Apply(t.Context(), service.Request{
+		Assignments: solid(twinName+"/Keyboard[0]", "red"),
+	})
+	require.NoError(t, err)
+	lit := false
+	for _, r := range results {
+		if r.Device == drawnName {
+			lit = r.Applied
+		}
+	}
+	require.True(t, lit, "the canvas was not written: %+v", results)
+	d.frames(t, 1)
+	held, ok := d.fake.Showing(6)
+	require.True(t, ok)
+	require.Equal(t, uint8(255), held.R, "the twin's first light, light 6, is not red on the canvas")
+	held, _ = d.fake.Showing(1)
+	require.Zero(t, held.R, "the colour landed by index rather than by name")
+}

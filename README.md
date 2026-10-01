@@ -221,6 +221,17 @@ MIT. See [LICENSE](LICENSE).
 
 ## Changelog
 
+### Unreleased
+
+- Scenes written before a canvas device existed light it again. A picture
+  scene colours a keyboard's OpenRGB listing light by light, and hotaru no
+  longer writes that listing once it draws the keyboard itself, so the
+  keyboard dropped out of every such scene and an effect chosen for it did
+  nothing. The colours are now carried to the canvas device by key name, a
+  whole-listing colour becomes a whole-device one, and the scene editor and
+  effect picker no longer offer the handed listing as a second device
+  (spec 060).
+
 ### 0.1.20 (2026-10-01)
 
 - Effects hotaru draws itself, for a keyboard that has none of its own. The

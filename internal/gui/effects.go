@@ -296,12 +296,13 @@ withModes are the devices worth asking about, in name order.
 
 More than one mode, because one mode is not a choice. In scope, because a
 scene does not touch anything else -- and offering a mode for a device hotaru
-will not write to is offering something that cannot happen.
+will not write to is offering something that cannot happen. Not handed to a
+canvas device, for the same reason: hotaru writes the canvas instead.
 */
 func withModes(devices []api.Device) []api.Device {
 	var out []api.Device
 	for _, device := range devices {
-		if device.InScope && len(device.Modes) > 1 {
+		if device.InScope && device.HandedTo == "" && len(device.Modes) > 1 {
 			out = append(out, device)
 		}
 	}

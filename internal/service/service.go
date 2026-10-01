@@ -531,6 +531,8 @@ func (s *Service) Apply(ctx context.Context, req Request) ([]Result, error) {
 		return nil, err
 	}
 
+	twins := twinsByCanvas(found)
+
 	var results []Result
 	for i := range found {
 		device := found[i]
@@ -542,6 +544,12 @@ func (s *Service) Apply(ctx context.Context, req Request) ([]Result, error) {
 		}
 
 		assignments := forDevice(req.Assignments, device.Name)
+		if twin, ok := twins[device.Name]; ok {
+			// The scene's colours for the OpenRGB listing of this hardware,
+			// written before the canvas's own so those win.
+			carried := carry(twin, &device, devices.RuleFor(cfg, twin.Name), forDevice(req.Assignments, twin.Name))
+			assignments = append(carried, assignments...)
+		}
 		if req.Colour != nil {
 			whole := devices.Assignment{Target: devices.Target{Device: device.Name}, Colour: *req.Colour}
 			assignments = append([]devices.Assignment{whole}, assignments...)

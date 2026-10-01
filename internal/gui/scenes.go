@@ -726,6 +726,12 @@ func (s *ScenesSection) picture(sh *shell.Shell, got Snapshot) fyne.CanvasObject
 			// would be a control that does nothing.
 			continue
 		}
+		if device.HandedTo != "" {
+			// The same hardware as a canvas device listed beside it, which is
+			// the one hotaru writes; the scene's colours for this listing
+			// are carried to it (spec 060).
+			continue
+		}
 		if effect, one := s.oneColour(device); one {
 			cards = append(cards, widgets.Card(device.Name, s.effectColour(sh, device, effect)...))
 			continue
