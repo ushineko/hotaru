@@ -602,7 +602,7 @@ func report(cmd *cobra.Command, done api.SceneResponse) {
 			cmd.Printf("%s: %s\n", result.Device, problem)
 		}
 	}
-	cmd.Printf("%s: %d of %d device(s) lit.\n", done.Scene, changed, len(done.Results))
+	cmd.Printf("%s: %d of %d device(s) lit.\n", done.Scene, changed, api.Counted(done.Results))
 	if done.Screen != "" {
 		cmd.Printf("The screen is showing %s.\n", done.Screen)
 	}

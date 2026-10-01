@@ -16,6 +16,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/ushineko/hotaru/internal/api"
+	"github.com/ushineko/hotaru/internal/canvas"
 	"github.com/ushineko/hotaru/internal/config"
 	"github.com/ushineko/hotaru/internal/cooler"
 	"github.com/ushineko/hotaru/internal/dashboard"
@@ -177,6 +178,19 @@ func run(cmd *cobra.Command) error {
 	cooled := make(chan struct{})
 	go func() { defer close(cooled); attach(ctx, svc, cooler.Open, connectBackoff, report) }()
 	defer func() { <-cooled }()
+
+	/*
+		The devices hotaru draws itself, on the same terms as the cooler: a
+		resource that appears, attached when it can be opened and looked for
+		again when it goes (spec 060). Most machines have none, and pay a
+		sysfs scan every thirty seconds for it.
+	*/
+	drew := make(chan struct{})
+	go func() {
+		defer close(drew)
+		attachCanvases(ctx, svc, canvas.Open, connectBackoff, report)
+	}()
+	defer func() { <-drew }()
 
 	/*
 		The desktop, if this machine has one.

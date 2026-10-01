@@ -88,6 +88,9 @@ type Service struct {
 	// applied and showing are the last scene somebody applied and what the
 	// panel was last asked to draw: see showing.go.
 	applied, showing string
+
+	// canvases are the devices hotaru draws itself, by name: see canvas.go.
+	canvases map[string]*drawn
 }
 
 /*
@@ -319,10 +322,21 @@ func (s *Service) SetConfig(cfg *config.Config) {
 	s.mu.Unlock()
 }
 
+/*
+current is the configuration, the client and the server's address.
+
+With a canvas device attached the client is the OpenRGB server with the
+canvas devices beside it (see lights), so every operation reaches them
+through the calls it already makes. With none it is the server alone, and
+nothing behaves differently from before spec 060.
+*/
 func (s *Service) current() (*config.Config, openrgb.Client, string) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.cfg, s.client, s.addr
+	if s.client == nil || len(s.canvases) == 0 {
+		return s.cfg, s.client, s.addr
+	}
+	return s.cfg, &lights{Client: s.client, cfg: s.cfg, drawn: s.drawnNow()}, s.addr
 }
 
 /*
@@ -452,6 +466,11 @@ type Result struct {
 	Applied bool
 	// Skipped is a device that could not express the request, and why.
 	Skipped string
+	// HandedTo is the canvas device that draws this OpenRGB device's
+	// hardware (spec 060 R1.3). The device is skipped, and it is the same
+	// hardware as a device that was written, so it is not one more device
+	// left unlit.
+	HandedTo string
 	// Superseded is a write replaced by a newer one for the same device before
 	// it ran. Not a failure: lighting is a state, and the newer request is the
 	// state that was wanted.
@@ -528,6 +547,12 @@ func (s *Service) Apply(ctx context.Context, req Request) ([]Result, error) {
 			assignments = append([]devices.Assignment{whole}, assignments...)
 		}
 		if len(assignments) == 0 && !req.Off {
+			continue
+		}
+		if device.HandedTo != "" {
+			// Said rather than left out: a scene that names the keyboard and
+			// skips one of its two listings silently looks like a bug.
+			results = append(results, Result{Device: device.Name, Skipped: handedReason(device.Name, device.HandedTo), HandedTo: device.HandedTo})
 			continue
 		}
 		results = append(results, s.applyOne(ctx, client, cfg, &device, assignments, req))
@@ -826,8 +851,13 @@ func (s *Service) writeFrame(ctx context.Context, client openrgb.Client,
 			is the device not being in it yet. Together they are the one case
 			that needs the second mode packet below.
 		*/
+		/*
+			A device hotaru draws has no firmware finishing a mode change, so
+			it never needs the second packet: its mode is chosen and drawn in
+			one step (see drawn, in canvas.go).
+		*/
 		one, known := device.Mode(mode)
-		commits := known && one.ModeColour
+		commits := known && one.ModeColour && device.Canvas == nil
 		arriving := !strings.EqualFold(device.ActiveMode, mode)
 
 		if err := client.SetMode(ctx, device.Name, mode, style); err != nil {

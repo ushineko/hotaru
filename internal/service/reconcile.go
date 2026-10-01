@@ -112,10 +112,25 @@ func (s *Service) Reconcile(ctx context.Context, only []string) (Restore, error)
 			continue
 		}
 		device, here := present[name]
+		if !here && s.handedByRule(name) {
+			/*
+				An OpenRGB listing a canvas device draws, and not on the
+				server now. It is not waited for: nothing would be written to
+				it if it came back. OpenRGB's exit reboots the first canvas
+				device, so a restarted server often starts before the device
+				is back and does not list it at all.
+			*/
+			continue
+		}
 		if !here {
 			// Recorded, and not on the server. The device may enumerate later,
 			// which is why this is reported rather than forgotten.
 			restore.Missing = append(restore.Missing, name)
+			continue
+		}
+		if device.HandedTo != "" {
+			// Recorded before hotaru drew on it, and OpenRGB's no longer: it
+			// is the canvas device that is restored now (spec 060 R1.3).
 			continue
 		}
 
@@ -148,6 +163,20 @@ func (s *Service) Reconcile(ctx context.Context, only []string) (Restore, error)
 			restore.Applied++
 		}
 		restore.Results = append(restore.Results, result)
+	}
+	if len(only) == 0 {
+		/*
+			A canvas already showing the recorded scene was skipped above as
+			unchanged, but a full restore is when its device most likely lost
+			it: OpenRGB's exit reboots the first canvas device, and through
+			its receiver nothing reports that. One frame each.
+		*/
+		s.mu.RLock()
+		all := s.drawnNow()
+		s.mu.RUnlock()
+		for _, d := range all {
+			d.Redraw()
+		}
 	}
 	return restore, nil
 }
@@ -217,6 +246,11 @@ func (s *Service) ReassertRules(ctx context.Context) (map[string]time.Duration, 
 	}
 	out := map[string]time.Duration{}
 	for _, view := range views {
+		// A canvas holds what it was sent and does not drift, so it is never
+		// re-asserted; its twin is not hotaru's to write (spec 060 R3.6).
+		if view.Device.Canvas != nil || view.Device.HandedTo != "" {
+			continue
+		}
 		if view.InScope && view.Rule.Reassert > 0 {
 			out[view.Device.Name] = view.Rule.Reassert
 		}

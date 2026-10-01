@@ -197,7 +197,8 @@ hotaru is a ground-up rearchitecture. Hardware learnings are carried over.
 The cooler driver hotaru wrote for itself (spec 012) now lives in
 [sanshoku](https://github.com/ushineko/sanshoku), a Go module of device
 drivers shared with hayami. hotaru reads and draws on the Kraken through its
-`nzxt` package (spec 059).
+`nzxt` package (spec 059), and draws the effects on a keyboard that has none of
+its own through sanshoku's lighting capability, `lighting.Canvas` (spec 060).
 
 ## Documentation
 
@@ -221,6 +222,24 @@ MIT. See [LICENSE](LICENSE).
 ## Changelog
 
 ### Unreleased
+
+- Effects hotaru draws itself, for a keyboard that has none of its own. The
+  SteelSeries Apex Pro TKL Wireless Gen 3 offers OpenRGB two modes, Direct
+  and Onboard, because its vendor's software draws every effect on the PC and
+  streams the frames. hotaru now does the same through sanshoku's
+  `lighting.Canvas`: the board is listed as a device whose modes are Static,
+  Breathing, Spectrum, Rainbow Wave and Off, and a scene names them as it
+  names any firmware mode. A scene that does not move is one frame, because
+  the board holds its last frame; a moving one streams at 56 ms, the pace of
+  the vendor's own software, and a `frame_interval` rule changes it. OpenRGB's
+  listing of the same board is shown as handed over and is never written to,
+  matched by its hidraw path or by a `twin` rule where OpenRGB's location has
+  gone stale. Stopping hotaru leaves the last frame showing; `hotaru light
+  release <device>` and a button on the device's card in the window hand the
+  lighting back to the firmware. A board that reboots, as the Apex does
+  whenever OpenRGB exits, is attached again and its scene put back. The
+  package's udev rule now tags SteelSeries hidraw nodes `uaccess` (spec 060,
+  [#172](https://github.com/ushineko/hotaru/issues/172)).
 
 - `docs/credits.md`: the projects the device protocols were learned from
   (liquidctl, OpenRGB, the kernel) and the libraries the program is built on,

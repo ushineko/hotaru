@@ -248,3 +248,23 @@ devices:
 	require.Equal(t, []string{"caps"}, cfg.Devices[0].Toggles,
 		"the good entry did not survive the bad one")
 }
+
+func TestADrawnDeviceCanBePacedAndItsTwinNamed(t *testing.T) {
+	// Spec 060: the two keys a device hotaru draws itself can carry.
+	cfg, problems, err := config.Parse("hotaru.yml", []byte(`
+devices:
+  - match: canvas board
+    frame_interval: 100ms
+    twin: Canvas Board (OpenRGB)
+  - match: other board
+    frame_interval: -5ms
+`))
+	require.NoError(t, err)
+	require.Len(t, problems, 1, "a negative interval was not reported")
+	require.Contains(t, problems[0].Why, "frame_interval")
+
+	rule := cfg.RulesFor("Test Canvas Board")[0]
+	require.Equal(t, 100*time.Millisecond, rule.FrameInterval.Duration())
+	require.Equal(t, "Canvas Board (OpenRGB)", rule.Twin)
+	require.Zero(t, cfg.RulesFor("Other Board")[0].FrameInterval)
+}

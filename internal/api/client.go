@@ -100,6 +100,14 @@ func (c *Client) Probe(ctx context.Context, req ProbeRequest) ([]Finding, error)
 	return out.Findings, err
 }
 
+// Release hands a device hotaru draws back to its firmware, which on the first
+// such device reboots it.
+func (c *Client) Release(ctx context.Context, device string) (ReleaseResponse, error) {
+	var out ReleaseResponse
+	err := c.do(ctx, http.MethodPost, "/"+Version+"/lighting/release", ReleaseRequest{Device: device}, &out)
+	return out, err
+}
+
 // Status is what the service is and what it remembers.
 func (c *Client) Status(ctx context.Context) (Status, error) {
 	var out Status

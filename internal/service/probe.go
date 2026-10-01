@@ -88,6 +88,10 @@ func (s *Service) Probe(ctx context.Context, only []string) ([]Finding, error) {
 		if !cfg.InScope(device.Name) || !named(only, device.Name) {
 			continue
 		}
+		if device.HandedTo != "" {
+			out = append(out, Finding{Device: device.Name, Err: &Handed{Device: device.Name, To: device.HandedTo}})
+			continue
+		}
 		out = append(out, s.probeOne(ctx, client, &device))
 	}
 	return out, nil

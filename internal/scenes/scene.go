@@ -70,10 +70,13 @@ type Scene struct {
 		gives way, because there is nothing to fall back to when the mode is
 		the thing being asked for. See spec 050.
 
-		The name is the device's own spelling of a mode it advertises. Effects
-		hotaru renders itself -- a storm across every device at once, which no
-		firmware mode can do because no device knows what the others are
-		showing -- resolve here too, and are their own spec.
+		The name is the device's own spelling of a mode it advertises. On a
+		device hotaru draws itself, a canvas device with no effects of its
+		own, the modes it advertises are hotaru's renderers, so "Breathing"
+		resolves to the renderer exactly as it resolves to a keyboard's
+		firmware mode (spec 060). An effect across every device at once, which
+		no firmware mode can do because no device knows what the others are
+		showing, is still its own spec.
 	*/
 	Effects map[string]Effect `json:"effects,omitempty"`
 

@@ -92,6 +92,37 @@ than reading it, because the protocol gives sizes and leaves the offsets
 implicit. A segment named in the rules file appears in `segments`. A device
 whose colour hotaru rewrites on a timer carries the interval in `reassert`.
 
+**A canvas device** is a device hotaru draws itself, because it has no
+effects of its own (spec 060). It carries `canvas`, which says what the
+drawing is doing, and `led_names`, its own names for its keys. Its `modes`
+are hotaru's renderers. With `drawing` false the device is holding the one
+frame it was sent. The OpenRGB listing of the same hardware carries
+`handed_to`, and hotaru writes nothing to it. This shape comes from the test
+suite; no live transcript is recorded yet.
+
+```json
+{
+  "name": "SteelSeries Apex Pro TKL Wireless Gen 3",
+  "leds": 85,
+  "modes": ["Static", "Breathing", "Spectrum", "Rainbow Wave", "Off"],
+  "active_mode": "Rainbow Wave",
+  "zones": [{ "name": "Keys", "shape": "grid", "first": 0, "count": 85 }],
+  "one_colour": ["Breathing"],
+  "paced": {
+    "Breathing": { "slowest": 0, "fastest": 100, "now": 50 },
+    "Spectrum": { "slowest": 0, "fastest": 100, "now": 50 },
+    "Rainbow Wave": { "slowest": 0, "fastest": 100, "now": 50 }
+  },
+  "led_names": ["A", "B", "C", "..."],
+  "canvas": { "device": "SteelSeries Apex Pro TKL Wireless Gen 3", "effect": "Rainbow Wave",
+              "drawing": true, "interval": "56ms", "rate": 17.8, "frames": 1068 },
+  "in_scope": true
+}
+```
+
+`/v1/health` lists the same `canvas` object for every canvas device, under
+`canvases`.
+
 ## POST /v1/lighting/apply
 
 `colour` sets everything in scope. `assignments` are the exceptions. `off`
@@ -149,6 +180,7 @@ Each result is one of three things, and they are kept apart deliberately:
 |---|---|
 | `applied` with `mode` | written, and confirmed by reading the device back |
 | `skipped` | the device cannot express this, and why. Not a failure, not worth retrying |
+| `handed_to` | with `skipped`: the canvas device that draws this hardware. The same device listed twice, so a count leaves it out |
 | `error` | the server or the hardware went wrong |
 
 ## GET /v1/status
@@ -683,12 +715,32 @@ addressable headers go dark. A user with only the probe would never receive
 the direct-first rule. The mapping wizard fills that gap by asking a person to
 look.
 
+## POST /v1/lighting/release
+
+Hands a canvas device's lighting back to its firmware. hotaru never does this
+on its own. When the service stops, the device keeps the last frame it was
+sent. On the Apex this reboots the board, which comes back on another hidraw
+node showing its onboard effect. hotaru forgets what the device was last
+asked to show, attaches it again, and sends it nothing until a scene asks.
+
+```console
+$ curl -s --unix-socket … -X POST -d '{"device":"apex"}' http://hotaru/v1/lighting/release
+{
+  "device": "SteelSeries Apex Pro TKL Wireless Gen 3",
+  "detail": "SteelSeries Apex Pro TKL Wireless Gen 3 shows its own lighting again. ..."
+}
+```
+
+`device` is any part of the name. A name that matches no canvas device is a
+404, and the error lists the devices hotaru draws.
+
 ## Status codes
 
 | Code | When |
 |---|---|
 | 200 | the request was understood, whatever the devices did with it |
 | 400 | the request does not decode, or names a colour or target that does not parse. Nothing is written |
+| 404 | a release names no device that hotaru draws |
 | 503 | no OpenRGB server. The request was fine; the machine is not ready |
 
 A 503 is deliberately not a 500. The client asked for something reasonable,

@@ -128,10 +128,13 @@ So **the package ships its own rule**, naming the devices hotaru supports:
 # /usr/lib/udev/rules.d/60-hotaru.rules
 KERNEL=="hidraw*", SUBSYSTEMS=="usb", ATTRS{idVendor}=="1e71", TAG+="uaccess"
 SUBSYSTEM=="usb", ATTRS{idVendor}=="1e71", TAG+="uaccess"
+KERNEL=="hidraw*", SUBSYSTEMS=="usb", ATTRS{idVendor}=="1038", TAG+="uaccess"
 ```
 
-Two rules, because the two interfaces appear differently. One appears as a
-hidraw character device, and one as the USB device node itself.
+The cooler needs two rules, because its two interfaces appear differently. One
+appears as a hidraw character device, and one as the USB device node itself.
+The third rule is for a canvas device, a keyboard whose effects hotaru draws
+(spec 060). It comes from sanshoku's `docs/udev.md`.
 
 `hotaru light health` reports a device it can see and cannot open as exactly
 that, rather than as missing hardware. "Permission denied on /dev/hidraw7" is
@@ -181,7 +184,7 @@ packaging property as much as a testing one.
 - `/usr/share/applications/io.github.ushineko.hotaru.desktop`
 - `/usr/share/icons/hicolor/scalable/apps/hotaru.svg`
 - `/usr/lib/udev/rules.d/60-hotaru.rules`. The `uaccess` tags that let the
-  service open the cooler without root. Without the rule, hotaru sees the
+  service open the cooler and a canvas device without root. Without the rule, hotaru sees the
   device and cannot talk to it. See "Device permissions are part of the
   package" above.
 - `/usr/lib/systemd/user/hotaru.service`. **Not enabled**, per Arch policy.
