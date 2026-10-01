@@ -66,8 +66,8 @@ github.com/stretchr/testify v1.12.1 h1:EuwCh5fleGS7H32xRwO3wRGT7DxrDhLAT6FF8MpWD
 github.com/stretchr/testify v1.12.1/go.mod h1:MDEgiDPPsNp5cuIrHPPCyornHKgEVbtFUmoNlxoYthg=
 github.com/ushineko/fynedesygn v0.1.43 h1:0kkehKCCTSH3JMA68AM9yaZN84afwlU7G7sqTTe/KGc=
 github.com/ushineko/fynedesygn v0.1.43/go.mod h1:WdsB3ChGjUhbmFS5N9ErLnerCEC85pBkYU4GSr8FDGw=
-github.com/ushineko/sanshoku v0.1.2 h1:aPinuepuWdLqELlkBWaUH4zryZ78hoxQ9r52zcGWets=
-github.com/ushineko/sanshoku v0.1.2/go.mod h1:fCmgH+mFCK66xoZEW7QST/5CLoXhezR6gNFGeT/1qWY=
+github.com/ushineko/sanshoku v0.1.5 h1:ArwWbNe272KMiCKXcGogt1Ol/KAuqnKSdS0SKKvDfUQ=
+github.com/ushineko/sanshoku v0.1.5/go.mod h1:fCmgH+mFCK66xoZEW7QST/5CLoXhezR6gNFGeT/1qWY=
 github.com/yuin/goldmark v1.8.2 h1:kEGpgqJXdgbkhcOgBxkC0X0PmoPG1ZyoZ117rDVp4zE=
 github.com/yuin/goldmark v1.8.2/go.mod h1:ip/1k0VRfGynBgxOz0yCqHrbZXhcjxyuS66Brc7iBKg=
 go.yaml.in/yaml/v3 v3.0.4/go.mod h1:DhzuOOF2ATzADvBadXxruRBLzYTpT36CKvDb3+aBEFg=
