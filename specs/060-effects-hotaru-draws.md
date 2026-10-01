@@ -120,7 +120,8 @@ hoped for.
   per run and the stream continues; `ErrGone` ends the attachment (R1.4).
 - R3.6 Previews, leases and reconcile apply to canvas devices as to others.
   Reconcile sends the recorded frame once; reassert is a no-op for a canvas,
-  because the board does not drift.
+  because the board does not drift. A full restore redraws each canvas once
+  (amended after the live run: behind a receiver a reboot is invisible).
 
 ### R4. Stopping
 
@@ -278,6 +279,15 @@ Run in the worktree on 2026-10-01, no hardware opened:
   rebooting board's old node, which the kernel keeps for about two seconds,
   and lost it again (nodes still carrying a lost device's kernel name are
   skipped). The last reads sysfs and is verified live, not by a unit test.
+- **Through the receiver, a reboot changes nothing the kernel shows.** The
+  receiver's hidraw node and its kernel name stay the same while the
+  keyboard behind it reboots, so the dying-node skip above blocked the
+  device for good after a release (found live, fixed: the skip lasts four
+  seconds), and `Present` cannot see a reboot while a static scene holds.
+  A full restore now redraws every canvas once, because OpenRGB
+  reconnecting is when its exit has most likely rebooted the board; a
+  reboot from any other cause while a static scene holds behind the
+  receiver shows the firmware's effect until the next scene or restore.
 - **A static frame that went unacknowledged was never sent again.** A
   static scene has no ticker, so the board would hold the previous scene.
   Fixed in review: the animator retries at the show's interval until a frame

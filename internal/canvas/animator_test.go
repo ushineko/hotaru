@@ -211,6 +211,21 @@ func TestAnUnacknowledgedStaticFrameIsSentAgainUntilItLands(t *testing.T) {
 	require.Equal(t, 1, r.reports())
 }
 
+func TestARedrawSendsTheSameFrameAgain(t *testing.T) {
+	// A device behind a receiver can reboot without the animator hearing of
+	// it, so a restore asks for the frame again although it has not changed.
+	r := start(t, canvastest.New(4))
+	r.anim.Show(show(render.Static, blue(4), 0))
+	require.Eventually(t, func() bool { return r.canvas.Frames() == 1 }, soon, poll)
+
+	r.anim.Redraw()
+	require.Eventually(t, func() bool { return r.canvas.Frames() == 2 }, soon, poll,
+		"a redraw did not send the frame again")
+	time.Sleep(50 * time.Millisecond)
+	require.Equal(t, 2, r.canvas.Frames(), "a redraw left something ticking")
+	require.Zero(t, r.clock.Running())
+}
+
 func TestAGoneDeviceEndsTheRun(t *testing.T) {
 	fake := canvastest.New(6)
 	fake.GoneNext = true

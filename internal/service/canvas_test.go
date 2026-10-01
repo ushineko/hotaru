@@ -224,8 +224,10 @@ func TestAStaticSceneIsOneFrameOnTheCanvas(t *testing.T) {
 	require.Equal(t, lighting.Pixel{ID: 1, R: 255}, last[0])
 	require.Equal(t, lighting.Pixel{ID: 3, B: 255}, last[2])
 
-	// R3.6: reconcile sends the recorded frame, which is the one showing.
-	restore, err := svc.Reconcile(t.Context(), nil)
+	// R3.6: reconciling the device sends the recorded frame, which is the
+	// one showing. (A full restore redraws once on purpose; see
+	// TestAFullRestoreRedrawsACanvasAndANamedOneDoesNot.)
+	restore, err := svc.Reconcile(t.Context(), []string{drawnName})
 	require.NoError(t, err)
 	require.Equal(t, 1, restore.Applied)
 	time.Sleep(30 * time.Millisecond)
@@ -376,4 +378,26 @@ func TestATwinTheServerNoLongerListsIsNotWaitedFor(t *testing.T) {
 	restore, err := after.Reconcile(t.Context(), nil)
 	require.NoError(t, err)
 	require.True(t, restore.Complete(), "the absent twin was waited for: %v", restore.Missing)
+}
+
+func TestAFullRestoreRedrawsACanvasAndANamedOneDoesNot(t *testing.T) {
+	// Through a receiver the first canvas device reboots behind a node that
+	// never changes, so a restore -- OpenRGB reconnecting, whose exit is
+	// what reboots it -- sends the frame again even though it is unchanged.
+	// A reconcile of named devices (re-assert, a preview ending) does not.
+	svc := service.New(nil, openrgb.NewFake(board()), "")
+	svc.SetRecorder(recorder(t))
+	d := attachDrawn(t, svc)
+	_, err := svc.Apply(t.Context(), service.Request{Colour: ptr(colour.MustParse("blue"))})
+	require.NoError(t, err)
+	d.frames(t, 1)
+
+	_, err = svc.Reconcile(t.Context(), []string{board().Name})
+	require.NoError(t, err)
+	time.Sleep(50 * time.Millisecond)
+	require.Equal(t, 1, d.fake.Frames(), "a named reconcile redrew the canvas")
+
+	_, err = svc.Reconcile(t.Context(), nil)
+	require.NoError(t, err)
+	d.frames(t, 2)
 }

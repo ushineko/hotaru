@@ -30,6 +30,8 @@ type Canvas interface {
 	Keys() []lighting.Key
 	// Show hands the animator what to draw. It does not wait.
 	Show(canvas.Show)
+	// Redraw sends what is showing again. It does not wait.
+	Redraw()
 	Status() canvas.Status
 	// Release hands the lighting back to the device's firmware.
 	Release(ctx context.Context) error

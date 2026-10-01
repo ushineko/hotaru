@@ -164,6 +164,20 @@ func (s *Service) Reconcile(ctx context.Context, only []string) (Restore, error)
 		}
 		restore.Results = append(restore.Results, result)
 	}
+	if len(only) == 0 {
+		/*
+			A canvas already showing the recorded scene was skipped above as
+			unchanged, but a full restore is when its device most likely lost
+			it: OpenRGB's exit reboots the first canvas device, and through
+			its receiver nothing reports that. One frame each.
+		*/
+		s.mu.RLock()
+		all := s.drawnNow()
+		s.mu.RUnlock()
+		for _, d := range all {
+			d.Redraw()
+		}
+	}
 	return restore, nil
 }
 

@@ -91,6 +91,7 @@ type Animator struct {
 	clock   Clock
 	report  func(format string, args ...any)
 	want    chan Show
+	redraw  chan struct{}
 
 	mu     sync.Mutex
 	status Status
@@ -109,7 +110,7 @@ func NewAnimator(surface Surface, clock Clock, report func(string, ...any)) *Ani
 	if report == nil {
 		report = func(string, ...any) {}
 	}
-	return &Animator{surface: surface, clock: clock, report: report, want: make(chan Show, 1)}
+	return &Animator{surface: surface, clock: clock, report: report, want: make(chan Show, 1), redraw: make(chan struct{}, 1)}
 }
 
 /*
@@ -130,6 +131,22 @@ func (a *Animator) Show(s Show) {
 			default:
 			}
 		}
+	}
+}
+
+/*
+Redraw sends what is showing again, even though it has not changed.
+
+A device can lose its frame without the animator knowing: through a USB
+receiver the first canvas device reboots behind a node that never changes,
+so nothing says it went, and it comes back on its own effect. A restore
+(OpenRGB reconnecting, whose exit is what reboots it, or somebody asking
+for one) is when that is likely, and one frame is what it costs.
+*/
+func (a *Animator) Redraw() {
+	select {
+	case a.redraw <- struct{}{}:
+	default:
 	}
 }
 
@@ -211,6 +228,9 @@ func (a *Animator) Run(ctx context.Context) error {
 			a.sent = a.sent[:0]
 			a.mu.Unlock()
 		case at = <-tick:
+		case <-a.redraw:
+			at = a.clock.Now()
+			last = nil
 		}
 		if !showing {
 			continue

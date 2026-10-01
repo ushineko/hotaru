@@ -28,6 +28,15 @@ within the backoff, rather than at the next scene somebody applies.
 const presentEvery = 2 * time.Second
 
 /*
+dyingFor is how long a lost device's node is not attached to again.
+
+The kernel removed a rebooting keyboard's node about two seconds after it
+stopped answering (measured 2026-10-01, on its cable). Through its receiver
+the node is never removed at all, so this is a window, not a ban.
+*/
+const dyingFor = 4 * time.Second
+
+/*
 attachCanvases keeps every canvas device on the machine attached, as attach
 keeps the cooler (spec 059): it waits for one with the same backoff, draws on
 it until it goes, and looks for it again.
@@ -52,7 +61,7 @@ func attachCanvases(ctx context.Context, svc *service.Service, open canvasOpener
 			2026-10-01: twice per reboot). A node still carrying a lost name
 			is skipped; the device comes back under a new one.
 		*/
-		dying     = map[string]bool{}
+		dying     = map[string]time.Time{}
 		wg        sync.WaitGroup
 		lost      = make(chan struct{}, 1)
 		announced bool
@@ -62,7 +71,14 @@ func attachCanvases(ctx context.Context, svc *service.Service, open canvasOpener
 	attached := func(path string) bool {
 		mu.Lock()
 		defer mu.Unlock()
-		return held[path] || dying[canvas.KernelNode(path)]
+		if held[path] {
+			return true
+		}
+		// Only while the kernel could still be removing it. Through a USB
+		// receiver the node and its name never change across a reboot, and
+		// skipping it for longer would never attach the device again.
+		lost, ok := dying[canvas.KernelNode(path)]
+		return ok && time.Since(lost) < dyingFor
 	}
 	for attempt := 0; ; attempt++ {
 		found, err := open(ctx, attached)
@@ -80,7 +96,7 @@ func attachCanvases(ctx context.Context, svc *service.Service, open canvasOpener
 				mu.Lock()
 				delete(held, path)
 				if gone && device.Node() != "" {
-					dying[device.Node()] = true
+					dying[device.Node()] = time.Now()
 				}
 				mu.Unlock()
 				if gone {
