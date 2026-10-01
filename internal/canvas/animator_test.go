@@ -264,3 +264,18 @@ func TestStoppingSendsNothing(t *testing.T) {
 	require.Equal(t, 1, fake.Frames())
 	require.Zero(t, fake.Released(), "stopping handed the lighting back")
 }
+
+func TestTheSameEffectInOtherColoursIsShown(t *testing.T) {
+	// Spec 061: a Breathing between red and blue after one in green is a
+	// different show, though the effect's name and the frame are the same.
+	r := start(t, canvastest.New(3))
+	p := blue(3)
+	p.Palette = []colour.Colour{colour.MustParse("lime")}
+	r.anim.Show(show(render.Breathing, p, 0))
+	require.Eventually(t, func() bool { return len(r.clock.Tickers()) == 1 }, soon, poll)
+
+	p.Palette = []colour.Colour{colour.MustParse("red"), colour.MustParse("blue")}
+	r.anim.Show(show(render.Breathing, p, 0))
+	require.Eventually(t, func() bool { return len(r.clock.Tickers()) == 2 }, soon, poll,
+		"the new colours were taken for the show already running")
+}

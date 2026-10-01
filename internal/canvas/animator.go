@@ -303,7 +303,7 @@ func (a *Animator) count() {
 func same(x, y Show) bool {
 	return x.Effect.Name == y.Effect.Name && x.Interval == y.Interval &&
 		slices.Equal(x.Params.Colours, y.Params.Colours) &&
-		samePointer(x.Params.Colour, y.Params.Colour) &&
+		slices.Equal(x.Params.Palette, y.Params.Palette) &&
 		samePointer(x.Params.Speed, y.Params.Speed) &&
 		samePointer(x.Params.Brightness, y.Params.Brightness)
 }
