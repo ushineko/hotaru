@@ -119,7 +119,12 @@ func sameDevice(a, b api.Device) bool {
 	if a.Name != b.Name || a.ActiveMode != b.ActiveMode || a.InScope != b.InScope {
 		return false
 	}
-	if (a.Preview == nil) != (b.Preview == nil) {
+	if (a.Preview == nil) != (b.Preview == nil) || a.HandedTo != b.HandedTo {
+		return false
+	}
+	// Drawing or holding is the change a person sees. The rate moves on
+	// every poll and is left for the next rebuild.
+	if (a.Canvas == nil) != (b.Canvas == nil) || (a.Canvas != nil && a.Canvas.Drawing != b.Canvas.Drawing) {
 		return false
 	}
 	if len(a.Colours) != len(b.Colours) {

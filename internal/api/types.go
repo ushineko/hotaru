@@ -98,6 +98,37 @@ type Device struct {
 	// accepts. A client offering a slider needs the bounds from the mode
 	// rather than a number hotaru made up.
 	Paced map[string]Speed `json:"paced,omitempty"`
+
+	// LEDNames are the device's own names for its lights, in order, where it
+	// gives them. A device hotaru draws names its keys.
+	LEDNames []string `json:"led_names,omitempty"`
+
+	/*
+		Canvas, when set, is a device hotaru draws itself (spec 060): its
+		modes are hotaru's renderers, and this says what the drawing is
+		doing. Absent for every device OpenRGB drives.
+	*/
+	Canvas *Canvas `json:"canvas,omitempty"`
+
+	// HandedTo, when set, is the device hotaru draws as this one. OpenRGB
+	// lists the same hardware, and hotaru does not write to it there.
+	HandedTo string `json:"handed_to,omitempty"`
+}
+
+/*
+Canvas is what hotaru's drawing on one device is doing.
+
+Drawing is an animated effect being streamed, at Rate frames a second with
+Interval between them. Not drawing is holding: the device was sent one frame
+and shows it, and nothing is being sent.
+*/
+type Canvas struct {
+	Device   string  `json:"device,omitempty"`
+	Effect   string  `json:"effect,omitempty"`
+	Drawing  bool    `json:"drawing"`
+	Interval string  `json:"interval,omitempty"`
+	Rate     float64 `json:"rate,omitempty"`
+	Frames   int     `json:"frames"`
 }
 
 /*
@@ -272,6 +303,9 @@ type Health struct {
 	Devices  int      `json:"devices"`
 	InScope  int      `json:"in_scope"`
 	Version  string   `json:"version"`
+
+	// Canvases are the devices hotaru draws itself, and what each is doing.
+	Canvases []Canvas `json:"canvases,omitempty"`
 }
 
 /*
@@ -354,6 +388,26 @@ type RescanResponse struct {
 	Applied  int      `json:"applied"`
 	Missing  []string `json:"missing,omitempty"`
 	Complete bool     `json:"complete"`
+}
+
+/*
+ReleaseRequest is the body of POST /v1/lighting/release: a device hotaru draws,
+by any part of its name, to hand back to its firmware.
+*/
+type ReleaseRequest struct {
+	Device string `json:"device"`
+}
+
+/*
+ReleaseResponse is what a release did.
+
+Detail says what happens next in a sentence for a person: on the first such
+device the board reboots and re-enumerates, and hotaru attaches it again and
+sends it nothing until a scene asks.
+*/
+type ReleaseResponse struct {
+	Device string `json:"device"`
+	Detail string `json:"detail"`
 }
 
 // ReloadResponse is the body of POST /v1/reload: what was wrong with the rules

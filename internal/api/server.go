@@ -37,6 +37,7 @@ func Routes() []string {
 		"POST /" + Version + "/screen",
 		"POST /" + Version + "/lighting/apply",
 		"POST /" + Version + "/lighting/probe",
+		"POST /" + Version + "/lighting/release",
 		"GET /" + Version + "/scenes",
 		"PUT /" + Version + "/scenes/{name}",
 		"DELETE /" + Version + "/scenes/{name}",
@@ -92,6 +93,7 @@ func Handler(svc *service.Service) http.Handler {
 			Devices:  health.Devices,
 			InScope:  health.InScope,
 			Version:  version.Version,
+			Canvases: canvases(health.Canvases),
 		})
 	})
 
@@ -155,6 +157,38 @@ func Handler(svc *service.Service) http.Handler {
 			out.Findings = append(out.Findings, finding(found))
 		}
 		write(w, http.StatusOK, out)
+	})
+
+	/*
+		Handing a canvas device's lighting back to its firmware.
+
+		Something a person asks for and never a side effect (spec 060 R4):
+		on the first such device it reboots the board.
+	*/
+	mux.HandleFunc("POST /"+Version+"/lighting/release", func(w http.ResponseWriter, r *http.Request) {
+		var req ReleaseRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			write(w, http.StatusBadRequest, Error{Error: "that request does not decode", Detail: err.Error()})
+			return
+		}
+		if req.Device == "" {
+			write(w, http.StatusBadRequest, Error{Error: "name the device to hand back"})
+			return
+		}
+		name, err := svc.ReleaseCanvas(r.Context(), req.Device)
+		switch {
+		case errors.Is(err, service.ErrNoCanvas):
+			write(w, http.StatusNotFound, Error{Error: err.Error()})
+			return
+		case err != nil:
+			fail(w, err)
+			return
+		}
+		write(w, http.StatusOK, ReleaseResponse{
+			Device: name,
+			Detail: name + " shows its own lighting again. It re-enumerates first, so it drops off the bus " +
+				"for a moment; hotaru finds it again and sends it nothing until a scene asks.",
+		})
 	})
 
 	mux.HandleFunc("GET /"+Version+"/status", func(w http.ResponseWriter, r *http.Request) {
@@ -904,7 +938,30 @@ func describe(view service.View) Device {
 	}
 	sortStrings(device.Segments)
 	device.Toggles = append(device.Toggles, view.Rule.Toggles...)
+	device.LEDNames = view.Device.LEDNames
+	device.HandedTo = view.Device.HandedTo
+	if drawn := view.Device.Canvas; drawn != nil {
+		device.Canvas = asCanvas(service.CanvasState{
+			Device: view.Device.Name, Effect: view.Device.ActiveMode, Canvas: *drawn,
+		})
+	}
 	return device
+}
+
+func canvases(in []service.CanvasState) []Canvas {
+	out := make([]Canvas, 0, len(in))
+	for _, c := range in {
+		out = append(out, *asCanvas(c))
+	}
+	return out
+}
+
+func asCanvas(c service.CanvasState) *Canvas {
+	out := &Canvas{Device: c.Device, Effect: c.Effect, Drawing: c.Drawing, Rate: c.Rate, Frames: c.Frames}
+	if c.Drawing {
+		out.Interval = c.Interval.String()
+	}
+	return out
 }
 
 func result(got service.Result) Result {

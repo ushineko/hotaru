@@ -3139,3 +3139,73 @@ func TestTheWindowOffersTheBounceAndSaysWhatItIsFor(t *testing.T) {
 	require.Contains(t, said, "unplugged and",
 		"the window does not say what the button is for, which is the half that makes it findable")
 }
+
+func TestADeviceHotaruDrawsCanBeGivenItsOwnLightingBack(t *testing.T) {
+	/*
+		Spec 060 R4.2 and R5. A device hotaru draws keeps hotaru's last frame
+		when the service stops, so the window offers the one way back to the
+		device's own lighting, on that device's card and nowhere else. Its
+		OpenRGB twin says why it is not written to.
+	*/
+	a := test.NewApp()
+	t.Cleanup(a.Quit)
+
+	routes := healthy()
+	routes["GET /"+api.Version+"/devices"] = api.DevicesResponse{Devices: []api.Device{
+		{
+			Name: "Test Canvas Board", LEDs: 3, ActiveMode: "Rainbow Wave", InScope: true,
+			Modes:  []string{"Static", "Breathing", "Spectrum", "Rainbow Wave", "Off"},
+			Zones:  []api.Zone{{Name: "Keys", Shape: api.ShapeGrid, First: 0, Count: 3}},
+			Canvas: &api.Canvas{Drawing: true, Rate: 17.8, Interval: "56ms", Frames: 400},
+		},
+		{
+			Name: "Test Canvas Board (OpenRGB)", LEDs: 3, ActiveMode: "Direct", InScope: true,
+			Modes: []string{"Direct"}, HandedTo: "Test Canvas Board",
+		},
+	}}
+	routes["POST /"+api.Version+"/lighting/release"] = api.ReleaseResponse{
+		Device: "Test Canvas Board", Detail: "it re-enumerates",
+	}
+	client, asked := watching(t, routes)
+	app := gui.New(client)
+	opts := app.Options("s")
+	opts.SettingsPath = filepath.Join(t.TempDir(), "gui.yml")
+	sh := shell.Headless(a, opts)
+	app.Refresh(context.Background())
+	drain := func() {
+		for {
+			select {
+			case <-asked:
+			default:
+				return
+			}
+		}
+	}
+	drain()
+
+	section := &gui.SystemSection{}
+	gui.OpenSystem(section, app)
+	built := section.Build(sh)
+
+	said := fynetest.Text(built)
+	require.Contains(t, said, "drawn by hotaru at 18 frames a second")
+	require.Contains(t, said, "hotaru draws this as Test Canvas Board, so OpenRGB is not written to")
+
+	give := fynetest.FindButton(built, "Give it its own lighting back")
+	require.NotNil(t, give, "the device hotaru draws offers no way back to its own lighting")
+	test.Tap(give)
+
+	release := "POST /" + api.Version + "/lighting/release"
+	require.Eventually(t, func() bool {
+		for {
+			select {
+			case route := <-asked:
+				if route == release {
+					return true
+				}
+			default:
+				return false
+			}
+		}
+	}, 3*time.Second, 20*time.Millisecond, "the button did not reach the service")
+}

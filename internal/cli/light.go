@@ -44,7 +44,7 @@ func lightCommand() *cobra.Command {
 		Short: "Lighting",
 	}
 	cmd.AddCommand(listCommand(), setCommand(), offCommand(), healthCommand(), probeCommand(), mapCommand(),
-		rescanCommand())
+		rescanCommand(), releaseCommand())
 	return cmd
 }
 
@@ -73,10 +73,16 @@ func listCommand() *cobra.Command {
 
 			w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 			_, _ = fmt.Fprintln(w, "DEVICE\tLEDS\tACTIVE\tSCOPE\tMODES")
-			previewing := false
+			var previewing bool
+			var handed []string
 			for _, device := range list {
 				scope := "-"
 				switch {
+				case device.HandedTo != "":
+					// Listed, so a person can see why it is not written to.
+					scope = "handed"
+					handed = append(handed, fmt.Sprintf("%s is drawn by hotaru as %s; OpenRGB is not written to.",
+						device.Name, device.HandedTo))
 				case device.Preview != nil:
 					// A device whose re-assertion is suspended looks exactly
 					// like one that is simply behaving, so it says so.
@@ -85,7 +91,7 @@ func listCommand() *cobra.Command {
 					scope = "yes"
 				}
 				_, _ = fmt.Fprintf(w, "%s\t%d\t%s\t%s\t%s\n",
-					device.Name, device.LEDs, device.ActiveMode, scope, strings.Join(device.Modes, ", "))
+					device.Name, device.LEDs, active(device), scope, strings.Join(device.Modes, ", "))
 			}
 			if err := w.Flush(); err != nil {
 				return fmt.Errorf("write the listing: %w", err)
@@ -93,6 +99,72 @@ func listCommand() *cobra.Command {
 			if previewing {
 				cmd.Println("\nSome devices are showing a draft. `hotaru preview` says who is holding it.")
 			}
+			if len(handed) > 0 {
+				cmd.Println()
+				for _, line := range handed {
+					cmd.Println(line)
+				}
+			}
+			return nil
+		},
+	}
+	withJSON(cmd)
+	return cmd
+}
+
+/*
+active is what a device is doing, for the listing's column.
+
+A device hotaru draws says so: its frame rate while an effect moves, and
+"holding" while it does not, because a canvas that was sent one frame and
+shows it is the ordinary state and costs nothing (spec 060 R5.2).
+*/
+func active(device api.Device) string {
+	if device.Canvas == nil {
+		return device.ActiveMode
+	}
+	return drawing(device.ActiveMode, *device.Canvas)
+}
+
+// drawing is one canvas's state in a few words: "Rainbow Wave, 17.9 fps" or
+// "Static, holding".
+func drawing(effect string, c api.Canvas) string {
+	if effect == "" {
+		effect = "nothing drawn"
+	}
+	if c.Drawing {
+		return fmt.Sprintf("%s, %.1f fps", effect, c.Rate)
+	}
+	return effect + ", holding"
+}
+
+func releaseCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "release <device>",
+		Short: "Hand a device hotaru draws back to its own lighting",
+		Long: `Hand a device hotaru draws back to its firmware's own lighting.
+
+A device hotaru draws holds the last frame it was sent, and stopping the
+service leaves that frame showing. This gives the lighting back. On the first
+such device that reboots the board: it drops off the bus for a moment and
+comes back on its onboard effect. hotaru attaches it again and sends it
+nothing until a scene asks.
+
+	hotaru light release apex`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, err := client(cmd)
+			if err != nil {
+				return err
+			}
+			out, err := client.Release(cmd.Context(), args[0])
+			if err != nil {
+				return quiet(err)
+			}
+			if asJSON(cmd) {
+				return emit(cmd, out)
+			}
+			cmd.Println(out.Detail)
 			return nil
 		},
 	}
@@ -287,6 +359,9 @@ func healthCommand() *cobra.Command {
 				if health.Protocol > 0 {
 					cmd.Printf("  %s, protocol %d, %d devices, %d in scope\n",
 						health.Address, health.Protocol, health.Devices, health.InScope)
+				}
+				for _, c := range health.Canvases {
+					cmd.Printf("  drawing on %s: %s\n", c.Device, drawing(c.Effect, c))
 				}
 			}
 			if health.State != "healthy" {

@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"context"
 	"fmt"
 	"image/color"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
+	"fyne.io/fyne/v2/widget"
 	fd "github.com/ushineko/fynedesygn"
 	"github.com/ushineko/fynedesygn/shell"
 	"github.com/ushineko/fynedesygn/widgets"
@@ -109,7 +111,7 @@ func (s *SystemSection) Tick(got Snapshot) {
 }
 
 // Build draws what is loaded, the cooler, and every device this machine has.
-func (s *SystemSection) Build(_ *shell.Shell) fyne.CanvasObject {
+func (s *SystemSection) Build(sh *shell.Shell) fyne.CanvasObject {
 	got := s.app.machine.Read()
 	if got.Err != nil {
 		return notRunning(got.Err)
@@ -135,18 +137,59 @@ func (s *SystemSection) Build(_ *shell.Shell) fyne.CanvasObject {
 
 	body := []fyne.CanvasObject{title("This machine"), s.loaded, s.cooling}
 	for _, device := range got.Devices {
-		body = append(body, drawDevice(device))
+		var actions []fyne.CanvasObject
+		if device.Canvas != nil {
+			actions = append(actions, s.release(sh, device))
+		}
+		body = append(body, drawDevice(device, actions...))
 	}
 	return container.NewVBox(body...)
 }
 
-// drawDevice is one device: what it is, what it is doing, and its lights.
-func drawDevice(device api.Device) fyne.CanvasObject {
+/*
+release is the button that hands a device hotaru draws back to its own
+lighting (spec 060 R4.2).
+
+Only here, on the device's card, and only when somebody presses it: the
+device holds hotaru's last frame when the service stops, and on the first
+such device giving the lighting back reboots the board. The note says so
+before it is pressed, rather than after.
+*/
+func (s *SystemSection) release(sh *shell.Shell, device api.Device) fyne.CanvasObject {
+	button := widget.NewButtonWithIcon("Give it its own lighting back", theme.MediaReplayIcon(), func() {
+		sh.Perform("handing "+device.Name+" back", func(ctx context.Context) error {
+			done, err := s.app.client.Release(ctx, device.Name)
+			if err != nil {
+				return err
+			}
+			onScreen(func() { sh.Flash(done.Detail, fd.StatusGood) })
+			return nil
+		})
+	})
+	button.Importance = widget.MediumImportance
+	return container.NewVBox(
+		widgets.Note("hotaru draws this device's lighting, and it keeps the last frame when hotaru stops. "+
+			"Giving it back restarts the device, which drops off the bus for a moment.", fd.StatusInfo),
+		button,
+	)
+}
+
+// drawDevice is one device: what it is, what it is doing, and its lights,
+// with whatever can be done to it underneath.
+func drawDevice(device api.Device, actions ...fyne.CanvasObject) fyne.CanvasObject {
 	rows := []fyne.CanvasObject{lights(device)}
 
 	mode := device.ActiveMode
 	if mode == "" {
 		mode = "not saying"
+	}
+	if c := device.Canvas; c != nil {
+		// What hotaru's drawing is doing, said as the listing says it.
+		if c.Drawing {
+			mode = fmt.Sprintf("%s, drawn by hotaru at %.0f frames a second", mode, c.Rate)
+		} else {
+			mode += ", drawn by hotaru and holding"
+		}
 	}
 	facts := []string{fmt.Sprintf("%d lights", device.LEDs), mode}
 	if len(device.Zones) > 0 {
@@ -164,6 +207,9 @@ func drawDevice(device api.Device) fyne.CanvasObject {
 	rows = append(rows, widgets.Dim(strings.Join(facts, " · ")))
 
 	switch {
+	case device.HandedTo != "":
+		rows = append(rows, widgets.Note(
+			fmt.Sprintf("hotaru draws this as %s, so OpenRGB is not written to.", device.HandedTo), fd.StatusInfo))
 	case device.Preview != nil:
 		rows = append(rows, widgets.Note(
 			fmt.Sprintf("Showing a draft held by %s.", holder(*device.Preview)), fd.StatusWarn))
@@ -174,6 +220,7 @@ func drawDevice(device api.Device) fyne.CanvasObject {
 		rows = append(rows, widgets.Note("Out of scope.", fd.StatusInfo))
 	}
 
+	rows = append(rows, actions...)
 	return widgets.Card(device.Name, rows...)
 }
 
