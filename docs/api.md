@@ -180,6 +180,7 @@ Each result is one of three things, and they are kept apart deliberately:
 |---|---|
 | `applied` with `mode` | written, and confirmed by reading the device back |
 | `skipped` | the device cannot express this, and why. Not a failure, not worth retrying |
+| `handed_to` | with `skipped`: the canvas device that draws this hardware. The same device listed twice, so a count leaves it out |
 | `error` | the server or the hardware went wrong |
 
 ## GET /v1/status
