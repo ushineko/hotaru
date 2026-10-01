@@ -355,3 +355,25 @@ func TestNothingChangesWithNoCanvas(t *testing.T) {
 }
 
 func ptr[T any](v T) *T { return &v }
+
+func TestATwinTheServerNoLongerListsIsNotWaitedFor(t *testing.T) {
+	// OpenRGB's exit reboots the first canvas device, so a restarted server
+	// can come up before the device is back and not list it. Desired state
+	// still names the twin; reconcile must not wait for a listing it would
+	// never write to.
+	store := recorder(t)
+	before := service.New(nil, openrgb.NewFake(twin(), board()), "")
+	before.SetRecorder(store)
+	_, err := before.Apply(t.Context(), service.Request{Colour: ptr(colour.MustParse("teal"))})
+	require.NoError(t, err)
+	require.Contains(t, store.Snapshot().Names(), twinName)
+
+	cfg := &config.Config{Devices: []config.DeviceRule{{Match: "canvas board", Twin: "(openrgb)"}}}
+	after := service.New(cfg, openrgb.NewFake(board()), "")
+	after.SetRecorder(store)
+	attachDrawn(t, after)
+
+	restore, err := after.Reconcile(t.Context(), nil)
+	require.NoError(t, err)
+	require.True(t, restore.Complete(), "the absent twin was waited for: %v", restore.Missing)
+}

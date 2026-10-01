@@ -466,6 +466,11 @@ type Result struct {
 	Applied bool
 	// Skipped is a device that could not express the request, and why.
 	Skipped string
+	// HandedTo is the canvas device that draws this OpenRGB device's
+	// hardware (spec 060 R1.3). The device is skipped, and it is the same
+	// hardware as a device that was written, so it is not one more device
+	// left unlit.
+	HandedTo string
 	// Superseded is a write replaced by a newer one for the same device before
 	// it ran. Not a failure: lighting is a state, and the newer request is the
 	// state that was wanted.
@@ -547,7 +552,7 @@ func (s *Service) Apply(ctx context.Context, req Request) ([]Result, error) {
 		if device.HandedTo != "" {
 			// Said rather than left out: a scene that names the keyboard and
 			// skips one of its two listings silently looks like a bug.
-			results = append(results, Result{Device: device.Name, Skipped: handedReason(device.Name, device.HandedTo)})
+			results = append(results, Result{Device: device.Name, Skipped: handedReason(device.Name, device.HandedTo), HandedTo: device.HandedTo})
 			continue
 		}
 		results = append(results, s.applyOne(ctx, client, cfg, &device, assignments, req))

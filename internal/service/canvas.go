@@ -432,3 +432,15 @@ func twinOf(device devices.Device, all []*drawn, cfg *config.Config) string {
 	}
 	return ""
 }
+
+/*
+handedByRule reports whether a name is the OpenRGB twin of an attached canvas
+device by a rule's twin key. It is how reconcile recognises a twin that
+OpenRGB is not listing, when there is no location to match.
+*/
+func (s *Service) handedByRule(name string) bool {
+	s.mu.RLock()
+	all := s.drawnNow()
+	s.mu.RUnlock()
+	return twinOf(devices.Device{Name: name}, all, s.config()) != ""
+}

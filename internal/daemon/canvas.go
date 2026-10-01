@@ -42,8 +42,17 @@ func attachCanvases(ctx context.Context, svc *service.Service, open canvasOpener
 	backoff []time.Duration, report func(string, ...any),
 ) {
 	var (
-		mu        sync.Mutex
-		held      = map[string]bool{}
+		mu   sync.Mutex
+		held = map[string]bool{}
+		/*
+			dying is the kernel names of devices that went. The kernel keeps a
+			rebooting device's node for a couple of seconds after it stops
+			answering, and the look that follows a loss straight away found
+			that node and attached to it, only to lose it again (measured
+			2026-10-01: twice per reboot). A node still carrying a lost name
+			is skipped; the device comes back under a new one.
+		*/
+		dying     = map[string]bool{}
 		wg        sync.WaitGroup
 		lost      = make(chan struct{}, 1)
 		announced bool
@@ -53,7 +62,7 @@ func attachCanvases(ctx context.Context, svc *service.Service, open canvasOpener
 	attached := func(path string) bool {
 		mu.Lock()
 		defer mu.Unlock()
-		return held[path]
+		return held[path] || dying[canvas.KernelNode(path)]
 	}
 	for attempt := 0; ; attempt++ {
 		found, err := open(ctx, attached)
@@ -61,6 +70,7 @@ func attachCanvases(ctx context.Context, svc *service.Service, open canvasOpener
 			path := device.Path()
 			mu.Lock()
 			held[path] = true
+			clear(dying) // what was being removed has gone by the time a device is back
 			mu.Unlock()
 			attempt = 0
 			wg.Add(1)
@@ -69,6 +79,9 @@ func attachCanvases(ctx context.Context, svc *service.Service, open canvasOpener
 				gone := serveCanvas(ctx, svc, device, report)
 				mu.Lock()
 				delete(held, path)
+				if gone && device.Node() != "" {
+					dying[device.Node()] = true
+				}
 				mu.Unlock()
 				if gone {
 					select {

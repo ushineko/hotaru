@@ -970,6 +970,7 @@ func result(got service.Result) Result {
 		Applied:     got.Applied,
 		Mode:        got.Mode,
 		Skipped:     got.Skipped,
+		HandedTo:    got.HandedTo,
 		Superseded:  got.Superseded,
 		Unconfirmed: got.Unconfirmed,
 		Problems:    got.Problems,

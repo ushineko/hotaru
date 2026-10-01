@@ -186,6 +186,17 @@ func (d *Device) Present() bool {
 	return kernelNode(d.dev.Identity().Path) == d.node
 }
 
+// Node is the kernel's name for the device as it was when opened, or "" for
+// a path Present cannot read.
+func (d *Device) Node() string { return d.node }
+
+/*
+KernelNode is the kernel's name for the device behind a hidraw node now, or
+"" for a path that is not one. A node whose name is a lost device's Node is
+that device still being removed, not the device back.
+*/
+func KernelNode(path string) string { return kernelNode(path) }
+
 // Lose closes the adapter as if the device had gone. The daemon calls it when
 // Present says the device has.
 func (d *Device) Lose() { d.lose() }

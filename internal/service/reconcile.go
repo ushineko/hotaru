@@ -112,6 +112,16 @@ func (s *Service) Reconcile(ctx context.Context, only []string) (Restore, error)
 			continue
 		}
 		device, here := present[name]
+		if !here && s.handedByRule(name) {
+			/*
+				An OpenRGB listing a canvas device draws, and not on the
+				server now. It is not waited for: nothing would be written to
+				it if it came back. OpenRGB's exit reboots the first canvas
+				device, so a restarted server often starts before the device
+				is back and does not list it at all.
+			*/
+			continue
+		}
 		if !here {
 			// Recorded, and not on the server. The device may enumerate later,
 			// which is why this is reported rather than forgotten.

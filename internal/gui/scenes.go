@@ -1785,7 +1785,7 @@ func applied(done api.SceneResponse) string {
 			lit++
 		}
 	}
-	return fmt.Sprintf("%s: %d of %d device(s).", done.Scene, lit, len(done.Results))
+	return fmt.Sprintf("%s: %d of %d device(s).", done.Scene, lit, api.Counted(done.Results))
 }
 
 func join(facts []string) string {

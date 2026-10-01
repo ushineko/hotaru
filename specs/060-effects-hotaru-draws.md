@@ -269,6 +269,15 @@ Run in the worktree on 2026-10-01, no hardware opened:
   places a key by its name on a standard US layout, and a light whose name
   the layout does not know keeps its place in the canvas's order. R2.3 is
   amended.
+- **Found in the live run, fixed:** a scene's "N of M device(s) lit"
+  counted the skipped twin as an unlit device (results now carry
+  `handed_to`, and the count leaves it out); a restore after OpenRGB
+  restarted waited for the twin, which the restarted server did not list
+  because the board was still rebooting (reconcile now skips a recorded
+  twin named by a rule); and the look straight after a loss attached to the
+  rebooting board's old node, which the kernel keeps for about two seconds,
+  and lost it again (nodes still carrying a lost device's kernel name are
+  skipped). The last reads sysfs and is verified live, not by a unit test.
 - **A static frame that went unacknowledged was never sent again.** A
   static scene has no ticker, so the board would hold the previous scene.
   Fixed in review: the animator retries at the show's interval until a frame

@@ -245,6 +245,9 @@ type Result struct {
 	Applied bool   `json:"applied"`
 	Mode    string `json:"mode,omitempty"`
 	Skipped string `json:"skipped,omitempty"`
+	// HandedTo is the canvas device that draws this device's hardware, so a
+	// count of devices lit leaves this listing out (spec 060).
+	HandedTo string `json:"handed_to,omitempty"`
 	// Superseded is a write replaced by a newer one for the same device before
 	// it ran. Not a failure, and not a device declining: the caller asked for
 	// something else immediately afterwards, and that is what happened.
@@ -977,4 +980,17 @@ type RecolourRequest struct {
 // ShowImageRequest puts a stored picture on the panel.
 type ShowImageRequest struct {
 	Name string `json:"name"`
+}
+
+// Counted is how many devices a scene's results are about: every result but
+// an OpenRGB listing whose hardware a canvas device draws, which is the same
+// device counted twice.
+func Counted(results []Result) int {
+	n := 0
+	for _, r := range results {
+		if r.HandedTo == "" {
+			n++
+		}
+	}
+	return n
 }
