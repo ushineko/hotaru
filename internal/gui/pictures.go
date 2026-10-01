@@ -379,6 +379,9 @@ func (p *PicturesSection) scene(sh *shell.Shell, image api.Image) {
 	makeScene(sh, image.Name, image.Name, p.app.machine.Read().Devices,
 		func(ctx context.Context, name string, distance float64, effects map[string]api.Effect) (api.Scene, error) {
 			return p.app.client.SceneFromImage(ctx, image.Name, name, distance, effects)
+		},
+		func(ctx context.Context, count int, distance float64) ([]string, error) {
+			return p.app.client.PickColours(ctx, image.Name, count, distance)
 		})
 }
 

@@ -950,7 +950,9 @@ func describe(view service.View) Device {
 		// How many colours of its own the mode takes, for the editor's
 		// pickers. Asked of every mode, not only those that show one colour:
 		// a Spectrum hotaru draws takes eight and shows the wheel without.
-		if least, most := mode.Slots(); most > 0 {
+		// Not of a mode that takes a colour per light, whose colour is the
+		// frame and whose own slot, where it has one, the device does not show.
+		if least, most := mode.Slots(); most > 0 && !mode.PerLED {
 			if device.Coloured == nil {
 				device.Coloured = map[string]ColourSlots{}
 			}

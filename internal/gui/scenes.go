@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"image/color"
 	"path/filepath"
-	"slices"
 	"sort"
 	"strings"
 
@@ -732,8 +731,8 @@ func (s *ScenesSection) picture(sh *shell.Shell, got Snapshot) fyne.CanvasObject
 			// are carried to it (spec 060).
 			continue
 		}
-		if effect, one := s.oneColour(device); one {
-			cards = append(cards, widgets.Card(device.Name, s.effectColour(sh, device, effect)...))
+		if effect, slots, coloured := s.ownColours(device); coloured {
+			cards = append(cards, widgets.Card(device.Name, s.effectColours(sh, device, effect, slots)...))
 			continue
 		}
 		cards = append(cards, widgets.Card(device.Name, s.targets(sh, device)...))
@@ -742,32 +741,38 @@ func (s *ScenesSection) picture(sh *shell.Shell, got Snapshot) fyne.CanvasObject
 }
 
 /*
-oneColour is this scene's effect for a device, where the effect is a mode that
-can only show one colour.
+ownColours is this scene's effect for a device, where the effect is a mode
+that shows colours of its own rather than one per light, and how many it takes.
 
 The question the editor has to ask before it draws a device, because the answer
-decides whether a colour per light is a control or a lie.
+decides whether a colour per light is a control or a lie. Asked of the slots
+the mode takes and not of whether it shows one colour (spec 061 R4.2): a
+Spectrum hotaru draws takes eight and shows none of the frame either.
 */
-func (s *ScenesSection) oneColour(device api.Device) (api.Effect, bool) {
+func (s *ScenesSection) ownColours(device api.Device) (api.Effect, api.ColourSlots, bool) {
 	if s.draft == nil {
-		return api.Effect{}, false
+		return api.Effect{}, api.ColourSlots{}, false
 	}
 	effect := s.draft.Effect(device.Name)
 	if !effect.Named() {
-		return api.Effect{}, false
+		return api.Effect{}, api.ColourSlots{}, false
 	}
-	return effect, slices.Contains(device.OneColour, effect.Mode)
+	slots, ok := colourSlots(device, effect.Mode)
+	return effect, slots, ok
 }
 
 /*
-effectColour is a device under a mode that shows one colour: that colour, and
-the speed the mode runs at.
+effectColours is a device under a mode that shows colours of its own: those
+colours, a slot at a time, and the speed the mode runs at.
 
 **In place of its zones and its lights.** The picture is the editor's whole
 idea -- click the thing you want to change -- and it is the wrong picture for
-a device that will show one colour whatever is clicked. Drawing twenty-four
-blocks and honouring none of them is the editor promising what the hardware
-refuses; see spec 051.
+a device that will show its mode's colours whatever is clicked. Drawing
+twenty-four blocks and honouring none of them is the editor promising what the
+hardware refuses; see spec 051.
+
+**One row per slot** (spec 061 R4.1): the ones the mode needs always, and
+"Add a colour" up to as many as it takes.
 
 **The scene's own colours stay in it.** They are what the device goes back to
 the moment the effect is turned off, and losing a keyboard's hundred keys to a
@@ -775,33 +780,58 @@ mode somebody was trying out is not a trade this window gets to make for them.
 Said in a line under the control, because a person who cannot see their
 colours will otherwise assume they are gone.
 */
-func (s *ScenesSection) effectColour(sh *shell.Shell, device api.Device, effect api.Effect) []fyne.CanvasObject {
-	current := effect.Colour
-	swatch := canvas.NewRectangle(parse(current))
-	swatch.SetMinSize(fyne.NewSize(zoneHeight*2, zoneHeight))
+func (s *ScenesSection) effectColours(sh *shell.Shell, device api.Device, effect api.Effect,
+	slots api.ColourSlots,
+) []fyne.CanvasObject {
+	palette := effect.Palette()
+	heading := effect.Mode + " shows one colour."
+	if slots.Most > 1 {
+		heading = fmt.Sprintf("%s takes up to %d colours.", effect.Mode, slots.Most)
+	}
+	rows := []fyne.CanvasObject{widgets.Dim(heading)}
 
-	said := describe(current)
-	if current == "" {
-		// The fallback, named rather than left blank: "nothing" is a colour
-		// this device will be lit in, and it is not black.
-		said = "the colour most of the scene is"
+	for i := range max(slots.Least, len(palette), min(slots.Most, 1)) {
+		current := ""
+		if i < len(palette) {
+			current = palette[i]
+		}
+		swatch := canvas.NewRectangle(parse(current))
+		swatch.SetMinSize(fyne.NewSize(zoneHeight*2, zoneHeight))
+
+		said := describe(current)
+		if current == "" {
+			// The fallback, named rather than left blank: "nothing" is a
+			// colour this device will be lit in, and it is not black.
+			said = fallbackSaid(device, effect.Mode, palette, i)
+		}
+
+		choose := widget.NewButtonWithIcon("Choose a colour", theme.ColorChromaticIcon(), func() {
+			s.pickEffectColour(sh, device.Name, palette, i)
+		})
+		choose.Importance = widget.HighImportance
+		buttons := container.NewHBox(choose)
+		if i < len(palette) {
+			word := "Clear"
+			if i >= slots.Least {
+				word = "Remove"
+			}
+			buttons.Add(widget.NewButtonWithIcon(word, theme.ContentClearIcon(), func() {
+				s.draft.SetEffectColours(device.Name, withoutSlot(palette, i))
+				sh.Invalidate()
+			}))
+		}
+		rows = append(rows, container.NewHBox(swatch, widgets.Dim(said)), buttons)
+	}
+	if len(palette) > 0 && len(palette) < slots.Most {
+		add := widget.NewButtonWithIcon("Add a colour", theme.ContentAddIcon(), func() {
+			s.pickEffectColour(sh, device.Name, palette, len(palette))
+		})
+		rows = append(rows, container.NewHBox(add))
+	}
+	if effect.ColoursFrom == api.ColoursFromPicture && len(palette) > 0 {
+		rows = append(rows, widgets.Dim("Picked from the picture; a recolour picks them again."))
 	}
 
-	choose := widget.NewButtonWithIcon("Choose a colour", theme.ColorChromaticIcon(), func() {
-		s.pickEffectColour(sh, device.Name, current)
-	})
-	choose.Importance = widget.HighImportance
-
-	back := widget.NewButtonWithIcon("Clear", theme.ContentClearIcon(), func() {
-		s.draft.SetEffectColour(device.Name, "")
-		sh.Invalidate()
-	})
-
-	rows := []fyne.CanvasObject{
-		widgets.Dim(effect.Mode + " shows one colour."),
-		container.NewHBox(swatch, widgets.Dim(said)),
-		container.NewHBox(choose, back),
-	}
 	if pace, ok := device.Paced[effect.Mode]; ok {
 		rows = append(rows, s.effectSpeed(sh, device.Name, effect, pace))
 	}
@@ -1047,17 +1077,22 @@ func (s *ScenesSection) pickColour(sh *shell.Shell, current string) {
 }
 
 /*
-pickEffectColour is the same wheel for the one colour an effect shows.
+pickEffectColour is the same wheel for one of the colours an effect shows: the
+slot given, or a new one past the end.
 
 The same preview while it is open, because the argument for a wheel is that
 the machine is right there -- and a reactive mode lit in the colour being
 dragged is exactly the thing that cannot be described in a field.
 */
-func (s *ScenesSection) pickEffectColour(sh *shell.Shell, device, current string) {
-	before := current
+func (s *ScenesSection) pickEffectColour(sh *shell.Shell, device string, palette []string, slot int) {
+	before := append([]string(nil), palette...)
+	current := ""
+	if slot < len(palette) {
+		current = palette[slot]
+	}
 	s.pickInto(sh, "Choose a colour for "+device, current,
-		func(picked string) { s.draft.SetEffectColour(device, picked) },
-		func() { s.draft.SetEffectColour(device, before) })
+		func(picked string) { s.draft.SetEffectColours(device, withSlot(before, slot, picked)) },
+		func() { s.draft.SetEffectColours(device, before) })
 }
 
 /*

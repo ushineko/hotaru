@@ -126,7 +126,7 @@ func effectField(window fyne.Window, device api.Device, get func(device string) 
 }
 
 /*
-effectSettings are the mode's own: the colour it shows and the speed it runs
+effectSettings are the mode's own: the colours it shows and the speed it runs
 at, for the modes that have them.
 
 Indented under the row rather than beside it. Six devices at four controls
@@ -140,8 +140,8 @@ func effectSettings(window fyne.Window, device api.Device, effect api.Effect,
 		return nil
 	}
 	var out []fyne.CanvasObject
-	if slices.Contains(device.OneColour, effect.Mode) {
-		out = append(out, effectIndent(effectColourField(window, effect, changed)))
+	if slots, ok := colourSlots(device, effect.Mode); ok {
+		out = append(out, effectIndent(effectColoursField(window, device, effect, slots, changed)))
 	}
 	if pace, ok := device.Paced[effect.Mode]; ok {
 		out = append(out, effectIndent(effectSpeedField(device, effect, pace, set)))
@@ -150,8 +150,12 @@ func effectSettings(window fyne.Window, device api.Device, effect api.Effect,
 }
 
 /*
-effectColourField is the one colour a mode like this shows: a swatch, and the
-same wheel everything else in this window picks a colour with.
+effectColoursField is the colours a mode like this shows: a swatch per slot,
+and the same wheel everything else in this window picks a colour with.
+
+**One row per slot the mode takes** (spec 061 R4.1): the slots it needs are
+always drawn, and "Add a colour" offers the rest up to as many as it takes.
+A slot past the ones it needs can be removed; one it needs can be cleared.
 
 **Not a field somebody types a hex value into.** The argument for a window at
 all is that a colour is looked at rather than spelled, and a control that is a
@@ -162,33 +166,126 @@ dialog, which is what overlays are for.
 Empty says what it falls back to, because "nothing" is otherwise
 indistinguishable from black in a control that shows a colour.
 */
-func effectColourField(window fyne.Window, effect api.Effect, changed func(api.Effect)) fyne.CanvasObject {
-	swatch := canvas.NewRectangle(parse(effect.Colour))
-	swatch.SetMinSize(fyne.NewSize(swatchWidth, swatchHeight))
-
-	said := effect.Colour
-	if said == "" {
-		said = "the colour most of the scene is"
+func effectColoursField(window fyne.Window, device api.Device, effect api.Effect, slots api.ColourSlots,
+	changed func(api.Effect),
+) fyne.CanvasObject {
+	palette := effect.Palette()
+	keep := func(colours []string) {
+		current := effect
+		current.SetPalette(colours)
+		// Chosen here, so a recolour keeps it rather than picking again.
+		current.ColoursFrom = ""
+		changed(current)
 	}
 
-	choose := widget.NewButton("Choose"+ellipsis, func() {
-		pickOver(window, "A colour for "+effect.Mode, effect.Colour, func(picked string) {
-			current := effect
-			current.Colour = picked
-			changed(current)
-		})
-	})
-	clearing := widget.NewButton("Clear", func() {
-		current := effect
-		current.Colour = ""
-		changed(current)
-	})
+	rows := []fyne.CanvasObject{}
+	// One row at least, so the first colour is chosen where it is shown.
+	for i := range max(slots.Least, len(palette), min(slots.Most, 1)) {
+		said := fallbackSaid(device, effect.Mode, palette, i)
+		current := ""
+		if i < len(palette) {
+			current, said = palette[i], palette[i]
+		}
+		swatch := canvas.NewRectangle(parse(current))
+		swatch.SetMinSize(fyne.NewSize(swatchWidth, swatchHeight))
 
-	return container.NewBorder(nil, nil,
-		column(effectSettingWidth, widgets.Dim("shows one colour")),
-		container.NewHBox(choose, clearing),
-		container.NewHBox(swatch, widgets.Dim(said)),
-	)
+		choose := widget.NewButton("Choose"+ellipsis, func() {
+			pickOver(window, "A colour for "+effect.Mode, current, func(picked string) {
+				keep(withSlot(palette, i, picked))
+			})
+		})
+		buttons := container.NewHBox(choose)
+		switch {
+		case i >= slots.Least && i < len(palette):
+			buttons.Add(widget.NewButton("Remove", func() { keep(withoutSlot(palette, i)) }))
+		case i < len(palette):
+			buttons.Add(widget.NewButton("Clear", func() { keep(withoutSlot(palette, i)) }))
+		}
+
+		label := widgets.Dim("")
+		if i == 0 {
+			label = widgets.Dim(slotsSaid(slots))
+		}
+		// The buttons hold a width, so "Choose" lines up down the slots
+		// whether or not a slot has a second button beside it.
+		rows = append(rows, container.NewBorder(nil, nil,
+			column(effectSettingWidth, label), column(effectButtonsWidth, buttons),
+			container.NewHBox(swatch, widgets.Dim(said))))
+	}
+
+	if len(palette) > 0 && len(palette) < slots.Most {
+		add := widget.NewButton("Add a colour"+ellipsis, func() {
+			pickOver(window, "A colour for "+effect.Mode, "", func(picked string) {
+				keep(append(append([]string(nil), palette...), picked))
+			})
+		})
+		rows = append(rows, container.NewBorder(nil, nil, column(effectSettingWidth, widgets.Dim("")), nil,
+			container.NewHBox(add)))
+	}
+	if effect.ColoursFrom == api.ColoursFromPicture && len(palette) > 0 {
+		rows = append(rows, container.NewBorder(nil, nil, column(effectSettingWidth, widgets.Dim("")), nil,
+			widgets.Dim("picked from the picture")))
+	}
+	return container.NewVBox(rows...)
+}
+
+/*
+colourSlots is how many colours of its own a mode takes, and whether it takes
+any.
+
+From the listing's Coloured where the service sends it. A service from before
+spec 061 sends only OneColour, and a mode there takes one, which is what the
+window offered before.
+*/
+func colourSlots(device api.Device, mode string) (api.ColourSlots, bool) {
+	if slots, ok := device.Coloured[mode]; ok && slots.Most > 0 {
+		return slots, true
+	}
+	if slices.Contains(device.OneColour, mode) {
+		return api.ColourSlots{Least: 0, Most: 1}, true
+	}
+	return api.ColourSlots{}, false
+}
+
+// slotsSaid is how many colours a mode takes, in words.
+func slotsSaid(slots api.ColourSlots) string {
+	if slots.Most == 1 {
+		return "shows one colour"
+	}
+	return fmt.Sprintf("takes up to %d colours", slots.Most)
+}
+
+/*
+fallbackSaid is what an empty slot shows: what the device fills it with.
+
+The first falls back to the frame for a mode that shows one colour of its own,
+and to nothing for one that draws without colours. A later one repeats the
+colour before it, as the hardware path fills slots past the ones given.
+*/
+func fallbackSaid(device api.Device, mode string, palette []string, slot int) string {
+	switch {
+	case len(palette) > 0 || slot > 0:
+		return "the same as the one above"
+	case slices.Contains(device.OneColour, mode):
+		return "the colour most of the scene is"
+	}
+	return "none: its own colours"
+}
+
+// withSlot is a palette with one slot set, appended where it is past the end.
+func withSlot(palette []string, slot int, colour string) []string {
+	out := append([]string(nil), palette...)
+	if slot < len(out) {
+		out[slot] = colour
+		return out
+	}
+	return append(out, colour)
+}
+
+// withoutSlot is a palette with one slot taken out and the rest moved up.
+func withoutSlot(palette []string, slot int) []string {
+	out := append([]string(nil), palette[:slot]...)
+	return append(out, palette[slot+1:]...)
 }
 
 /*
@@ -268,6 +365,8 @@ const (
 	effectNowWidth  = 210
 	// The label column under a row, and how far in that row's settings sit.
 	effectSettingWidth = 130
+	// The buttons beside a colour slot: Choose and Remove, side by side.
+	effectButtonsWidth = 180
 	effectIndentWidth  = 24
 	// The swatch beside a colour, tall enough to read as a colour rather than
 	// as a line.
