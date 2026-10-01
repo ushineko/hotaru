@@ -72,6 +72,10 @@ $ curl -s --unix-socket $XDG_RUNTIME_DIR/hotaru/hotaru.sock http://hotaru/v1/dev
       ],
       "colours": ["#ff5500"],
       "one_colour": ["Static"],
+      "coloured": {
+        "Breathing": { "least": 1, "most": 2 },
+        "Color Cycle": { "least": 1, "most": 3 }
+      },
       "paced": { "Rainbow Wave": { "slowest": 0, "fastest": 255, "now": 127 } },
       "in_scope": true
     }
@@ -86,6 +90,14 @@ editor needs both before it draws, so that a colour per light is offered where
 the device can show one and not where it cannot. `paced` gives each mode's own
 range: the numbers come from the mode and go back to it, and `slowest` may be
 the larger of the two on a driver that counts down.
+
+**`coloured` is how many colours of its own each mode takes** (spec 061).
+`least` is how many the mode needs and `most` is how many it accepts. A mode
+that takes a colour per light is not listed, because its colour is the frame.
+The numbers come from OpenRGB's `colors_min` and `colors_max` for a firmware
+mode. A mode that keeps a colour and reports no count takes one. An editor
+draws one colour picker per slot from this. `one_colour` still says which
+modes show one colour of their own in place of the frame.
 
 A zone is a contiguous run in device LED order. hotaru counts `first` rather
 than reading it, because the protocol gives sizes and leaves the offsets
@@ -108,6 +120,11 @@ suite; no live transcript is recorded yet.
   "active_mode": "Rainbow Wave",
   "zones": [{ "name": "Keys", "shape": "grid", "first": 0, "count": 85 }],
   "one_colour": ["Breathing"],
+  "coloured": {
+    "Breathing": { "least": 0, "most": 4 },
+    "Spectrum": { "least": 0, "most": 8 },
+    "Rainbow Wave": { "least": 0, "most": 8 }
+  },
   "paced": {
     "Breathing": { "slowest": 0, "fastest": 100, "now": 50 },
     "Spectrum": { "slowest": 0, "fastest": 100, "now": 50 },
@@ -122,6 +139,12 @@ suite; no live transcript is recorded yet.
 
 `/v1/health` lists the same `canvas` object for every canvas device, under
 `canvases`.
+
+A renderer needs no colours of its own. Breathing breathes the frame's
+colour without them, and one breath per colour in turn with several.
+Spectrum goes round the colour wheel without them, and round the colours
+given with them. Rainbow Wave is the full rainbow without them, and a moving
+gradient through the colours given with them.
 
 ## POST /v1/lighting/apply
 
@@ -227,6 +250,12 @@ $ curl -s --unix-socket … http://hotaru/v1/scenes
           "colour": "#0000ff",
           "speed": 127
         },
+        "graphics": {
+          "mode": "Breathing",
+          "colour": "#ff2000",
+          "colours": ["#ff2000", "#2040ff"],
+          "colours_from": "picture"
+        },
         "kraken": "Breathing"
       },
       "screen": "dashboard"
@@ -251,6 +280,18 @@ gives way. Such a mode is lit in `colour` where the scene names one and in the
 colour most of the frame is otherwise. `speed` is in the device's own units,
 within the range `paced` gives for that mode, and is ignored by a mode that
 advertises no speed.
+
+**An effect with several colours lists them in `colours`**, first to last
+(spec 061). The first is also written as `colour`, so an older hotaru runs
+the effect in its first colour. One colour is written as `colour` alone, as
+before. The colours fill the mode's slots in order, up to `most` in
+`coloured`. Fewer than `least` repeat the last one. One colour fills every
+slot the mode has, so a mode that takes two shows that colour twice.
+
+`colours_from: picture` marks colours that hotaru picked from the picture or
+dashboard the scene was made from. `POST /v1/scenes/{name}/recolour` picks
+those again. Colours without the mark are somebody's choice, and a recolour
+keeps them.
 
 A name the device does not have costs the effect rather than the scene, and
 appears in that device's `problems`, as does a colour that will not parse.
@@ -590,6 +631,33 @@ background, and averaging that in reads a rust planet as grey-brown. hotaru
 then lifts the value to something a light can show, because a photograph is
 mostly shadow. The scene names the picture as its screen, so applying it makes
 the whole machine agree.
+
+**An effect that takes colours, and was sent with none, gets the picture's.**
+`effects` in the body names what each device does, as in a scene. hotaru
+gives such an effect the picture's most prominent distinct colours. It gives
+as many as the mode takes, four at most, and the colour that covers most of
+the picture comes first. A pixel counts by how much colour it has, so a dark
+background does not count as a colour. `distance` decides how far apart two
+colours must be to count as two. Those colours carry `colours_from:
+picture`. `POST /v1/dashboards/{name}/scene` does the same with the frame the
+dashboard draws.
+
+## POST /v1/images/{name}/colours
+
+The colours a scene made from the picture would give an effect, without
+making a scene. The window shows them in Make a scene before the scene
+exists. `count` is how many the mode takes, and `distance` is the scene's.
+
+```console
+$ curl -s --unix-socket … -X POST http://hotaru/v1/images/sunset/colours \
+    -d '{"count": 2, "distance": 1}'
+{ "colours": ["#f83000", "#2040f8"] }
+```
+
+Fewer colours than `count` is a picture with fewer distinct colours. An
+empty list is a picture with nothing to pick. `POST
+/v1/dashboards/{name}/colours` does the same for a dashboard. The CLI reaches
+both as `hotaru image colours` and `hotaru dashboard colours`.
 
 ## POST /v1/images/{name}/show
 

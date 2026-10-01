@@ -4,6 +4,24 @@
 
 ## Status: INCOMPLETE
 
+Every criterion is met except the live run on cachyos, which needs someone
+watching the hardware.
+
+## Executive Summary
+
+An effect carries a list of colours, and every mode says how many it takes:
+firmware modes as OpenRGB reports `colors_min`/`colors_max`, hotaru's
+renderers as they draw (Breathing 0-4, Spectrum and Rainbow Wave 0-8). Several
+colours fill a firmware mode's slots in order and are put back by reconcile;
+the editor and Make a scene show a picker per slot; Make a scene picks the
+picture's most prominent colours and marks them so a recolour picks again.
+One-colour scenes are written exactly as 0.1.21 wrote them.
+
+Look first at `openrgb.Slots` (how slots are filled, shared with the fake),
+`modeColoursFor` in `internal/service/service.go` (why a renderer that needs
+no colours is not handed the frame's), and `images.Palette`. Then the Gaps
+found, which record what this spec did not say.
+
 ## Context
 
 A scene's effect carries one colour at most. `scenes.Effect` has `Mode`,
@@ -88,22 +106,22 @@ does now.
 
 ## Acceptance Criteria
 
-- [ ] `make test`, `make lint` and the canaries pass; a 0.1.21 `scenes.yml`
+- [x] `make test`, `make lint` and the canaries pass; a 0.1.21 `scenes.yml`
       loads and round-trips with no change.
-- [ ] Render tests per R2's table: each renderer with none, one and several
+- [x] Render tests per R2's table: each renderer with none, one and several
       colours, as pure functions.
-- [ ] `openrgb.Fake` gains `colors_min`/`colors_max` per mode; a test shows a
+- [x] `openrgb.Fake` gains `colors_min`/`colors_max` per mode; a test shows a
       two-colour firmware Breathing written with both colours, and a
       reconcile writing both back.
-- [ ] A palette test: a picture made of known blocks of colour gives those
+- [x] A palette test: a picture made of known blocks of colour gives those
       colours, in coverage order, and `distance` merges near ones.
-- [ ] CLI, API and window parity for the new colours (`parity_test.go`).
+- [x] CLI, API and window parity for the new colours (`parity_test.go`).
 - [ ] **Live, on cachyos with someone watching:** a Breathing between two
       colours on the Apex; a firmware mode with two colours on a device that
       offers one (the GPU or a board header, chosen during the run); Make a
       scene from a picture with Breathing on the Apex runs in the picture's
       colours.
-- [ ] Docs: `docs/api.md` (effect colours), `docs/hardware.md` if a device's
+- [x] Docs: `docs/api.md` (effect colours), `docs/hardware.md` if a device's
       behaviour is documented there, the README changelog.
 
 ## Risks & Assumptions
@@ -130,4 +148,134 @@ limit of two.
 
 ## Verification
 
-To be filled.
+### Mode colours as reported
+
+Read from OpenRGB on 2026-10-01 with a read-only probe (controller data
+only: no mode, colour or frame was written). Flags in hex; colour mode 1 is
+per-LED, 2 mode-specific, 3 random. Only modes with `colors_max` of 2 or more
+are listed, plus the shapes that matter for the edge cases.
+
+The development machine:
+
+| Device | Mode | Flags | Colour mode | Min | Max | Held |
+|---|---|---|---|---|---|---|
+| MSI RTX 4090 Suprim Liquid X | Color Cycle | 0x151 | 2 | 1 | 3 | 3 |
+| MSI RTX 4090 Suprim Liquid X | Wave | 0x153 | 2 | 1 | 3 | 3 |
+| MSI RTX 4090 Suprim Liquid X | Fade In | 0x151 | 2 | 1 | 2 | 2 |
+| MSI RTX 4090 Suprim Liquid X | Breathing | 0x151 | 2 | 1 | 2 | 2 |
+| NZXT Kraken 2024 Elite | Fading, Cover Marquee, Pulsing, Breathing, Candle | 0x041-0x061 | 2 | 1 | 8 | 1 |
+| NZXT Kraken 2024 Elite | Alternating | 0x043 | 2 | 1 | 2 | 1 |
+
+The ASUS Z790 Hero, G502 X Plus and Keychron K4 HE report one and one for
+every mode-specific mode; the MM700 has Direct only.
+
+cachyos:
+
+| Device | Mode | Flags | Colour mode | Min | Max | Held |
+|---|---|---|---|---|---|---|
+| Corsair Dominator DDR5 (x4) | Color Shift, Color Pulse | 0x2d1 | 2 | 2 | 2 | 2 |
+| Corsair Dominator DDR5 (x4) | Color Wave, Visor, Rain | 0x2d5-0x2d9 | 2 | 2 | 2 | 2 |
+| EVGA RTX 3080 FTW3 Ultra LHR | Breathing | 0x151 | 2 | 1 | 2 | 1 |
+| EVGA RTX 3080 FTW3 Ultra LHR | Color Cycle, Color Stack | 0x151/0x153 | 2 | 2 | 7 | 2 |
+| EVGA RTX 3080 FTW3 Ultra LHR | Direct | 0x130 | 1 | 1 | 1 | 0 |
+| Razer Mouse Dock Pro | Breathing | 0x0d0 | 2 | 1 | 2 | 1 |
+
+Both Z790 Aorus Master X controllers report one and one; the Apex lists
+Direct and Onboard with none.
+
+**No device reports zero and zero while having mode colours.** Every mode
+with the mode-specific flag reports a minimum of at least one. Two readings
+change the design: the Kraken's modes hold one colour while allowing eight,
+so the slot count comes from `colors_max` and not from the colours held; and
+the EVGA's Direct reports one and one beside a per-LED colour mode, so the
+counts are read only for a mode with the mode-specific flag.
+
+### Checks
+
+| Command | Result |
+|---|---|
+| `go vet ./...` and with `-tags migrated_fynedo` on `./internal/gui/...` | clean |
+| `make test` | every package ok |
+| `go test -tags migrated_fynedo ./internal/gui/...` | ok |
+| `go test -race ./internal/canvas/... ./internal/service/... ./internal/daemon/...` | ok |
+| `GOLANGCI_LINT_CACHE=$PWD/.cache/golangci-lint make lint` | 0 issues |
+| `make build` | builds without cgo |
+
+Tests added: `scenes` (0.1.21 file round-trips byte for byte; several
+colours written as a list with the first as `colour`; `colours_from`),
+`openrgb` (`Slots` with the measured shapes; `convert` reads min, max and
+every held colour; per-LED Direct gets no slots), `render` (R2's table, a
+renderer at a time), `canvas` (the same effect in other colours is a new
+show), `state` (several colours survive a restart; an old file reads as one),
+`images` (blocks in coverage order; distance merges red and orange; colour
+outweighs a dark background), `service` (two-colour firmware Breathing
+written with both and read back; reconcile writes both; one colour fills a
+two-slot mode; a canvas Spectrum is not handed the frame's colour; Make a
+scene picks in coverage order; recolour picks picked colours again and keeps
+chosen ones), `api` (the listing's `coloured`), `cli` (comma list; `image
+colours`; parity covers both new routes), `gui` (a second slot offered,
+removed and cleared; Make a scene shows the picked colours and sends them
+marked).
+
+### Live run
+
+Not yet run. The commands for it, on cachyos:
+
+```sh
+# A Breathing between two colours on the Apex (hotaru draws it).
+hotaru scene write duo "Apex Pro TKL Wireless Gen 3=#202020" \
+    --effect "Apex Pro TKL Wireless Gen 3=Breathing" \
+    --effect-colour "Apex Pro TKL Wireless Gen 3=#ff0000,#0000ff"
+hotaru scene apply duo
+
+# A firmware mode with two colours: the EVGA card's Breathing (1 to 2), or a
+# DDR5 stick's Color Shift (exactly 2).
+hotaru scene write gpu-duo "EVGA=#202020" --effect "EVGA=Breathing" \
+    --effect-colour "EVGA=#ff0000,#00ff00"
+hotaru scene apply gpu-duo
+
+# Make a scene from a picture with Breathing on the Apex.
+hotaru image colours <picture> --count 4
+hotaru image scene <picture> pictured --effect "Apex Pro TKL Wireless Gen 3=Breathing"
+hotaru scene show pictured
+hotaru scene apply pictured
+```
+
+### Gaps found
+
+- **Several colours are written as `colours` and their first as `colour`
+  too.** R1.1 says one colour goes in the short form; the Risks section says
+  an older build reads `colour`. Both hold only if the first colour is
+  written twice for a scene with several. On read, `colours` wins.
+- **`--effect-colour` was a string slice, which splits on commas.** R1.2's
+  `device="#ff0000,#0000ff"` could not reach the scene through it. It is a
+  string array now, and the value is split on commas by hotaru.
+- **Make a scene's colours needed a route of their own.** R5.3 shows the
+  colours before the scene exists, which no route offered. `POST
+  /v1/images/{name}/colours` and `/v1/dashboards/{name}/colours` return them,
+  reachable as `hotaru image colours` and `hotaru dashboard colours`.
+- **The mode's colour mode is set to mode-specific when colours are
+  written.** A mode that also offers random colours and was left in them
+  ignores every slot. R3.1 assumed the mode was already mode-specific.
+- **The frame's colour is the fallback only for a mode that shows one of its
+  own.** Before, every non-per-LED mode was handed the frame's colour, and
+  firmware ignored it. Spectrum and Rainbow Wave now draw from the colours
+  they are handed, so the fallback would have held them still in one colour.
+- **R2's "with one" column is blank for Spectrum and Rainbow Wave.** One
+  colour there holds that colour on every light, which is a loop of one
+  colour; the editor still offers it, as Most allows.
+- **Several colours on Breathing breathe in turn, through dark.** R2 says
+  "fades from each to the next in turn". A crossfade with no dark between
+  colours is Spectrum through the same colours, so Breathing keeps the dark,
+  as the two-colour firmware Breathings do.
+- **Make a scene picks for every mode that takes colours, not only modes
+  with several.** A one-colour mode used to get the dominant colour of that
+  device's own frame; it now gets the picture's most prominent colour, the
+  same way. The two agree for most pictures.
+- **Picked colours are not pushed apart by the distance.** The distance
+  decides which colours count as distinct, at 64 RGB units per step of
+  distance from 1. Separating the picked colours as well would move them off
+  the picture's own colours for no gain a test could show.
+- **A per-light mode is left out of `coloured` even when it carries the
+  mode-specific flag.** Its colour is the frame (R4.2), and the fake already
+  treated its own slot as spare.
