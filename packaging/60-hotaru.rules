@@ -1,4 +1,5 @@
-# The cooler's two nodes, tagged so the logged-in user may open them.
+# The cooler's two nodes and the keyboard hotaru draws on, tagged so the
+# logged-in user may open them.
 #
 # hotaru needs no root: systemd-logind puts an ACL on a device tagged
 # "uaccess" for whoever is logged in at the seat. Without a rule that applies
@@ -21,3 +22,10 @@
 
 KERNEL=="hidraw*", SUBSYSTEMS=="usb", ATTRS{idVendor}=="1e71", TAG+="uaccess"
 SUBSYSTEM=="usb", ATTRS{idVendor}=="1e71", TAG+="uaccess"
+
+# 1038 is SteelSeries: the Apex Pro TKL Wireless Gen 3, whose lighting hotaru
+# draws by streaming frames to its hidraw node (spec 060). The rule is
+# sanshoku's, from its docs/udev.md, and matches the vendor for the same
+# reason as the one above.
+
+KERNEL=="hidraw*", SUBSYSTEMS=="usb", ATTRS{idVendor}=="1038", TAG+="uaccess"

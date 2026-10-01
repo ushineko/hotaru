@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/ushineko/hotaru/internal/canvas"
 	"github.com/ushineko/hotaru/internal/cooler"
 	"github.com/ushineko/hotaru/internal/openrgb"
 	"github.com/ushineko/hotaru/internal/service"
@@ -34,4 +35,16 @@ func Attach(ctx context.Context, svc *service.Service, open func(context.Context
 	backoff []time.Duration, report func(string, ...any),
 ) {
 	attach(ctx, svc, open, backoff, report)
+}
+
+// CanvasOpener is canvasOpener, so a test can hand back fakes.
+type CanvasOpener = func(ctx context.Context, skip func(path string) bool) ([]*canvas.Device, error)
+
+// AttachCanvases is attachCanvases, for a test: a canvas that goes and comes
+// back is the behaviour, and a test that could not reboot one would be a test
+// of nothing.
+func AttachCanvases(ctx context.Context, svc *service.Service, open CanvasOpener,
+	backoff []time.Duration, report func(string, ...any),
+) {
+	attachCanvases(ctx, svc, open, backoff, report)
 }
