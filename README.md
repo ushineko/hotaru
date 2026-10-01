@@ -2,7 +2,7 @@
 
 *lights, cooler, action!*
 
-**Version**: 0.1.20
+**Version**: 0.1.21
 
 RGB lighting and AIO cooler control for Linux, as a CLI, a user service and a
 desktop GUI. 
@@ -221,7 +221,7 @@ MIT. See [LICENSE](LICENSE).
 
 ## Changelog
 
-### Unreleased
+### 0.1.21 (2026-10-01)
 
 - Scenes written before a canvas device existed light it again. A picture
   scene colours a keyboard's OpenRGB listing light by light, and hotaru no
