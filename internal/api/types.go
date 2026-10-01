@@ -94,6 +94,17 @@ type Device struct {
 	*/
 	OneColour []string `json:"one_colour,omitempty"`
 
+	/*
+		Coloured is the modes that take colours of their own, by name, with
+		how many each takes (spec 061 R1.3).
+
+		Separate from OneColour, which is about the picture of the device: a
+		Spectrum hotaru draws takes up to eight colours and needs none, and a
+		mode that shows one colour may take two. An editor offers a picker per
+		slot from this, the first Least of them always and the rest up to Most.
+	*/
+	Coloured map[string]ColourSlots `json:"coloured,omitempty"`
+
 	// Paced is the modes that take a speed, by name, with the range each one
 	// accepts. A client offering a slider needs the bounds from the mode
 	// rather than a number hotaru made up.
@@ -129,6 +140,15 @@ type Canvas struct {
 	Interval string  `json:"interval,omitempty"`
 	Rate     float64 `json:"rate,omitempty"`
 	Frames   int     `json:"frames"`
+}
+
+// ColourSlots is how many colours of its own a mode takes.
+type ColourSlots struct {
+	// Least is how many colours the mode needs. Fewer are filled from the
+	// last, or from the frame where there are none.
+	Least int `json:"least"`
+	// Most is how many it takes.
+	Most int `json:"most"`
 }
 
 /*
@@ -701,6 +721,10 @@ const (
 	ScreenDashboardPrefix = "dashboard:"
 )
 
+// ColoursFromPicture marks an effect's colours as picked from the picture or
+// dashboard its scene was made from, so recolouring picks them again.
+const ColoursFromPicture = scenes.ColoursFromPicture
+
 // CaptureRequest saves what the lights are showing now as a named scene.
 type CaptureRequest struct {
 	// Screen is what the scene should say about the cooler's panel. Empty
@@ -969,6 +993,25 @@ type CopyEffectsRequest struct {
 // CopyEffectsResponse is the scenes that changed.
 type CopyEffectsResponse struct {
 	Scenes []string `json:"scenes"`
+}
+
+/*
+PickColoursRequest asks for the colours Make a scene would give an effect,
+from a stored picture or a dashboard, without making a scene (spec 061 R5.3).
+*/
+type PickColoursRequest struct {
+	// Count is how many colours the mode takes. Make a scene picks no more
+	// than four, however many it takes.
+	Count int `json:"count"`
+	// Distance is the same separation the scene would be made at, which also
+	// decides how far apart two picked colours have to be.
+	Distance float64 `json:"distance,omitempty"`
+}
+
+// PickColoursResponse is the picked colours, the one covering most of the
+// picture first. Fewer than asked for is a picture with fewer distinct colours.
+type PickColoursResponse struct {
+	Colours []string `json:"colours"`
 }
 
 // RecolourRequest builds a scene's lights again from whatever it shows, at a

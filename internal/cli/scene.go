@@ -638,12 +638,15 @@ func effects(scene api.Scene) string {
 	return strings.Join(out, ", ")
 }
 
-// doing is one effect as a person would read it: the mode, and the colour and
+// doing is one effect as a person would read it: the mode, and the colours and
 // speed only where somebody set them, so the common case stays one word.
 func doing(effect api.Effect) string {
 	out := effect.Mode
-	if effect.Colour != "" {
-		out += " in " + effect.Colour
+	if palette := effect.Palette(); len(palette) > 0 {
+		out += " in " + strings.Join(palette, ", ")
+		if effect.ColoursFrom == api.ColoursFromPicture {
+			out += " (from the picture)"
+		}
 	}
 	if effect.Speed != nil {
 		out += fmt.Sprintf(" at %d", *effect.Speed)
@@ -672,17 +675,22 @@ func setEffects(cmd *cobra.Command, into map[string]api.Effect) error {
 		into[device] = api.Effect{Mode: mode}
 	}
 
-	colours, _ := cmd.Flags().GetStringSlice("effect-colour")
+	/*
+		Several colours are one value, comma-separated, so a device's colours
+		stay together and in order: device="#ff0000,#0000ff". A colour is
+		never written with a comma, so the split cannot cut one in half.
+	*/
+	colours, _ := cmd.Flags().GetStringArray("effect-colour")
 	for _, pair := range colours {
 		device, want, ok := strings.Cut(pair, "=")
 		if !ok {
-			return fmt.Errorf("%q: an effect's colour is written device=colour", pair)
+			return fmt.Errorf("%q: an effect's colours are written device=colour,colour", pair)
 		}
 		effect, has := into[device]
 		if !has {
 			return fmt.Errorf("%s has no effect to colour; name one with --effect", device)
 		}
-		effect.Colour = want
+		effect.SetPalette(strings.Split(want, ","))
 		into[device] = effect
 	}
 

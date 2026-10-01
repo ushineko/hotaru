@@ -30,7 +30,7 @@ func dashboardCommand() *cobra.Command {
 	}
 	cmd.AddCommand(
 		dashboardListCommand(), dashboardShowCommand(), dashboardSaveCommand(),
-		dashboardUseCommand(), dashboardSceneCommand(),
+		dashboardUseCommand(), dashboardSceneCommand(), dashboardColoursCommand(),
 		dashboardPreviewCommand(), dashboardRenameCommand(),
 		dashboardCloneCommand(), dashboardDeleteCommand(),
 	)
@@ -235,6 +235,32 @@ func dashboardSceneCommand() *cobra.Command {
 	}
 	distanceFlag(cmd)
 	effectFlag(cmd)
+	return cmd
+}
+
+// dashboardColoursCommand is `hotaru image colours` for what a dashboard draws.
+func dashboardColoursCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "colours <dashboard>",
+		Short: "The colours a scene from a dashboard gives an effect",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, err := client(cmd)
+			if err != nil {
+				return err
+			}
+			count, _ := cmd.Flags().GetInt("count")
+			distance, _ := cmd.Flags().GetFloat64("distance")
+			picked, err := client.PickDashboardColours(cmd.Context(), args[0], count, distance)
+			if err != nil {
+				return quiet(err)
+			}
+			printPicked(cmd, picked)
+			return nil
+		},
+	}
+	distanceFlag(cmd)
+	countFlag(cmd)
 	return cmd
 }
 
