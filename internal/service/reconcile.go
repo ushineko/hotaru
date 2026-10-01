@@ -153,8 +153,10 @@ func (s *Service) Reconcile(ctx context.Context, only []string) (Restore, error)
 		*/
 		kept := desired.Devices[name]
 		want := preference{mode: kept.Mode, insist: true, speed: kept.Speed}
-		if c, err := colour.Parse(kept.ModeColour); kept.ModeColour != "" && err == nil {
-			want.colour = &c
+		for _, named := range kept.Named() {
+			if c, err := colour.Parse(named); err == nil {
+				want.colours = append(want.colours, c)
+			}
 		}
 		result := s.through(ctx, device.Name, func(ctx context.Context) Result {
 			return s.writeFrame(ctx, client, device, kept.Frame(name), false, want, nil)

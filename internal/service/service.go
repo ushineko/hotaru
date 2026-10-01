@@ -593,17 +593,17 @@ func (s *Service) applyOne(ctx context.Context, client openrgb.Client, cfg *conf
 	*/
 	if effect := effectFor(req.Effects, device.Name); effect.Named() {
 		want.mode, want.insist = effect.Mode, true
-		if effect.Colour != "" {
+		for _, named := range effect.Palette() {
 			// Named, and unreadable is worth saying: an effect falling back to
 			// the frame's colour because of a typo looks exactly like one that
 			// was never given a colour at all.
-			c, err := colour.Parse(effect.Colour)
+			c, err := colour.Parse(named)
 			if err != nil {
 				result.Problems = append(result.Problems,
 					fmt.Sprintf("%s: the effect's colour: %v", device.Name, err))
-			} else {
-				want.colour = &c
+				continue
 			}
+			want.colours = append(want.colours, c)
 		}
 		want.speed = effect.Speed
 		if _, has := device.Mode(effect.Mode); !has {
@@ -656,7 +656,7 @@ func (s *Service) applyOne(ctx context.Context, client openrgb.Client, cfg *conf
 }
 
 /*
-modeColourFor is the single colour to put in a mode that carries one.
+modeColoursFor is the colours to put in a mode that carries its own.
 
 A mode that keeps its colour in the mode is given the frame's, where the frame
 has one colour to give. Without it the device shows whatever the vendor left
@@ -672,29 +672,56 @@ scene says nor anything anybody picked.
 
 Per-LED modes are left alone here: their colour is the frame, written next, and
 the mode's own slot is not what the device reads.
+
+**The reduction is one colour, and only for a mode that shows one of its
+own.** A mode that takes colours and needs none -- a Spectrum hotaru draws,
+which goes round the wheel without them -- is given the frame's colour as
+nothing, because one colour there is a Spectrum that holds still (spec 061).
+Several colours are only ever named, never reduced to.
 */
-func modeColourFor(device *devices.Device, mode string, frame devices.Frame, off bool,
-	named *colour.Colour,
-) *colour.Colour {
+func modeColoursFor(device *devices.Device, mode string, frame devices.Frame, off bool,
+	named []colour.Colour,
+) []colour.Colour {
 	if off {
 		return nil
 	}
-	if m, ok := device.Mode(mode); ok && !m.PerLED && named != nil {
-		// A scene that names the effect's colour has answered this, and the
+	m, known := device.Mode(mode)
+	if known && !m.PerLED && len(named) > 0 {
+		// A scene that names the effect's colours has answered this, and the
 		// frame's reduction is only ever the fallback -- see spec 051.
 		return named
 	}
-	if uniform, ok := frame.Uniform(); ok {
-		return &uniform
+	if known && !m.ModeColour {
+		return nil
 	}
-	if m, ok := device.Mode(mode); ok && m.PerLED {
+	if uniform, ok := frame.Uniform(); ok {
+		return []colour.Colour{uniform}
+	}
+	if known && m.PerLED {
 		return nil
 	}
 	dominant, ok := frame.Dominant()
 	if !ok {
 		return nil
 	}
-	return &dominant
+	return []colour.Colour{dominant}
+}
+
+/*
+styleOf is a mode's own settings with its colours in the shape openrgb.Style
+keeps them: the first as Colour, and every one as Colours where there are
+several.
+*/
+func styleOf(brightness *int, colours []colour.Colour, speed *int) openrgb.Style {
+	style := openrgb.Style{Brightness: brightness, Speed: speed}
+	if len(colours) > 0 {
+		first := colours[0]
+		style.Colour = &first
+	}
+	if len(colours) > 1 {
+		style.Colours = append([]colour.Colour(nil), colours...)
+	}
+	return style
 }
 
 /*
@@ -718,8 +745,9 @@ type preference struct {
 		is no use. See spec 050.
 	*/
 	insist bool
-	// colour is the effect's own, overriding the frame's reduction.
-	colour *colour.Colour
+	// colours are the effect's own, first to last, overriding the frame's
+	// reduction. Nil is nobody naming any.
+	colours []colour.Colour
 	// speed is the mode's, in the device's units, where it advertises a range.
 	speed *int
 }
@@ -817,11 +845,7 @@ func (s *Service) writeFrame(ctx context.Context, client openrgb.Client,
 
 	for _, mode := range candidates {
 		attempt := Attempt{Mode: mode}
-		style := openrgb.Style{
-			Brightness: rule.Brightness,
-			Colour:     modeColourFor(device, mode, frame, off, want.colour),
-			Speed:      want.speed,
-		}
+		style := styleOf(rule.Brightness, modeColoursFor(device, mode, frame, off, want.colours), want.speed)
 
 		/*
 			A mode that shows one colour of its own takes the frame first,
@@ -933,7 +957,7 @@ func (s *Service) writeFrame(ctx context.Context, client openrgb.Client,
 			return result
 		}
 		attempt.Active = after.ActiveMode
-		attempt.Showing = showing(after, frame, style.Colour)
+		attempt.Showing = showing(after, frame, want.colours)
 
 		if !attempt.Showing && strings.EqualFold(after.ActiveMode, mode) {
 			/*
@@ -948,7 +972,7 @@ func (s *Service) writeFrame(ctx context.Context, client openrgb.Client,
 				trip between them, lights hardware that hotaru could not.
 			*/
 			if again := s.settle(ctx, client, device.Name, frame); again != nil {
-				attempt.Showing = showing(*again, frame, style.Colour)
+				attempt.Showing = showing(*again, frame, want.colours)
 				attempt.Settled = attempt.Showing
 			}
 		}
@@ -1036,8 +1060,13 @@ func (s *Service) remember(name, mode string, frame devices.Frame, want preferen
 		Applied: time.Now(),
 		Speed:   want.speed,
 	}
-	if want.colour != nil {
-		kept.ModeColour = want.colour.String()
+	if len(want.colours) > 0 {
+		kept.ModeColour = want.colours[0].String()
+	}
+	if len(want.colours) > 1 {
+		for _, c := range want.colours {
+			kept.ModeColours = append(kept.ModeColours, c.String())
+		}
 	}
 	_ = recorder.Record(name, kept)
 }
@@ -1117,7 +1146,7 @@ Static reports its mode's colour rather than its buffer, and a device that
 reports nothing at all is simply not saying -- neither is evidence of a failed
 write, and treating them as one would fail every write to hardware that works.
 */
-func showing(after devices.Device, frame devices.Frame, want *colour.Colour) bool {
+func showing(after devices.Device, frame devices.Frame, want []colour.Colour) bool {
 	mode, known := after.Mode(after.ActiveMode)
 	if !known {
 		return true // not a question this device can answer
@@ -1146,9 +1175,23 @@ func showing(after devices.Device, frame devices.Frame, want *colour.Colour) boo
 			showing" on every apply of an effect with a colour, which cost a
 			settle -- a sleep and a second frame -- for a device that was
 			doing exactly what it was told.
+
+			Every colour that was asked for and that the device reports is
+			compared, so a two-colour mode that kept its second slot is not
+			showing. A device reporting fewer slots than were asked for is
+			checked on the ones it reports; the rest it was never going to
+			take, because a mode is written no more than it allows.
 		*/
-		if want != nil {
-			return mode.Colour == *want
+		if len(want) > 0 {
+			if len(mode.Colours) == 0 {
+				return mode.Colour == want[0]
+			}
+			for i := range min(len(want), len(mode.Colours)) {
+				if mode.Colours[i] != want[i] {
+					return false
+				}
+			}
+			return true
 		}
 		got, uniform := frame.Uniform()
 		if !uniform {

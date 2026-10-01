@@ -219,7 +219,7 @@ func (d *drawn) showLocked(colours []colour.Colour, rule devices.Rule) {
 	d.Show(canvas.Show{
 		Effect: pick.effect,
 		Params: render.Params{
-			Colours: d.colours, Colour: pick.style.Colour,
+			Colours: d.colours, Palette: pick.style.Palette(),
 			Speed: pick.style.Speed, Brightness: pick.style.Brightness,
 		},
 		Interval: rule.FrameInterval,
@@ -232,8 +232,10 @@ the wizard and every listing treat it as any other.
 
 One zone, "Keys", with a light per key in the canvas's order. Its modes are
 hotaru's renderers, carrying the flags a firmware mode would: Static takes a
-colour per light, Breathing one colour of its own, and every one a brightness,
-because a brightness is a multiply in the renderer.
+colour per light, Breathing a colour of its own, and every one a brightness,
+because a brightness is a multiply in the renderer. Each says how many
+colours of its own it takes, as a firmware mode does through OpenRGB (spec
+061): none needed, and as many as the renderer draws.
 */
 func (d *drawn) device() devices.Device {
 	keys := d.Keys()
@@ -265,10 +267,13 @@ func (d *drawn) device() devices.Device {
 	out.Canvas = &canvased
 
 	for _, r := range render.Renderers() {
-		mode := devices.Mode{Name: r.Name, PerLED: r.PerLight, Brightness: true, ModeColour: r.OneColour}
+		mode := devices.Mode{
+			Name: r.Name, PerLED: r.PerLight, Brightness: true, ModeColour: r.OneColour, ColoursMax: r.Colours,
+		}
 		current := r.Name == active.effect.Name
-		if r.OneColour && current && active.style.Colour != nil {
-			mode.Colour = *active.style.Colour
+		if palette := active.style.Palette(); r.Colours > 0 && current && len(palette) > 0 {
+			mode.Colours = palette[:min(len(palette), r.Colours)]
+			mode.Colour = mode.Colours[0]
 		}
 		if r.Paced {
 			now := render.DefaultSpeed
