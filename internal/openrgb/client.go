@@ -82,6 +82,15 @@ type Style struct {
 	// Colour is the mode's own colour, for a mode that keeps one.
 	Colour *colour.Colour
 	/*
+		Colours are the mode's own colours where there are several, first to
+		last, and Colour is then their first (spec 061). Nil is one colour or
+		none, as Colour says.
+
+		Two fields rather than one list, because one colour is still the
+		common case and everything that reads back a mode compares the first.
+	*/
+	Colours []colour.Colour
+	/*
 		Speed is in the device's own units, within the range the mode gives.
 
 		Not scaled, and not guessed at: a range is min to max in numbers the
@@ -90,6 +99,50 @@ type Style struct {
 		clamped to the mode's own bounds.
 	*/
 	Speed *int
+}
+
+// Palette is every colour the style names, first to last.
+func (s Style) Palette() []colour.Colour {
+	if len(s.Colours) > 0 {
+		return append([]colour.Colour(nil), s.Colours...)
+	}
+	if s.Colour != nil {
+		return []colour.Colour{*s.Colour}
+	}
+	return nil
+}
+
+/*
+Slots fills a mode's colour slots from the colours asked for.
+
+How many slots is the mode's to say: at least least and at most most, where
+most is above zero. One colour fills every slot the mode has now, have,
+because a device asked for one colour wants all of them that colour rather
+than one set and the rest whatever the vendor left; a stick of RAM whose
+Color Pulse takes exactly two would otherwise pulse between the new colour
+and an old one. Several fill one slot each, and fewer than least repeat the
+last (spec 061 R3.1).
+
+Shared with the fake, so a test of what was written fills the slots the
+same way the hardware path does.
+*/
+func Slots(colours []colour.Colour, have, least, most int) []colour.Colour {
+	if len(colours) == 0 {
+		return nil
+	}
+	n := len(colours)
+	if n == 1 {
+		n = max(n, have)
+	}
+	n = max(n, least, 1)
+	if most > 0 {
+		n = min(n, most)
+	}
+	out := make([]colour.Colour, n)
+	for i := range out {
+		out[i] = colours[min(i, len(colours)-1)]
+	}
+	return out
 }
 
 /*

@@ -362,11 +362,18 @@ func (c *Conn) SetMode(ctx context.Context, device, mode string, style Style) (e
 			a Kraken put into Static displayed NZXT's red while the buffer, and
 			every read-back of it, held purple.
 
-			Only the slots the mode actually has are filled: ModeColorsMin is
-			how many it insists on, and a mode advertising none is left alone.
+			Only the slots the mode allows are filled: ModeColorsMin is how
+			many it insists on and ModeColorsMax how many it takes, and a mode
+			advertising none is left alone. Several colours go one to a slot
+			(spec 061 R3.1).
+
+			The colour mode is set to mode-specific as well. A mode that can
+			also run in random colours and was left in them ignores every
+			slot, and somebody who names colours has answered that question.
 		*/
-		if style.Colour != nil && wanted.ModeFlags&flagHasModeSpecificColor != 0 {
-			wanted.ModeColors = modeColours(m, *style.Colour)
+		if palette := style.Palette(); len(palette) > 0 && wanted.ModeFlags&flagHasModeSpecificColor != 0 {
+			wanted.ModeColors = modeColours(m, palette)
+			wanted.ModeColorMode = colourModeSpecific
 		}
 		req := &sdk.RGBControllerUpdateModeRequest{ModeIdx: int32(i), Mode: &wanted}
 		if err := c.client.RGBControllerUpdateMode(entry.index, req); err != nil {
@@ -510,8 +517,14 @@ func convert(data *sdk.ControllerData) devices.Device {
 				Slowest: int(mode.ModeSpeedMin), Fastest: int(mode.ModeSpeedMax), Now: int(mode.ModeSpeed),
 			}
 		}
-		if m.ModeColour && len(mode.ModeColors) > 0 {
-			m.Colour = colour.Colour{R: mode.ModeColors[0].R, G: mode.ModeColors[0].G, B: mode.ModeColors[0].B}
+		if m.ModeColour {
+			for _, c := range mode.ModeColors {
+				m.Colours = append(m.Colours, colour.Colour{R: c.R, G: c.G, B: c.B})
+			}
+			if len(m.Colours) > 0 {
+				m.Colour = m.Colours[0]
+			}
+			m.ColoursMin, m.ColoursMax = colourSlots(mode)
 		}
 		device.Modes = append(device.Modes, m)
 		if int32(i) == data.ActiveMode {
@@ -577,13 +590,6 @@ func scaleBrightness(percent int, lowest, highest uint32) uint32 {
 }
 
 /*
-modeColours fills a mode's colour slots with one colour.
-
-A mode declares how many it takes. Most take one; a few take several, and a
-device asked for a solid colour wants all of them the same rather than one set
-and the rest whatever they were.
-*/
-/*
 clampSpeed holds a speed inside the range its mode gives.
 
 The bounds can arrive either way round -- OpenRGB has drivers where a smaller
@@ -611,20 +617,36 @@ func clampSpeed(speed int, low, high uint32) uint32 {
 	}
 }
 
-func modeColours(m *sdk.Mode, c colour.Colour) []sdk.Color {
-	n := len(m.ModeColors)
-	if n < int(m.ModeColorsMin) {
-		n = int(m.ModeColorsMin)
-	}
-	if n == 0 {
-		n = 1
-	}
-	if most := int(m.ModeColorsMax); most > 0 && n > most {
-		n = most
-	}
-	out := make([]sdk.Color, n)
-	for i := range out {
+// modeColours is a mode's colour slots, filled as Slots says.
+func modeColours(m *sdk.Mode, colours []colour.Colour) []sdk.Color {
+	filled := Slots(colours, len(m.ModeColors), int(m.ModeColorsMin), int(m.ModeColorsMax))
+	out := make([]sdk.Color, len(filled))
+	for i, c := range filled {
 		out[i] = sdk.Color{R: c.R, G: c.G, B: c.B}
 	}
 	return out
 }
+
+/*
+colourSlots is how many colours of its own a mode takes, as the mode reports
+it.
+
+Read only for a mode with the mode-specific flag, which convert checks first:
+a GPU's Direct reports one and one beside a per-LED colour mode, and offering
+a colour for it would be offering a slot the device does not read.
+
+A mode with the flag that reports a maximum of zero still takes one. None was
+measured (spec 061, Verification), and one is what hotaru has always written
+to such a mode, so the editor keeps offering it.
+*/
+func colourSlots(mode *sdk.Mode) (least, most int) {
+	least, most = int(mode.ModeColorsMin), int(mode.ModeColorsMax)
+	if most == 0 {
+		most = max(1, least, len(mode.ModeColors))
+	}
+	return min(least, most), most
+}
+
+// colourModeSpecific is OpenRGB's MODE_COLORS_MODE_SPECIFIC: the mode shows
+// the colours in its own slots, rather than none, per-LED or random ones.
+const colourModeSpecific = 2
