@@ -60,6 +60,28 @@ type Device struct {
 	*/
 	ModeColour string `json:"mode_colour,omitempty"`
 	Speed      *int   `json:"speed,omitempty"`
+
+	/*
+		ModeColours are every colour a scene named for the mode, where it
+		named several, and ModeColour is then their first (spec 061 R3.2).
+
+		A key of its own rather than a list in mode_colour, so a state file
+		written by this build reads in an older one as the first colour, and
+		one written by an older build reads here unchanged.
+	*/
+	ModeColours []string `json:"mode_colours,omitempty"`
+}
+
+// Named is every colour a scene named for the mode, first to last, from
+// whichever key holds them. Empty is "nobody said".
+func (d Device) Named() []string {
+	if len(d.ModeColours) > 0 {
+		return append([]string(nil), d.ModeColours...)
+	}
+	if d.ModeColour != "" {
+		return []string{d.ModeColour}
+	}
+	return nil
 }
 
 // Frame is the remembered state as a frame.
@@ -185,6 +207,7 @@ func copyOf(in Snapshot) Snapshot {
 			speed := *device.Speed
 			kept.Speed = &speed
 		}
+		kept.ModeColours = append([]string(nil), device.ModeColours...)
 		out.Devices[name] = kept
 	}
 	return out

@@ -110,9 +110,45 @@ type Mode struct {
 	// after a write to a PerLED one.
 	Colour colour.Colour
 
+	// Colours is every colour the mode holds, first to last; Colour is the
+	// first of them. Empty for a device that reports one or none.
+	Colours []colour.Colour
+
+	/*
+		ColoursMin and ColoursMax are how many colours of its own the mode
+		takes (spec 061 R1.3). Zero and zero is a mode that takes none.
+
+		A firmware mode reports them through OpenRGB. On the hardware measured
+		they range from one and one (a board's Static) to one and eight (a
+		cooler's Breathing) and two and two (a stick of RAM that alternates
+		two colours whatever it is sent). A mode hotaru draws declares its own.
+	*/
+	ColoursMin int
+	ColoursMax int
+
 	// Speed is the range this mode runs at, and where in it the mode is now.
 	// Nil for a mode that has no speed, which is most of them.
 	Speed *Speed
+}
+
+/*
+Slots is how many colours of its own the mode takes: at least, and at most.
+
+A mode that carries its own colour and reports no count takes one, which is
+what hotaru has always given such a mode; a test device written before the
+counts were read is the common case of that. A mode that takes a colour per
+LED takes none of its own here, whatever it reports, because its colour is
+the frame.
+*/
+func (m Mode) Slots() (least, most int) {
+	if m.PerLED && !m.ModeColour {
+		return 0, 0
+	}
+	most = m.ColoursMax
+	if most == 0 && m.ModeColour {
+		most = 1
+	}
+	return min(m.ColoursMin, most), most
 }
 
 /*

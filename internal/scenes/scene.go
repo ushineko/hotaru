@@ -218,6 +218,20 @@ says so:
 	    colour: '#0000ff'
 	    speed: 127
 
+A mode that takes several colours -- a firmware Breathing that alternates two,
+a Spectrum hotaru draws through the colours somebody picked -- is given them as
+a list (spec 061):
+
+	effects:
+	  keyboard:
+	    mode: Breathing
+	    colour: '#ff0000'
+	    colours: ['#ff0000', '#0000ff']
+
+The first of them is written as colour as well, so a build from before the
+list reads the scene and runs the effect in its first colour rather than
+refusing the file.
+
 Both forms are read, and the short one is written wherever it is sufficient:
 this file is read by people, and a mode's name is a line rather than a block.
 */
@@ -226,13 +240,32 @@ type Effect struct {
 	Mode string `json:"mode"`
 
 	/*
-		Colour is what a mode that carries its own colour is given.
+		Colour is what a mode that carries its own colour is given, where it is
+		given one.
 
 		Empty is the ordinary case and means the frame decides. A mode that
 		takes a colour per LED ignores this: its colour is the frame, and two
 		answers to one question would make which one won depend on hardware.
+
+		Exactly one of Colour and Colours holds an effect's colours: Colour for
+		one, Colours for several. Read them through Palette and write them
+		through SetPalette, which keep that so; the two fields are the file's
+		shape, not two settings.
 	*/
 	Colour string `json:"colour,omitempty"`
+
+	// Colours are an effect's colours where there are several, in order.
+	Colours []string `json:"colours,omitempty"`
+
+	/*
+		ColoursFrom says where the colours came from, where that matters.
+
+		"picture" is colours hotaru picked from the picture or dashboard a
+		scene was made from (spec 061 R5), which recolouring the scene picks
+		again. Absent is colours somebody chose, which recolouring keeps:
+		a person's choice is not something a new separation should undo.
+	*/
+	ColoursFrom string `json:"colours_from,omitempty"`
 
 	/*
 		Speed is how fast the mode runs, in the device's own units, for a mode
@@ -246,20 +279,63 @@ type Effect struct {
 	Speed *int `json:"speed,omitempty"`
 }
 
+// ColoursFromPicture marks an effect's colours as picked from a picture.
+const ColoursFromPicture = "picture"
+
 // Named reports whether this effect says anything at all. The zero value is a
 // device a scene is silent about, which is not the same as one set to Direct.
 func (e Effect) Named() bool { return e.Mode != "" }
 
+// Palette is every colour the effect names, first to last, whichever field
+// holds them. Empty is the frame deciding.
+func (e Effect) Palette() []string {
+	if len(e.Colours) > 0 {
+		return append([]string(nil), e.Colours...)
+	}
+	if e.Colour != "" {
+		return []string{e.Colour}
+	}
+	return nil
+}
+
+/*
+SetPalette replaces the effect's colours: one goes in Colour and several in
+Colours, so a scene with one colour is written exactly as 0.1.21 wrote it.
+
+Blank entries are dropped rather than kept as slots. A slot with no colour
+has nothing to send, and the device fills it from the last colour anyway.
+*/
+func (e *Effect) SetPalette(colours []string) {
+	var kept []string
+	for _, c := range colours {
+		if c = strings.TrimSpace(c); c != "" {
+			kept = append(kept, c)
+		}
+	}
+	e.Colour, e.Colours = "", nil
+	switch len(kept) {
+	case 0:
+	case 1:
+		e.Colour = kept[0]
+	default:
+		e.Colours = kept
+	}
+}
+
 // bare reports whether the mode's name is the whole of this effect, and so
 // whether it can be written as one.
-func (e Effect) bare() bool { return e.Colour == "" && e.Speed == nil }
+func (e Effect) bare() bool {
+	return e.Colour == "" && len(e.Colours) == 0 && e.ColoursFrom == "" && e.Speed == nil
+}
 
 // effectForm is the long form, as a plain struct: the type itself cannot be
 // marshalled through the codecs without recursing into its own methods.
 type effectForm struct {
-	Mode   string `json:"mode"`
-	Colour string `json:"colour,omitempty"`
-	Speed  *int   `json:"speed,omitempty"`
+	Mode        string   `json:"mode"`
+	Colour      string   `json:"colour,omitempty"`
+	Colours     []string `json:"colours,omitempty"`
+	ColoursFrom string   `json:"colours_from,omitempty"`
+	Speed       *int     `json:"speed,omitempty"`
 }
 
 /*
@@ -267,6 +343,9 @@ MarshalJSON writes the short form where the mode is the whole of the effect.
 
 JSON rather than YAML, and it covers both: the settings codec encodes through
 JSON, so the json tags name the fields in the file as well as on the wire.
+
+Several colours are written as colours and their first as colour too, which
+is what an older build reads (spec 061, Risks).
 */
 func (e Effect) MarshalJSON() ([]byte, error) {
 	var (
@@ -276,7 +355,15 @@ func (e Effect) MarshalJSON() ([]byte, error) {
 	if e.bare() {
 		written, err = json.Marshal(e.Mode)
 	} else {
-		written, err = json.Marshal(effectForm(e))
+		form := effectForm{Mode: e.Mode, ColoursFrom: e.ColoursFrom, Speed: e.Speed}
+		switch palette := e.Palette(); len(palette) {
+		case 0:
+		case 1:
+			form.Colour = palette[0]
+		default:
+			form.Colour, form.Colours = palette[0], palette
+		}
+		written, err = json.Marshal(form)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("write the effect %q: %w", e.Mode, err)
@@ -290,6 +377,9 @@ UnmarshalJSON reads either form.
 The short one first, because every scene written before this spec is in it and
 a file somebody cannot read back is not a file -- see the store, which reports
 a scene it cannot parse rather than replacing it.
+
+Colours, where present, are the colours and colour is only their first, kept
+for older builds; a file that has colour alone is a one-colour effect.
 */
 func (e *Effect) UnmarshalJSON(b []byte) error {
 	var mode string
@@ -300,8 +390,13 @@ func (e *Effect) UnmarshalJSON(b []byte) error {
 
 	var form effectForm
 	if err := json.Unmarshal(b, &form); err != nil {
-		return fmt.Errorf("an effect is a mode's name, or a mode with a colour and a speed: %w", err)
+		return fmt.Errorf("an effect is a mode's name, or a mode with its colours and a speed: %w", err)
 	}
-	*e = Effect(form)
+	*e = Effect{Mode: form.Mode, ColoursFrom: form.ColoursFrom, Speed: form.Speed}
+	if len(form.Colours) > 0 {
+		e.SetPalette(form.Colours)
+	} else {
+		e.SetPalette([]string{form.Colour})
+	}
 	return nil
 }
