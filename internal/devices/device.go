@@ -15,6 +15,7 @@ package devices
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/ushineko/hotaru/internal/colour"
 )
@@ -38,6 +39,43 @@ type Device struct {
 	// composes onto, and the thing reconciliation compares desired state
 	// against.
 	Colours []colour.Colour
+
+	// LEDNames are the device's own names for its lights, in LED order, where
+	// it gives them: a canvas device names its keys. Empty for a device that
+	// does not.
+	LEDNames []string
+
+	/*
+		Canvas is set on a device hotaru draws itself, and says what the
+		drawing is doing (spec 060). Nil for every device OpenRGB drives.
+
+		Such a device's modes are hotaru's renderers rather than firmware
+		modes, and its ActiveMode is the renderer it was last asked for.
+	*/
+	Canvas *Canvas
+
+	/*
+		HandedTo names the canvas device this one is the same hardware as,
+		while that canvas is attached.
+
+		OpenRGB lists the device too, and two programs streaming to one
+		keyboard would alternate frames. hotaru writes nothing to a device
+		handed over, and lists it so a person can see why (spec 060 R1.3).
+	*/
+	HandedTo string
+}
+
+// Canvas is what hotaru's drawing on a canvas device is doing.
+type Canvas struct {
+	// Drawing is an animated effect being streamed. A canvas that is not
+	// drawing is holding the one frame it was sent.
+	Drawing bool
+	// Interval is the time between frames while drawing.
+	Interval time.Duration
+	// Rate is frames sent a second over the last few seconds, while drawing.
+	Rate float64
+	// Frames is every frame sent since the device was attached.
+	Frames int
 }
 
 // Showing is the device's current lighting as a frame, for comparing against

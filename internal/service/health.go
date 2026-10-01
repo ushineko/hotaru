@@ -57,6 +57,10 @@ type Health struct {
 	// user manager at boot is the user's decision, and a program that made it
 	// for them would be the other kind of annoying.
 	Remedies []string
+
+	// Canvases are the devices hotaru draws itself, and what each is doing:
+	// a frame rate while an effect moves, holding while it does not.
+	Canvases []CanvasState
 }
 
 /*
@@ -107,7 +111,7 @@ running" is the same fact, actionable.
 */
 func (s *Service) Health(ctx context.Context) Health {
 	cfg, client, addr := s.current()
-	health := Health{Address: addr}
+	health := Health{Address: addr, Canvases: s.Canvases()}
 
 	if client == nil {
 		health.State = StateUnreachable

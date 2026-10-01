@@ -118,6 +118,11 @@ func (s *Service) Reconcile(ctx context.Context, only []string) (Restore, error)
 			restore.Missing = append(restore.Missing, name)
 			continue
 		}
+		if device.HandedTo != "" {
+			// Recorded before hotaru drew on it, and OpenRGB's no longer: it
+			// is the canvas device that is restored now (spec 060 R1.3).
+			continue
+		}
 
 		/*
 			The mode is restored as well as the colours.
@@ -217,6 +222,11 @@ func (s *Service) ReassertRules(ctx context.Context) (map[string]time.Duration, 
 	}
 	out := map[string]time.Duration{}
 	for _, view := range views {
+		// A canvas holds what it was sent and does not drift, so it is never
+		// re-asserted; its twin is not hotaru's to write (spec 060 R3.6).
+		if view.Device.Canvas != nil || view.Device.HandedTo != "" {
+			continue
+		}
 		if view.InScope && view.Rule.Reassert > 0 {
 			out[view.Device.Name] = view.Rule.Reassert
 		}

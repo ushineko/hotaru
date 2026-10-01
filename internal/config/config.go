@@ -91,6 +91,26 @@ type DeviceRule struct {
 		(spec 043).
 	*/
 	Toggles []string `json:"toggles,omitempty"`
+
+	/*
+		FrameInterval is the time between frames of an animated effect on a
+		device hotaru draws itself (spec 060). Absent is 56 ms, the pace the
+		first such device's own software draws at; a value under the device's
+		floor is raised to the floor.
+	*/
+	FrameInterval Duration `json:"frame_interval,omitempty"`
+
+	/*
+		Twin names the OpenRGB device that is the same hardware as a device
+		hotaru draws itself, matched as a case-insensitive substring of
+		OpenRGB's name for it.
+
+		Needed where OpenRGB's location does not carry the device's hidraw
+		path: OpenRGB records the path when it starts and keeps it after the
+		device re-enumerates on another node. A rule that names the twin is
+		the whole answer for that device, and the location is not consulted.
+	*/
+	Twin string `json:"twin,omitempty"`
 }
 
 // Segment is a named part of a device: a whole zone, or a range within one.
@@ -208,6 +228,10 @@ func decodeRule(i int, raw json.RawMessage) (*DeviceRule, []Problem) {
 	if rule.Reassert < 0 {
 		problems = append(problems, Problem{where, "reassert is negative, ignored"})
 		rule.Reassert = 0
+	}
+	if rule.FrameInterval < 0 {
+		problems = append(problems, Problem{where, "frame_interval is negative, ignored"})
+		rule.FrameInterval = 0
 	}
 
 	for name, segment := range rule.Segments {

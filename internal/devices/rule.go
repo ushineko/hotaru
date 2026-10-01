@@ -1,6 +1,7 @@
 package devices
 
 import (
+	"strings"
 	"time"
 
 	"github.com/ushineko/hotaru/internal/config"
@@ -24,6 +25,10 @@ type Rule struct {
 	// Toggles are the segments that are switches rather than decoration. See
 	// config.DeviceRule.
 	Toggles []string
+	// FrameInterval and Twin are for a device hotaru draws itself. See
+	// config.DeviceRule.
+	FrameInterval time.Duration
+	Twin          string
 }
 
 /*
@@ -71,6 +76,12 @@ func MergeRules(rules []config.DeviceRule) Rule {
 		}
 		if len(r.Toggles) > 0 {
 			out.Toggles = append([]string(nil), r.Toggles...)
+		}
+		if r.FrameInterval > 0 {
+			out.FrameInterval = r.FrameInterval.Duration()
+		}
+		if strings.TrimSpace(r.Twin) != "" {
+			out.Twin = strings.TrimSpace(r.Twin)
 		}
 	}
 	return out
