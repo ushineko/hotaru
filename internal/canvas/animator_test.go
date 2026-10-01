@@ -193,6 +193,24 @@ func TestAnUnacknowledgedFrameIsSaidOnceAndTheStreamCarriesOn(t *testing.T) {
 	}
 }
 
+func TestAnUnacknowledgedStaticFrameIsSentAgainUntilItLands(t *testing.T) {
+	// A static scene has no next tick of its own, so a lost frame is tried
+	// again rather than leaving the device on the scene before it.
+	fake := canvastest.New(4)
+	fake.SilentNext = 2
+	r := start(t, fake)
+	r.anim.Show(show(render.Static, blue(4), 0))
+	require.Eventually(t, func() bool { return r.clock.Running() == 1 }, soon, poll,
+		"no retry was scheduled after the frame went unacknowledged")
+
+	require.True(t, r.clock.Tick(t.Context()))
+	require.True(t, r.clock.Tick(t.Context()))
+	require.Eventually(t, func() bool { return r.canvas.Frames() == 1 }, soon, poll)
+	require.Eventually(t, func() bool { return r.clock.Running() == 0 }, soon, poll,
+		"the retry kept ticking after the frame landed")
+	require.Equal(t, 1, r.reports())
+}
+
 func TestAGoneDeviceEndsTheRun(t *testing.T) {
 	fake := canvastest.New(6)
 	fake.GoneNext = true

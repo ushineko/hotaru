@@ -188,9 +188,11 @@ func spectrum(t time.Duration, keys []lighting.Key, p Params) []lighting.Pixel {
 }
 
 /*
-wave is one rainbow across the lights, moving towards the end of the list.
+wave is one rainbow across the lights, moving left to right across the device.
 
-The hue is set by a light's place in the canvas's order (spec 060 R2.3). After
+The hue is set by a light's place across the device: its column on a
+standard layout when its name says where it is, else its place in the
+canvas's order (positions, spec 060 R2.3). With unnamed lights, after
 1/v seconds every light shows the colour its predecessor showed: that is what
 moving one light per step means, and the shift is worked out in whole
 nanoseconds so that a step lands on exactly one light and not a rounding error
@@ -200,8 +202,9 @@ func wave(t time.Duration, keys []lighting.Key, p Params) []lighting.Pixel {
 	speed := waveSlowest + (waveFastest-waveSlowest)*float64(speedOf(p)-SlowestSpeed)/(FastestSpeed-SlowestSpeed)
 	shift := float64(t.Nanoseconds()) * speed / float64(time.Second)
 	width := float64(max(len(keys), 1))
+	place := positions(keys)
 	return paint(keys, p, func(i int) colour.Colour {
-		at := math.Mod(float64(i)-shift, width)
+		at := math.Mod(place[i]*width-shift, width)
 		if at < 0 {
 			at += width
 		}

@@ -95,8 +95,11 @@ hoped for.
   that need input (reactive, ripple on key press) are out of scope: they read
   the keyboard's events, which is a permissions and privacy question of its
   own.
-- R2.3 Key position for Wave comes from the canvas's key order unless the
-  mapping wizard has recorded a layout. The wizard is not extended here.
+- R2.3 Key position for Wave comes from the key's name on a standard US
+  (ANSI) layout where the name is one the layout knows, and from the canvas's
+  key order otherwise. The wizard is not extended here. (Amended in review:
+  the first canvas lists A to Z and then the digits, so key order alone
+  waved across the alphabet, not the board.)
 - R2.4 Brightness is a multiply in the renderer, as it is in GG. The device
   rule's `Brightness` applies to canvas devices that way.
 
@@ -260,13 +263,16 @@ Run in the worktree on 2026-10-01, no hardware opened:
 
 ### Gaps found
 
-- **Rainbow Wave follows the canvas's key order (R2.3), and on the Apex
-  that order is not a layout.** sanshoku lists the keys in GG's frame order,
-  which is A to Z, the digits, then the rest by HID usage. A wave by that
-  order moves across the board in letter order rather than left to right.
-  The spec accepted key order until the wizard records a layout; the live
-  run decides whether that is good enough or whether a layout is the next
-  spec.
+- **Rainbow Wave by key order crossed the alphabet, not the board.**
+  sanshoku lists the Apex's keys in GG's frame order, A to Z, the digits,
+  then the rest by HID usage. Fixed in review: `internal/render/layout.go`
+  places a key by its name on a standard US layout, and a light whose name
+  the layout does not know keeps its place in the canvas's order. R2.3 is
+  amended.
+- **A static frame that went unacknowledged was never sent again.** A
+  static scene has no ticker, so the board would hold the previous scene.
+  Fixed in review: the animator retries at the show's interval until a frame
+  lands, then stops ticking.
 - **"The scene's interval" (R3.3) has no field in a scene.** It is the
   device rule's `frame_interval`, default 56 ms, never under `Floor()`. A
   per-scene interval would be a field on `scenes.Effect`, and nothing asked

@@ -225,6 +225,9 @@ func (a *Animator) Run(ctx context.Context) error {
 		case err == nil:
 			last = px
 			a.count()
+			if !current.Effect.Animated {
+				stop() // the retry below has landed; the device holds it now
+			}
 		case errors.Is(err, sanshoku.ErrGone):
 			return err
 		case ctx.Err() != nil:
@@ -233,6 +236,15 @@ func (a *Animator) Run(ctx context.Context) error {
 			// Not known to be showing, so the next frame is sent even if it
 			// is the same one.
 			last = nil
+			/*
+				An effect that does not move has no next tick to try again
+				on, and the device would hold the scene before it for good.
+				So it gets one, at the show's interval, until a frame lands.
+			*/
+			if !current.Effect.Animated && ticker == nil {
+				ticker = a.clock.NewTicker(a.interval(current))
+				tick = ticker.C()
+			}
 			if !said {
 				if errors.Is(err, hidraw.ErrSilent) {
 					a.report("a frame was not acknowledged, carrying on: %v", err)
