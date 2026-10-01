@@ -64,6 +64,14 @@ hoped for.
   device's location does not carry it, a config key names the twin
   explicitly. The twin stays visible in `light list` marked as handed to
   the canvas, so the user can see why it is not written.
+  *Amended after measuring (2026-10-01, cachyos):* OpenRGB does report the
+  path (`HID: /dev/hidraw5`), but it is the node OpenRGB found when it
+  started, and it is not updated when the board re-enumerates. The board's
+  0xFFC0 node was `/dev/hidraw4` (input3) at the time and `/dev/hidraw5` no
+  longer existed. So the location match is kept, compared as a whole path,
+  and the config key (`twin` on the canvas device's rule, a substring of
+  OpenRGB's name) is the dependable path. A rule that names a twin decides
+  alone; the location is not consulted for that canvas.
 - R1.4 A canvas device is attached and detached like the cooler (spec 059):
   `attach` with the 1/2/5/15/30 s backoff, an adapter whose `check` closes the
   device once and signals `Gone()` on `sanshoku.ErrGone`, and a new
@@ -148,18 +156,18 @@ hoped for.
 
 ## Acceptance Criteria
 
-- [ ] `make test`, `make lint` and the style and README canaries pass; `make
+- [x] `make test`, `make lint` and the style and README canaries pass; `make
       test` opens no device.
-- [ ] `internal/render` has unit tests per effect as pure functions (a static
+- [x] `internal/render` has unit tests per effect as pure functions (a static
       effect gives the same frame at every t; Breathing at t=0 and at half
       its period; Wave moves by one key per step at a known speed;
       brightness scales every channel), and none of them names a product.
-- [ ] The animator is tested against a fake canvas carrying only measured
+- [x] The animator is tested against a fake canvas carrying only measured
       behaviours (acknowledges, holds the last frame, `ErrSilent`, `ErrGone`):
       a static scene sends exactly one frame; an animated one ticks at the
       configured interval and never under the floor; an identical frame is
       skipped; `ErrGone` ends the attachment and a new one re-applies.
-- [ ] A canvas device's OpenRGB twin receives no write while the canvas is
+- [x] A canvas device's OpenRGB twin receives no write while the canvas is
       attached, tested against `openrgb.Fake` through `Apply`, `Reconcile`
       and reassert.
 - [ ] **Live, on cachyos, with someone watching the Apex:** `hotaru scene
@@ -175,7 +183,7 @@ hoped for.
       hotaru reattaches afterwards without writing to it until a scene asks.
 - [ ] Every other lit device behaves as before (`light list`, a scene apply
       and a reconcile on cachyos and njv-cachyos).
-- [ ] Docs per R7.
+- [x] Docs per R7.
 
 ## Risks & Assumptions
 
@@ -183,6 +191,12 @@ hoped for.
   device's location (hidapi's path on Linux); `light list --json` does not
   show location today, so this is checked first. The config key in R1.3 is
   the fallback, and the spec is amended to whichever was needed.
+  *Measured:* the location carries a path and it goes stale (R1.3). On
+  cachyos the user's rule needs `twin: Apex Pro TKL Gen 3 Wireless` on the
+  rule matching `Apex Pro TKL Wireless Gen 3` until OpenRGB restarts and
+  records the current node. A stale location can also name a node the
+  kernel has since given to another device, which is one more reason the
+  rule wins.
 - **OpenRGB still holds the node.** OpenRGB keeps the keyboard's hidraw
   handle open whether hotaru writes to it or not. Idle, it sends nothing
   (sanshoku E5 measured a clean stream beside it); a profile applied by
@@ -217,4 +231,69 @@ because effects are a product decision and sanshoku is device access.
 
 ## Verification
 
-To be filled.
+The live criteria (watching the Apex, the reattach after an OpenRGB restart,
+the CPU and battery measurements of R6, release on the board, and every other
+device on cachyos and njv-cachyos) are for the live run and are not recorded
+yet.
+
+### Checks
+
+Run in the worktree on 2026-10-01, no hardware opened:
+
+- `make test`: every package passes, including `internal/render`,
+  `internal/canvas`, the canvas tests in `internal/service`,
+  `internal/daemon`, `internal/cli` and `internal/gui`, and the style and
+  README canaries at the root.
+- `go test -race ./internal/canvas/... ./internal/service/ ./internal/daemon/
+  ./internal/render/`: pass.
+- `go test -tags migrated_fynedo ./internal/gui/`: pass.
+- `make lint` (golangci-lint v2.12.2): 0 issues.
+- `go vet ./...`: clean.
+- `make generate`, then the stale diagram images pruned: the architecture
+  diagram is rendered.
+- `make build`, `make gui`, and `CGO_ENABLED=0 go build ./cmd/hotaru`:
+  build.
+- The OpenRGB location reading in R1.3: a read-only listing over the SDK on
+  cachyos (no mode or colour set, no service touched), beside
+  `/sys/class/hidraw/*/device/uevent` and the first bytes of each node's
+  report descriptor.
+
+### Gaps found
+
+- **Rainbow Wave follows the canvas's key order (R2.3), and on the Apex
+  that order is not a layout.** sanshoku lists the keys in GG's frame order,
+  which is A to Z, the digits, then the rest by HID usage. A wave by that
+  order moves across the board in letter order rather than left to right.
+  The spec accepted key order until the wizard records a layout; the live
+  run decides whether that is good enough or whether a layout is the next
+  spec.
+- **"The scene's interval" (R3.3) has no field in a scene.** It is the
+  device rule's `frame_interval`, default 56 ms, never under `Floor()`. A
+  per-scene interval would be a field on `scenes.Effect`, and nothing asked
+  for one.
+- **A canvas device is listed only while the OpenRGB server is connected.**
+  Every service operation starts from the OpenRGB client, and a canvas device
+  is listed beside it. OpenRGB's exit reboots the Apex anyway, so the canvas
+  is not usable without the server today; a canvas without OpenRGB is a
+  separate change to how the service reports an unreachable server.
+- **Off is a renderer.** R2.2 lists four effects; Off (one black frame) is a
+  fifth mode so that `light off` and an Off scene reach a canvas device
+  through the ordinary off path. `never_blank` applies to it as to any
+  device.
+- **An apply reports a canvas device as applied when the animator has the
+  frame**, not when the board acknowledges it. The animator is the only
+  writer and sends asynchronously; an unacknowledged frame is logged once per
+  run, and `ErrGone` ends the attachment and the reattachment puts the scene
+  back.
+- **A holding canvas sends nothing, so it cannot see `ErrGone`.** The daemon
+  reads `/sys/class/hidraw/<node>/device` every two seconds and compares the
+  kernel's HID device name (`0003:VVVV:PPPP.NNNN`), whose sequence number
+  moves on every enumeration even when the node path comes back the same.
+  That is how a board rebooted by OpenRGB's exit is reattached while showing
+  a static scene.
+- **`light health`'s stale verdict (spec 058) may name the twin**, because
+  OpenRGB does hold a descriptor for a node the kernel removed. That is true
+  of OpenRGB and harmless to hotaru, which no longer writes to the twin; it
+  is left as it is.
+- **The user's OpenRGB "purp" profile** is not touched; docs/hardware.md says
+  to leave the keyboard out of any profile applied at login.

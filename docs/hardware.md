@@ -20,6 +20,11 @@ short device list rather than a borrowed one. See
 `nzxt` package of [sanshoku](https://github.com/ushineko/sanshoku), which was
 hotaru's own code until spec 059.
 
+A *canvas device* is the second exception. It has no lighting effects of its
+own, so hotaru draws them and streams the frames through sanshoku. The first
+canvas device is the SteelSeries Apex Pro TKL Wireless Gen 3. See
+[spec 060](../specs/060-effects-hotaru-draws.md) and "Canvas devices" below.
+
 ## Tested
 
 "Works" here means observed on the hardware. It does not mean inferred from a
@@ -152,11 +157,53 @@ present. NVIDIA's own driver registers no hwmon, so that card's number comes
 from `nvidia-smi`. This is why `nvidia-utils` is an `optdepends` rather than a
 dependency: a machine without it shows a placeholder rather than an error.
 
+**Canvas devices: hotaru itself, through sanshoku.** The Apex Pro TKL Wireless
+Gen 3 offers OpenRGB two modes, Direct and Onboard, and no command on the
+board changes its effect. SteelSeries GG draws every effect on the PC and
+streams it as frames, and the board holds the last frame it was sent.
+sanshoku's `steelseries` driver sends those frames, and each one is
+acknowledged. hotaru lists the board as a device whose modes are its own
+renderers: Static, Breathing, Spectrum, Rainbow Wave and Off. A scene names
+them as it names any firmware mode.
+
+- **A scene that does not move is one frame.** Static, a solid colour and Off
+  send one frame, and then nothing.
+- **A moving effect is a stream.** It sends a frame every 56 ms, the pace GG
+  uses, and the board's floor is 16 ms. A `frame_interval` rule changes the
+  pace for one device. Through the wireless receiver, a stream spends the
+  battery faster than a scene that does not move.
+- **Stopping hotaru leaves the last frame showing.** `hotaru light release
+  <device>` hands the lighting back to the firmware. On the Apex that reboots
+  the board, which then shows its onboard effect. hotaru attaches it again
+  and sends it nothing until a scene asks.
+- **OpenRGB's exit reboots the board.** hotaru notices within two seconds,
+  attaches the board again and puts the scene back.
+- **OpenRGB still lists the board.** hotaru calls that listing the board's
+  *twin*, writes nothing to it, and shows it as handed over in `hotaru light
+  list`. The twin is found by the hidraw path in OpenRGB's location. OpenRGB
+  records that path when it starts and keeps it after the board moves to
+  another node. On 2026-10-01 it listed the board at `/dev/hidraw5` after the
+  board had moved to `/dev/hidraw4`. A rule names the twin where the path does
+  not match:
+
+```yaml
+devices:
+  - match: Apex Pro TKL Wireless Gen 3     # the kernel's name: the canvas device
+    twin: Apex Pro TKL Gen 3 Wireless      # OpenRGB's name for the same board
+```
+
+- **An OpenRGB profile can still write to the board.** A profile applied at
+  login that includes the keyboard sets OpenRGB's Direct mode, and two
+  programs then send it frames in turn. Leave the keyboard out of any such
+  profile. hotaru does not edit OpenRGB profiles.
+
 **Permissions.** Both cooler nodes need a udev rule that tags the device
 `uaccess`: the `/dev/hidraw*` node, and the `/dev/bus/usb/BBB/DDD` node behind
 which the panel's bulk endpoint lives. Without that rule `systemd-logind` puts
 no ACL on them, and hotaru finds a cooler it cannot open. The package ships the
-rule. See [docs/packaging.md](packaging.md).
+rule. See [docs/packaging.md](packaging.md). A canvas device needs the same
+tag on its hidraw node, and the package's rule covers every SteelSeries
+device.
 
 `uaccess` grants that ACL to an **active seat session**, not to the user
 manager that `enable-linger` starts at boot. hotaru therefore starts before
@@ -186,6 +233,7 @@ hotaru light list             # what hotaru sees, with modes and scope
 hotaru light health           # why, if it sees nothing
 hotaru light probe            # what each device can actually do
 hotaru cooling                # the cooler, or the fact that there is not one
+hotaru light release apex     # a canvas device's own lighting back
 ```
 
 If `hotaru light list` shows nothing while `openrgb --list-devices` shows

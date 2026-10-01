@@ -35,17 +35,20 @@ flowchart TB
         STATE["Desired state<br/>one frame per device + LCD<br/>preview leases held apart"]
         RECON["Reconcilers<br/>reassert per device rule<br/>dashboard render + push gate<br/>LCD keepalive"]
         MBOX["Per-device mailboxes<br/>one goroutine each<br/>single slot: latest frame wins"]
+        ANIM["Animators<br/>one per canvas device<br/>one frame, or a stream at 56 ms"]
         CFG["Config + state<br/>hotaru.yml (user, read-only)<br/>scenes.yml · state.yml"]
     end
 
     subgraph backends["Backends"]
         ORGB["OpenRGB server<br/>SDK protocol, TCP 6742<br/>systemd --user, enumeration gate"]
         COOL["Cooler · sanshoku nzxt driver<br/>/dev/hidraw + usbfs<br/>NZXT protocol, no cgo"]
+        CANV["Canvas devices · sanshoku lighting.Canvas<br/>/dev/hidraw<br/>acknowledged frames"]
         HWMON["Kernel sensors<br/>/sys/class/hwmon by label<br/>nvidia-smi where there is none"]
     end
 
     subgraph hw["Hardware"]
         LIT["Lit devices<br/>Kraken · GPU · Aura · MM700 · G502 · Keychron"]
+        KEYS["Apex Pro TKL Wireless Gen 3<br/>no effects of its own"]
         LCD["Kraken LCD<br/>640x640, GIF only"]
         TELEM["Cooler telemetry<br/>coolant · pump · fans"]
         TEMP["CPU package · GPU"]
@@ -69,11 +72,14 @@ flowchart TB
     CORE --> MBOX
 
     MBOX -->|"mode + frame<br/>per zone / per LED"| ORGB
+    MBOX -->|"renderer + frame"| ANIM
+    ANIM -->|"frames, identical ones skipped"| CANV
     RECON -->|"dashboard frames<br/>hash gate + size floor"| COOL
     CORE -->|"status, coalesced"| COOL
     CORE -->|"package + card temps"| HWMON
 
     ORGB --> LIT
+    CANV --> KEYS
     COOL --> LCD
     COOL --> TELEM
     HWMON --> TEMP
@@ -87,9 +93,9 @@ flowchart TB
     classDef future fill:#1d1f22,stroke:#a1a9b1,stroke-dasharray:5 5,color:#a1a9b1
     classDef entry fill:#292c30,stroke:#3c4045,color:#fcfcfc
 
-    class DBUS,API,CORE,STATE,RECON,MBOX,CFG svcnode
-    class ORGB,COOL,HWMON backend
-    class LIT,LCD,TELEM,TEMP hwnode
+    class DBUS,API,CORE,STATE,RECON,MBOX,ANIM,CFG svcnode
+    class ORGB,COOL,CANV,HWMON backend
+    class LIT,KEYS,LCD,TELEM,TEMP hwnode
     class KEY,GUI,CLI,KWIN entry
     class DEV future
     class FUTURE,PBM future
@@ -230,6 +236,33 @@ them.
   is the `nzxt` package of [sanshoku](https://github.com/ushineko/sanshoku),
   which hayami also uses. `internal/cooler` adapts it to the service (spec 059).
   A cooler that goes away is let go and waited for again.
+- **Effects hotaru draws.** Most lit devices carry their effects in
+  firmware. A *canvas device* has none: its vendor's software draws every
+  effect on the host and streams frames to it. The first is the Apex Pro TKL
+  Wireless Gen 3. hotaru finds canvas devices through sanshoku's
+  `lighting.Canvas` and lists each one as a device. Its modes are hotaru's
+  *renderers* (Static, Breathing, Spectrum, Rainbow Wave, Off), which
+  `internal/render` draws as pure functions of time. Scenes, targets and the
+  wizard reach a canvas device through the same write path as an OpenRGB
+  device (spec 060).
+- **One animator per canvas device.** The animator is the only writer to
+  its device. A scene that does not move is one frame, because the device
+  holds its last frame. A moving effect sends a frame every 56 ms, the pace
+  of the vendor's own software, and never faster than the device's floor. A
+  frame identical to the last one is not sent. Stopping the service sends
+  nothing, and the device keeps its last frame. `hotaru light release`
+  hands the lighting back to the firmware, and that is the only call that
+  does.
+- **One writer per keyboard.** OpenRGB lists the same keyboard as a device of
+  its own, its *twin*. While the canvas device is attached, hotaru writes
+  nothing to the twin and lists it as handed over. A twin is found by its
+  OpenRGB location, which carries the hidraw path. OpenRGB keeps the path it
+  found at start after the keyboard moves to another node, so a `twin` rule
+  can name it instead.
+- **A canvas device comes and goes.** OpenRGB's exit reboots the Apex. The
+  daemon attaches canvas devices as it attaches the cooler, with the same
+  backoff, and checks every two seconds that the node is the one it opened.
+  A new attachment puts back the scene that was last applied.
 - **One writer per file.** The rules belong to the user, and hotaru never
   rewrites them. hotaru writes the scenes, because the window edits them.
   Desired state lives outside the config directory. The window's own file
