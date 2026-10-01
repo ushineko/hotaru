@@ -2,7 +2,7 @@
 
 *lights, cooler, action!*
 
-**Version**: 0.1.19
+**Version**: 0.1.20
 
 RGB lighting and AIO cooler control for Linux, as a CLI, a user service and a
 desktop GUI. 
@@ -221,7 +221,7 @@ MIT. See [LICENSE](LICENSE).
 
 ## Changelog
 
-### Unreleased
+### 0.1.20 (2026-10-01)
 
 - Effects hotaru draws itself, for a keyboard that has none of its own. The
   SteelSeries Apex Pro TKL Wireless Gen 3 offers OpenRGB two modes, Direct
