@@ -4,6 +4,25 @@
 
 ## Status: INCOMPLETE
 
+Every criterion is met except R6.2, the battery comparison, which was still
+running when 0.1.20 was released. Its result is added here when it ends.
+
+## Executive Summary
+
+hotaru draws effects itself on any device that offers sanshoku's
+`lighting.Canvas`, and the SteelSeries Apex Pro TKL Wireless Gen 3 is the
+first: Static, Breathing, Spectrum and Rainbow Wave, set from scenes like any
+firmware mode. The keyboard's OpenRGB listing is left alone while hotaru
+draws it. A static scene is one frame; an animated one costs about 1.2% of
+one core at the default 56 ms (measured). Nothing in the renderer, animator
+or device model names a product, so the next canvas device (the Kraken
+capture may produce one) plugs in unchanged.
+
+Look first at `internal/canvas/animator.go` (the one writer per device, what
+it sends and when) and `internal/service/canvas.go` (`twinOf` and the
+canvas-aware client), then at the Gaps found, which record five things the
+live run corrected.
+
 ## Context
 
 Every effect hotaru offers today is a firmware mode: a scene names "Breathing"
@@ -174,7 +193,7 @@ hoped for.
 - [x] A canvas device's OpenRGB twin receives no write while the canvas is
       attached, tested against `openrgb.Fake` through `Apply`, `Reconcile`
       and reassert.
-- [ ] **Live, on cachyos, with someone watching the Apex:** `hotaru scene
+- [x] **Live, on cachyos, with someone watching the Apex:** `hotaru scene
       apply` of a scene with Breathing and then Rainbow Wave on the Apex
       shows both. A static scene shows and the stream stops (frames counted
       on the canvas: one). Restarting OpenRGB reboots the board and hotaru
@@ -182,10 +201,11 @@ hoped for.
       integration-boundary criterion: a real keyboard through sanshoku.
 - [ ] R6.1 and R6.2 are measured and in Verification. A static scene costs no
       CPU above the no-scene baseline, and the stream's CPU at the default
-      interval is reported as a number.
-- [ ] `hotaru light release` hands the Apex back to its onboard effect and
+      interval is reported as a number. (R6.1 done; R6.2's four-hour battery
+      run was still going at release, so this stays open.)
+- [x] `hotaru light release` hands the Apex back to its onboard effect and
       hotaru reattaches afterwards without writing to it until a scene asks.
-- [ ] Every other lit device behaves as before (`light list`, a scene apply
+- [x] Every other lit device behaves as before (`light list`, a scene apply
       and a reconcile on cachyos and njv-cachyos).
 - [x] Docs per R7.
 
@@ -235,10 +255,50 @@ because effects are a product decision and sanshoku is device access.
 
 ## Verification
 
-The live criteria (watching the Apex, the reattach after an OpenRGB restart,
-the CPU and battery measurements of R6, release on the board, and every other
-device on cachyos and njv-cachyos) are for the live run and are not recorded
-yet.
+### The live run
+
+On cachyos on 2026-10-01, the Apex on its cable and then its receiver, the
+user watching the board. The service ran the branch's build through a
+user-unit drop-in; the twin needed the `twin:` rule because OpenRGB's
+location was stale (`HID: /dev/hidraw5`, board at `/dev/hidraw4`).
+
+- `scene apply apex-static`: the board went purple; `light list` read
+  "Static, holding".
+- `apex-breathe`: purple breathing at 17.5 fps. `apex-spectrum`: the whole
+  board cycling, 17.9 fps. `apex-wave`: a rainbow moving left to right across
+  the board, 17.9 fps (after the layout fix in Gaps found).
+- OpenRGB restarted with the wave running: the board rebooted, hotaru saw it
+  go, reattached it at `/dev/hidraw5` and the wave was back about four
+  seconds after the restart. On another restart the board did not reboot
+  and one frame timed out; the stream carried on.
+- `light release apex`: the board rebooted to its onboard rainbow and hotaru
+  reattached it holding, with nothing drawn, until a scene was applied. On
+  the receiver, after the fix in Gaps found, it reattached in eight seconds.
+- Other devices: on cachyos every OpenRGB device was restored after each
+  restart. On njv-cachyos (no canvas device; the Arctis base station is a
+  SteelSeries device and was correctly not taken as one) the build restored
+  all six devices, kept the Keychron's reactive mode, and read the Kraken.
+
+### Cost (R6.1)
+
+hotaru's whole process, from `/proc/<pid>/stat`, 10 minutes each, the Apex
+on its receiver:
+
+| State | CPU, one core | Frame rate |
+|---|---|---|
+| A: no scene on the Apex | 0.100% | holding |
+| B: `apex-static` | 0.105% | holding |
+| C: `apex-wave`, default interval | 1.198% | 17.8 fps |
+| D: `apex-wave`, `frame_interval: 16ms` | 2.117% | 54.8 fps |
+
+A static scene costs three ticks in ten minutes over the baseline: nothing
+measurable.
+
+### Battery (R6.2)
+
+Running at release: two hours of `apex-wave` through the receiver from
+14:06, then two hours of `apex-static`, starting from 100%. The wave was
+interrupted for about a minute in total by redeploys at 14:07 and 14:11.
 
 ### Checks
 
