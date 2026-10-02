@@ -2,7 +2,7 @@
 
 *lights, cooler, action!*
 
-**Version**: 0.1.21
+**Version**: 0.1.22
 
 RGB lighting and AIO cooler control for Linux, as a CLI, a user service and a
 desktop GUI. 
@@ -221,7 +221,7 @@ MIT. See [LICENSE](LICENSE).
 
 ## Changelog
 
-### Unreleased
+### 0.1.22 (2026-10-01)
 
 - Every mode its colours. A scene's effect carries a list of colours, and
   each mode says how many it takes: a firmware mode as OpenRGB reports it
