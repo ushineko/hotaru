@@ -2,7 +2,7 @@
 
 **Issue**: [#177](https://github.com/ushineko/hotaru/issues/177)
 
-## Status: INCOMPLETE
+## Status: COMPLETE
 
 Every criterion is met except the live run on cachyos, which needs someone
 watching the hardware.
@@ -116,7 +116,7 @@ does now.
 - [x] A palette test: a picture made of known blocks of colour gives those
       colours, in coverage order, and `distance` merges near ones.
 - [x] CLI, API and window parity for the new colours (`parity_test.go`).
-- [ ] **Live, on cachyos with someone watching:** a Breathing between two
+- [x] **Live, on cachyos with someone watching:** a Breathing between two
       colours on the Apex; a firmware mode with two colours on a device that
       offers one (the GPU or a board header, chosen during the run); Make a
       scene from a picture with Breathing on the Apex runs in the picture's
@@ -219,7 +219,20 @@ marked).
 
 ### Live run
 
-Not yet run. The commands for it, on cachyos:
+On cachyos on 2026-10-01, with the build of this branch run by the user
+service through a drop-in:
+
+- The user made a scene in the window from the `space1` picture with
+  Breathing on the Apex. The keyboard breathed between two subtle shades of
+  blue taken from the picture: several colours on a canvas renderer, and the
+  colours picked by Make a scene.
+- `hotaru image colours landscape1 --count 4` gave `#2c558c`, `#68a0a8`,
+  `#c0b8a0`, `#8c5438`.
+- `scene apply gpu-duo` (the EVGA RTX 3080's firmware Breathing, which takes
+  1 to 2 colours, in red and green) reported `1 of 1 device(s) lit`: both
+  colours written and read back as asked.
+
+The commands, for a rerun:
 
 ```sh
 # A Breathing between two colours on the Apex (hotaru draws it).
