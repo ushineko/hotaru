@@ -35,31 +35,16 @@ with a different image on its screen is two themes at once.
 each light should be and nothing about what a device should be *doing* with
 it, so a keyboard asked to run a rainbow is a decision somebody makes here.
 Nothing is the default, which leaves every device lit with the colours it was
-given.
+given. An effect the caller chose and gave no colours runs in the picture's
+(see representative).
 */
 func (s *Service) SceneFromImage(
 	ctx context.Context, picture, name string, distance float64, effects map[string]scenes.Effect,
 ) (scenes.Scene, error) {
-	library, err := s.library()
+	found, err := s.storedPicture(picture)
 	if err != nil {
 		return scenes.Scene{}, err
 	}
-	stored, err := library.All()
-	if err != nil {
-		return scenes.Scene{}, err
-	}
-
-	var found images.Image
-	for _, image := range stored {
-		if image.Name == picture {
-			found = image
-			break
-		}
-	}
-	if found.Name == "" {
-		return scenes.Scene{}, fmt.Errorf("no picture called %q", picture)
-	}
-
 	decoded, err := images.First(found.Path)
 	if err != nil {
 		return scenes.Scene{}, err
@@ -68,6 +53,33 @@ func (s *Service) SceneFromImage(
 	return s.painted(ctx, scenes.Scene{
 		Name: name, Screen: found.Path, Distance: distance, Effects: effects,
 	}, decoded)
+}
+
+// storedPicture is a picture in the library by name.
+func (s *Service) storedPicture(picture string) (images.Image, error) {
+	library, err := s.library()
+	if err != nil {
+		return images.Image{}, err
+	}
+	stored, err := library.All()
+	if err != nil {
+		return images.Image{}, err
+	}
+	for _, image := range stored {
+		if image.Name == picture {
+			return image, nil
+		}
+	}
+	return images.Image{}, fmt.Errorf("no picture called %q", picture)
+}
+
+// pictureNamed is a stored picture's first frame.
+func (s *Service) pictureNamed(picture string) (image.Image, error) {
+	found, err := s.storedPicture(picture)
+	if err != nil {
+		return nil, err
+	}
+	return images.First(found.Path) //nolint:wrapcheck // First names the file
 }
 
 /*
@@ -90,19 +102,33 @@ func (s *Service) SceneFromDashboard(
 	if err != nil {
 		return scenes.Scene{}, err
 	}
-	frame, err := s.RenderDashboard(ctx, one)
+	decoded, err := s.dashboardFrame(ctx, one.Name)
 	if err != nil {
 		return scenes.Scene{}, err
-	}
-	decoded, err := gif.Decode(bytes.NewReader(frame))
-	if err != nil {
-		return scenes.Scene{}, fmt.Errorf("read the dashboard's own frame: %w", err)
 	}
 
 	return s.painted(ctx, scenes.Scene{
 		Name: name, Screen: scenes.ScreenDashboardPrefix + one.Name, Distance: distance,
 		Effects: effects,
 	}, decoded)
+}
+
+// dashboardFrame is the frame the panel would draw for a dashboard, as a
+// picture.
+func (s *Service) dashboardFrame(ctx context.Context, board string) (image.Image, error) {
+	one, err := s.Dashboard(board)
+	if err != nil {
+		return nil, err
+	}
+	frame, err := s.RenderDashboard(ctx, one)
+	if err != nil {
+		return nil, err
+	}
+	decoded, err := gif.Decode(bytes.NewReader(frame))
+	if err != nil {
+		return nil, fmt.Errorf("read the dashboard's own frame: %w", err)
+	}
+	return decoded, nil
 }
 
 /*
@@ -153,7 +179,7 @@ func (s *Service) painted(ctx context.Context, scene scenes.Scene, picture image
 		return scenes.Scene{}, err
 	}
 	scene.Assignments = assignments
-	scene = s.representative(ctx, scene)
+	scene = s.representative(ctx, scene, picture)
 
 	if err := s.SaveScene(ctx, scene); err != nil {
 		return scenes.Scene{}, err
@@ -302,24 +328,30 @@ func written(c color.NRGBA) string {
 }
 
 /*
-representative gives a one-colour effect the colour of what the picture put on
-that device.
+representative gives an effect that takes colours of its own the picture's
+colours (spec 061 R5).
 
 A picture answers "what colour is each light", and a device running a mode
-that shows one colour cannot use that answer: it would be lit in whatever the
-frame reduces to at the write, which is the same number arrived at later and
-invisible in the scene until then. So the reduction is done here and written
-down, where somebody can see it and change it.
+that shows colours of its own cannot use that answer: it would be lit in
+whatever the frame reduces to at the write, which is the same number arrived
+at later and invisible in the scene until then. So the colours are picked here
+and written down, where somebody can see them and change them.
 
-Only where the scene does not already name one, and only for a mode that
-cannot take a colour per LED: a device in Direct is painted light by light and
-has nothing to reduce.
+**The picture's most prominent colours, as many as the mode takes up to
+four**, ordered by how much of the picture each covers (images.Palette). A
+Breathing between two colours on a sunset is the sunset's two colours. The
+scene's distance decides what counts as two.
+
+Only where the scene does not already name them, or where the colours it names
+were picked here before (colours_from: picture), so recolouring picks again
+and a colour somebody chose is kept. Only for a mode that cannot take a colour
+per LED: a device in Direct is painted light by light and has nothing to pick.
 
 An unreachable server or a device that is not there leaves the scene as it is.
 The colours are still what the picture said, and the effect still has spec
 050's fallback underneath it -- this is a better answer, not a required one.
 */
-func (s *Service) representative(ctx context.Context, scene scenes.Scene) scenes.Scene {
+func (s *Service) representative(ctx context.Context, scene scenes.Scene, picture image.Image) scenes.Scene {
 	if len(scene.Effects) == 0 {
 		return scene
 	}
@@ -332,12 +364,13 @@ func (s *Service) representative(ctx context.Context, scene scenes.Scene) scenes
 		return scene
 	}
 
-	resolved, _ := scene.Resolve()
-	cfg := s.config()
 	out := cloneEffects(scene.Effects)
 	for name, effect := range scene.Effects {
-		if !effect.Named() || effect.Colour != "" {
+		if !effect.Named() {
 			continue
+		}
+		if len(effect.Palette()) > 0 && effect.ColoursFrom != scenes.ColoursFromPicture {
+			continue // somebody chose these
 		}
 		for i := range found {
 			device := &found[i]
@@ -348,12 +381,9 @@ func (s *Service) representative(ctx context.Context, scene scenes.Scene) scenes
 			if !ok || mode.PerLED {
 				break
 			}
-			// Nothing underneath: the picture gave every light a colour, so a
-			// remembered frame is not what this device is being asked to show.
-			frame, _ := devices.Compose(device, devices.RuleFor(cfg, device.Name), nil,
-				forDevice(resolved, device.Name))
-			if dominant, has := frame.Dominant(); has {
-				effect.Colour = dominant.String()
+			if picked := pickedColours(picture, mode, scene.Distance); len(picked) > 0 {
+				effect.SetPalette(picked)
+				effect.ColoursFrom = scenes.ColoursFromPicture
 				out[name] = effect
 			}
 			break
@@ -361,4 +391,53 @@ func (s *Service) representative(ctx context.Context, scene scenes.Scene) scenes
 	}
 	scene.Effects = out
 	return scene
+}
+
+// mostPicked is as many colours as Make a scene picks for one effect, however
+// many the mode takes. Past four a picture's colours are mostly shades of its
+// first few, and a Spectrum through eight of them reads as one colour drifting.
+const mostPicked = 4
+
+// pickedColours is the picture's colours for one mode, as a scene writes them.
+func pickedColours(picture image.Image, mode devices.Mode, distance float64) []string {
+	_, most := mode.Slots()
+	var out []string
+	for _, c := range images.Palette(picture, min(most, mostPicked), distance) {
+		out = append(out, written(c))
+	}
+	return out
+}
+
+/*
+Picked is the colours Make a scene would give an effect that takes up to n,
+from a stored picture, without making anything (spec 061 R5.3).
+
+What the window shows before somebody presses Make it, and what it shows is
+what the scene then gets: the same picture, the same distance and the same
+function.
+*/
+func (s *Service) Picked(picture string, n int, distance float64) ([]string, error) {
+	decoded, err := s.pictureNamed(picture)
+	if err != nil {
+		return nil, err
+	}
+	return pickedFrom(decoded, n, distance), nil
+}
+
+// PickedFromDashboard is Picked for a dashboard, from the frame the panel
+// would draw.
+func (s *Service) PickedFromDashboard(ctx context.Context, board string, n int, distance float64) ([]string, error) {
+	decoded, err := s.dashboardFrame(ctx, board)
+	if err != nil {
+		return nil, err
+	}
+	return pickedFrom(decoded, n, distance), nil
+}
+
+func pickedFrom(picture image.Image, n int, distance float64) []string {
+	var out []string
+	for _, c := range images.Palette(picture, min(max(n, 1), mostPicked), distance) {
+		out = append(out, written(c))
+	}
+	return out
 }

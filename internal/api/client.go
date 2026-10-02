@@ -569,6 +569,25 @@ func (c *Client) SceneFromDashboard(
 	return out, err
 }
 
+// PickColours is the colours Make a scene would give an effect that takes
+// count of them, from a stored picture, without making anything.
+func (c *Client) PickColours(ctx context.Context, picture string, count int, distance float64) ([]string, error) {
+	var out PickColoursResponse
+	err := c.do(ctx, http.MethodPost,
+		"/"+Version+"/images/"+url.PathEscape(picture)+"/colours",
+		PickColoursRequest{Count: count, Distance: distance}, &out)
+	return out.Colours, err
+}
+
+// PickDashboardColours is PickColours for what a dashboard draws.
+func (c *Client) PickDashboardColours(ctx context.Context, board string, count int, distance float64) ([]string, error) {
+	var out PickColoursResponse
+	err := c.do(ctx, http.MethodPost,
+		"/"+Version+"/dashboards/"+url.PathEscape(board)+"/colours",
+		PickColoursRequest{Count: count, Distance: distance}, &out)
+	return out.Colours, err
+}
+
 // Recolour builds a scene's lights again from whatever it shows, at a
 // different separation.
 func (c *Client) Recolour(ctx context.Context, scene string, distance float64) (Scene, error) {

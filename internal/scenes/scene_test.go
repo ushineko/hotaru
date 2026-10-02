@@ -276,3 +276,86 @@ func TestSomethingThatIsNeitherFormSaysWhatAnEffectIs(t *testing.T) {
 	err := json.Unmarshal([]byte(`[1,2,3]`), &effect)
 	require.ErrorContains(t, err, "a mode's name")
 }
+
+/*
+A scenes file as 0.1.21 wrote it reads and writes back byte for byte.
+
+Spec 061 adds colours to an effect, and the one promise it makes about the
+file is that a scene nobody touches does not change: an effect named on its
+own, one with a colour and a speed, a scene built from a picture.
+*/
+func TestASceneFileFrom0121RoundTripsUnchanged(t *testing.T) {
+	const written = `scenes:
+  evening:
+    assignments:
+      - colour: '#8000ff'
+        target: kraken
+    effects:
+      keychron: Solid Splash
+      mouse:
+        colour: '#0000ff'
+        mode: Breathing
+        speed: 3
+    screen: dashboard
+  wallpaper:
+    assignments:
+      - colour: '#ff2000'
+        target: kraken/ring[0:11]
+    distance: 1.5
+    effects:
+      board:
+        colour: '#ff2000'
+        mode: Static
+    screen: /pictures/sunset.gif
+`
+	path := filepath.Join(t.TempDir(), "scenes.yml")
+	require.NoError(t, os.WriteFile(path, []byte(written), 0o600))
+
+	first, err := scenes.Open(path)
+	require.NoError(t, err)
+	scene, err := first.Get("evening")
+	require.NoError(t, err)
+	require.Equal(t, []string{"#0000ff"}, scene.Effects["mouse"].Palette())
+	require.Empty(t, scene.Effects["mouse"].Colours, "one colour is still the one-colour form")
+
+	// Saved again, as the window does with a scene it did not change.
+	require.NoError(t, first.Save(scene))
+	again, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.Equal(t, written, string(again))
+}
+
+func TestSeveralColoursAreWrittenAsAListWithTheFirstForOlderBuilds(t *testing.T) {
+	var effect scenes.Effect
+	effect.Mode = "Breathing"
+	effect.SetPalette([]string{"#ff0000", "#0000ff"})
+	written, err := json.Marshal(effect)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"mode":"Breathing","colour":"#ff0000","colours":["#ff0000","#0000ff"]}`, string(written))
+
+	var back scenes.Effect
+	require.NoError(t, json.Unmarshal(written, &back))
+	require.Equal(t, []string{"#ff0000", "#0000ff"}, back.Palette())
+	require.Equal(t, effect, back)
+}
+
+func TestOneColourInAListIsTheOneColourForm(t *testing.T) {
+	var effect scenes.Effect
+	require.NoError(t, json.Unmarshal([]byte(`{"mode":"Breathing","colours":["#00ff00"]}`), &effect))
+	require.Equal(t, "#00ff00", effect.Colour)
+	require.Empty(t, effect.Colours)
+}
+
+func TestPickedColoursSayWhereTheyCameFrom(t *testing.T) {
+	effect := scenes.Effect{Mode: "Breathing", ColoursFrom: scenes.ColoursFromPicture}
+	effect.SetPalette([]string{"#102030", "", "#405060"})
+	written, err := json.Marshal(effect)
+	require.NoError(t, err)
+	require.JSONEq(t,
+		`{"mode":"Breathing","colour":"#102030","colours":["#102030","#405060"],"colours_from":"picture"}`,
+		string(written))
+
+	var back scenes.Effect
+	require.NoError(t, json.Unmarshal(written, &back))
+	require.Equal(t, scenes.ColoursFromPicture, back.ColoursFrom)
+}

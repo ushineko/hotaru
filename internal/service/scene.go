@@ -426,9 +426,9 @@ func (s *Service) SceneFrom(name string, screen string) (scenes.Scene, error) {
 			// The mode's own colour and speed come with it: what was applied
 			// is what is saved, and re-deriving either from the frame would
 			// make a saved scene differ from the machine it was saved off.
-			scene.Effects[device] = scenes.Effect{
-				Mode: want.Mode, Colour: want.ModeColour, Speed: want.Speed,
-			}
+			effect := scenes.Effect{Mode: want.Mode, Speed: want.Speed}
+			effect.SetPalette(want.Named())
+			scene.Effects[device] = effect
 		}
 	}
 	if len(scene.Assignments) == 0 {

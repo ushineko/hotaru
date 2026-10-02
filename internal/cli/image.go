@@ -23,7 +23,7 @@ func imageCommand() *cobra.Command {
 		Short: "Pictures for the cooler's screen",
 	}
 	cmd.AddCommand(imageListCommand(), imageAddCommand(), imageSceneCommand(),
-		imageShowCommand(), imageRenameCommand(), imageRemoveCommand())
+		imageColoursCommand(), imageShowCommand(), imageRenameCommand(), imageRemoveCommand())
 	return cmd
 }
 
@@ -158,6 +158,61 @@ scene shows the picture on the cooler's panel as well.`,
 }
 
 /*
+imageColoursCommand is the colours `hotaru image scene` would give an effect,
+without making a scene (spec 061 R5.3).
+
+For somebody deciding whether a picture's colours suit a Breathing before
+committing to one, and the CLI half of what Make a scene shows in the window.
+*/
+func imageColoursCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "colours <picture>",
+		Short: "The colours a scene from a picture gives an effect",
+		Long: `The colours a scene from a picture gives an effect.
+
+The picture's most prominent distinct colours, the one covering most of it
+first: what ` + "`hotaru image scene`" + ` gives an effect that takes colours
+of its own when --effect-colour does not name them. --count is how many the
+effect takes, four at most. --distance is the scene's separation, which also
+decides how far apart two colours have to be to count as two.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, err := client(cmd)
+			if err != nil {
+				return err
+			}
+			count, _ := cmd.Flags().GetInt("count")
+			distance, _ := cmd.Flags().GetFloat64("distance")
+			picked, err := client.PickColours(cmd.Context(), args[0], count, distance)
+			if err != nil {
+				return quiet(err)
+			}
+			printPicked(cmd, picked)
+			return nil
+		},
+	}
+	distanceFlag(cmd)
+	countFlag(cmd)
+	return cmd
+}
+
+// countFlag is how many colours to pick, on the commands that pick them.
+func countFlag(cmd *cobra.Command) {
+	cmd.Flags().Int("count", 4, "how many colours the effect takes; four at most")
+}
+
+// printPicked is picked colours, one a line, so a script can read them.
+func printPicked(cmd *cobra.Command, picked []string) {
+	if len(picked) == 0 {
+		cmd.Println("No colours to pick.")
+		return
+	}
+	for _, c := range picked {
+		cmd.Println(c)
+	}
+}
+
+/*
 effectFlag is what a device should be doing with the colours.
 
 A picture says what colour each light should be and nothing about the mode a
@@ -168,8 +223,10 @@ than one the image answers. The same spelling as `hotaru scene write
 func effectFlag(cmd *cobra.Command) {
 	cmd.Flags().StringSlice("effect", nil,
 		`what a device should be doing: device="Mode Name"`)
-	cmd.Flags().StringSlice("effect-colour", nil,
-		`the colour an effect that shows one runs in: device="#0000ff"`)
+	// An array, not a slice: a slice splits on commas, and a comma is how
+	// one device's several colours are written.
+	cmd.Flags().StringArray("effect-colour", nil,
+		`the colours an effect runs in, first to last: device="#ff0000,#0000ff"`)
 	cmd.Flags().StringSlice("effect-speed", nil,
 		`how fast an effect runs, in the device's own units: device=127`)
 }

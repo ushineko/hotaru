@@ -134,6 +134,26 @@ frame, and hotaru reports that rather than approximating it. hotaru talks to
 the running OpenRGB *server*, so lighting needs `openrgb` installed **and** its
 server running.
 
+**Mode colours: as many as the mode reports.** OpenRGB gives each mode a
+`colors_min` and a `colors_max`, and hotaru fills that many slots from a
+scene's effect (spec 061). One colour fills every slot. Most modes take one.
+Some take more:
+
+| Device type | Mode | Colours |
+|---|---|---|
+| NVIDIA GPU (MSI) | Breathing, Fade In | 1 to 2 |
+| NVIDIA GPU (MSI) | Color Cycle, Wave | 1 to 3 |
+| NVIDIA GPU (EVGA) | Breathing | 1 to 2 |
+| NVIDIA GPU (EVGA) | Color Cycle, Color Stack | 2 to 7 |
+| NZXT Kraken | Fading, Breathing, Pulsing, Cover Marquee, Candle | 1 to 8 |
+| NZXT Kraken | Alternating | 1 to 2 |
+| Corsair Dominator DDR5 | Color Shift, Color Pulse, Color Wave, Visor, Rain | 2 |
+| Razer mouse dock | Breathing | 1 to 2 |
+
+These counts were read from OpenRGB on the two test machines on 2026-10-01.
+A mode is written no more colours than it reports, and fewer than it needs
+repeat the last one.
+
 **Cooler telemetry: hotaru itself, through sanshoku.** The kernel has no
 driver for recent NZXT coolers. `nzxt-kraken3` matches 2007, 2014, 3008, 300C
 and 300E, so a Kraken Elite V2 has no hwmon node and `sensors` reports nothing
@@ -164,7 +184,9 @@ streams it as frames, and the board holds the last frame it was sent.
 sanshoku's `steelseries` driver sends those frames, and each one is
 acknowledged. hotaru lists the board as a device whose modes are its own
 renderers: Static, Breathing, Spectrum, Rainbow Wave and Off. A scene names
-them as it names any firmware mode.
+them as it names any firmware mode. Breathing takes up to four colours of its
+own, one breath each. Spectrum and Rainbow Wave take up to eight and move
+through them. Without colours each draws as it did before.
 
 - **A scene that does not move is one frame.** Static, a solid colour and Off
   send one frame, and then nothing.

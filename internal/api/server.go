@@ -59,6 +59,8 @@ func Routes() []string {
 		"POST /" + Version + "/images/{name}/rename",
 		"POST /" + Version + "/images/{name}/scene",
 		"POST /" + Version + "/dashboards/{name}/scene",
+		"POST /" + Version + "/images/{name}/colours",
+		"POST /" + Version + "/dashboards/{name}/colours",
 		"POST /" + Version + "/scenes/{name}/recolour",
 		"POST /" + Version + "/scenes/{name}/effects",
 		"POST /" + Version + "/images/{name}/show",
@@ -634,6 +636,39 @@ func Handler(svc *service.Service) http.Handler {
 	})
 
 	/*
+		The colours Make a scene would give an effect, before it makes
+		anything (spec 061 R5.3): what the window shows under an effect that
+		takes colours, from the same picture and distance the scene will use.
+	*/
+	mux.HandleFunc("POST /"+Version+"/images/{name}/colours", func(w http.ResponseWriter, r *http.Request) {
+		var in PickColoursRequest
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			write(w, http.StatusBadRequest, Error{Error: "that request does not decode", Detail: err.Error()})
+			return
+		}
+		picked, err := svc.Picked(r.PathValue("name"), in.Count, in.Distance)
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		write(w, http.StatusOK, PickColoursResponse{Colours: orEmpty(picked)})
+	})
+
+	mux.HandleFunc("POST /"+Version+"/dashboards/{name}/colours", func(w http.ResponseWriter, r *http.Request) {
+		var in PickColoursRequest
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			write(w, http.StatusBadRequest, Error{Error: "that request does not decode", Detail: err.Error()})
+			return
+		}
+		picked, err := svc.PickedFromDashboard(r.Context(), r.PathValue("name"), in.Count, in.Distance)
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		write(w, http.StatusOK, PickColoursResponse{Colours: orEmpty(picked)})
+	})
+
+	/*
 		A scene's lights, built again from whatever it shows.
 
 		For the knob that has no right answer: somebody sets a separation,
@@ -912,6 +947,17 @@ func describe(view service.View) Device {
 		if mode.ModeColour && !mode.PerLED {
 			device.OneColour = append(device.OneColour, mode.Name)
 		}
+		// How many colours of its own the mode takes, for the editor's
+		// pickers. Asked of every mode, not only those that show one colour:
+		// a Spectrum hotaru draws takes eight and shows the wheel without.
+		// Not of a mode that takes a colour per light, whose colour is the
+		// frame and whose own slot, where it has one, the device does not show.
+		if least, most := mode.Slots(); most > 0 && !mode.PerLED {
+			if device.Coloured == nil {
+				device.Coloured = map[string]ColourSlots{}
+			}
+			device.Coloured[mode.Name] = ColourSlots{Least: least, Most: most}
+		}
 		if mode.Speed != nil {
 			if device.Paced == nil {
 				device.Paced = map[string]Speed{}
@@ -1189,3 +1235,12 @@ func hold(w http.ResponseWriter, r *http.Request, svc *service.Service, outcome 
 // revertWithin bounds putting the lights back after a preview's holder goes
 // away. Long enough for every device, short enough not to pile up.
 const revertWithin = 30 * time.Second
+
+// orEmpty is a list that encodes as [] rather than null, so a client reads
+// "no colours" without a special case for absent.
+func orEmpty(list []string) []string {
+	if list == nil {
+		return []string{}
+	}
+	return list
+}

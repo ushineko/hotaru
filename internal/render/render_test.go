@@ -55,7 +55,7 @@ func TestStaticIsTheSameFrameAtEveryInstant(t *testing.T) {
 
 func TestStaticWithNoFrameShowsTheEffectsColour(t *testing.T) {
 	green := colour.MustParse("lime")
-	px := draw(t, render.Static, 0, lights(3), render.Params{Colour: &green})
+	px := draw(t, render.Static, 0, lights(3), render.Params{Palette: []colour.Colour{green}})
 	for _, p := range px {
 		require.Equal(t, uint8(255), p.G)
 	}
@@ -65,7 +65,7 @@ func TestBreathingIsDarkAtTheStartAndFullAtHalfItsPeriod(t *testing.T) {
 	// At the default speed the period is 4.5 s: 8 s slowest, 1 s fastest.
 	keys := lights(4)
 	purple := colour.MustParse("#8000ff")
-	p := render.Params{Colour: &purple}
+	p := render.Params{Palette: []colour.Colour{purple}}
 
 	for _, px := range draw(t, render.Breathing, 0, keys, p) {
 		require.Equal(t, lighting.Pixel{ID: px.ID}, px, "Breathing does not start dark")

@@ -142,12 +142,14 @@ func (s *Service) probeOne(ctx context.Context, client openrgbClient, device *de
 	if before.ActiveMode != "" {
 		// With the colour the mode was holding: a mode that carries its own
 		// colour is put back to the colour it had, not merely to its name.
-		var was *colour.Colour
+		var was []colour.Colour
 		if m, ok := before.Mode(before.ActiveMode); ok && m.ModeColour {
-			held := m.Colour
-			was = &held
+			was = m.Colours
+			if len(was) == 0 {
+				was = []colour.Colour{m.Colour}
+			}
 		}
-		style := openrgb.Style{Colour: was}
+		style := styleOf(nil, was, nil)
 		if err := client.SetMode(ctx, device.Name, before.ActiveMode, style); err != nil && finding.Err == nil {
 			finding.Err = fmt.Errorf("could not put %s back into %s: %w", device.Name, before.ActiveMode, err)
 		}

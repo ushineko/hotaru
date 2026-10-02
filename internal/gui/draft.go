@@ -88,11 +88,23 @@ Silently nothing for a device with no effect, because the control that sets
 this is only drawn for a device that has one.
 */
 func (d *Draft) SetEffectColour(device, colour string) {
+	d.SetEffectColours(device, []string{colour})
+}
+
+/*
+SetEffectColours is every colour an effect runs in, first to last (spec 061).
+None gives the device back to the fallback, as an empty colour does.
+
+Colours set here are somebody's choice, so a mark that they were picked from
+a picture goes: recolouring the scene keeps them rather than picking again.
+*/
+func (d *Draft) SetEffectColours(device string, colours []string) {
 	effect, has := d.rest.Effects[device]
 	if !has {
 		return
 	}
-	effect.Colour = strings.TrimSpace(colour)
+	effect.SetPalette(colours)
+	effect.ColoursFrom = ""
 	d.setEffect(device, effect)
 }
 

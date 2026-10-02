@@ -65,6 +65,8 @@ func TestEveryRouteTheServiceServesIsReachableFromTheCommandLine(t *testing.T) {
 		{"image", "add", "parity", "/etc/hostname", "--convert-to", "/dev/null"},
 		{"image", "scene", "parity", "parity-scene"},
 		{"dashboard", "scene", "coolant", "parity-scene"},
+		{"image", "colours", "parity"},
+		{"dashboard", "colours", "coolant"},
 		{"scene", "recolour", "parity"},
 		{"scene", "style", "parity", "parity"},
 		{"image", "show", "parity"},

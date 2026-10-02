@@ -221,6 +221,26 @@ MIT. See [LICENSE](LICENSE).
 
 ## Changelog
 
+### Unreleased
+
+- Every mode its colours. A scene's effect carries a list of colours, and
+  each mode says how many it takes: a firmware mode as OpenRGB reports it
+  (a graphics card's Breathing takes two, a cooler's up to eight, a stick of
+  RAM's Color Shift exactly two), and hotaru's own renderers as they draw
+  them. Breathing on a canvas device takes up to four, one breath each;
+  Spectrum and Rainbow Wave take up to eight and move through them. Several
+  colours fill a firmware mode's slots in order, and reconcile puts every one
+  back. The scene editor and Make a scene show a colour picker per slot.
+  Make a scene gives an effect that takes colours the picture's most
+  prominent ones, shows them before the scene is made, and marks them
+  `colours_from: picture` so a recolour picks them again; colours somebody
+  chose are kept. `--effect-colour device="#ff0000,#0000ff"` sets several from
+  the terminal, and `hotaru image colours` and `hotaru dashboard colours`
+  print what a picture or dashboard would give. A scene with one colour is
+  written exactly as before, and a scene with several still reads in an older
+  build in its first colour (spec 061,
+  [#177](https://github.com/ushineko/hotaru/issues/177)).
+
 ### 0.1.21 (2026-10-01)
 
 - Scenes written before a canvas device existed light it again. A picture

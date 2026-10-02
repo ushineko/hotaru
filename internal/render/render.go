@@ -29,7 +29,7 @@ import (
 
 /*
 Params are what a scene says about the effect, in the terms a scene already
-has: the colours its assignments composed, the effect's own colour and its
+has: the colours its assignments composed, the effect's own colours and its
 speed, and the device rule's brightness.
 */
 type Params struct {
@@ -37,10 +37,16 @@ type Params struct {
 	// assignments composed. Static shows them.
 	Colours []colour.Colour
 
-	// Colour is the effect's own colour, for an effect that shows one. Nil
-	// falls back to the frame, as a firmware mode with a colour of its own
-	// falls back to the colour most of the scene is.
-	Colour *colour.Colour
+	/*
+		Palette is the effect's own colours, first to last (spec 061 R2).
+		Empty falls back to the frame for Breathing, as a firmware mode with
+		a colour of its own falls back to the colour most of the scene is,
+		and to the full wheel for Spectrum and Rainbow Wave.
+
+		Longer than the renderer's Colours is not an error: the rest are not
+		drawn, as a firmware mode with fewer slots is not written them.
+	*/
+	Palette []colour.Colour
 
 	// Speed is 0 to 100, slowest to fastest. Nil is DefaultSpeed.
 	Speed *int
@@ -77,8 +83,17 @@ type Renderer struct {
 	Animated bool
 	// PerLight is an effect that shows the frame's own colours.
 	PerLight bool
-	// OneColour is an effect that shows one colour of its own.
+	// OneColour is an effect that shows a colour of its own, and falls back
+	// to the frame's when it is given none.
 	OneColour bool
+	/*
+		Colours is how many colours of its own the effect takes, at most; it
+		needs none (spec 061 R2). Four for Breathing, because a breath per
+		colour makes a cycle that long already; eight for the two that move
+		through their colours, which is the most a firmware mode measured on
+		the machines spec 061 read takes.
+	*/
+	Colours int
 	// Paced is an effect that takes a speed.
 	Paced bool
 	// Blank is the effect that turns the lights off.
@@ -113,6 +128,12 @@ const (
 	waveFastest = 40.0
 )
 
+// How many colours of its own each effect that takes them takes, at most.
+const (
+	breathingColours = 4
+	cycleColours     = 8
+)
+
 // Off, Static, Breathing, Spectrum and Wave are the renderers' names.
 const (
 	Off       = "Off"
@@ -135,9 +156,9 @@ canvas device turns its lights off by being sent a black frame.
 func Renderers() []Renderer {
 	return []Renderer{
 		{Name: Static, Draw: static, PerLight: true},
-		{Name: Breathing, Draw: breathing, Animated: true, OneColour: true, Paced: true},
-		{Name: Spectrum, Draw: spectrum, Animated: true, Paced: true},
-		{Name: Wave, Draw: wave, Animated: true, Paced: true},
+		{Name: Breathing, Draw: breathing, Animated: true, OneColour: true, Paced: true, Colours: breathingColours},
+		{Name: Spectrum, Draw: spectrum, Animated: true, Paced: true, Colours: cycleColours},
+		{Name: Wave, Draw: wave, Animated: true, Paced: true, Colours: cycleColours},
 		{Name: Off, Draw: blank, Blank: true},
 	}
 }
@@ -166,29 +187,48 @@ dark again at the period.
 Starting dark is deliberate. A scene applied while the device shows something
 else fades in from nothing, where starting at full would jump to the colour
 and then fade.
+
+With several colours each takes one breath in turn, out of dark and back into
+it, and the next one begins there: the way a firmware Breathing that takes two
+colours alternates them. Crossfading from one to the next without the dark
+would be Spectrum through the same colours, which is already an effect.
 */
 func breathing(t time.Duration, keys []lighting.Key, p Params) []lighting.Pixel {
 	period := pace(p, breathingSlowest, breathingFastest)
 	phase := 2 * math.Pi * float64(t%period) / float64(period)
 	scale := (1 - math.Cos(phase)) / 2
+	palette := p.palette(breathingColours)
 	return paint(keys, p, func(i int) colour.Colour {
 		c := p.base(i)
-		if p.Colour != nil {
-			c = *p.Colour
+		if len(palette) > 0 {
+			c = palette[int(t/period)%len(palette)]
 		}
 		return scaled(c, scale)
 	})
 }
 
-// spectrum is every light one hue, going round the colour wheel once a period.
+/*
+spectrum is every light one hue, going round the colour wheel once a period.
+
+With colours of its own it goes round them instead, first to last and back to
+the first, blending from each to the next: one period is still once round,
+so the speed means the same with two colours as with the wheel.
+*/
 func spectrum(t time.Duration, keys []lighting.Key, p Params) []lighting.Pixel {
 	period := pace(p, spectrumSlowest, spectrumFastest)
-	c := hue(360 * float64(t%period) / float64(period))
+	at := float64(t%period) / float64(period)
+	c := hue(360 * at)
+	if palette := p.palette(cycleColours); len(palette) > 0 {
+		c = along(palette, at)
+	}
 	return paint(keys, p, func(int) colour.Colour { return c })
 }
 
 /*
 wave is one rainbow across the lights, moving left to right across the device.
+
+With colours of its own it is a gradient through them instead, first to last
+and back to the first across the device, so the moving edge has no seam.
 
 The hue is set by a light's place across the device: its column on a
 standard layout when its name says where it is, else its place in the
@@ -203,10 +243,14 @@ func wave(t time.Duration, keys []lighting.Key, p Params) []lighting.Pixel {
 	shift := float64(t.Nanoseconds()) * speed / float64(time.Second)
 	width := float64(max(len(keys), 1))
 	place := positions(keys)
+	palette := p.palette(cycleColours)
 	return paint(keys, p, func(i int) colour.Colour {
 		at := math.Mod(place[i]*width-shift, width)
 		if at < 0 {
 			at += width
+		}
+		if len(palette) > 0 {
+			return along(palette, at/width)
 		}
 		return hue(360 * at / width)
 	})
@@ -231,16 +275,48 @@ func paint(keys []lighting.Key, p Params, at func(i int) colour.Colour) []lighti
 	return out
 }
 
-// base is the light's own colour in the frame, or the effect's colour where
-// the frame does not reach that light.
+// base is the light's own colour in the frame, or the effect's first colour
+// where the frame does not reach that light.
 func (p Params) base(i int) colour.Colour {
 	if i < len(p.Colours) {
 		return p.Colours[i]
 	}
-	if p.Colour != nil {
-		return *p.Colour
+	if len(p.Palette) > 0 {
+		return p.Palette[0]
 	}
 	return colour.Black
+}
+
+// palette is the effect's own colours, as many as an effect taking most of
+// them draws.
+func (p Params) palette(most int) []colour.Colour {
+	return p.Palette[:min(len(p.Palette), most)]
+}
+
+/*
+along is the colour at a place round a loop of colours, from 0 to 1: the first
+at 0, each next one an equal step further, and back to the first at 1, blended
+in a straight line between neighbours.
+
+Blended channel by channel rather than round the wheel. Red to blue through
+the wheel passes through magenta or through green depending on the way round,
+and either is a colour nobody picked.
+*/
+func along(palette []colour.Colour, at float64) colour.Colour {
+	if len(palette) == 1 {
+		return palette[0]
+	}
+	at = math.Mod(at, 1)
+	if at < 0 {
+		at++
+	}
+	place := at * float64(len(palette))
+	from := int(place) % len(palette)
+	to := (from + 1) % len(palette)
+	f := place - math.Floor(place)
+	mix := func(a, b uint8) uint8 { return uint8(math.Round(float64(a) + (float64(b)-float64(a))*f)) }
+	x, y := palette[from], palette[to]
+	return colour.Colour{R: mix(x.R, y.R), G: mix(x.G, y.G), B: mix(x.B, y.B)}
 }
 
 // speedOf is the speed asked for, inside the range.

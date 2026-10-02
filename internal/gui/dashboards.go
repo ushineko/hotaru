@@ -270,6 +270,9 @@ func (d *DashboardsSection) row(sh *shell.Shell, one api.Dashboard, active bool)
 		makeScene(sh, one.Name, one.Name, d.app.machine.Read().Devices,
 			func(ctx context.Context, name string, distance float64, effects map[string]api.Effect) (api.Scene, error) {
 				return d.app.client.SceneFromDashboard(ctx, one.Name, name, distance, effects)
+			},
+			func(ctx context.Context, count int, distance float64) ([]string, error) {
+				return d.app.client.PickDashboardColours(ctx, one.Name, count, distance)
 			})
 	})
 

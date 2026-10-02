@@ -298,3 +298,34 @@ func TestTheListingSaysWhichModesShowOneColourAndWhichTakeASpeed(t *testing.T) {
 	require.Equal(t, api.Speed{Slowest: 0, Fastest: 255, Now: 127}, pace)
 	require.NotContains(t, keys.Paced, "Direct")
 }
+
+func TestTheListingSaysHowManyColoursEachModeTakes(t *testing.T) {
+	// Spec 061 R1.3: one picker per slot, the first Least always. A mode
+	// whose colour is the frame takes none of its own.
+	card := devices.Device{
+		Name:     "Test Graphics Card",
+		LEDCount: 2,
+		Modes: []devices.Mode{
+			{Name: "Direct", PerLED: true},
+			{Name: "Breathing", ModeColour: true, ColoursMin: 1, ColoursMax: 2},
+			{Name: "Color Cycle", ModeColour: true, ColoursMin: 2, ColoursMax: 7},
+		},
+		Zones: []devices.Zone{{Name: "Card", First: 0, Count: 2}},
+	}
+	client := running(t, nil, openrgb.NewFake(card, keyboard()))
+
+	found, err := client.Devices(t.Context())
+	require.NoError(t, err)
+	byName := map[string]api.Device{}
+	for _, device := range found {
+		byName[device.Name] = device
+	}
+
+	require.Equal(t, map[string]api.ColourSlots{
+		"Breathing":   {Least: 1, Most: 2},
+		"Color Cycle": {Least: 2, Most: 7},
+	}, byName["Test Graphics Card"].Coloured)
+	// A mode that carries one colour and reports no count takes one.
+	require.Equal(t, map[string]api.ColourSlots{"Solid Reactive": {Least: 0, Most: 1}},
+		byName["Keychron K4 HE"].Coloured)
+}

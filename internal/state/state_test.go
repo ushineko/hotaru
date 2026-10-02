@@ -158,3 +158,39 @@ func TestASnapshotsSpeedIsItsOwn(t *testing.T) {
 	*kept.Speed = 99
 	require.Equal(t, 40, *store.Snapshot().Devices["Keychron K4 HE"].Speed)
 }
+
+func TestEveryColourAModeWasGivenSurvivesARestart(t *testing.T) {
+	// Spec 061 R3.2: a re-assert after a restart puts back both colours of a
+	// two-colour mode, not the first one twice.
+	path := filepath.Join(t.TempDir(), "state.yml")
+	store, err := state.Open(path)
+	require.NoError(t, err)
+	require.NoError(t, store.Record("board", state.Device{
+		Mode: "Breathing", ModeColour: "#ff0000", ModeColours: []string{"#ff0000", "#0000ff"},
+	}))
+	require.NoError(t, store.Flush())
+
+	again, err := state.Open(path)
+	require.NoError(t, err)
+	kept := again.Snapshot().Devices["board"]
+	require.Equal(t, []string{"#ff0000", "#0000ff"}, kept.Named())
+
+	kept.ModeColours[1] = "#00ff00"
+	require.Equal(t, "#0000ff", again.Snapshot().Devices["board"].ModeColours[1],
+		"the snapshot's colours are the store's")
+}
+
+func TestAStateFileFromBeforeSeveralColoursReadsAsOne(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.yml")
+	require.NoError(t, os.WriteFile(path, []byte(`lighting:
+  devices:
+    board:
+      mode: Static
+      colours: []
+      applied: 2026-09-30T10:00:00Z
+      mode_colour: '#123456'
+`), 0o600))
+	store, err := state.Open(path)
+	require.NoError(t, err)
+	require.Equal(t, []string{"#123456"}, store.Snapshot().Devices["board"].Named())
+}

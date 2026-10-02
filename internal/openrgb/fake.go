@@ -73,7 +73,9 @@ type ModeWrite struct {
 	Mode       string
 	Brightness *int
 	Colour     *colour.Colour
-	Speed      *int
+	// Colours are every colour the write named, where it named several.
+	Colours []colour.Colour
+	Speed   *int
 }
 
 // NewFake is a server holding these devices.
@@ -138,13 +140,14 @@ func (f *Fake) SetMode(_ context.Context, device, mode string, style Style) erro
 		f.Modes = append(f.Modes, ModeWrite{
 			Device: device, Mode: mode,
 			Brightness: style.Brightness, Colour: style.Colour, Speed: style.Speed,
+			Colours: append([]colour.Colour(nil), style.Colours...),
 		})
 		f.Sequence = append(f.Sequence, "mode:"+mode)
 		if lie, ok := f.Lies[f.devices[i].Name]; ok && strings.EqualFold(lie, mode) {
 			return nil // accepted, not honoured: only a read-back can tell
 		}
 		f.devices[i].ActiveMode = mode
-		f.applyModeColour(&f.devices[i], mode, style.Colour)
+		f.applyModeColour(&f.devices[i], mode, style.Palette())
 		return nil
 	}
 	return fmt.Errorf("no device called %q", device)
@@ -266,20 +269,31 @@ Real hardware does this and it is the failure spec 009 exists for: a device put
 into such a mode displays the colour stored in the mode, and a frame written
 afterwards goes to a buffer the mode does not read. A fake that always showed
 the last frame could never have caught it.
+
+The mode's slots are filled the way the hardware path fills them, between the
+mode's ColoursMin and ColoursMax (spec 061), and the lights show the first.
+A device listed with neither has one slot, as the modes in tests written
+before the slots were modelled do.
 */
-func (f *Fake) applyModeColour(d *devices.Device, name string, want *colour.Colour) {
+func (f *Fake) applyModeColour(d *devices.Device, name string, want []colour.Colour) {
 	for i := range d.Modes {
-		if !strings.EqualFold(d.Modes[i].Name, name) || !d.Modes[i].ModeColour {
+		m := &d.Modes[i]
+		if !strings.EqualFold(m.Name, name) || !m.ModeColour {
 			continue
 		}
-		if want != nil {
-			d.Modes[i].Colour = *want
+		if len(want) > 0 {
+			most := m.ColoursMax
+			if most == 0 {
+				most = 1
+			}
+			m.Colours = Slots(want, len(m.Colours), m.ColoursMin, most)
+			m.Colour = m.Colours[0]
 		}
-		if d.Modes[i].PerLED {
+		if m.PerLED {
 			return // the buffer is what it shows; the mode's colour is spare
 		}
 		for j := range d.Colours {
-			d.Colours[j] = d.Modes[i].Colour
+			d.Colours[j] = m.Colour
 		}
 		return
 	}
