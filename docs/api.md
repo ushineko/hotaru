@@ -569,7 +569,8 @@ $ curl -s --unix-socket … http://hotaru/v1/images
       "path": "/home/you/.local/share/hotaru/images/wallpaper.gif",
       "bytes": 202752,
       "frames": 1,
-      "added": "2026-09-20T22:53:41-07:00"
+      "added": "2026-09-20T22:53:41-07:00",
+      "source_sha256": "9f2c…"
     }
   ]
 }
@@ -578,12 +579,18 @@ $ curl -s --unix-socket … http://hotaru/v1/images
 Read `bytes`. The panel's refresh floor scales with frame size rather than
 being a fixed rate limit, so a large picture is a slow one.
 
+`source_sha256` is the SHA-256 of the file that hotaru converted. A client
+compares it with a file it holds to find out whether the library already has
+that file. The stored GIF cannot answer this, because two conversions of one
+file can differ. A slideshow has no `source_sha256`, and neither has a
+picture that a release before 0.1.23 stored.
+
 ## PUT /v1/images/{name}
 
 Converts a picture and keeps it. `{"image": "<base64>"}`, as any JPEG, PNG or
 GIF. hotaru crops it to the middle, scales it to 640x640, and reduces it to
 256 colours chosen from the picture itself. A name that already exists is
-replaced.
+replaced. The reply is the picture as `GET /v1/images` lists it.
 
 `{"images": ["<base64>", …]}` makes a slideshow out of several instead. Each
 picture holds, crossfades into the next, and the last one fades back into the
@@ -641,6 +648,13 @@ background does not count as a colour. `distance` decides how far apart two
 colours must be to count as two. Those colours carry `colours_from:
 picture`. `POST /v1/dashboards/{name}/scene` does the same with the frame the
 dashboard draws.
+
+**`screen` puts a saved dashboard on the panel instead of the picture.**
+`{"scene": "jovian", "screen": "dashboard:jovian"}` takes the lights from the
+picture and shows the dashboard when the scene is applied. hotaru refuses a
+dashboard that does not exist, and keeps no scene. The window uses this for a
+picture dropped on Scenes, after it saves a dashboard with the picture behind
+it.
 
 ## POST /v1/images/{name}/colours
 

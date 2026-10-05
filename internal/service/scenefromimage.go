@@ -41,9 +41,38 @@ given. An effect the caller chose and gave no colours runs in the picture's
 func (s *Service) SceneFromImage(
 	ctx context.Context, picture, name string, distance float64, effects map[string]scenes.Effect,
 ) (scenes.Scene, error) {
+	return s.SceneFromImageOn(ctx, picture, name, "", distance, effects)
+}
+
+/*
+SceneFromImageOn is SceneFromImage with something else on the screen: a saved
+dashboard, named `dashboard:<name>`, rather than the picture itself (spec 062).
+
+The lights still come from the picture. A dashboard with the picture behind it
+draws it dimmed and with readings over it, and colours read from that frame
+are not the picture's.
+
+Anything but a dashboard that exists is refused before the scene is kept: a
+scene naming a screen that is not there fails every time it is applied.
+*/
+func (s *Service) SceneFromImageOn(
+	ctx context.Context, picture, name, screen string, distance float64, effects map[string]scenes.Effect,
+) (scenes.Scene, error) {
 	found, err := s.storedPicture(picture)
 	if err != nil {
 		return scenes.Scene{}, err
+	}
+	shown := found.Path
+	if screen != "" {
+		board, ok := strings.CutPrefix(screen, scenes.ScreenDashboardPrefix)
+		if !ok {
+			return scenes.Scene{}, fmt.Errorf("the screen %q is not a saved dashboard (dashboard:<name>)", screen)
+		}
+		one, err := s.Dashboard(board)
+		if err != nil {
+			return scenes.Scene{}, err
+		}
+		shown = scenes.ScreenDashboardPrefix + one.Name
 	}
 	decoded, err := images.First(found.Path)
 	if err != nil {
@@ -51,7 +80,7 @@ func (s *Service) SceneFromImage(
 	}
 
 	return s.painted(ctx, scenes.Scene{
-		Name: name, Screen: found.Path, Distance: distance, Effects: effects,
+		Name: name, Screen: shown, Distance: distance, Effects: effects,
 	}, decoded)
 }
 

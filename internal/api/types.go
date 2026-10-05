@@ -872,6 +872,10 @@ type Image struct {
 	// Frames is how many it has. More than one moves.
 	Frames int       `json:"frames"`
 	Added  time.Time `json:"added"`
+	// Source is the SHA-256 of the file it was converted from, so a caller
+	// holding a file can tell it is already stored (spec 062). Empty for a
+	// slideshow and for a picture kept before 0.1.23.
+	Source string `json:"source_sha256,omitempty"`
 }
 
 // ImagesResponse is the library.
@@ -972,6 +976,16 @@ type SceneFromImageRequest struct {
 		given, which is what most scenes from a picture want.
 	*/
 	Effects map[string]Effect `json:"effects,omitempty"`
+
+	/*
+		Screen is what the scene puts on the panel instead of the picture:
+		a saved dashboard, as `dashboard:<name>` (spec 062). Empty shows the
+		picture. The lights come from the picture either way.
+
+		Only on the picture's route. A scene from a dashboard already shows
+		that dashboard.
+	*/
+	Screen string `json:"screen,omitempty"`
 }
 
 /*

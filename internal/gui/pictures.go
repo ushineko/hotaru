@@ -26,6 +26,7 @@ import (
 	"github.com/ushineko/fynedesygn/shell"
 	"github.com/ushineko/fynedesygn/widgets"
 	"github.com/ushineko/hotaru/internal/api"
+	"github.com/ushineko/hotaru/internal/images"
 	xdraw "golang.org/x/image/draw"
 )
 
@@ -422,6 +423,26 @@ Anything that is not an image is refused by name, because a directory of
 holiday photographs contains one thing that is not a photograph.
 */
 func (p *PicturesSection) Dropped(sh *shell.Shell, uris []fyne.URI) {
+	p.drop(sh, uris, nil)
+}
+
+/*
+onKept is what happens to a picture once it is in the library: a screen or a
+scene made from it (spec 062). Nil is the library's own drop, which ends at
+keeping it.
+
+Called on the UI thread, with the picture as the library now lists it.
+*/
+type onKept func(api.Image)
+
+/*
+drop reads the files and asks about them, then hands what was kept to then.
+
+Only one picture goes on to then. A screen or a scene is made from one
+picture, and a stack kept separately is a question per picture already; a
+second dialog after each would be two questions per picture.
+*/
+func (p *PicturesSection) drop(sh *shell.Shell, uris []fyne.URI, then onKept) {
 	for _, uri := range uris {
 		path := uri.Path()
 		say("dropped: %s", path)
@@ -443,14 +464,20 @@ func (p *PicturesSection) Dropped(sh *shell.Shell, uris []fyne.URI) {
 		delete, or one animation they did not want.
 	*/
 	if len(p.waiting) > 1 {
-		p.stack(sh)
+		p.stack(sh, then)
+		return
+	}
+	if len(p.waiting) == 1 && then != nil {
+		first := p.waiting[0]
+		p.waiting = nil
+		p.preview(sh, first.name, first.source, then)
 		return
 	}
 	p.next(sh)
 }
 
 // stack asks what a dropped pile of pictures is.
-func (p *PicturesSection) stack(sh *shell.Shell) {
+func (p *PicturesSection) stack(sh *shell.Shell, then onKept) {
 	count := len(p.waiting)
 	body := container.NewVBox(
 		widget.NewLabel(fmt.Sprintf("%d pictures.", count)),
@@ -463,8 +490,12 @@ func (p *PicturesSection) stack(sh *shell.Shell) {
 		body,
 		func(reel bool) {
 			if reel {
-				p.slideshow(sh)
+				p.slideshow(sh, then)
 				return
+			}
+			if then != nil {
+				sh.Flash("Each one is kept in Pictures. Drop one picture at a time "+
+					"to make a screen or a scene from it.", fd.StatusInfo)
 			}
 			p.next(sh)
 		}, sh.Window)
@@ -477,7 +508,7 @@ The pictures are already read, so the work is the encoding -- and a reel of
 eight photographs with a crossfade between each is most of the panel's memory,
 which is why it happens in the service where the budget is known.
 */
-func (p *PicturesSection) slideshow(sh *shell.Shell) {
+func (p *PicturesSection) slideshow(sh *shell.Shell, then onKept) {
 	sources := make([][]byte, 0, len(p.waiting))
 	for _, file := range p.waiting {
 		sources = append(sources, file.source)
@@ -495,18 +526,14 @@ func (p *PicturesSection) slideshow(sh *shell.Shell) {
 				return
 			}
 			say("slideshow: %d pictures as %s", len(sources), entry.Text)
-			sh.Perform("building the slideshow", func(ctx context.Context) error {
-				stored, err := p.app.client.AddSlideshow(ctx, entry.Text, sources)
-				if err != nil {
-					return err
-				}
-				onScreen(func() {
-					sh.Flash(fmt.Sprintf("%s is %s, %d frames.",
-						stored.Name, size(stored.Bytes), stored.Frames), fd.StatusGood)
-					sh.Invalidate()
+			name := entry.Text
+			p.keeping(sh, "building the slideshow", then,
+				func(ctx context.Context) (api.Image, error) {
+					return p.app.client.AddSlideshow(ctx, name, sources)
+				},
+				func(stored api.Image) string {
+					return fmt.Sprintf("%s is %s, %d frames.", stored.Name, size(stored.Bytes), stored.Frames)
 				})
-				return nil
-			})
 		}, sh.Window)
 }
 
@@ -523,7 +550,7 @@ func (p *PicturesSection) next(sh *shell.Shell) {
 	}
 	first := p.waiting[0]
 	p.waiting = p.waiting[1:]
-	p.preview(sh, first.name, first.source)
+	p.preview(sh, first.name, first.source, nil)
 }
 
 /*
@@ -548,7 +575,7 @@ func (p *PicturesSection) add(sh *shell.Shell) {
 			return
 		}
 		say("add: read %d bytes from %s", len(source), file.URI().Path())
-		p.preview(sh, suggested(file.URI().Name()), source)
+		p.preview(sh, suggested(file.URI().Name()), source, nil)
 	}, sh.Window)
 
 	// Grid view because the alternative is a column of filenames. Fyne's
@@ -569,8 +596,13 @@ colours -- and whether that is still the picture somebody wanted is a question
 only they can answer, in front of the answer.
 
 Nothing is stored until they say so: the service converts and hands it back.
+
+**A file the library already holds is not converted again** (spec 062). The
+library records the hash of each file it converted, and a match is the picture
+it already has: said, and handed on as that picture. Pictures kept before the
+library recorded hashes never match.
 */
-func (p *PicturesSection) preview(sh *shell.Shell, suggestion string, source []byte) {
+func (p *PicturesSection) preview(sh *shell.Shell, suggestion string, source []byte, then onKept) {
 	/*
 		A goroutine rather than Perform, and that is not a shortcut.
 
@@ -590,6 +622,18 @@ func (p *PicturesSection) preview(sh *shell.Shell, suggestion string, source []b
 		ctx, cancel := context.WithTimeout(context.Background(), convertWithin)
 		defer cancel()
 
+		if have, ok := p.holding(ctx, source); ok {
+			say("preview: already stored as %s", have.Name)
+			onScreen(func() {
+				sh.Flash("Already in Pictures as "+have.Name+".", fd.StatusInfo)
+				if then != nil {
+					then(have)
+				}
+				p.next(sh)
+			})
+			return
+		}
+
 		say("preview: converting %d bytes", len(source))
 		converted, frames, err := p.app.client.ConvertImage(ctx, source)
 		if err != nil {
@@ -598,8 +642,29 @@ func (p *PicturesSection) preview(sh *shell.Shell, suggestion string, source []b
 			return
 		}
 		say("preview: converted to %d bytes, %d frame(s)", len(converted), frames)
-		onScreen(func() { p.keep(sh, suggestion, source, converted, frames) })
+		onScreen(func() { p.keep(sh, suggestion, source, converted, frames, then) })
 	}()
+}
+
+/*
+holding is the stored picture converted from this very file, if there is one.
+
+A library that cannot be listed holds nothing as far as this is concerned: the
+worst that does is a second copy, where refusing would stop an import over a
+check.
+*/
+func (p *PicturesSection) holding(ctx context.Context, source []byte) (api.Image, bool) {
+	stored, err := p.app.client.Images(ctx)
+	if err != nil {
+		return api.Image{}, false
+	}
+	hash := images.SourceHash(source)
+	for _, one := range stored {
+		if one.Source == hash {
+			return one, true
+		}
+	}
+	return api.Image{}, false
 }
 
 // convertWithin bounds a conversion. A wallpaper takes a third of a second and
@@ -608,7 +673,9 @@ func (p *PicturesSection) preview(sh *shell.Shell, suggestion string, source []b
 const convertWithin = 60 * time.Second
 
 // keep shows the converted picture, asks what to call it, and stores it.
-func (p *PicturesSection) keep(sh *shell.Shell, suggestion string, source, converted []byte, frames int) {
+func (p *PicturesSection) keep(
+	sh *shell.Shell, suggestion string, source, converted []byte, frames int, then onKept,
+) {
 	say("keep: showing the conversion")
 	picture := canvas.NewImageFromResource(fyne.NewStaticResource("preview.gif", converted))
 	picture.FillMode = canvas.ImageFillContain
@@ -639,7 +706,7 @@ func (p *PicturesSection) keep(sh *shell.Shell, suggestion string, source, conve
 		body,
 		func(ok bool) {
 			if ok && entry.Text != "" {
-				p.store(sh, entry.Text, source)
+				p.store(sh, entry.Text, source, then)
 			}
 			// Either answer moves the queue on. A cancelled picture is
 			// answered as much as a kept one.
@@ -649,18 +716,60 @@ func (p *PicturesSection) keep(sh *shell.Shell, suggestion string, source, conve
 }
 
 // store keeps a converted picture under a name.
-func (p *PicturesSection) store(sh *shell.Shell, name string, source []byte) {
-	sh.Perform("keeping "+name, func(ctx context.Context) error {
-		stored, err := p.app.client.AddImage(ctx, name, source)
-		if err != nil {
-			return err
-		}
-		onScreen(func() {
-			sh.Flash(fmt.Sprintf("%s is %s.", stored.Name, size(stored.Bytes)), fd.StatusGood)
-			sh.Invalidate()
+func (p *PicturesSection) store(sh *shell.Shell, name string, source []byte, then onKept) {
+	p.keeping(sh, "keeping "+name, then,
+		func(ctx context.Context) (api.Image, error) { return p.app.client.AddImage(ctx, name, source) },
+		func(stored api.Image) string { return fmt.Sprintf("%s is %s.", stored.Name, size(stored.Bytes)) })
+}
+
+/*
+keeping runs a write to the library and says what it kept.
+
+**Through Perform only when nothing follows it.** Perform holds a busy popup
+up while the work runs, and removing that popup takes down every overlay above
+it. A layout chooser opened from inside the work is above it, so the chooser
+closed the moment it opened, and the window looked like a drop on Pictures
+(spec 062's live run). preview avoids the same trap the same way.
+
+With then, the work is a goroutine counted by converting, and then runs on the
+UI thread after it, with no popup to take anything down.
+*/
+func (p *PicturesSection) keeping(
+	sh *shell.Shell, what string, then onKept,
+	work func(ctx context.Context) (api.Image, error), said func(api.Image) string,
+) {
+	if then == nil {
+		sh.Perform(what, func(ctx context.Context) error {
+			stored, err := work(ctx)
+			if err != nil {
+				return err
+			}
+			onScreen(func() {
+				sh.Flash(said(stored), fd.StatusGood)
+				sh.Invalidate()
+			})
+			return nil
 		})
-		return nil
-	})
+		return
+	}
+
+	p.converting.Add(1)
+	go func() {
+		defer p.converting.Done()
+		ctx, cancel := context.WithTimeout(context.Background(), convertWithin)
+		defer cancel()
+
+		stored, err := work(ctx)
+		onScreen(func() {
+			if err != nil {
+				sh.Report(what, err)
+				return
+			}
+			sh.Flash(said(stored), fd.StatusGood)
+			sh.Invalidate()
+			then(stored)
+		})
+	}()
 }
 
 // previewSize is how big the conversion is shown. Large enough to judge a
