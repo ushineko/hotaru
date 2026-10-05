@@ -221,6 +221,20 @@ MIT. See [LICENSE](LICENSE).
 
 ## Changelog
 
+### Unreleased
+
+- Drop a picture on Screen or Scenes (spec 062,
+  [#179](https://github.com/ushineko/hotaru/issues/179)). The picture is kept
+  in Pictures first, with the same questions. Then the window offers the
+  saved screens as layouts, each drawn with the picture behind it. On Screen
+  the editor opens on a new screen with that layout and the picture behind
+  it. On Scenes, Make a scene opens; "Make it" saves the screen and a scene
+  that shows it, with the lights from the picture. A file the library
+  already holds is used rather than kept twice: the library records the
+  SHA-256 of each file it converts (`source_sha256` in `GET /v1/images`).
+  `hotaru image scene --screen <name>` makes a scene from a picture that
+  shows a saved screen.
+
 ### 0.1.22 (2026-10-01)
 
 - Every mode its colours. A scene's effect carries a list of colours, and
