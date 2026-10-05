@@ -171,6 +171,12 @@ judges readiness by the device list instead. That is why **Partial** is a
 state of its own, rather than a successful restore with fewer lights than
 expected.
 
+**What "went away" means.** A connection has gone when its socket fails, or
+when a request gets no answer within five seconds. A request finishes or
+times out on its own; a caller that stops waiting does not cut it short. The
+OpenRGB SDK cannot recover from an abandoned request. Its late answer blocks
+every request after it (spec 063).
+
 ## Session attachment
 
 The desktop is a precondition for nothing. It appears, and it may appear more

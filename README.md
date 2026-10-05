@@ -221,6 +221,17 @@ MIT. See [LICENSE](LICENSE).
 
 ## Changelog
 
+### Unreleased
+
+- The service no longer hangs when the OpenRGB server dies in the middle of
+  a request (spec 063, [#181](https://github.com/ushineko/hotaru/issues/181)).
+  The SDK does not wake a request whose socket closes, so the request waited
+  forever and held the connection's lock. Health, status and the reconnect
+  of spec 058 all waited behind it. Every request now has a five-second
+  deadline, and one that runs out marks the connection gone, so the service
+  redials and restores. A caller that hangs up no longer abandons a request
+  halfway, which could leave a healthy connection unusable.
+
 ### 0.1.23 (2026-10-04)
 
 - Drop a picture on Screen or Scenes (spec 062,
