@@ -2,7 +2,7 @@
 
 *lights, cooler, action!*
 
-**Version**: 0.1.22
+**Version**: 0.1.23
 
 RGB lighting and AIO cooler control for Linux, as a CLI, a user service and a
 desktop GUI. 
@@ -221,7 +221,7 @@ MIT. See [LICENSE](LICENSE).
 
 ## Changelog
 
-### Unreleased
+### 0.1.23 (2026-10-04)
 
 - Drop a picture on Screen or Scenes (spec 062,
   [#179](https://github.com/ushineko/hotaru/issues/179)). The picture is kept
