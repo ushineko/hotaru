@@ -8,7 +8,9 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
+	"time"
 
 	sdk "github.com/csutorasa/go-openrgb-sdk"
 	"github.com/ushineko/hotaru/internal/colour"
@@ -18,6 +20,16 @@ import (
 // clientName is what hotaru calls itself to the server. It shows up in
 // OpenRGB's own client list, so it says which program is holding the socket.
 const clientName = "hotaru"
+
+/*
+exchangeTimeout is how long one exchange waits for its answer.
+
+A listing takes under a millisecond against a local server, so this is a
+server that has stopped answering, not a slow one. Without it, a server that
+died between a request and its answer held Conn.mu for good: the SDK does not
+wake a waiting exchange when the socket closes. See spec 063.
+*/
+const exchangeTimeout = 5 * time.Second
 
 /*
 Conn is a connection to an OpenRGB server.
@@ -31,15 +43,21 @@ socket.
 type Conn struct {
 	mu      sync.Mutex
 	client  *sdk.Client
+	socket  net.Conn
 	address string
 	version uint32
+
+	// wait is how long one exchange waits for its answer: exchangeTimeout,
+	// shortened by a test that should not spend seconds proving a timeout.
+	wait time.Duration
 
 	// gone is whether this connection has failed at the connection level.
 	// Sticky, because a socket whose peer has gone does not come back: the
 	// server that answers next is a different process with its own
-	// enumeration, reached by dialling again. Guarded by mu, which every
-	// exchange already holds.
-	gone bool
+	// enumeration, reached by dialling again. Atomic rather than guarded by
+	// mu, so asking does not wait behind an exchange that is stuck on the
+	// very server that went (spec 063 R3).
+	gone atomic.Bool
 }
 
 /*
@@ -60,7 +78,12 @@ func Dial(ctx context.Context, address string) (*Conn, error) {
 	if err != nil {
 		return nil, fmt.Errorf("connect to the OpenRGB server at %s: %w", address, err)
 	}
+	return handshake(ctx, netConn, address, exchangeTimeout)
+}
 
+// handshake introduces hotaru on a connected socket. Apart from Dial so a
+// test can hand it one end of a pipe, and say how long an exchange may wait.
+func handshake(ctx context.Context, netConn net.Conn, address string, wait time.Duration) (*Conn, error) {
 	client := sdk.NewClient(netConn)
 	if err := client.Initialize(clientName); err != nil {
 		_ = netConn.Close()
@@ -68,13 +91,37 @@ func Dial(ctx context.Context, address string) (*Conn, error) {
 	}
 	// Version negotiation is the one piece of the handshake worth insisting on:
 	// health reports what was agreed, so a client lagging a server release is
-	// visible rather than showing up as a field that decodes oddly.
-	if err := client.RequestProtocolVersion(); err != nil {
+	// visible rather than showing up as a field that decodes oddly. Bounded,
+	// like every exchange, so a server that accepts and never answers cannot
+	// hold a redial. The caller's context still counts here: nothing else
+	// will use this connection if the handshake is abandoned.
+	agree, cancel := context.WithTimeout(ctx, wait)
+	defer cancel()
+	if err := client.RequestProtocolVersionCtx(agree); err != nil {
 		_ = netConn.Close()
 		return nil, fmt.Errorf("agree a protocol version with %s: %w", address, err)
 	}
 
-	return &Conn{client: client, address: address, version: uint32(client.CommonVersion())}, nil
+	return &Conn{
+		client: client, socket: netConn, address: address,
+		version: uint32(client.CommonVersion()), wait: wait,
+	}, nil
+}
+
+/*
+exchange is the context one request waits on: the caller's values, and a
+deadline of the connection's own in place of the caller's cancellation.
+
+The caller cannot cut an exchange short, because the SDK cannot abandon one
+safely. A request that gives up leaves its reply channel registered, and the
+answer that still arrives blocks the SDK's read loop for good -- every later
+exchange on the connection then waits for nothing. A client hanging up on the
+API mid-request was enough to do that to a healthy server. So the only thing
+that ends an exchange early is this deadline, and reaching it means the server
+stopped answering (spec 063 R1.1, R2).
+*/
+func (c *Conn) exchange(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), c.wait)
 }
 
 // Address is the server this is connected to, for messages that need to name it.
@@ -83,11 +130,18 @@ func (c *Conn) Address() string { return c.address }
 // ProtocolVersion is the version client and server agreed on.
 func (c *Conn) ProtocolVersion() uint32 { return c.version }
 
-// Close hangs up.
+/*
+Close hangs up.
+
+The socket, not the SDK's client. The client's Close hands nil to every reply
+channel it still holds, and after an exchange has timed out nobody is
+receiving on one, so it blocks for good -- in the redial that is replacing
+this connection. Closing the socket is all the hanging up a server sees. No
+lock either: closing a socket is safe from any goroutine, and it is how an
+exchange stuck on this connection learns to stop.
+*/
 func (c *Conn) Close() error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if err := c.client.Close(); err != nil {
+	if err := c.socket.Close(); err != nil {
 		return fmt.Errorf("hang up on %s: %w", c.address, err)
 	}
 	return nil
@@ -106,33 +160,34 @@ because the server that comes back is a new process; the caller's move is to
 dial again and replace this.
 */
 func (c *Conn) Gone() bool {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.gone
+	return c.gone.Load()
 }
 
 /*
-noteLocked records a connection-level failure, and leaves every other kind
-alone. The caller holds mu.
+note records a connection-level failure, and leaves every other kind alone.
 
 The test is the error chain rather than the text of it: every exchange in this
 file wraps the SDK's error with %w, and the three that do not are about a
 device, a mode and an LED count -- none of which are the socket.
 */
-func (c *Conn) noteLocked(err error) {
-	if !c.gone && isGone(err) {
-		c.gone = true
+func (c *Conn) note(err error) {
+	if isGone(err) {
+		c.gone.Store(true)
 	}
 }
 
 // isGone is whether an error is the socket rather than the answer. Shared with
 // the fake, so a test that says "the server went away" means by this what the
-// hardware path means by it.
+// hardware path means by it. An exchange that ran out of time counts: only
+// the connection's own deadline ends one (see exchange), and a server that
+// does not answer within it has gone as surely as one that hung up.
 func isGone(err error) bool {
 	if err == nil {
 		return false
 	}
-	return errors.Is(err, syscall.EPIPE) ||
+	var timedOut *sdk.ResponseTimeoutError
+	return errors.As(err, &timedOut) ||
+		errors.Is(err, syscall.EPIPE) ||
 		errors.Is(err, syscall.ECONNRESET) ||
 		errors.Is(err, net.ErrClosed) ||
 		errors.Is(err, io.EOF) ||
@@ -150,8 +205,7 @@ two writes to change, and invisible as anything else.
 func (c *Conn) Devices(ctx context.Context) (found []devices.Device, err error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	// Registered after the unlock, so it runs before it and still holds mu.
-	defer func() { c.noteLocked(err) }()
+	defer func() { c.note(err) }()
 	return c.list(ctx)
 }
 
@@ -181,18 +235,20 @@ type located struct {
 // catalogue is one listing: every controller, duplicates removed, names made
 // distinguishable, each with the index it was found at.
 func (c *Conn) catalogue(ctx context.Context) ([]located, error) {
-	count, err := c.client.RequestControllerCountCtx(ctx)
+	asked, cancel := c.exchange(ctx)
+	count, err := c.client.RequestControllerCountCtx(asked)
+	cancel()
 	if err != nil {
 		return nil, fmt.Errorf("ask %s how many devices it has: %w", c.address, err)
 	}
 
 	out := make([]located, 0, count.Count)
 	for i := uint32(0); i < count.Count; i++ {
-		data, err := c.client.RequestControllerDataCtx(ctx, i)
+		data, err := c.raw(ctx, i)
 		if err != nil {
-			return nil, fmt.Errorf("read device %d from %s: %w", i, c.address, err)
+			return nil, err
 		}
-		out = append(out, located{index: i, device: convert(data.Controller)})
+		out = append(out, located{index: i, device: convert(data)})
 	}
 	return collapse(out), nil
 }
@@ -277,7 +333,7 @@ the active mode is read back and compared. A zero exit code establishes nothing.
 func (c *Conn) Device(ctx context.Context, name string) (found devices.Device, err error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	defer func() { c.noteLocked(err) }()
+	defer func() { c.note(err) }()
 
 	entry, err := c.find(ctx, name)
 	if err != nil {
@@ -313,7 +369,9 @@ func (c *Conn) find(ctx context.Context, name string) (located, error) {
 // raw is the controller as the server describes it, for a write that needs the
 // mode structures the protocol round-trips.
 func (c *Conn) raw(ctx context.Context, index uint32) (*sdk.ControllerData, error) {
-	data, err := c.client.RequestControllerDataCtx(ctx, index)
+	asked, cancel := c.exchange(ctx)
+	defer cancel()
+	data, err := c.client.RequestControllerDataCtx(asked, index)
 	if err != nil {
 		return nil, fmt.Errorf("read device %d from %s: %w", index, c.address, err)
 	}
@@ -331,7 +389,7 @@ looks up. Brightness is asserted only where the mode says it has any.
 func (c *Conn) SetMode(ctx context.Context, device, mode string, style Style) (err error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	defer func() { c.noteLocked(err) }()
+	defer func() { c.note(err) }()
 
 	entry, err := c.find(ctx, device)
 	if err != nil {
@@ -394,7 +452,7 @@ protocol wants too.
 func (c *Conn) SetFrame(ctx context.Context, device string, frame devices.Frame) (err error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	defer func() { c.noteLocked(err) }()
+	defer func() { c.note(err) }()
 
 	entry, err := c.find(ctx, device)
 	if err != nil {
