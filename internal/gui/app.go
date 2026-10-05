@@ -354,6 +354,25 @@ selected the first section. fynedesygn ignores an unknown title now (its spec
 028); this asks for the two things that do exist.
 */
 func (a *App) dropped(sh *shell.Shell, uris []fyne.URI) {
+	/*
+		Screen and Scenes keep a drop and make something from it (spec 062).
+		The library still keeps the picture first, so it is asked about as it
+		would be in Pictures, and the window stays where it was.
+	*/
+	if a.pictures != nil {
+		on := a.droppedOn(sh)
+		if on != nil {
+			say("drop: on %s", on.Title())
+		}
+		switch part := on.(type) {
+		case *DashboardsSection:
+			a.pictures.drop(sh, uris, func(picture api.Image) { part.fromPicture(sh, picture) })
+			return
+		case *ScenesSection:
+			a.pictures.drop(sh, uris, func(picture api.Image) { part.fromPicture(sh, picture) })
+			return
+		}
+	}
 	if a.create != nil {
 		a.create.Show("Pictures")
 	}

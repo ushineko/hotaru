@@ -109,9 +109,15 @@ func makeScene(
 				if err != nil {
 					return err
 				}
+				said := fmt.Sprintf("%s: %d assignment(s). It is in Scenes.",
+					scene.Name, len(scene.Assignments))
+				if screen, ok := shownScreen(scene); ok && screen != from {
+					// A screen made on the way (spec 062) is worth saying:
+					// it is a second thing in a second tab.
+					said += " It shows the screen " + screen + "."
+				}
 				onScreen(func() {
-					sh.Flash(fmt.Sprintf("%s: %d assignment(s). It is in Scenes.",
-						scene.Name, len(scene.Assignments)), fd.StatusGood)
+					sh.Flash(said, fd.StatusGood)
 					sh.Invalidate()
 				})
 				return nil

@@ -423,3 +423,76 @@ func TestARenamedNameIsCleanedLikeAnyOther(t *testing.T) {
 	require.Equal(t, "escaped-name", moved.Name)
 	require.Equal(t, filepath.Dir(l.Path("one")), filepath.Dir(moved.Path))
 }
+
+func TestAPictureRemembersTheFileItCameFrom(t *testing.T) {
+	/*
+		A wallpaper dropped twice is the same file twice, and the library is
+		the one place that can say so: the conversion is not repeatable byte
+		for byte, so only the source's hash recognises it (spec 062).
+	*/
+	l := library(t)
+	source := wallpaper(t, 800, 600)
+
+	stored, err := l.Add("wallpaper", source)
+	require.NoError(t, err)
+	require.Equal(t, images.SourceHash(source), stored.Source)
+
+	all, err := l.All()
+	require.NoError(t, err)
+	require.Len(t, all, 1, "the record was listed as a picture of its own")
+	require.Equal(t, images.SourceHash(source), all[0].Source)
+
+	// Replaced under the same name: the record is the new file's.
+	other := wallpaper(t, 640, 640)
+	_, err = l.Add("wallpaper", other)
+	require.NoError(t, err)
+	all, err = l.All()
+	require.NoError(t, err)
+	require.Equal(t, images.SourceHash(other), all[0].Source)
+
+	// Renamed: the record goes with it.
+	moved, err := l.Rename("wallpaper", "aurora")
+	require.NoError(t, err)
+	require.Equal(t, images.SourceHash(other), moved.Source)
+	all, err = l.All()
+	require.NoError(t, err)
+	require.Equal(t, "aurora", all[0].Name)
+	require.Equal(t, images.SourceHash(other), all[0].Source)
+
+	// Removed: nothing of it is left in the directory.
+	require.NoError(t, l.Remove("aurora"))
+	left, err := os.ReadDir(l.Dir())
+	require.NoError(t, err)
+	require.Empty(t, left, "removing a picture left its record behind")
+}
+
+func TestAPictureWithNoRecordHasNoSource(t *testing.T) {
+	// Pictures kept before spec 062, and slideshows, which have no one file
+	// they came from.
+	l := library(t)
+	_, err := l.AddSlideshow("reel", [][]byte{wallpaper(t, 100, 100), wallpaper(t, 200, 100)})
+	require.NoError(t, err)
+
+	source := wallpaper(t, 300, 300)
+	converted, _, err := images.Convert(source)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(l.Dir(), "older.gif"), converted, 0o600))
+
+	all, err := l.All()
+	require.NoError(t, err)
+	require.Len(t, all, 2)
+	for _, one := range all {
+		require.Empty(t, one.Source, "%s claims a source nobody recorded", one.Name)
+	}
+
+	// A slideshow over a picture that had a record does not inherit it.
+	_, err = l.Add("older", source)
+	require.NoError(t, err)
+	_, err = l.AddSlideshow("older", [][]byte{wallpaper(t, 100, 100), wallpaper(t, 200, 100)})
+	require.NoError(t, err)
+	all, err = l.All()
+	require.NoError(t, err)
+	for _, one := range all {
+		require.Empty(t, one.Source, "%s kept the record of what it replaced", one.Name)
+	}
+}

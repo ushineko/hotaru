@@ -19,6 +19,7 @@ import (
 	"github.com/ushineko/hotaru/internal/cli"
 	"github.com/ushineko/hotaru/internal/colour"
 	"github.com/ushineko/hotaru/internal/config"
+	"github.com/ushineko/hotaru/internal/dashboard"
 	"github.com/ushineko/hotaru/internal/devices"
 	"github.com/ushineko/hotaru/internal/images"
 	"github.com/ushineko/hotaru/internal/openrgb"
@@ -155,6 +156,9 @@ func serving(t *testing.T, cfg *config.Config, server openrgb.Client) string {
 	}
 	if saved, err := scenes.Open(filepath.Join(dir, "scenes.yml")); err == nil {
 		svc.SetScenes(saved)
+	}
+	if boards, err := dashboard.Open(filepath.Join(dir, "dashboards.yml")); err == nil {
+		svc.SetDashboards(boards)
 	}
 
 	ctx, cancel := context.WithCancel(t.Context())
@@ -486,4 +490,61 @@ func TestASpeedThatIsNotANumberSaysSo(t *testing.T) {
 		"--effect", "keychron=Solid Reactive", "--effect-speed", "keychron=quick")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "a number")
+}
+
+func TestASceneFromAPictureCanShowASavedScreen(t *testing.T) {
+	/*
+		Spec 062: a scene whose lights come from a picture and whose panel
+		shows a screen with that picture behind it. Through the real socket,
+		library and scene store, because the screen is a field the service
+		has to carry all the way into the saved scene.
+	*/
+	socket := serving(t, &config.Config{}, openrgb.NewFake(board()))
+
+	picture := filepath.Join(t.TempDir(), "wallpaper.png")
+	require.NoError(t, os.WriteFile(picture, gif(t), 0o600))
+	_, err := run(t, socket, "image", "add", "wall", picture)
+	require.NoError(t, err)
+
+	_, err = run(t, socket, "image", "scene", "wall", "themed", "--screen", "coolant")
+	require.NoError(t, err)
+
+	client := api.NewClient(socket)
+	saved := func(name string) (api.Scene, bool) {
+		got, err := client.Scenes(t.Context())
+		require.NoError(t, err)
+		for _, one := range got {
+			if one.Name == name {
+				return one, true
+			}
+		}
+		return api.Scene{}, false
+	}
+	themed, ok := saved("themed")
+	require.True(t, ok)
+	require.Equal(t, api.ScreenDashboardPrefix+"coolant", themed.Screen,
+		"the scene does not show the screen it was asked to")
+
+	// A screen that is not there is refused, and nothing is kept.
+	_, err = run(t, socket, "image", "scene", "wall", "other", "--screen", "nowhere")
+	require.Error(t, err)
+	_, ok = saved("other")
+	require.False(t, ok, "a scene naming a missing screen was kept")
+}
+
+func TestTheLibraryReportsWhereAPictureCameFrom(t *testing.T) {
+	// Spec 062: the hash the window compares a dropped file against, from
+	// the real library through the socket.
+	socket := serving(t, &config.Config{}, openrgb.NewFake(board()))
+
+	source := gif(t)
+	picture := filepath.Join(t.TempDir(), "wallpaper.png")
+	require.NoError(t, os.WriteFile(picture, source, 0o600))
+	_, err := run(t, socket, "image", "add", "wall", picture)
+	require.NoError(t, err)
+
+	stored, err := api.NewClient(socket).Images(t.Context())
+	require.NoError(t, err)
+	require.Len(t, stored, 1)
+	require.Equal(t, images.SourceHash(source), stored[0].Source)
 }

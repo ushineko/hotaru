@@ -16,6 +16,8 @@ package images
 import (
 	"bufio"
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"image"
 	"image/color"
@@ -63,6 +65,16 @@ type Image struct {
 	Frames int
 	// Added is when it was converted.
 	Added time.Time
+	/*
+		Source is the SHA-256 of the file it was converted from, in hex, or
+		empty when nothing recorded one (spec 062).
+
+		The source's, not the stored file's: the conversion is not repeatable
+		byte for byte -- popular sorts cells of equal count in any order --
+		so the same wallpaper converted twice is two different GIFs, and only
+		the file somebody drops is the same file the second time.
+	*/
+	Source string
 }
 
 // Moves reports whether the image is an animation, which is the one thing a
@@ -77,7 +89,22 @@ wants the same thing: something the panel will display. A name that exists is
 replaced -- somebody adding "wallpaper" twice means the second one.
 */
 func (l *Library) Add(name string, source []byte) (Image, error) {
-	return l.keep(name, func() ([]byte, int, error) { return Convert(source) })
+	stored, err := l.keep(name, func() ([]byte, int, error) { return Convert(source) })
+	if err != nil {
+		return Image{}, err
+	}
+	stored.Source = SourceHash(source)
+	if err := os.WriteFile(l.record(stored.Name), []byte(stored.Source+"\n"), 0o600); err != nil {
+		return Image{}, fmt.Errorf("record where %s came from: %w", stored.Name, err)
+	}
+	return stored, nil
+}
+
+// SourceHash is the hash a library records for a source file, so a caller
+// holding a file can ask whether it is already stored.
+func SourceHash(source []byte) string {
+	sum := sha256.Sum256(source)
+	return hex.EncodeToString(sum[:])
 }
 
 /*
@@ -106,6 +133,11 @@ func (l *Library) keep(name string, convert func() ([]byte, int, error)) (Image,
 	if err := os.WriteFile(path, converted, 0o600); err != nil {
 		return Image{}, fmt.Errorf("store %s: %w", name, err)
 	}
+	// Whatever was recorded for the picture this replaces is not where this
+	// one came from. Add writes its own afterwards; a slideshow has none.
+	if err := os.Remove(l.record(name)); err != nil && !os.IsNotExist(err) {
+		return Image{}, fmt.Errorf("store %s: %w", name, err)
+	}
 	return Image{
 		Name: name, Path: path, Bytes: int64(len(converted)),
 		Frames: frames, Added: time.Now(),
@@ -131,7 +163,7 @@ func (l *Library) All() ([]Image, error) {
 		name := strings.TrimSuffix(entry.Name(), ".gif")
 		out = append(out, Image{
 			Name: name, Path: l.path(name), Bytes: info.Size(),
-			Frames: frames(l.path(name)), Added: info.ModTime(),
+			Frames: frames(l.path(name)), Added: info.ModTime(), Source: l.source(name),
 		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
@@ -141,8 +173,10 @@ func (l *Library) All() ([]Image, error) {
 // Remove deletes one. Removing something that is not there is not an error:
 // the caller wanted it gone and it is gone.
 func (l *Library) Remove(name string) error {
-	if err := os.Remove(l.path(clean(name))); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("remove %s: %w", name, err)
+	for _, path := range []string{l.path(clean(name)), l.record(clean(name))} {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("remove %s: %w", name, err)
+		}
 	}
 	return nil
 }
@@ -175,6 +209,16 @@ func (l *Library) Rename(from, to string) (Image, error) {
 	if err := os.Rename(l.path(from), l.path(to)); err != nil {
 		return Image{}, fmt.Errorf("rename %s: %w", from, err)
 	}
+	// The record goes with the picture. A picture with none has none to move,
+	// and a stale one under the new name is not this picture's.
+	if err := os.Rename(l.record(from), l.record(to)); err != nil {
+		if !os.IsNotExist(err) {
+			return Image{}, fmt.Errorf("rename %s: %w", from, err)
+		}
+		if err := os.Remove(l.record(to)); err != nil && !os.IsNotExist(err) {
+			return Image{}, fmt.Errorf("rename %s: %w", from, err)
+		}
+	}
 
 	info, err := os.Stat(l.path(to))
 	if err != nil {
@@ -182,7 +226,7 @@ func (l *Library) Rename(from, to string) (Image, error) {
 	}
 	return Image{
 		Name: to, Path: l.path(to), Bytes: info.Size(),
-		Frames: frames(l.path(to)), Added: info.ModTime(),
+		Frames: frames(l.path(to)), Added: info.ModTime(), Source: l.source(to),
 	}, nil
 }
 
@@ -201,6 +245,21 @@ func (l *Library) Read(name string) ([]byte, error) {
 
 func (l *Library) path(name string) string {
 	return filepath.Join(l.dir, name+".gif")
+}
+
+// record is where a picture's source hash is kept, beside it. All lists only
+// .gif files, so an older hotaru reading this directory does not see it.
+func (l *Library) record(name string) string {
+	return filepath.Join(l.dir, name+".sha256")
+}
+
+// source is a picture's recorded source hash, or empty when it has none.
+func (l *Library) source(name string) string {
+	body, err := os.ReadFile(l.record(name)) //nolint:gosec // a name this package cleaned
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(body))
 }
 
 /*

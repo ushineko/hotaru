@@ -131,7 +131,8 @@ one averaged colour -- an average of a red storm on a blue sky is mud.
 
 Dark parts of a picture are lifted to a brightness a light can show: what
 somebody means by "match this picture" is its colours, not its shadows. The
-scene shows the picture on the cooler's panel as well.`,
+scene shows the picture on the cooler's panel as well, or the saved screen
+named by --screen.`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client, err := client(cmd)
@@ -143,7 +144,11 @@ scene shows the picture on the cooler's panel as well.`,
 			if err != nil {
 				return err
 			}
-			scene, err := client.SceneFromImage(cmd.Context(), args[0], args[1], distance, effects)
+			screen, _ := cmd.Flags().GetString("screen")
+			if screen != "" {
+				screen = api.ScreenDashboardPrefix + screen
+			}
+			scene, err := client.SceneFromImageOn(cmd.Context(), args[0], args[1], screen, distance, effects)
 			if err != nil {
 				return quiet(err)
 			}
@@ -154,6 +159,8 @@ scene shows the picture on the cooler's panel as well.`,
 	}
 	distanceFlag(cmd)
 	effectFlag(cmd)
+	cmd.Flags().String("screen", "",
+		"a saved screen to show instead of the picture, by name (see hotaru dashboard list)")
 	return cmd
 }
 

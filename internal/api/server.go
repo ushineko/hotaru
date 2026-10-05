@@ -536,7 +536,7 @@ func Handler(svc *service.Service) http.Handler {
 		for _, image := range stored {
 			out.Images = append(out.Images, Image{
 				Name: image.Name, Path: image.Path, Bytes: image.Bytes,
-				Frames: image.Frames, Added: image.Added,
+				Frames: image.Frames, Added: image.Added, Source: image.Source,
 			})
 		}
 		write(w, http.StatusOK, out)
@@ -579,7 +579,7 @@ func Handler(svc *service.Service) http.Handler {
 		}
 		write(w, http.StatusOK, Image{
 			Name: stored.Name, Path: stored.Path, Bytes: stored.Bytes,
-			Frames: stored.Frames, Added: stored.Added,
+			Frames: stored.Frames, Added: stored.Added, Source: stored.Source,
 		})
 	})
 
@@ -612,7 +612,8 @@ func Handler(svc *service.Service) http.Handler {
 			return
 		}
 
-		scene, err := svc.SceneFromImage(r.Context(), r.PathValue("name"), in.Scene, in.Distance, in.Effects)
+		scene, err := svc.SceneFromImageOn(r.Context(), r.PathValue("name"), in.Scene, in.Screen,
+			in.Distance, in.Effects)
 		if err != nil {
 			fail(w, err)
 			return

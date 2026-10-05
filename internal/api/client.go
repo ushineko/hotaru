@@ -550,10 +550,18 @@ run of lights carries the picture's own sweep rather than one averaged colour.
 func (c *Client) SceneFromImage(
 	ctx context.Context, picture, scene string, distance float64, effects map[string]Effect,
 ) (Scene, error) {
+	return c.SceneFromImageOn(ctx, picture, scene, "", distance, effects)
+}
+
+// SceneFromImageOn is SceneFromImage with a saved dashboard on the screen
+// instead of the picture, named `dashboard:<name>` (spec 062).
+func (c *Client) SceneFromImageOn(
+	ctx context.Context, picture, scene, screen string, distance float64, effects map[string]Effect,
+) (Scene, error) {
 	var out Scene
 	err := c.do(ctx, http.MethodPost,
 		"/"+Version+"/images/"+url.PathEscape(picture)+"/scene",
-		SceneFromImageRequest{Scene: scene, Distance: distance, Effects: effects}, &out)
+		SceneFromImageRequest{Scene: scene, Distance: distance, Effects: effects, Screen: screen}, &out)
 	return out, err
 }
 
