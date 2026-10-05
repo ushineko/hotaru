@@ -11,7 +11,7 @@
 
 pkgbase=hotaru
 pkgname=(hotaru hotaru-gui)
-pkgver=0.1.23
+pkgver=0.1.24
 pkgrel=1
 pkgdesc='RGB lighting and AIO cooler control for Linux'
 arch=('x86_64')

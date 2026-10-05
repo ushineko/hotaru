@@ -2,7 +2,7 @@
 
 *lights, cooler, action!*
 
-**Version**: 0.1.23
+**Version**: 0.1.24
 
 RGB lighting and AIO cooler control for Linux, as a CLI, a user service and a
 desktop GUI. 
@@ -221,7 +221,7 @@ MIT. See [LICENSE](LICENSE).
 
 ## Changelog
 
-### Unreleased
+### 0.1.24 (2026-10-05)
 
 - The service no longer hangs when the OpenRGB server dies in the middle of
   a request (spec 063, [#181](https://github.com/ushineko/hotaru/issues/181)).
