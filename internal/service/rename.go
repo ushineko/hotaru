@@ -142,11 +142,9 @@ func (s *Service) RenameScene(from, to string) (Renamed, error) {
 
 	// The label follows, so status after a rename is not the name of a scene
 	// that no longer exists.
-	s.mu.Lock()
-	if s.applied == out.From {
-		s.applied = to
+	if s.Applied() == out.From {
+		s.applying(to)
 	}
-	s.mu.Unlock()
 	return out, nil
 }
 

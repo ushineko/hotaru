@@ -228,6 +228,11 @@ that is a fresh install that nobody has asked for anything. Such an install
 restores nothing, which is why installing hotaru cannot disturb lighting that
 was configured elsewhere.
 
+`scene` is the scene applied last, and `showing` is what the cooler's panel
+was last asked to show. hotaru keeps both in its state file, so they survive
+a restart. When the cooler attaches, hotaru puts the panel back the way
+`showing` describes: a picture, the cooler's own readout, or the dashboard.
+
 ## GET /v1/scenes
 
 Every saved scene. A scene holds colour assignments addressed at whatever
@@ -300,6 +305,11 @@ appears in that device's `problems`, as does a colour that will not parse.
 
 Writes a scene under a name, replacing one already there. The body is a scene
 without its name, which comes from the path.
+
+hotaru applies a scene's assignments in order. Where two cover the same light,
+the later one shows. Saving the scene that was applied last lights it again.
+hotaru keeps that scene's name in its state file, so this also works after a
+restart.
 
 ## DELETE /v1/scenes/{name}
 
@@ -632,7 +642,9 @@ Builds a scene whose lights match a stored picture, and keeps it.
 
 Every zone gets a run across the picture rather than one colour for the whole
 machine. Light *i* of *n* takes the *i*th vertical slice, so a ring carries
-the image's own left-to-right sweep. hotaru weights each slice by how much
+the image's own left-to-right sweep. A device's zones of one light form one
+run together, in the device's order, so a mouse mat's three edges take three
+slices. hotaru weights each slice by how much
 colour its pixels carry. Half of every slice through a photograph is
 background, and averaging that in reads a rust planet as grey-brown. hotaru
 then lifts the value to something a light can show, because a photograph is
@@ -676,7 +688,9 @@ both as `hotaru image colours` and `hotaru dashboard colours`.
 ## POST /v1/images/{name}/show
 
 Puts a stored picture on the panel, taking it from the dashboard.
-`POST /v1/screen` with `{"dashboard": true}` gives it back.
+`POST /v1/screen` with `{"dashboard": true}` gives it back. hotaru records
+the picture, as it does for every change of the screen, and shows it again
+after a restart.
 
 ## GET /v1/keys
 

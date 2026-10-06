@@ -8,6 +8,7 @@ import (
 	"image/gif"
 
 	"github.com/ushineko/hotaru/internal/dashboard"
+	"github.com/ushineko/hotaru/internal/state"
 )
 
 /*
@@ -129,7 +130,7 @@ func (s *Service) UseDashboard(name string) error {
 	if panel != nil {
 		panel.Release() // Release redraws; see Dashboard.
 	}
-	s.drawing("dashboard: " + one.Name)
+	s.shown(state.Screen{Showing: "dashboard: " + one.Name}, nil)
 	return nil
 }
 

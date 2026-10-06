@@ -19,12 +19,24 @@ type Recorder interface {
 	Snapshot() state.Snapshot
 	Record(name string, device state.Device) error
 	Forget(name string) error
+	RecordScene(name string) error
+	RecordScreen(screen state.Screen, image []byte) error
 }
 
-// SetRecorder gives the service somewhere to remember what was asked for.
+// SetRecorder gives the service somewhere to remember what was asked for, and
+// takes back the name of the scene last applied before a restart.
 func (s *Service) SetRecorder(r Recorder) {
 	s.mu.Lock()
 	s.recorder = r
+	if r != nil {
+		saved := r.Snapshot()
+		if s.applied == "" {
+			s.applied = saved.Scene
+		}
+		if s.showing == "" && saved.Screen != nil {
+			s.showing = saved.Screen.Showing
+		}
+	}
 	s.mu.Unlock()
 }
 

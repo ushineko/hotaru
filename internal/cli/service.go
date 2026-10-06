@@ -36,6 +36,13 @@ func statusCommand() *cobra.Command {
 			if status.RulesFile != "" {
 				cmd.Printf("  rules     %s\n", status.RulesFile)
 			}
+			// What the window's System card says, so the two agree (#184).
+			if status.Scene != "" {
+				cmd.Printf("  scene     %s, the last applied\n", status.Scene)
+			}
+			if status.Showing != "" {
+				cmd.Printf("  screen    %s\n", status.Showing)
+			}
 			if len(status.Remembered) == 0 {
 				// The inert state, said plainly: nothing has been asked for,
 				// so nothing will be put back.

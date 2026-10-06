@@ -1,5 +1,13 @@
 package service
 
+import (
+	"context"
+	"fmt"
+	"os"
+
+	"github.com/ushineko/hotaru/internal/state"
+)
+
 /*
 What is on the machine right now: the scene somebody applied, and what the
 cooler's panel is showing.
@@ -17,8 +25,9 @@ a device waking up wrong -- leaves the label saying what it said, which is why
 the window shows it as "last applied" rather than as "this is the scene".
 */
 
-// Applied is the scene last applied, or empty if none has been since the
-// service started.
+// Applied is the scene last applied, or empty if none ever has been. It
+// survives a restart through the recorder (#183): forgetting it turned saving
+// the scene on the machine into writing a file and nothing else.
 func (s *Service) Applied() string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -38,12 +47,69 @@ func (s *Service) Showing() string {
 func (s *Service) applying(scene string) {
 	s.mu.Lock()
 	s.applied = scene
+	recorder := s.recorder
 	s.mu.Unlock()
+	if recorder != nil {
+		_ = recorder.RecordScene(scene)
+	}
 }
 
-// drawing records what the panel was asked for.
-func (s *Service) drawing(what string) {
+/*
+shown records what the panel is showing: the label, and what it takes to put
+it back (#184). The image is the picture's bytes, which the recorder keeps
+only when there is no file to name.
+*/
+func (s *Service) shown(screen state.Screen, image []byte) {
 	s.mu.Lock()
-	s.showing = what
+	s.showing = screen.Showing
+	recorder := s.recorder
 	s.mu.Unlock()
+	if recorder == nil {
+		return
+	}
+	if image != nil && screen.Picture != "" {
+		image = nil
+	}
+	_ = recorder.RecordScreen(screen, image)
+}
+
+// dashboardShown is the record for the dashboard drawing, by the name of the
+// one in use where there is a store to ask.
+func (s *Service) dashboardShown() state.Screen {
+	if store, err := s.boards(); err == nil {
+		return state.Screen{Showing: "dashboard: " + store.Active().Name}
+	}
+	return state.Screen{Showing: "the dashboard"}
+}
+
+/*
+RestoreScreen puts back what the panel was last asked to show, for a cooler
+that has just attached.
+
+The screen's half of what reconciling does for the lights. Nothing recorded
+is nothing to put back, which is a fresh install and the dashboard. The
+dashboard recorded is the same: it is what an attached cooler draws already.
+A picture whose file has gone is reported and left; the dashboard stays.
+*/
+func (s *Service) RestoreScreen(ctx context.Context) error {
+	s.mu.RLock()
+	recorder := s.recorder
+	s.mu.RUnlock()
+	if recorder == nil {
+		return nil
+	}
+	screen := recorder.Snapshot().Screen
+	switch {
+	case screen == nil:
+		return nil
+	case screen.Readout:
+		return s.Draw(ctx, Screen{Readout: true})
+	case screen.Picture != "":
+		gif, err := os.ReadFile(screen.Picture) //nolint:gosec // a path hotaru recorded
+		if err != nil {
+			return fmt.Errorf("put back %s: %w", screen.Showing, err)
+		}
+		return s.Draw(ctx, Screen{Image: gif, Source: screen.Picture})
+	}
+	return nil
 }

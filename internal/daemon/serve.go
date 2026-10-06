@@ -310,6 +310,12 @@ func serveCooler(ctx context.Context, svc *service.Service, found *cooler.Cooler
 	drawn := make(chan struct{})
 	go func() { defer close(drawn); panel.Run(drawing) }()
 
+	// What the panel was last asked to show, as the lights are put back
+	// (#184). After the dashboard has started, because a picture holds it.
+	if err := svc.RestoreScreen(ctx); err != nil {
+		report("could not put the screen back: %v", err)
+	}
+
 	gone := false
 	select {
 	case <-ctx.Done():

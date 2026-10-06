@@ -10,7 +10,9 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"github.com/ushineko/hotaru/internal/devices"
 	"github.com/ushineko/hotaru/internal/images"
+	"github.com/ushineko/hotaru/internal/openrgb"
 	"github.com/ushineko/hotaru/internal/scenes"
 	"github.com/ushineko/hotaru/internal/service"
 )
@@ -82,6 +84,46 @@ func TestASceneFromAPictureSweepsAcrossIt(t *testing.T) {
 	require.Len(t, board, 2, "four lights over two colours is two runs")
 	require.True(t, redder(board[0]), "the left of the picture is red, got %s", board[0])
 	require.True(t, bluer(board[1]), "the right of the picture is blue, got %s", board[1])
+}
+
+func TestOneLightZonesAreSpreadAcrossThePicture(t *testing.T) {
+	/*
+		A mouse mat with three zones of one light each (#183).
+
+		Painted zone by zone, each light was a run of one, which is the whole
+		picture's mean: the mat came out three times the same colour. As one
+		strip, its first zone takes the left of the picture and its last the
+		right.
+	*/
+	mat := devices.Device{
+		Name:     "Corsair MM700",
+		LEDCount: 3,
+		Modes:    []devices.Mode{{Name: "Direct", PerLED: true}},
+		Zones: []devices.Zone{
+			{Name: "Left", First: 0, Count: 1},
+			{Name: "Right", First: 1, Count: 1},
+			{Name: "Logo", First: 2, Count: 1},
+		},
+		ActiveMode: "Direct",
+	}
+	svc := service.New(nil, openrgb.NewFake(mat), "")
+	withPictures(t, svc)
+	saved, err := scenes.Open(filepath.Join(t.TempDir(), "scenes.yml"))
+	require.NoError(t, err)
+	svc.SetScenes(saved)
+	_, err = svc.AddImage("halves", encoded(t))
+	require.NoError(t, err)
+
+	scene, err := svc.SceneFromImage(t.Context(), "halves", "themed", 1, nil)
+	require.NoError(t, err)
+
+	got := map[string]string{}
+	for _, assignment := range scene.Assignments {
+		got[assignment.Target] = assignment.Colour
+	}
+	require.Len(t, got, 3, "%v", scene.Assignments)
+	require.True(t, redder(got["Corsair MM700/Left[0]"]), "the first zone is the red left: %v", got)
+	require.True(t, bluer(got["Corsair MM700/Logo[0]"]), "the last zone is the blue right: %v", got)
 }
 
 func TestAdjacentLightsThatAgreeAreOneRule(t *testing.T) {

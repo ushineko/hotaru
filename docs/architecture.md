@@ -177,6 +177,11 @@ times out on its own; a caller that stops waiting does not cut it short. The
 OpenRGB SDK cannot recover from an abandoned request. Its late answer blocks
 every request after it (spec 063).
 
+**The screen is restored too.** The state file also records the scene applied
+last and what the cooler's panel was last asked to show. When the cooler
+attaches, hotaru puts the panel back: a picture, the readout, or the
+dashboard. A fresh install records nothing, so the dashboard draws (spec 065).
+
 ## Session attachment
 
 The desktop is a precondition for nothing. It appears, and it may appear more

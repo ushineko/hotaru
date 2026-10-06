@@ -296,6 +296,30 @@ func TestStatusSaysWhatIsRunningAndWhatItRemembers(t *testing.T) {
 	out, err = run(t, socket, "status")
 	require.NoError(t, err)
 	require.Contains(t, out, "remembers ASUS ROG MAXIMUS Z790 HERO")
+	require.NotContains(t, out, "scene ", "a scene was named before one was applied")
+}
+
+// The scene and the screen, as the window's System card shows them (#184).
+func TestStatusSaysTheSceneAndTheScreen(t *testing.T) {
+	socket := serving(t, nil, openrgb.NewFake(board()))
+	boards, err := dashboard.Open(filepath.Join(t.TempDir(), "dashboards.yml"))
+	require.NoError(t, err)
+	shipped := boards.Active().Name
+
+	for _, args := range [][]string{
+		{"light", "set", "red"},
+		{"scene", "save", "evening"},
+		{"scene", "apply", "evening"},
+		{"dashboard", "use", shipped},
+	} {
+		_, err := run(t, socket, args...)
+		require.NoError(t, err, strings.Join(args, " "))
+	}
+
+	out, err := run(t, socket, "status")
+	require.NoError(t, err)
+	require.Contains(t, out, "scene     evening")
+	require.Contains(t, out, "screen    dashboard: "+shipped)
 }
 
 func TestReconcileFromTheCommandLinePutsThingsBack(t *testing.T) {
