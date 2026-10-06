@@ -99,6 +99,10 @@ mode. A mode that keeps a colour and reports no count takes one. An editor
 draws one colour picker per slot from this. `one_colour` still says which
 modes show one colour of their own in place of the frame.
 
+`colours` is what each light shows, as the colour that was meant. For a
+device with a `colour` rule, the service writes a corrected colour and lists
+the one it was asked for (spec 066).
+
 A zone is a contiguous run in device LED order. hotaru counts `first` rather
 than reading it, because the protocol gives sizes and leaves the offsets
 implicit. A segment named in the rules file appears in `segments`. A device

@@ -55,6 +55,15 @@ devices:
     never_blank: true
     brightness: 100
 
+  - match: geforce
+    # The card's LEDs wash out: a pale blue the fans show as written looks
+    # close to white, and its middle greens are too bright. Matched by eye to
+    # the fans' #80aad1, which this writes as #003eff (spec 066).
+    colour:
+      saturation: 1
+      value: 1
+      curve: {green: 2.15}
+
   - match: g502
     # Wireless, and it restores its onboard colour when it wakes. OpenRGB sets
     # a volatile effect and has no way to make one stick, so the colour is

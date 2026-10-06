@@ -29,6 +29,8 @@ type Rule struct {
 	// config.DeviceRule.
 	FrameInterval time.Duration
 	Twin          string
+	// Colour corrects what is written to lights that wash out (spec 066).
+	Colour Profile
 }
 
 /*
@@ -82,6 +84,28 @@ func MergeRules(rules []config.DeviceRule) Rule {
 		}
 		if strings.TrimSpace(r.Twin) != "" {
 			out.Twin = strings.TrimSpace(r.Twin)
+		}
+		// One setting at a time, so one rule can give saturation and a
+		// later one value.
+		if r.Colour != nil && r.Colour.Saturation != nil {
+			out.Colour.Saturation = *r.Colour.Saturation
+		}
+		if r.Colour != nil && r.Colour.Value != nil {
+			out.Colour.Value = *r.Colour.Value
+		}
+		if r.Colour != nil && r.Colour.Curve != nil {
+			for _, channel := range []struct {
+				from *float64
+				to   *float64
+			}{
+				{r.Colour.Curve.Red, &out.Colour.Red},
+				{r.Colour.Curve.Green, &out.Colour.Green},
+				{r.Colour.Curve.Blue, &out.Colour.Blue},
+			} {
+				if channel.from != nil {
+					*channel.to = *channel.from
+				}
+			}
 		}
 	}
 	return out

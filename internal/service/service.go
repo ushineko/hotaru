@@ -91,6 +91,10 @@ type Service struct {
 
 	// canvases are the devices hotaru draws itself, by name: see canvas.go.
 	canvases map[string]*drawn
+
+	// corrections are what was asked for and written to devices with a
+	// colour profile: see correct.go.
+	corrections corrections
 }
 
 /*
@@ -329,14 +333,24 @@ With a canvas device attached the client is the OpenRGB server with the
 canvas devices beside it (see lights), so every operation reaches them
 through the calls it already makes. With none it is the server alone, and
 nothing behaves differently from before spec 060.
+
+With a colour profile in the rules, the client corrects what it writes and
+reports what was meant (see corrected, and spec 066).
 */
 func (s *Service) current() (*config.Config, openrgb.Client, string) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	if s.client == nil || len(s.canvases) == 0 {
+	if s.client == nil {
 		return s.cfg, s.client, s.addr
 	}
-	return s.cfg, &lights{Client: s.client, cfg: s.cfg, drawn: s.drawnNow()}, s.addr
+	client := s.client
+	if len(s.canvases) > 0 {
+		client = &lights{Client: client, cfg: s.cfg, drawn: s.drawnNow()}
+	}
+	if profiled(s.cfg) {
+		client = &corrected{Client: client, cfg: s.cfg, kept: &s.corrections}
+	}
+	return s.cfg, client, s.addr
 }
 
 /*

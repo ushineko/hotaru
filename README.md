@@ -221,6 +221,16 @@ MIT. See [LICENSE](LICENSE).
 
 ## Changelog
 
+### Unreleased
+
+- Lights that wash out can be corrected (spec 066,
+  [#186](https://github.com/ushineko/hotaru/issues/186)). A graphics card's
+  LEDs showed a pale colour close to white, while the fans showed it as
+  written. A `colour` rule pushes a device's saturation and value toward
+  100% and curves each channel. A scene keeps the colour that was meant, so
+  matching lights look the same in the editor too. See
+  [docs/hardware.md](docs/hardware.md#lights-that-wash-out).
+
 ### 0.1.25 (2026-10-06)
 
 - Colouring from the Scenes editor does what it says (spec 064,
