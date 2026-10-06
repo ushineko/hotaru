@@ -2,7 +2,7 @@
 
 **Issue**: [#183](https://github.com/ushineko/hotaru/issues/183)
 
-## Status: INCOMPLETE
+## Status: COMPLETE
 
 ## Executive Summary
 
@@ -103,12 +103,12 @@ made from a picture gives it one line per light:
 - [x] A mat's three one-light zones take the left and right of a picture
       (`TestOneLightZonesAreSpreadAcrossThePicture`).
 - [x] `make test`, the GUI tests and `make lint` pass.
-- [ ] Live, with someone watching: in the window, on the MM700, "the whole
+- [x] Live, with someone watching: in the window, on the MM700, "the whole
       device" in a scene made from a picture shows the picked colour on all
       three lights while the wheel is open, and after Save.
-- [ ] Live: after `systemctl --user restart hotaru`, `hotaru status` names
+- [x] Live: after `systemctl --user restart hotaru`, `hotaru status` names
       the scene applied before the restart.
-- [ ] Live: Make a scene from a picture with distinct left and right gives
+- [x] Live: Make a scene from a picture with distinct left and right gives
       the MM700 different colours on Left and Logo.
 
 ## Risks & Assumptions
@@ -137,4 +137,36 @@ made from a picture gives it one line per light:
 
 ## Verification
 
-(Filled in after the run.)
+Tests: the ten criteria above, each named. Each fix was checked against a
+mutation that undoes it:
+
+- Sorting the draft's lines again, or not pruning lines inside a whole
+  device, fails the draft tests.
+- Reading only `[a:b]` in `spotOf` fails `TestALineForOneLightSelectsThatLight`.
+- Matching only a light's own target fails
+  `TestEachLightIsInTheNewestLineThatCoversIt`.
+- Not reading the scene back in `SetRecorder` fails the restart test.
+- Raising the one-light threshold fails `TestOneLightZonesAreSpreadAcrossThePicture`.
+
+`make test`, `go test -tags migrated_fynedo ./internal/gui/...` and
+`make lint` pass. `govulncheck ./...`: no vulnerabilities.
+
+Live, with the development build as the user's service:
+
+- Make a scene from a square picture in red, green and blue thirds gave:
+
+  ```
+  Corsair MM700/Left[0]  #f70000
+  Corsair MM700/Right[0] #00f700
+  Corsair MM700/Logo[0]  #0000f7
+  ASUS ROG MAXIMUS Z790 HERO/Aura Mainboard[0] #8c8c8c
+  ```
+
+  The board's one light keeps the mean, as R6 says. A first try with a wide
+  picture gave every light green: the library keeps the square middle of a
+  picture for the panel, which was the green third.
+- `nebula` was applied, and the service restarted. `/v1/status` then read
+  `scene= nebula`, and `hotaru status` printed it.
+- The maintainer checked the window: "the whole device" on the MM700 in a
+  scene made from a picture lit all three lights, in the editor and on the
+  hardware, and the colour stayed after Save.

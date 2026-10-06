@@ -2,7 +2,7 @@
 
 **Issue**: [#184](https://github.com/ushineko/hotaru/issues/184)
 
-## Status: INCOMPLETE
+## Status: COMPLETE
 
 ## Executive Summary
 
@@ -71,7 +71,7 @@ something the panel was no longer showing.
 - [x] `hotaru status` names the scene and the screen
       (`TestStatusSaysTheSceneAndTheScreen`).
 - [x] `make test`, the GUI tests and `make lint` pass.
-- [ ] Live, with someone watching: apply a scene with a picture, run
+- [x] Live, with someone watching: apply a scene with a picture, run
       `systemctl --user restart hotaru`, and the picture is back on the
       panel. System shows that scene and `picture: <name>`.
 
@@ -103,4 +103,38 @@ something the panel was no longer showing.
 
 ## Verification
 
-(Filled in after the run.)
+Tests: the criteria above, each named. Each fix was checked against a
+mutation that undoes it:
+
+- Not reading the label back in `SetRecorder` fails the picture and readout
+  tests.
+- Skipping the picture branch of `RestoreScreen` fails all three picture
+  tests.
+- Not keeping the bytes of a picture with no file fails
+  `TestAPictureSentAsBytesIsPutBack`.
+- Not recording the dashboard in `Draw` fails
+  `TestASceneThatAsksForTheDashboardReplacesThePicture`.
+
+`make test`, the GUI tests and `make lint` pass.
+
+Live, with the development build as the user's service, `nebula` (a scene
+with a picture) was applied. The state file then held:
+
+```yaml
+  scene: nebula
+  screen:
+    picture: /home/<user>/.local/share/hotaru/images/nebula.gif
+    showing: 'picture: nebula'
+```
+
+After `systemctl --user restart hotaru`, the journal showed the cooler
+attaching and no "could not put the screen back". `/v1/status` read
+`showing= picture: nebula`, and `hotaru status` printed:
+
+```
+  scene     nebula, the last applied
+  screen    picture: nebula
+```
+
+The maintainer confirmed the panel showed the picture after the restart, not
+the dashboard.
