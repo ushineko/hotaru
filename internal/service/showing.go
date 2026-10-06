@@ -17,8 +17,9 @@ a device waking up wrong -- leaves the label saying what it said, which is why
 the window shows it as "last applied" rather than as "this is the scene".
 */
 
-// Applied is the scene last applied, or empty if none has been since the
-// service started.
+// Applied is the scene last applied, or empty if none ever has been. It
+// survives a restart through the recorder (#183): forgetting it turned saving
+// the scene on the machine into writing a file and nothing else.
 func (s *Service) Applied() string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -38,7 +39,11 @@ func (s *Service) Showing() string {
 func (s *Service) applying(scene string) {
 	s.mu.Lock()
 	s.applied = scene
+	recorder := s.recorder
 	s.mu.Unlock()
+	if recorder != nil {
+		_ = recorder.RecordScene(scene)
+	}
 }
 
 // drawing records what the panel was asked for.

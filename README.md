@@ -221,6 +221,23 @@ MIT. See [LICENSE](LICENSE).
 
 ## Changelog
 
+### Unreleased
+
+- Colouring from the Scenes editor does what it says (spec 064,
+  [#183](https://github.com/ushineko/hotaru/issues/183)).
+  - A colour for the whole device or a whole zone replaces the colours set
+    inside it. A scene's lines were written out sorted, so a mouse mat's
+    per-light lines were applied after the whole-mat colour and hid it.
+    Lines now keep the order they were set in, and the newest shows.
+  - The editor draws each light in the colour that covers it, including a
+    whole-device colour. Editing a one-light line such as `Mouse LEDs[5]`
+    edits that light, not its zone.
+  - The service remembers the scene applied last across a restart. Saving
+    that scene lights it again, and no longer needs a second apply.
+  - Make a scene spreads a device's one-light zones across the picture. A
+    mat whose edges and logo are separate zones no longer comes out in one
+    colour three times.
+
 ### 0.1.24 (2026-10-05)
 
 - The service no longer hangs when the OpenRGB server dies in the middle of

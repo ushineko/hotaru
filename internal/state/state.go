@@ -92,6 +92,12 @@ func (d Device) Frame(name string) devices.Frame {
 // Snapshot is every device hotaru has been told about, by name.
 type Snapshot struct {
 	Devices map[string]Device `json:"devices"`
+
+	// Scene is the scene last applied, by name. Kept here so a service that
+	// restarts still knows which scene the machine is showing, and saving
+	// that scene still relights it (#183). A label, not a claim: something
+	// that changed the lights by another route leaves it as it was.
+	Scene string `json:"scene,omitempty"`
 }
 
 // Empty reports whether there is nothing to restore — the condition of a fresh
@@ -173,6 +179,18 @@ func (s *Store) Record(name string, device Device) error {
 	return nil
 }
 
+// RecordScene remembers which scene was last applied, and schedules a write.
+func (s *Store) RecordScene(name string) error {
+	s.mu.Lock()
+	s.cache.Scene = name
+	snapshot := copyOf(s.cache)
+	s.mu.Unlock()
+	if err := s.file.Set(sectionKey, snapshot); err != nil {
+		return fmt.Errorf("remember the scene %s: %w", name, err)
+	}
+	return nil
+}
+
 // Forget drops a device, for one that has been turned off deliberately rather
 // than merely darkened.
 func (s *Store) Forget(name string) error {
@@ -195,7 +213,7 @@ func (s *Store) Flush() error {
 }
 
 func copyOf(in Snapshot) Snapshot {
-	out := Snapshot{Devices: make(map[string]Device, len(in.Devices))}
+	out := Snapshot{Devices: make(map[string]Device, len(in.Devices)), Scene: in.Scene}
 	for name, device := range in.Devices {
 		// The whole device, with only the slice replaced. Listing the fields
 		// here instead makes a field added above a field silently dropped in

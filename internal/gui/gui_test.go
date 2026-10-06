@@ -792,6 +792,23 @@ func TestASceneLineSelectsWhatItNames(t *testing.T) {
 	require.Empty(t, stray, "the colour landed on what was selected in the picture")
 }
 
+// A line for one light written `[5]`, as a scene made from a picture writes
+// it, edits that light and not its whole zone (#183).
+func TestALineForOneLightSelectsThatLight(t *testing.T) {
+	draft := gui.NewDraft()
+	draft.Set("NZXT Kraken/Ring[5]", "red")
+
+	section := &gui.ScenesSection{}
+	gui.OpenEditor(section, gui.New(service(t, healthy())), draft)
+	gui.EditLine(section, "NZXT Kraken/Ring[5]")
+	gui.SetColour(section, "blue")
+
+	colour, _ := draft.Colour("NZXT Kraken/Ring[5]")
+	require.Equal(t, "blue", colour)
+	whole, _ := draft.Colour("NZXT Kraken/Ring")
+	require.Empty(t, whole, "editing one light coloured its whole zone")
+}
+
 func TestSelectingALightDoesNotMoveThePicture(t *testing.T) {
 	/*
 		Clicking a light is how the picker appears, and the picker appearing

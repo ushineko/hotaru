@@ -2,7 +2,7 @@ package gui
 
 import (
 	"fmt"
-	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/ushineko/hotaru/internal/api"
@@ -24,10 +24,18 @@ type Draft struct {
 	// saving offers the same name.
 	From string
 
-	// colours are the assignments being edited, by target. A map because
-	// setting the same target twice is a correction rather than a second
-	// assignment.
-	colours map[string]string
+	/*
+		colours are the assignments being edited, oldest first.
+
+		A list rather than a map because the order is what the scene means:
+		the service applies assignments in turn, so where two overlap the
+		later one shows. It was a map written out sorted, and a colour for
+		the whole mouse mat sorted ahead of the colour each of its lights
+		already had -- which then painted over it (#183). Setting a target
+		again is still a correction, not a second assignment: it moves to
+		the end with its new colour.
+	*/
+	colours []assignment
 
 	/*
 		rest is everything the editor does not edit, carried through
@@ -42,7 +50,10 @@ type Draft struct {
 }
 
 // NewDraft starts an empty one.
-func NewDraft() *Draft { return &Draft{colours: map[string]string{}} }
+func NewDraft() *Draft { return &Draft{} }
+
+// assignment is one target and its colour.
+type assignment struct{ target, colour string }
 
 /*
 DraftFrom opens an existing scene for editing.
@@ -51,11 +62,13 @@ Everything that is not a colour comes along: the effects, the screen state, and
 the name it will be offered to save under.
 */
 func DraftFrom(scene api.Scene) *Draft {
-	d := &Draft{From: scene.Name, colours: map[string]string{}, rest: scene}
+	d := &Draft{From: scene.Name, rest: scene}
 	for _, a := range scene.Assignments {
-		d.colours[a.Target] = a.Colour
+		// In the scene's own order, which is what it means.
+		d.drop(a.Target)
+		d.colours = append(d.colours, assignment{a.Target, a.Colour})
 	}
-	// The assignments live in the map now; keeping a second copy would let
+	// The assignments live in the list now; keeping a second copy would let
 	// the two disagree.
 	d.rest.Assignments = nil
 	return d
@@ -148,14 +161,82 @@ func (d *Draft) Effect(device string) api.Effect { return d.rest.Effects[device]
 // Effects are every device this draft says something about.
 func (d *Draft) Effects() map[string]api.Effect { return d.rest.Effects }
 
-// Set gives a target a colour. An empty colour removes it, which is how
-// somebody takes an exception back out of a scene.
+/*
+Set gives a target a colour, after everything set before it. An empty colour
+removes it, which is how somebody takes an exception back out of a scene.
+
+**A whole device or a whole zone replaces what was set inside it.** Somebody
+who colours the whole mouse mat after its lights were coloured one by one has
+changed their mind about the mat, and leaving the lights' lines in would keep
+assignments that no longer show anywhere. Inside means the target's own
+lights as this window writes them: `mat` covers `mat/Left[0]` and
+`mat/logo`, and `mat/Left` covers `mat/Left[0:3]`. The whole scene's colour
+is not a target and keeps its exceptions -- see SetEverything.
+*/
 func (d *Draft) Set(target, colour string) {
+	d.drop(target)
 	if strings.TrimSpace(colour) == "" {
-		delete(d.colours, target)
 		return
 	}
-	d.colours[target] = colour
+	kept := d.colours[:0]
+	for _, a := range d.colours {
+		if !inside(a.target, target) {
+			kept = append(kept, a)
+		}
+	}
+	kept = append(kept, assignment{target, colour})
+	d.colours = kept
+}
+
+// drop takes a target out, wherever it is.
+func (d *Draft) drop(target string) {
+	for i, a := range d.colours {
+		if a.target == target {
+			d.colours = append(d.colours[:i], d.colours[i+1:]...)
+			return
+		}
+	}
+}
+
+/*
+inside is whether one target names lights within another that is a whole
+device or a whole zone.
+
+Spelled as this window spells targets: a device by its name, a zone after a
+slash, lights in brackets. A target somebody typed with a shorter name --
+`kraken/ring[3]` for the NZXT Kraken -- is not recognised as inside the full
+name and is left alone. That costs only the tidying: Set still puts the newer
+colour after it, so it still shows.
+*/
+func inside(target, whole string) bool {
+	if strings.Contains(whole, "[") || target == whole {
+		return false
+	}
+	target, whole = strings.ToLower(target), strings.ToLower(whole)
+	if !strings.Contains(whole, "/") {
+		return strings.HasPrefix(target, whole+"/") || strings.HasPrefix(target, whole+"[")
+	}
+	return strings.HasPrefix(target, whole+"[")
+}
+
+/*
+Clone is a copy to go back to, for a colour wheel that is cancelled.
+
+Undoing by setting the old colour again is not enough once Set can take other
+lines out: the per-light colours a whole-device colour replaced have to come
+back with it.
+*/
+func (d *Draft) Clone() *Draft {
+	out := *d
+	out.colours = append([]assignment(nil), d.colours...)
+	return &out
+}
+
+// Restore puts back what a Clone saved, in place, so everything holding this
+// draft sees it.
+func (d *Draft) Restore(saved *Draft) {
+	d.colours = append([]assignment(nil), saved.colours...)
+	d.rest = saved.rest
 }
 
 /*
@@ -178,21 +259,89 @@ func (d *Draft) Screen() string { return d.rest.Screen }
 
 // Colour is what a target is showing in the draft, if anything.
 func (d *Draft) Colour(target string) (string, bool) {
-	c, ok := d.colours[target]
-	return c, ok
+	for _, a := range d.colours {
+		if a.target == target {
+			return a.colour, true
+		}
+	}
+	return "", false
+}
+
+/*
+Light is the colour the draft gives one light: the newest line that covers
+it, else the whole scene's colour.
+
+What the editor draws each light in. Looking up the light's own target
+string was not enough: a whole-device colour, a whole-zone colour and a light
+written `Left[0]` rather than `Left[0:0]` all left the light drawn in what the
+hardware was showing, so a colour that had been set looked as if it had not
+(#183). Segments are left out: which lights a rule names is the service's to
+say, and a light it would colour is drawn as before.
+*/
+func (d *Draft) Light(device, zone string, light int) (string, bool) {
+	for i := len(d.colours) - 1; i >= 0; i-- {
+		if covers(d.colours[i].target, device, zone, light) {
+			return d.colours[i].colour, true
+		}
+	}
+	if d.rest.Colour != "" {
+		return d.rest.Colour, true
+	}
+	return "", false
+}
+
+// covers is whether a target, as this window writes it, includes one light.
+func covers(target, device, zone string, light int) bool {
+	name, part, hasPart := strings.Cut(target, "/")
+	if !strings.EqualFold(name, device) {
+		return false
+	}
+	if !hasPart {
+		return true
+	}
+	named, lights, hasLights := strings.Cut(part, "[")
+	if !strings.EqualFold(named, zone) {
+		return false
+	}
+	if !hasLights {
+		return true
+	}
+	for _, run := range strings.Split(strings.TrimSuffix(lights, "]"), ",") {
+		first, last, ok := span(run)
+		if ok && first <= light && light <= last {
+			return true
+		}
+	}
+	return false
+}
+
+// span reads one run of a target's lights: `3` or `3:5`.
+func span(run string) (first, last int, ok bool) {
+	from, to, isRun := strings.Cut(strings.TrimSpace(run), ":")
+	first, err := strconv.Atoi(from)
+	if err != nil {
+		return 0, 0, false
+	}
+	if !isRun {
+		return first, first, true
+	}
+	last, err = strconv.Atoi(to)
+	if err != nil {
+		return 0, 0, false
+	}
+	return first, last, true
 }
 
 // Empty reports whether there is anything to preview or save.
 func (d *Draft) Empty() bool { return len(d.colours) == 0 && d.rest.Colour == "" && !d.rest.Off }
 
-// Targets are the targets this draft touches, in a stable order so a listing
-// does not reshuffle itself between rebuilds.
+// Targets are the targets this draft touches, oldest first: the order the
+// scene applies them in, and stable between rebuilds until something is set.
 func (d *Draft) Targets() []string {
 	out := make([]string, 0, len(d.colours))
-	for target := range d.colours {
-		out = append(out, target)
+	for _, a := range d.colours {
+		out = append(out, a.target)
 	}
-	sort.Strings(out)
 	return out
 }
 
@@ -206,9 +355,9 @@ func (d *Draft) Scene(name string) api.Scene {
 	out := d.rest
 	out.Name = name
 	out.Assignments = nil
-	for _, target := range d.Targets() {
+	for _, a := range d.colours {
 		out.Assignments = append(out.Assignments,
-			api.SceneAssignment{Target: target, Colour: d.colours[target]})
+			api.SceneAssignment{Target: a.target, Colour: a.colour})
 	}
 	return out
 }

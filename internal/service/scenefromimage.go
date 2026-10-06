@@ -223,8 +223,7 @@ Per zone rather than per device: a zone is what the hardware treats as a run of
 lights, so running the picture across one makes the sweep line up with
 something physical -- a ring goes round, a strip goes along.
 
-A zone of one light gets the colour of the slice it would have had, which is
-the middle of the picture for a single-LED logo.
+Zones of one light are the exception; see paintDevice.
 */
 func (s *Service) paint(ctx context.Context, picture image.Image, distance float64) ([]scenes.Assignment, error) {
 	_, client, addr := s.current()
@@ -260,11 +259,43 @@ func paintDevice(device *devices.Device, picture image.Image, distance float64) 
 		}}
 	}
 
+	/*
+		A device's one-light zones are one strip across the picture, in the
+		order the device lists them (#183).
+
+		Each on its own is a run of one, and a run of one is the whole
+		picture's mean. A mouse mat whose left edge, right edge and logo are
+		three zones of one light each came out three times the same muddy
+		colour, whatever the picture was. Taken together they are three
+		lights, and three lights take three slices. A device with one such
+		zone still gets the mean: there is nothing to spread it across.
+	*/
+	var singles []color.NRGBA
+	if lone := oneLight(device.Zones); lone > 1 {
+		singles = lit(images.Scan(picture, lone), distance)
+	}
+
 	var out []scenes.Assignment
 	for _, zone := range device.Zones {
+		if zone.Count == 1 && singles != nil {
+			out = append(out, run(device.Name, zone.Name, 0, 0, written(singles[0])))
+			singles = singles[1:]
+			continue
+		}
 		out = append(out, paintZone(device.Name, zone, picture, distance)...)
 	}
 	return out
+}
+
+// oneLight is how many of a device's zones have a single light.
+func oneLight(zones []devices.Zone) int {
+	n := 0
+	for _, zone := range zones {
+		if zone.Count == 1 {
+			n++
+		}
+	}
+	return n
 }
 
 /*

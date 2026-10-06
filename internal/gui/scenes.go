@@ -614,8 +614,11 @@ func spotOf(target string) Spot {
 	if !hasRange {
 		return WholeZone(device, zone)
 	}
-	var first, last int
-	if _, err := fmt.Sscanf(strings.TrimSuffix(rang, "]"), "%d:%d", &first, &last); err != nil {
+	// One run, written either way: `[5]` is how a scene made from a picture
+	// writes a single light, and reading only `[5:5]` turned editing that
+	// line into colouring the whole zone (#183).
+	first, last, ok := span(strings.TrimSuffix(rang, "]"))
+	if !ok {
 		return WholeZone(device, zone)
 	}
 	return Lights(device, zone, first, last)
@@ -977,9 +980,10 @@ func (s *ScenesSection) led(sh *shell.Shell, device api.Device, zone api.Zone,
 	*/
 	block := widgets.NewSwatch(fyne.NewSize(blockSize, blockSize))
 	block.Fill = sample(colours, zone.First+first, device.InScope)
-	if colour, has := s.draft.Colour(spot.Target()); has {
+	if colour, has := s.draft.Light(device.Name, zone.Name, first); has {
 		// What the draft will do to it, which is the point of drawing it here
-		// rather than in the read-only view.
+		// rather than in the read-only view: through whatever line covers
+		// it, the whole device's included.
 		block.Fill = parse(colour)
 	}
 	block.StrokeWidth = 1
@@ -1067,12 +1071,11 @@ dismissing it puts the lights back, and there is no state left behind to
 wonder about later.
 */
 func (s *ScenesSection) pickColour(sh *shell.Shell, current string) {
-	before, had := s.chosen(), s.chosen() != ""
+	// The whole draft, not the one colour: a whole-device colour takes the
+	// per-light lines out, and cancelling has to bring them back.
+	before := s.draft.Clone()
 	s.pickInto(sh, "Choose a colour for "+s.targetName(), current, s.set, func() {
-		s.set("")
-		if had {
-			s.set(before)
-		}
+		s.draft.Restore(before)
 	})
 }
 

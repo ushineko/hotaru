@@ -541,6 +541,48 @@ func TestSavingTheSceneOnTheMachineLightsIt(t *testing.T) {
 		"saving over the scene on the machine did not light it")
 }
 
+func TestSavingTheSceneOnTheMachineLightsItAfterARestart(t *testing.T) {
+	/*
+		The same edit, after the service restarted in between (#183).
+
+		Which scene was applied lived in memory only. After a restart --
+		every boot -- saving the scene on the machine wrote the file and
+		left the lights as they were, so an edit took a save and then an
+		apply. The name is kept with the desired state, in the same file,
+		and a new service reads it back.
+	*/
+	const asus = "ASUS ROG MAXIMUS Z790 HERO"
+	server := openrgb.NewFake(board(), keyboard())
+	statePath := filepath.Join(t.TempDir(), "state.yml")
+	saved, err := scenes.Open(filepath.Join(t.TempDir(), "scenes.yml"))
+	require.NoError(t, err)
+	require.NoError(t, saved.Save(blue()))
+
+	start := func() (*service.Service, *state.Store) {
+		desired, err := state.Open(statePath)
+		require.NoError(t, err)
+		svc := service.New(nil, server, "")
+		svc.SetRecorder(desired)
+		svc.SetScenes(saved)
+		return svc, desired
+	}
+
+	before, desired := start()
+	_, err = before.ApplyScene(t.Context(), "blue")
+	require.NoError(t, err)
+	// As stopping the service does: what the next one reads is the file.
+	require.NoError(t, desired.Flush())
+
+	after, _ := start()
+	require.Equal(t, "blue", after.Applied(), "the restarted service forgot which scene was applied")
+
+	edited := blue()
+	edited.Assignments[0].Colour = "red"
+	require.NoError(t, after.SaveScene(t.Context(), edited))
+	require.Equal(t, "#ff0000", showing(t, server, asus)[0].String(),
+		"saving the scene on the machine after a restart did not light it")
+}
+
 func TestSavingASceneNobodyIsShowingLeavesTheMachineAlone(t *testing.T) {
 	// A draft saved for later must not take the machine: the scene showing
 	// is the one somebody asked for, and this is not it.

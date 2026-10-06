@@ -301,6 +301,11 @@ appears in that device's `problems`, as does a colour that will not parse.
 Writes a scene under a name, replacing one already there. The body is a scene
 without its name, which comes from the path.
 
+hotaru applies a scene's assignments in order. Where two cover the same light,
+the later one shows. Saving the scene that was applied last lights it again.
+hotaru keeps that scene's name in its state file, so this also works after a
+restart.
+
 ## DELETE /v1/scenes/{name}
 
 Removes one. Deleting a scene that is not there is not an error.
@@ -632,7 +637,9 @@ Builds a scene whose lights match a stored picture, and keeps it.
 
 Every zone gets a run across the picture rather than one colour for the whole
 machine. Light *i* of *n* takes the *i*th vertical slice, so a ring carries
-the image's own left-to-right sweep. hotaru weights each slice by how much
+the image's own left-to-right sweep. A device's zones of one light form one
+run together, in the device's order, so a mouse mat's three edges take three
+slices. hotaru weights each slice by how much
 colour its pixels carry. Half of every slice through a photograph is
 background, and averaging that in reads a rust planet as grey-brown. hotaru
 then lifts the value to something a light can show, because a photograph is
