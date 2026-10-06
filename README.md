@@ -2,7 +2,7 @@
 
 *lights, cooler, action!*
 
-**Version**: 0.1.24
+**Version**: 0.1.25
 
 RGB lighting and AIO cooler control for Linux, as a CLI, a user service and a
 desktop GUI. 
@@ -221,7 +221,7 @@ MIT. See [LICENSE](LICENSE).
 
 ## Changelog
 
-### Unreleased
+### 0.1.25 (2026-10-06)
 
 - Colouring from the Scenes editor does what it says (spec 064,
   [#183](https://github.com/ushineko/hotaru/issues/183)).
