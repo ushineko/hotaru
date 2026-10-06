@@ -237,6 +237,12 @@ MIT. See [LICENSE](LICENSE).
   - Make a scene spreads a device's one-light zones across the picture. A
     mat whose edges and logo are separate zones no longer comes out in one
     colour three times.
+- The cooler's screen comes back after the service restarts (spec 065,
+  [#184](https://github.com/ushineko/hotaru/issues/184)). hotaru records what
+  the panel was last asked to show and puts it back when the cooler attaches:
+  a picture, the readout, or the dashboard. The System card's Scene and
+  Screen no longer read empty after a restart. Showing a stored picture, or
+  one sent with `hotaru screen show`, now updates Screen too.
 
 ### 0.1.24 (2026-10-05)
 

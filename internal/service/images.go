@@ -144,5 +144,5 @@ func (s *Service) ShowImage(ctx context.Context, name string) error {
 	if err != nil {
 		return fmt.Errorf("show %s: %w", name, err)
 	}
-	return s.Draw(ctx, Screen{Image: body})
+	return s.Draw(ctx, Screen{Image: body, Source: library.Path(name)})
 }

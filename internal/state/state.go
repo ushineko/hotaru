@@ -98,7 +98,29 @@ type Snapshot struct {
 	// that scene still relights it (#183). A label, not a claim: something
 	// that changed the lights by another route leaves it as it was.
 	Scene string `json:"scene,omitempty"`
+
+	// Screen is what the cooler's panel was last asked to show, so a service
+	// that restarts can put it back as it puts back the lights (#184). Nil
+	// until something asks, which leaves the dashboard drawing.
+	Screen *Screen `json:"screen,omitempty"`
 }
+
+/*
+Screen is what the panel was last asked to show.
+
+One of three things: the dashboard, the cooler's own readout, or a picture.
+A picture is kept by the file it came from. A picture handed over as bytes,
+with no file of its own, is copied next to the state file (see RecordScreen).
+*/
+type Screen struct {
+	// Showing is the panel's state in the words the window says it in.
+	Showing string `json:"showing"`
+	Readout bool   `json:"readout,omitempty"`
+	Picture string `json:"picture,omitempty"`
+}
+
+// screenFile is where a picture with no file of its own is kept.
+const screenFile = "screen.gif"
 
 // Empty reports whether there is nothing to restore — the condition of a fresh
 // install, and the reason it touches nothing.
@@ -148,7 +170,13 @@ func Open(path string) (*Store, error) {
 
 	store := &Store{file: file, path: path, cache: Snapshot{Devices: map[string]Device{}}}
 	var loaded Snapshot
-	if file.Get(sectionKey, &loaded) && loaded.Devices != nil {
+	if file.Get(sectionKey, &loaded) {
+		// The scene and the screen are kept even with no devices recorded:
+		// a machine whose only state is a picture on its cooler has
+		// something to put back.
+		if loaded.Devices == nil {
+			loaded.Devices = map[string]Device{}
+		}
 		store.cache = loaded
 	}
 	return store, nil
@@ -191,6 +219,33 @@ func (s *Store) RecordScene(name string) error {
 	return nil
 }
 
+/*
+RecordScreen remembers what the panel was asked to show, and schedules a
+write.
+
+A picture given as bytes (image non-nil, Picture empty) is written next to
+the state file first, because putting it back needs it again. Only then: a
+scene's picture is a stored file already, and copying it at every scene
+change would write megabytes for a hotkey.
+*/
+func (s *Store) RecordScreen(screen Screen, image []byte) error {
+	if screen.Picture == "" && len(image) > 0 {
+		path := filepath.Join(filepath.Dir(s.path), screenFile)
+		if err := os.WriteFile(path, image, 0o600); err != nil {
+			return fmt.Errorf("keep the picture on the screen: %w", err)
+		}
+		screen.Picture = path
+	}
+	s.mu.Lock()
+	s.cache.Screen = &screen
+	snapshot := copyOf(s.cache)
+	s.mu.Unlock()
+	if err := s.file.Set(sectionKey, snapshot); err != nil {
+		return fmt.Errorf("remember the screen: %w", err)
+	}
+	return nil
+}
+
 // Forget drops a device, for one that has been turned off deliberately rather
 // than merely darkened.
 func (s *Store) Forget(name string) error {
@@ -214,6 +269,10 @@ func (s *Store) Flush() error {
 
 func copyOf(in Snapshot) Snapshot {
 	out := Snapshot{Devices: make(map[string]Device, len(in.Devices)), Scene: in.Scene}
+	if in.Screen != nil {
+		screen := *in.Screen
+		out.Screen = &screen
+	}
 	for name, device := range in.Devices {
 		// The whole device, with only the slice replaced. Listing the fields
 		// here instead makes a field added above a field silently dropped in

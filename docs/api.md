@@ -228,6 +228,11 @@ that is a fresh install that nobody has asked for anything. Such an install
 restores nothing, which is why installing hotaru cannot disturb lighting that
 was configured elsewhere.
 
+`scene` is the scene applied last, and `showing` is what the cooler's panel
+was last asked to show. hotaru keeps both in its state file, so they survive
+a restart. When the cooler attaches, hotaru puts the panel back the way
+`showing` describes: a picture, the cooler's own readout, or the dashboard.
+
 ## GET /v1/scenes
 
 Every saved scene. A scene holds colour assignments addressed at whatever
@@ -683,7 +688,9 @@ both as `hotaru image colours` and `hotaru dashboard colours`.
 ## POST /v1/images/{name}/show
 
 Puts a stored picture on the panel, taking it from the dashboard.
-`POST /v1/screen` with `{"dashboard": true}` gives it back.
+`POST /v1/screen` with `{"dashboard": true}` gives it back. hotaru records
+the picture, as it does for every change of the screen, and shows it again
+after a restart.
 
 ## GET /v1/keys
 

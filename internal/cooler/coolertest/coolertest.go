@@ -106,8 +106,9 @@ type Panel struct {
 
 	Refuse error
 
-	mu     sync.Mutex
-	images []*gif.GIF
+	mu       sync.Mutex
+	images   []*gif.GIF
+	readouts int
 }
 
 // NewPanel is a cooler with a panel, reporting plausible numbers.
@@ -127,8 +128,22 @@ func (p *Panel) Image(_ context.Context, g *gif.GIF) error {
 	return nil
 }
 
-// Readout returns Refuse.
-func (p *Panel) Readout(context.Context) error { return p.Refuse }
+// Readout counts a hand-back to the firmware's display, and returns Refuse.
+func (p *Panel) Readout(context.Context) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.Refuse == nil {
+		p.readouts++
+	}
+	return p.Refuse
+}
+
+// Readouts is how many times the panel was handed back to the firmware.
+func (p *Panel) Readouts() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.readouts
+}
 
 // Appearance returns Refuse.
 func (p *Panel) Appearance(context.Context, int, int) error { return p.Refuse }

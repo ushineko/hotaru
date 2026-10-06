@@ -1271,6 +1271,10 @@ type Screen struct {
 	// Image is a GIF to display. A still picture is not retained by the
 	// firmware; one frame of a GIF is.
 	Image []byte
+	// Source is the file Image was read from, when it has one: a stored
+	// picture, a scene's screen. Recorded instead of a copy of the bytes, so
+	// a hotkey that changes the screen does not also write megabytes.
+	Source string
 	// Readout hands the panel back to the cooler's own display.
 	Readout bool
 	// Dashboard gives the screen back to hotaru's own dashboard, after
@@ -1305,17 +1309,36 @@ func (s *Service) Draw(ctx context.Context, what Screen) error {
 	if panel != nil && (what.Readout || len(what.Image) > 0) {
 		panel.Hold()
 	}
+	/*
+		Each of the three is recorded once it is showing, by whichever route
+		asked, so the window's Screen says what the panel shows and a
+		restart puts it back (#184). Appearance is the device's own setting
+		and the device keeps it, so it is not.
+	*/
 	switch {
 	case what.Dashboard:
 		if panel == nil {
 			return errors.New("there is no dashboard on this machine")
 		}
 		panel.Release()
+		s.shown(s.dashboardShown(), nil)
 		return nil
 	case what.Readout:
-		return c.Readout(ctx)
+		if err := c.Readout(ctx); err != nil {
+			return err //nolint:wrapcheck // the cooler's own words, as before
+		}
+		s.shown(state.Screen{Showing: "the cooler's own readout", Readout: true}, nil)
+		return nil
 	case len(what.Image) > 0:
-		return c.Show(ctx, what.Image)
+		if err := c.Show(ctx, what.Image); err != nil {
+			return err //nolint:wrapcheck // the cooler's own words, as before
+		}
+		showing := "a picture"
+		if what.Source != "" {
+			showing = "picture: " + pictureName(what.Source)
+		}
+		s.shown(state.Screen{Showing: showing, Picture: what.Source}, what.Image)
+		return nil
 	case what.Brightness != nil || what.Orientation != nil:
 		brightness, orientation := 100, 0
 		if what.Brightness != nil {

@@ -321,7 +321,6 @@ func (s *Service) screen(ctx context.Context, scene scenes.Scene) (string, strin
 	case scenes.ScreenDashboard:
 		return scene.Screen, s.draw(ctx, Screen{Dashboard: true})
 	case scenes.ScreenReadout:
-		s.drawing("the cooler's own readout")
 		return scene.Screen, s.draw(ctx, Screen{Readout: true})
 	}
 
@@ -345,8 +344,7 @@ func (s *Service) screen(ctx context.Context, scene scenes.Scene) (string, strin
 	if err != nil {
 		return "", fmt.Sprintf("the screen: %v", err)
 	}
-	s.drawing("picture: " + pictureName(scene.Screen))
-	return scene.Screen, s.draw(ctx, Screen{Image: gif})
+	return scene.Screen, s.draw(ctx, Screen{Image: gif, Source: scene.Screen})
 }
 
 // pictureName is a stored picture's name, from the path a scene keeps: what
