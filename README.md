@@ -2,7 +2,7 @@
 
 *lights, cooler, action!*
 
-**Version**: 0.1.25
+**Version**: 0.1.26
 
 RGB lighting and AIO cooler control for Linux, as a CLI, a user service and a
 desktop GUI. 
@@ -221,7 +221,7 @@ MIT. See [LICENSE](LICENSE).
 
 ## Changelog
 
-### Unreleased
+### 0.1.26 (2026-10-06)
 
 - Lights that wash out can be corrected (spec 066,
   [#186](https://github.com/ushineko/hotaru/issues/186)). A graphics card's
