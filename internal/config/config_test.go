@@ -220,6 +220,8 @@ func TestTheShippedExampleParsesAndMeansWhatItSays(t *testing.T) {
 
 	require.True(t, cfg.RulesFor("Keychron K4 HE")[0].NeverBlank)
 	require.Equal(t, time.Minute, cfg.RulesFor("G502 X PLUS")[0].Reassert.Duration())
+	card := cfg.RulesFor("MSI GeForce RTX 4090 Suprim Liquid X")[0].Colour
+	require.InDelta(t, 2.15, *card.Curve.Green, 1e-9)
 
 	// And with the example loaded, everything is still in scope: the file
 	// corrects behaviour, it does not select devices.
@@ -267,4 +269,38 @@ devices:
 	require.Equal(t, 100*time.Millisecond, rule.FrameInterval.Duration())
 	require.Equal(t, "Canvas Board (OpenRGB)", rule.Twin)
 	require.Zero(t, cfg.RulesFor("Other Board")[0].FrameInterval)
+}
+
+func TestAColourProfileIsReadAndRangeChecked(t *testing.T) {
+	// Spec 066: lights that wash out are corrected by a rule, and a setting
+	// outside 0-1 costs that setting rather than the rule.
+	cfg, problems, err := config.Load(write(t, `
+devices:
+  - match: geforce
+    colour: {saturation: 0.8, value: 1, curve: {green: 2.15, red: 0}}
+  - match: mm700
+    colour: {saturation: 1.5, value: 0.5}
+  - match: g502
+    colour: {value: -1}
+`))
+	require.NoError(t, err)
+
+	card := cfg.RulesFor("MSI GeForce RTX 4090")[0].Colour
+	require.NotNil(t, card)
+	require.InDelta(t, 0.8, *card.Saturation, 1e-9)
+	require.InDelta(t, 1.0, *card.Value, 1e-9)
+	require.InDelta(t, 2.15, *card.Curve.Green, 1e-9)
+	require.Nil(t, card.Curve.Red, "a curve of 0 turns the channel off and is refused")
+
+	mat := cfg.RulesFor("Corsair MM700")[0].Colour
+	require.NotNil(t, mat, "the good setting is kept")
+	require.Nil(t, mat.Saturation)
+	require.InDelta(t, 0.5, *mat.Value, 1e-9)
+
+	require.Nil(t, cfg.RulesFor("G502 X PLUS")[0].Colour, "a profile with nothing left in it is no profile")
+
+	require.Len(t, problems, 3)
+	require.Contains(t, problems[0].Error(), "colour curve red 0 is outside 0-10")
+	require.Contains(t, problems[1].Error(), "colour saturation 1.5 is outside 0-1")
+	require.Contains(t, problems[2].Error(), "colour value -1 is outside 0-1")
 }

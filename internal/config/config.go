@@ -111,6 +111,36 @@ type DeviceRule struct {
 		the whole answer for that device, and the location is not consulted.
 	*/
 	Twin string `json:"twin,omitempty"`
+
+	/*
+		Colour corrects what is written to a device whose lights wash out: a
+		pale colour that the fans show as written looks close to white on a
+		graphics card's LEDs (spec 066). Absent is no correction.
+	*/
+	Colour *ColourProfile `json:"colour,omitempty"`
+}
+
+/*
+ColourProfile is how far toward 100% the saturation and the value of every
+colour written to a device are pushed, each from 0 (as written) to 1 (always
+100%), and a curve per channel applied after that. Any setting may be absent,
+so one rule can set one and a later rule another.
+*/
+type ColourProfile struct {
+	Saturation *float64 `json:"saturation,omitempty"`
+	Value      *float64 `json:"value,omitempty"`
+	Curve      *Curve   `json:"curve,omitempty"`
+}
+
+/*
+Curve is a gamma per channel: a channel at x, from 0 to 1, is written as x
+raised to it. Above 1 lowers that channel's middle levels, for an LED that
+shows them too bright. Off and full stay as they are. Absent is 1.
+*/
+type Curve struct {
+	Red   *float64 `json:"red,omitempty"`
+	Green *float64 `json:"green,omitempty"`
+	Blue  *float64 `json:"blue,omitempty"`
 }
 
 // Segment is a named part of a device: a whole zone, or a range within one.
@@ -133,6 +163,10 @@ type Problem struct {
 func (p Problem) Error() string { return p.Where + ": " + p.Why }
 
 const maxBrightness = 100
+
+// maxCurve is the steepest curve a channel may take. Beyond it every level
+// short of full is off, which is not a correction.
+const maxCurve = 10
 
 /*
 Load reads the user's rules file.
@@ -232,6 +266,37 @@ func decodeRule(i int, raw json.RawMessage) (*DeviceRule, []Problem) {
 	if rule.FrameInterval < 0 {
 		problems = append(problems, Problem{where, "frame_interval is negative, ignored"})
 		rule.FrameInterval = 0
+	}
+
+	if rule.Colour != nil {
+		for _, setting := range []struct {
+			name  string
+			value **float64
+		}{{"saturation", &rule.Colour.Saturation}, {"value", &rule.Colour.Value}} {
+			if v := *setting.value; v != nil && (*v < 0 || *v > 1) {
+				problems = append(problems,
+					Problem{where, fmt.Sprintf("colour %s %g is outside 0-1, ignored", setting.name, *v)})
+				*setting.value = nil
+			}
+		}
+		if curve := rule.Colour.Curve; curve != nil {
+			for _, channel := range []struct {
+				name  string
+				value **float64
+			}{{"red", &curve.Red}, {"green", &curve.Green}, {"blue", &curve.Blue}} {
+				if v := *channel.value; v != nil && (*v <= 0 || *v > maxCurve) {
+					problems = append(problems, Problem{where,
+						fmt.Sprintf("colour curve %s %g is outside 0-%d, ignored", channel.name, *v, maxCurve)})
+					*channel.value = nil
+				}
+			}
+			if curve.Red == nil && curve.Green == nil && curve.Blue == nil {
+				rule.Colour.Curve = nil
+			}
+		}
+		if rule.Colour.Saturation == nil && rule.Colour.Value == nil && rule.Colour.Curve == nil {
+			rule.Colour = nil
+		}
 	}
 
 	for name, segment := range rule.Segments {

@@ -35,9 +35,9 @@ support list.
 | Device | Through | Notes |
 |---|---|---|
 | NZXT Kraken 2024 Elite (`1e71:3012`) | both | Lighting through OpenRGB. The radiator fans' RGB daisy-chains into the cooler, and OpenRGB exposes **only** the colour channels. Telemetry and the 640x640 panel are hotaru's own, over `/dev/hidraw` and usbfs. The two Hue 2 channels are separate controllers, so hotaru writes them separately (spec 011). hotaru never writes into the bucket the panel is displaying, because the panel blanks for the length of that transfer (spec 013) |
-| MSI GeForce RTX 4090 Suprim Liquid X | OpenRGB | Accepts `direct/breathing/flashing/off`. It **rejects `static`** and goes dark when it receives it |
+| MSI GeForce RTX 4090 Suprim Liquid X | OpenRGB | Accepts `direct/breathing/flashing/off`. It **rejects `static`** and goes dark when it receives it. **Its LEDs wash out.** A pale colour looks close to white, and its middle greens look too bright. A `colour` rule corrects both (spec 066) |
 | ASUS ROG Maximus Z790 Hero | OpenRGB | Onboard LEDs and four addressable headers. Static drives the onboard LED only. The headers need Direct |
-| Corsair MM700 | OpenRGB | Its logo has no blue channel, so a request for purple appears as dim red. The write does not fail, and nothing in the protocol reports the limit. OpenRGB's own command line behaves the same way (spec 009) |
+| Corsair MM700 | OpenRGB | Its logo has no blue channel, so a request for purple appears as dim red. The write does not fail, and nothing in the protocol reports the limit. OpenRGB's own command line behaves the same way (spec 009). Its LEDs wash out like the 4090's, and a `colour` rule corrects them (spec 066) |
 | Logitech G502 X PLUS | OpenRGB | Wireless. It restores its onboard state on wake, so hotaru rewrites its colour on a timer. Solaar cannot set its colour at all, because its command line drops the colour argument without saying so |
 | Keychron K4 HE | OpenRGB | The board advertises no Off mode, so `off` resolves to Direct with black and kills the backlight. hotaru colours the board instead, and never blanks it. **Per-key colour takes hue but not value.** `#ffffff` and `#101010` look the same on the board, and `#000000` is as lit as any other colour. A red row beside a green one draws correctly. OpenRGB's own command line reproduces this, so it is not hotaru's fault. Firmware `v1.1.1 2025-06-17`. **The lock keys belong to the firmware.** It paints Caps Lock and Num Lock white while they are engaged, over whatever hotaru wrote, and nothing on the host overrides that. The firmware does this deliberately: an indicator the host can switch off is an indicator that is off when it matters. Both findings are why spec 043 colours those keys rather than blanking them (#110) |
 | Intel Core i9-14900K | kernel | CPU package temperature from `coretemp`, read by label. Never by hwmon index: the kernel assigns those numbers in probe order, and they move between boots |
@@ -105,6 +105,42 @@ hotaru applies every correction in the first table by *discovering* it. It
 reads back what a write did, rather than matching a device name against a
 table. The table above records what was learned. It is not a list the program
 requires.
+
+### Lights that wash out
+
+Some LEDs show a smaller range of colour than others. On the development
+machine, the RTX 4090 and the MM700 show a pale colour close to white. The
+fans and the keyboards show it as written.
+
+The scene `ice1` measured it. To look like the fans' `#80aad1`, the 4090 had
+to be written `#003eff`. That is 39% saturation against 100%, and a hue 16°
+toward blue.
+
+A `colour` rule corrects a device, and a scene keeps the colour that was
+meant (spec 066):
+
+```yaml
+devices:
+  - match: geforce
+    colour:
+      saturation: 1         # 0 as written, 1 always 100%
+      value: 1              # the same, for brightness
+      curve: {green: 2.15}  # a gamma per channel, applied last
+```
+
+`saturation` and `value` push each colour toward 100% and keep its hue. Black
+stays black, and a grey keeps no hue. `curve` raises a channel to a power, so
+above 1 dims its middle levels and leaves off and full alone. With these
+numbers, `#80aad1` is written `#003eff`.
+
+The service corrects every write to the device: scenes, `light set`,
+previews, reconciling and an effect's own colours. Everything it reports is
+the colour that was meant. It keeps what it last asked for and what it wrote,
+and reports a light the device shows in the written colour as the asked-for
+one. After a restart it has no record until its first write to the device.
+
+These numbers are one desk's, matched by eye. Tune them by looking: change
+the rule, run `hotaru reload`, and apply the scene again.
 
 ## Everything else
 
