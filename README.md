@@ -242,7 +242,8 @@ MIT. See [LICENSE](LICENSE).
   the panel was last asked to show and puts it back when the cooler attaches:
   a picture, the readout, or the dashboard. The System card's Scene and
   Screen no longer read empty after a restart. Showing a stored picture, or
-  one sent with `hotaru screen show`, now updates Screen too.
+  one sent with `hotaru screen show`, now updates Screen too. `hotaru status`
+  prints the scene and the screen, as the window does.
 
 ### 0.1.24 (2026-10-05)
 

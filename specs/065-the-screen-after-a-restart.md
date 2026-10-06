@@ -52,6 +52,8 @@ something the panel was no longer showing.
 - **R5** A fresh install records nothing and puts nothing on the panel.
 - **R6** The state file still loads when it holds a scene or a screen and no
   devices.
+- **R7** `hotaru status` prints the scene and the screen, as the window's
+  System card does. It printed neither, which broke CLI and window parity.
 
 ## Acceptance Criteria
 
@@ -66,6 +68,8 @@ something the panel was no longer showing.
       (`TestShowingAStoredPictureSaysWhatIsShowing`).
 - [x] A fresh install puts nothing on the panel
       (`TestAFreshInstallPutsNothingOnTheScreen`).
+- [x] `hotaru status` names the scene and the screen
+      (`TestStatusSaysTheSceneAndTheScreen`).
 - [x] `make test`, the GUI tests and `make lint` pass.
 - [ ] Live, with someone watching: apply a scene with a picture, run
       `systemctl --user restart hotaru`, and the picture is back on the
