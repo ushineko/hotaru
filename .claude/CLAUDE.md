@@ -48,9 +48,13 @@ is enforced by a test, the test is named.
 - **A canvas device is never handed back implicitly.** On the Apex, release
   reboots the keyboard, so it happens only when a person asks
   (`hotaru light release`). Stopping the service leaves the last frame.
-- **Cost is a requirement.** hotaru runs all day. A static scene sends one
-  frame and then nothing; animated effects default to the vendor's pace, not
-  the device's floor. New background work states and measures its cost.
+- **Cost is a requirement.** hotaru runs all day. A static scene sends the
+  least its device allows: one frame and then nothing where a frame stays
+  (the Apex), and the same frame again, no sooner than the device needs it,
+  where the device takes its lights back (a sanshoku `lighting.Fading`
+  canvas, the AULA F75 first). Animated effects default to the vendor's
+  pace, not the device's floor. New background work states and measures its
+  cost, and a device that needs a resend has that cost measured in its spec.
 
 ---
 
