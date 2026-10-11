@@ -14,6 +14,7 @@ import (
 	"github.com/ushineko/hotaru/internal/openrgb"
 	svcpkg "github.com/ushineko/hotaru/internal/service" // `service` is a fixture in this package
 	"github.com/ushineko/hotaru/internal/state"
+	"github.com/ushineko/hotaru/internal/testsock"
 )
 
 /*
@@ -28,7 +29,7 @@ func previewing(t *testing.T) *gui.App {
 	t.Helper()
 
 	dir := t.TempDir()
-	socket := filepath.Join(dir, "s")
+	socket := testsock.Path(t)
 	listener, err := api.Listen(t.Context(), socket)
 	require.NoError(t, err)
 

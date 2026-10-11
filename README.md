@@ -221,6 +221,22 @@ MIT. See [LICENSE](LICENSE).
 
 ## Changelog
 
+### Unreleased
+
+- The first step of a Windows port (spec 067,
+  [#190](https://github.com/ushineko/hotaru/issues/190)). The service, the
+  CLI and the window build on Windows and their tests pass there. Files go
+  under `%APPDATA%\hotaru` and `%LOCALAPPDATA%\hotaru`, the socket is
+  restricted to its user by its access list, and a lost OpenRGB server is
+  recognised from the errors Windows reports. `hotaru serve` in a terminal
+  drives lights through OpenRGB. Readings from the machine, hotkeys, running
+  in the background and an installer are not there yet. Nothing changes on
+  Linux. sanshoku moves to 0.1.14 and fynedesygn to 0.1.96.
+- `docs/hardware.md` says which OpenRGB build hotaru needs. The 1.0 release
+  sends a write from hotaru to the wrong device, or nowhere, once a device
+  has left its list ([#191](https://github.com/ushineko/hotaru/issues/191)).
+  The fix is on OpenRGB's `master` and in no release yet.
+
 ### 0.1.26 (2026-10-06)
 
 - Lights that wash out can be corrected (spec 066,

@@ -9,7 +9,6 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	sdk "github.com/csutorasa/go-openrgb-sdk"
@@ -187,8 +186,7 @@ func isGone(err error) bool {
 	}
 	var timedOut *sdk.ResponseTimeoutError
 	return errors.As(err, &timedOut) ||
-		errors.Is(err, syscall.EPIPE) ||
-		errors.Is(err, syscall.ECONNRESET) ||
+		reset(err) ||
 		errors.Is(err, net.ErrClosed) ||
 		errors.Is(err, io.EOF) ||
 		errors.Is(err, io.ErrUnexpectedEOF)

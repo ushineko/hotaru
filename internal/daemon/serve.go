@@ -12,6 +12,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"runtime"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -461,6 +462,14 @@ name gets no hotkeys and everything else. The reason is recorded so that
 `hotaru keys` can say it rather than showing an empty table.
 */
 func keys(ctx context.Context, cmd *cobra.Command, svc *service.Service, report func(string, ...any)) {
+	// The door and the script are KWin's. Anywhere else there is no session
+	// bus to look for, and looking means the D-Bus library trying to start
+	// one: a child process, which on Windows is a program that is not there.
+	if runtime.GOOS != "linux" {
+		svc.SetDesktop("hotkeys are not available on " + runtime.GOOS + " yet")
+		cmd.Println("no hotkeys: not available on " + runtime.GOOS + " yet")
+		return
+	}
 	conn, err := desktop.Session()
 	if err != nil {
 		svc.SetDesktop(err.Error())
@@ -478,14 +487,14 @@ func keys(ctx context.Context, cmd *cobra.Command, svc *service.Service, report 
 		return
 	}
 
-	runtime, err := config.RuntimeDir()
+	runtimeDir, err := config.RuntimeDir()
 	if err != nil {
 		svc.SetDesktop(err.Error())
 		return
 	}
 	install := &desktop.Installer{
 		KWin:     desktop.NewKWin(conn),
-		Dir:      filepath.Join(runtime, "keys"),
+		Dir:      filepath.Join(runtimeDir, "keys"),
 		Bindings: func() map[string]string { return bindings(svc) },
 		Report:   report,
 	}

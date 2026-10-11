@@ -46,7 +46,7 @@ GOLANGCI           := $(HOME)/go/bin/golangci-lint-$(LINT_VERSION)
 # panic on files it thinks are from the future.
 LINT_GO_TOOLCHAIN  ?= go1.26.0
 
-.PHONY: all test race lint vuln build gui install generate screenshots tidy clean
+.PHONY: all test race lint lint-windows vuln build gui install generate screenshots tidy clean
 
 all: test build
 
@@ -60,6 +60,18 @@ lint: export GOTOOLCHAIN = $(LINT_GO_TOOLCHAIN)
 lint:
 	@go version
 	$(GOLANGCI) run --timeout 5m0s --config config/.golangci-$(LINT_VERSION).yml ./...
+
+# The files only Windows builds, checked from whichever system this runs on.
+# A linter sees one system's files at a time, so `lint` alone never reads a
+# _windows.go file on Linux, or the other way about.
+#
+# Without the window: it needs cgo, and a cross-build has none.
+lint-windows: export GOTOOLCHAIN = $(LINT_GO_TOOLCHAIN)
+lint-windows: export GOOS = windows
+lint-windows: export CGO_ENABLED = 0
+lint-windows:
+	$(GOLANGCI) run --timeout 5m0s --config config/.golangci-$(LINT_VERSION).yml \
+		$$(go list ./... | grep -v -e /internal/gui -e /cmd/hotaru-gui)
 
 vuln:
 	govulncheck ./...

@@ -26,6 +26,7 @@ import (
 	"github.com/ushineko/hotaru/internal/scenes"
 	"github.com/ushineko/hotaru/internal/service"
 	"github.com/ushineko/hotaru/internal/state"
+	"github.com/ushineko/hotaru/internal/testsock"
 )
 
 /*
@@ -133,7 +134,7 @@ func serving(t *testing.T, cfg *config.Config, server openrgb.Client) string {
 		t.Setenv("XDG_CONFIG_HOME", dir)
 	}
 
-	socket := filepath.Join(dir, "s")
+	socket := testsock.Path(t)
 	listener, err := api.Listen(t.Context(), socket)
 	require.NoError(t, err)
 

@@ -161,6 +161,29 @@ protocol, negotiates the version at connect, and reports it in `hotaru light
 health`. A server too old for your device is a reason to upgrade the server. A
 device missing from `openrgb --list-devices` is an upstream matter.
 
+### A fix the OpenRGB server needs
+
+The OpenRGB 1.0 release has a fault that hotaru cannot work around yet
+([#191](https://github.com/ushineko/hotaru/issues/191)). Use a build of
+OpenRGB that includes the fix.
+
+- **What you see.** A device does not change and hotaru reports it as
+  unconfirmed, or a different device changes. It starts once any device has
+  left the server's list, or after a rescan.
+- **Why.** hotaru speaks protocol 3 and names a device by its position in the
+  list. The 1.0 server reads that position as the device's id, and the two
+  differ once a device has left.
+- **Which build.** The fix is on OpenRGB's `master` branch, from commit
+  `4d17bac5` at the latest. No release has it at the time of writing. The
+  release after 1.0 is expected to.
+- **A build from `master` is not a requirement.** Any build with the fix
+  works. `master` is the only place to get one until a release has it.
+- **Where it was found.** On Windows, with the 1.0.0 package from winget. The
+  fault is in the server on every system.
+
+Restarting a 1.0 server puts positions and ids back in step. That lasts until
+the next device leaves the list.
+
 ### What each contributes
 
 **Lighting: OpenRGB.** Colours on any device it enumerates, per device, per

@@ -94,34 +94,6 @@ func (f Facts) RestartCommand() string {
 	return "sudo systemctl restart " + f.Unit
 }
 
-/*
-restartPlan is how this unit would be bounced, and whether it can be.
-
-Three machines, three answers. A user unit is this user's own and needs nothing.
-A system unit needs root, which is reachable only where somebody has already
-decided it should be: `sudo -n` succeeds when this user has been granted the
-command without a password, and fails instantly rather than prompting when they
-have not. Anything else cannot be restarted from here, and gets the command
-instead.
-
-Pure, and separate from running it, because which of the three a machine is is
-the part worth being sure about.
-*/
-func restartPlan(f Facts, sudo bool) (privileged bool, args []string, ok bool) {
-	switch {
-	case !f.Installed:
-		return false, nil, false
-	case f.User:
-		return false, []string{"--user", "restart", f.Unit}, true
-	case sudo:
-		// -n again at the point of use: this must never be the thing that
-		// blocks a lighting daemon on a password prompt nobody can see.
-		return true, []string{"-n", "systemctl", "restart", f.Unit}, true
-	default:
-		return false, nil, false
-	}
-}
-
 func (f Facts) startCommand() string {
 	if f.User {
 		return "systemctl --user start " + f.Unit

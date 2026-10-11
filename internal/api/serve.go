@@ -13,7 +13,8 @@ import (
 	"github.com/ushineko/hotaru/internal/service"
 )
 
-// SocketMode is the socket's permissions: this user, nobody else.
+// SocketMode is the socket's permissions: this user, nobody else. On Windows,
+// where a mode says nothing, the socket's access list says the same.
 //
 // The API has no authentication, and this is why it does not need any. The
 // boundary is the filesystem, the audience is one session, and a port would
@@ -61,7 +62,7 @@ func Listen(ctx context.Context, socket string) (net.Listener, error) {
 	if err != nil {
 		return nil, fmt.Errorf("listen on %s: %w", socket, err)
 	}
-	if err := os.Chmod(socket, SocketMode); err != nil {
+	if err := restrict(socket); err != nil {
 		_ = listener.Close()
 		return nil, fmt.Errorf("set permissions on %s: %w", socket, err)
 	}

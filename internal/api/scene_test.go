@@ -12,6 +12,7 @@ import (
 	"github.com/ushineko/hotaru/internal/scenes"
 	"github.com/ushineko/hotaru/internal/service"
 	"github.com/ushineko/hotaru/internal/state"
+	"github.com/ushineko/hotaru/internal/testsock"
 )
 
 /*
@@ -25,7 +26,7 @@ func withScenes(t *testing.T, saved ...scenes.Scene) (*api.Client, *openrgb.Fake
 	t.Helper()
 
 	dir := t.TempDir()
-	socket := filepath.Join(dir, "s")
+	socket := testsock.Path(t)
 	listener, err := api.Listen(t.Context(), socket)
 	require.NoError(t, err)
 
