@@ -886,11 +886,10 @@ func (s *Service) writeFrame(ctx context.Context, client openrgb.Client,
 			reads.
 
 			For every other mode the order is unchanged and deliberate: the
-			mode packet goes first and goes every time, including when the
-			device is already in that mode. On an NZXT cooler it is what
-			commits the frame -- with it suppressed, the ring and the fans
-			ignored every write while the rest of the machine changed colour
-			around them. See spec 010, and spec 056 for the reordering.
+			mode packet goes first, and the frame behind it waits for the
+			mode to settle (openrgb.SettleDelay). A device already in the
+			per-LED mode asked for takes the frame alone; see below, and
+			spec 056 for the reordering.
 		*/
 		/*
 			commits is a mode that carries a colour of its own, and arriving
@@ -906,12 +905,29 @@ func (s *Service) writeFrame(ctx context.Context, client openrgb.Client,
 		commits := known && one.ModeColour && device.Canvas == nil
 		arriving := !strings.EqualFold(device.ActiveMode, mode)
 
-		if err := client.SetMode(ctx, device.Name, mode, style); err != nil {
-			attempt.Why = err.Error()
-			result.Attempts = append(result.Attempts, attempt)
-			continue
+		/*
+			No mode packet to a device already in the per-LED mode asked
+			for, when the packet would change nothing about it.
+
+			In OpenRGB 1.0 the packet is not inert. The server rewrites every
+			zone from the controller's own thread after answering, and the
+			frame behind it is written from the network thread, so the two
+			interleave on the device. On an NZXT cooler that lost frames and
+			left the ring's channel showing one wrong LED and ignoring every
+			frame until the next mode change (#24). The frame alone landed
+			180 times in 180. Spec 068 replaces spec 010's rule, measured
+			when a frame was one request for the whole device.
+		*/
+		if !arriving && unchanged(one, known, device, style) {
+			attempt.Accepted = true
+		} else {
+			if err := client.SetMode(ctx, device.Name, mode, style); err != nil {
+				attempt.Why = err.Error()
+				result.Attempts = append(result.Attempts, attempt)
+				continue
+			}
+			attempt.Accepted = true
 		}
-		attempt.Accepted = true
 
 		if !isOffMode(mode) {
 			if err := client.SetFrame(ctx, device.Name, frame); err != nil {
@@ -1112,13 +1128,26 @@ func without(list []string, drop string) []string {
 }
 
 /*
+unchanged is a per-LED mode that a mode packet would only re-send: no colour
+of its own, and no brightness or speed for the packet to carry. Not a device
+hotaru draws, whose mode is chosen and drawn in one step.
+*/
+func unchanged(mode devices.Mode, known bool, device *devices.Device, style openrgb.Style) bool {
+	return known && device.Canvas == nil &&
+		mode.PerLED && !mode.ModeColour &&
+		(style.Brightness == nil || !mode.Brightness) &&
+		(style.Speed == nil || mode.Speed == nil)
+}
+
+/*
 settleDelay is how long a slow controller is given to finish changing mode
 before its colours are written again.
 
 Long enough for an SMBus device, short enough that a person setting a colour
 does not notice. Only ever paid by a device that did not show the first frame.
+It is the connection's own settle period, so the two cannot drift apart.
 */
-const settleDelay = 120 * time.Millisecond
+const settleDelay = openrgb.SettleDelay
 
 // pause waits, and says whether it got to the end rather than being
 // cancelled. A write that is being given up on should not still sleep.

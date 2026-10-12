@@ -881,9 +881,9 @@ func TestAModeWithAColourOfItsOwnIsWrittenAgainAfterTheFrame(t *testing.T) {
 /*
 A per-LED mode keeps the order it has always had: the mode, then the frame.
 
-On an NZXT cooler the mode packet is what commits the frame, so it goes first
-and goes every time (spec 010). Nothing measured about the keyboard changes
-that, and this is here so the reordering cannot quietly spread to it.
+A device arriving in the mode takes the packet first (spec 068). Nothing
+measured about the keyboard changes that, and this is here so the reordering
+cannot quietly spread to it.
 */
 func TestAPerLEDModeTakesTheModeBeforeTheFrame(t *testing.T) {
 	svc, server := lit(t, scenes.Scene{
