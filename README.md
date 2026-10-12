@@ -2,7 +2,7 @@
 
 *lights, cooler, action!*
 
-**Version**: 0.1.26
+**Version**: 0.1.27
 
 RGB lighting and AIO cooler control for Linux, as a CLI, a user service and a
 desktop GUI. 
@@ -221,7 +221,7 @@ MIT. See [LICENSE](LICENSE).
 
 ## Changelog
 
-### Unreleased
+### 0.1.27 (2026-10-12)
 
 - The Kraken's ring no longer loses writes or sticks on one green LED (spec
   068, [#24](https://github.com/ushineko/hotaru/issues/24)). hotaru sent a
