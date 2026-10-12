@@ -221,6 +221,16 @@ MIT. See [LICENSE](LICENSE).
 
 ## Changelog
 
+### Unreleased
+
+- The Kraken's ring no longer loses writes or sticks on one green LED (spec
+  068, [#24](https://github.com/ushineko/hotaru/issues/24)). hotaru sent a
+  mode packet before every frame. OpenRGB 1.0 finishes a mode change on
+  another thread, and the frame behind it interleaved with it on the ring's
+  channel. A device already in Direct now takes the frame alone, and a frame
+  after a mode change waits 120 ms for it to settle. See
+  [docs/hardware.md](docs/hardware.md).
+
 ### 0.1.26 (2026-10-06)
 
 - Lights that wash out can be corrected (spec 066,

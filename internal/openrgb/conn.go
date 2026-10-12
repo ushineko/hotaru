@@ -58,6 +58,10 @@ type Conn struct {
 	// mu, so asking does not wait behind an exchange that is stuck on the
 	// very server that went (spec 063 R3).
 	gone atomic.Bool
+
+	// holds keeps each device's next frame back until its last mode change
+	// has settled (spec 068).
+	holds *holds
 }
 
 /*
@@ -105,6 +109,7 @@ func handshake(ctx context.Context, netConn net.Conn, address string, wait time.
 	return &Conn{
 		client: client, socket: netConn, address: address,
 		version: uint32(client.CommonVersion()), wait: wait,
+		holds: newHolds(),
 	}, nil
 }
 
@@ -437,6 +442,7 @@ func (c *Conn) SetMode(ctx context.Context, device, mode string, style Style) (e
 		if err := c.client.RGBControllerUpdateMode(entry.index, req); err != nil {
 			return fmt.Errorf("set %s to %s: %w", device, mode, err)
 		}
+		c.holds.start(device)
 		return nil
 	}
 	return fmt.Errorf("%s has no mode called %q", device, mode)
@@ -450,6 +456,16 @@ reasons that are about scenes and reconciliation, and it happens to be what the
 protocol wants too.
 */
 func (c *Conn) SetFrame(ctx context.Context, device string, frame devices.Frame) (err error) {
+	/*
+		After a mode change, not alongside it: the server is still writing
+		the mode on another thread, and a frame written now interleaves with
+		it on the device. Waited for outside the lock, so a device that is
+		settling does not hold up writes to the others. See SettleDelay.
+	*/
+	if err := c.holds.wait(ctx, device); err != nil {
+		return fmt.Errorf("write %s: %w", device, err)
+	}
+
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	defer func() { c.note(err) }()
