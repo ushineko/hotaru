@@ -232,10 +232,11 @@ MIT. See [LICENSE](LICENSE).
   drives lights through OpenRGB. Readings from the machine, hotkeys, running
   in the background and an installer are not there yet. Nothing changes on
   Linux. sanshoku moves to 0.1.14 and fynedesygn to 0.1.96.
-- `docs/hardware.md` says which OpenRGB build hotaru needs. The 1.0 release
-  sends a write from hotaru to the wrong device, or nowhere, once a device
-  has left its list ([#191](https://github.com/ushineko/hotaru/issues/191)).
-  The fix is on OpenRGB's `master` and in no release yet.
+- `docs/hardware.md` says to use any OpenRGB release except 1.0. The 1.0
+  release sends a write from hotaru to the wrong device, or nowhere, once a
+  device has left its list
+  ([#191](https://github.com/ushineko/hotaru/issues/191)). OpenRGB 1.1 fixes
+  it.
 
 ### 0.1.26 (2026-10-06)
 

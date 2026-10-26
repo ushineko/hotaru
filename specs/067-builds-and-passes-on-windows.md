@@ -116,8 +116,9 @@ window:
 - R8.2 The README's changelog has the entry. The README still describes a
   Linux program, which is what a person can install today.
 - R8.3 `docs/hardware.md` says the OpenRGB server has to include the fix for
-  [#191](https://github.com/ushineko/hotaru/issues/191), and that a build
-  from `master` is needed only while no release has it.
+  [#191](https://github.com/ushineko/hotaru/issues/191): any release except
+  1.0. OpenRGB 1.1 (2026-10-16) has it. When this was first written no
+  release did, and the text asked for a build from `master`.
 
 ## Acceptance Criteria
 
