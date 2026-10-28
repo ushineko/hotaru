@@ -45,6 +45,9 @@ type Service struct {
 	queue    *queue.Set
 	env      Environment
 	cooler   Cooler
+	// handback says the cooler's screen went to its own readout; see
+	// handback.go.
+	handback chan struct{}
 	// processor samples utilisation, which is a rate: one sampler for the
 	// whole service so the first answer is not always a dash.
 	processor *readings.CPU
@@ -244,7 +247,8 @@ func New(cfg *config.Config, client openrgb.Client, address string) *Service {
 	return &Service{
 		cfg: cfg, client: client, addr: address,
 		processor: readings.NewCPU(), memory: readings.NewMemory(),
-		history: readings.NewHistory(),
+		history:  readings.NewHistory(),
+		handback: make(chan struct{}, 1),
 	}
 }
 
@@ -1382,6 +1386,7 @@ func (s *Service) Draw(ctx context.Context, what Screen) error {
 			return err //nolint:wrapcheck // the cooler's own words, as before
 		}
 		s.shown(state.Screen{Showing: "the cooler's own readout", Readout: true}, nil)
+		s.handedBack()
 		return nil
 	case len(what.Image) > 0:
 		if err := c.Show(ctx, what.Image); err != nil {
