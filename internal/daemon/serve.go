@@ -315,6 +315,8 @@ func serveCooler(ctx context.Context, svc *service.Service, found *cooler.Cooler
 	if err := svc.RestoreScreen(ctx); err != nil {
 		report("could not put the screen back: %v", err)
 	}
+	retouched := make(chan struct{})
+	go func() { defer close(retouched); retouch(drawing, svc, handback, report) }()
 
 	gone := false
 	select {
@@ -324,11 +326,51 @@ func serveCooler(ctx context.Context, svc *service.Service, found *cooler.Cooler
 	}
 	stop()
 	<-drawn
+	<-retouched
 
 	svc.SetDashboard(nil)
 	svc.SetCooler(nil)
 	_ = found.Close()
 	return gone
+}
+
+/*
+handback is how long after the cooler's screen changes hands its lights are
+sent their frame again: long enough for the firmware to have finished, as
+measured for hotaru #24 (0.3 s was too soon, 12 s was not).
+*/
+var handback = 12 * time.Second
+
+/*
+retouch sends the cooler's own lights their recorded frame again, a while
+after the service takes the screen and a while after each switch to the
+cooler's readout (see service/handback.go). A switch inside the wait starts
+it again, so a run of them costs one frame.
+*/
+func retouch(ctx context.Context, svc *service.Service, after time.Duration, report func(string, ...any)) {
+	timer := time.NewTimer(after)
+	defer timer.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-svc.Handbacks():
+			timer.Reset(after)
+		case <-timer.C:
+			restore, err := svc.Retouch(ctx)
+			switch {
+			case err != nil:
+				report("could not send the cooler's lights their colours again: %v", err)
+			case restore.Applied > 0:
+				report("sent the cooler's lights their colours again after the screen changed hands")
+			}
+			for _, result := range restore.Results {
+				if result.Err != nil {
+					report("could not send %s its colours again: %v", result.Device, result.Err)
+				}
+			}
+		}
+	}
 }
 
 /*

@@ -2,7 +2,7 @@
 
 **Issue**: [#24](https://github.com/ushineko/hotaru/issues/24)
 
-## Status: INCOMPLETE
+## Status: COMPLETE
 
 ## Executive Summary
 
@@ -118,7 +118,7 @@ taking frames with no mode packet at all.
       ring does not stick.
 - [x] Live, with someone watching: two or three scenes applied with the
       development build. Every lit device in the case changes.
-- [ ] Live: a few days of ordinary use with the dashboard on, and the ring
+- [x] Live: a few days of ordinary use with the dashboard on, and the ring
       not stuck. The result goes on #24.
 
 ## Risks & Assumptions
@@ -192,6 +192,18 @@ service, the dashboard on the screen, `bounce` removed from the rules:
 
 Open: the green LED after the first unwatched run is not explained. The
 multi-day check is where it shows again, if it does.
+
+Multi-day check, 2026-10-12 15:53 to 2026-10-27 21:32: a probe build of
+0.1.27 under the user's service, with the dashboard on. The probe build also
+carried a sanshoku change that kept the screen off the firmware readout when
+memory filled. The user reported the ring clean for the whole run. The one
+readout switch in its log was at shutdown before a reboot.
+
+The check ran with that sanshoku change, so it shows this spec's fix with the
+readout switches removed. About 20 minutes after 0.1.27 was installed without
+it, LED 22 went green with no write from hotaru. That second cause, the
+screen's switch to the readout, is spec 070, and it likely explains the
+unwatched green above.
 
 ## Upstream report (draft)
 

@@ -221,6 +221,19 @@ MIT. See [LICENSE](LICENSE).
 
 ## Changelog
 
+### Unreleased
+
+- The Kraken's ring is sent its colours again after the cooler's screen
+  changes hands (spec 070, [#24](https://github.com/ushineko/hotaru/issues/24)).
+  The firmware can turn one ring LED green some seconds after the screen goes
+  to its own readout, and only a later frame clears it. hotaru now sends the
+  ring its recorded frame 12 s after the service takes the screen, and 12 s
+  after each switch to the readout somebody asks for. That the same fix covers
+  the green seen after a reboot is inferred, not yet tested.
+- sanshoku 0.1.16. The dashboard no longer leaves the screen for the
+  firmware readout about every 8.5 minutes to make room, which was the most
+  frequent cause of the green LED (sanshoku spec 021).
+
 ### 0.1.28 (2026-10-27)
 
 - A board's addressable headers get their size back after a restart (spec
@@ -233,8 +246,10 @@ MIT. See [LICENSE](LICENSE).
 
 ### 0.1.27 (2026-10-12)
 
-- The Kraken's ring no longer loses writes or sticks on one green LED (spec
-  068, [#24](https://github.com/ushineko/hotaru/issues/24)). hotaru sent a
+- The Kraken's ring no longer loses writes (spec 068,
+  [#24](https://github.com/ushineko/hotaru/issues/24)). (Corrected: this
+  entry also said the ring no longer stuck on one green LED. That green had
+  a second cause, the screen's switch to the readout; see spec 070.) hotaru sent a
   mode packet before every frame. OpenRGB 1.0 finishes a mode change on
   another thread, and the frame behind it interleaved with it on the ring's
   channel. A device already in Direct now takes the frame alone, and a frame
