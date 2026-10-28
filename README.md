@@ -2,7 +2,7 @@
 
 *lights, cooler, action!*
 
-**Version**: 0.1.27
+**Version**: 0.1.28
 
 RGB lighting and AIO cooler control for Linux, as a CLI, a user service and a
 desktop GUI. 
@@ -221,7 +221,7 @@ MIT. See [LICENSE](LICENSE).
 
 ## Changelog
 
-### Unreleased
+### 0.1.28 (2026-10-27)
 
 - A board's addressable headers get their size back after a restart (spec
   069, [#194](https://github.com/ushineko/hotaru/issues/194)). OpenRGB 1.1
