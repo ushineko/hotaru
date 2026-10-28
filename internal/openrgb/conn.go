@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"strings"
 	"sync"
@@ -449,6 +450,37 @@ func (c *Conn) SetMode(ctx context.Context, device, mode string, style Style) (e
 }
 
 /*
+ResizeZone sets a zone's LED count.
+
+The request has no answer. The server handles one client's requests in order,
+so the read that follows it sees the new size.
+*/
+func (c *Conn) ResizeZone(ctx context.Context, device, zone string, size int) (err error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	defer func() { c.note(err) }()
+
+	if size < 0 || size > math.MaxInt32 {
+		return fmt.Errorf("resize %s zone %s: %d is not a size", device, zone, size)
+	}
+	entry, err := c.find(ctx, device)
+	if err != nil {
+		return err
+	}
+	for i, z := range entry.device.Zones {
+		if !strings.EqualFold(z.Name, zone) {
+			continue
+		}
+		req := &sdk.RGBControllerResizeZoneRequest{ZoneIdx: int32(i), NewSize: int32(size)}
+		if err := c.client.RGBControllerResizeZone(entry.index, req); err != nil {
+			return fmt.Errorf("resize %s zone %s to %d: %w", device, zone, size, err)
+		}
+		return nil
+	}
+	return fmt.Errorf("%s has no zone called %q", device, zone)
+}
+
+/*
 SetFrame writes a colour per LED.
 
 The whole device in one exchange. A frame is the unit everywhere above this for
@@ -615,6 +647,8 @@ func convert(data *sdk.ControllerData) devices.Device {
 			Shape: shapeOf(zone.ZoneType),
 			First: first,
 			Count: int(zone.ZoneLedsCount),
+			Min:   int(zone.ZoneLedsMin),
+			Max:   int(zone.ZoneLedsMax),
 		})
 		first += int(zone.ZoneLedsCount)
 	}

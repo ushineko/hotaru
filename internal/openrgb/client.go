@@ -53,6 +53,14 @@ type Client interface {
 	// the unit precisely so a write cannot land half-applied.
 	SetFrame(ctx context.Context, device string, frame devices.Frame) error
 
+	/*
+		ResizeZone sets how many LEDs a resizable zone has: an addressable
+		header, a fan channel. The server keeps the size, and every LED after
+		the zone moves along. A server that comes back without a size it had
+		is how a board's headers end up dark (spec 069).
+	*/
+	ResizeZone(ctx context.Context, device, zone string, size int) error
+
 	// ProtocolVersion is the version client and server agreed on, which health
 	// reports so a mismatch is visible rather than mysterious.
 	ProtocolVersion() uint32

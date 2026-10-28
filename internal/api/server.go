@@ -1021,6 +1021,7 @@ func result(got service.Result) Result {
 		Superseded:  got.Superseded,
 		Unconfirmed: got.Unconfirmed,
 		Problems:    got.Problems,
+		Resized:     got.Resized,
 	}
 	if got.Err != nil {
 		out.Error = got.Err.Error()

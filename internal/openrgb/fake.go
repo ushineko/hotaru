@@ -58,6 +58,9 @@ type Fake struct {
 	*/
 	Sequence []string
 
+	// Resizes is every zone resized, in order.
+	Resizes []Resize
+
 	closed bool
 }
 
@@ -65,6 +68,13 @@ type Fake struct {
 type Write struct {
 	Device string
 	Frame  devices.Frame
+}
+
+// Resize is one zone given a new size.
+type Resize struct {
+	Device string
+	Zone   string
+	Size   int
 }
 
 // ModeWrite is one mode that was set.
@@ -181,6 +191,55 @@ func (f *Fake) SetFrame(_ context.Context, device string, frame devices.Frame) e
 			f.devices[i].Colours = append([]colour.Colour(nil), frame.Colours...)
 		}
 		return nil
+	}
+	return fmt.Errorf("no device called %q", device)
+}
+
+/*
+ResizeZone sets a zone's LED count, as the server does: the zones after it
+move along, and the LEDs that stay keep their colours. A size the zone does
+not allow is refused.
+*/
+func (f *Fake) ResizeZone(_ context.Context, device, zone string, size int) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.Unreachable != nil {
+		return f.Unreachable
+	}
+	for i := range f.devices {
+		d := &f.devices[i]
+		if !strings.EqualFold(d.Name, device) {
+			continue
+		}
+		for j, z := range d.Zones {
+			if !strings.EqualFold(z.Name, zone) {
+				continue
+			}
+			if !z.Fits(size) {
+				return fmt.Errorf("%s zone %s takes %d to %d LEDs, not %d", device, zone, z.Min, z.Max, size)
+			}
+			f.Resizes = append(f.Resizes, Resize{Device: device, Zone: z.Name, Size: size})
+			// Clamped, for a device described with fewer colours than its
+			// zones add up to.
+			start := min(z.First, len(d.Colours))
+			end := min(z.First+z.Count, len(d.Colours))
+			kept := min(end-start, size)
+			resized := make([]colour.Colour, 0, len(d.Colours)-(end-start)+size)
+			resized = append(resized, d.Colours[:start]...)
+			resized = append(resized, d.Colours[start:start+kept]...)
+			resized = append(resized, make([]colour.Colour, size-kept)...)
+			resized = append(resized, d.Colours[end:]...)
+			d.Colours = resized
+			d.Zones[j].Count = size
+			first := 0
+			for k := range d.Zones {
+				d.Zones[k].First = first
+				first += d.Zones[k].Count
+			}
+			d.LEDCount = first
+			return nil
+		}
+		return fmt.Errorf("%s has no zone called %q", device, zone)
 	}
 	return fmt.Errorf("no device called %q", device)
 }

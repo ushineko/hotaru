@@ -70,6 +70,17 @@ type Device struct {
 		one written by an older build reads here unchanged.
 	*/
 	ModeColours []string `json:"mode_colours,omitempty"`
+
+	/*
+		Zones is each zone's LED count when the colours were recorded, by
+		zone name.
+
+		The frame is laid out for these sizes. A server that comes back with
+		an addressable header at 0 LEDs has lost a size, and restore puts it
+		back from here before writing the frame (spec 069). Empty in a file
+		written before that, and restore then resizes nothing.
+	*/
+	Zones map[string]int `json:"zones,omitempty"`
 }
 
 // Named is every colour a scene named for the mode, first to last, from
@@ -285,6 +296,12 @@ func copyOf(in Snapshot) Snapshot {
 			kept.Speed = &speed
 		}
 		kept.ModeColours = append([]string(nil), device.ModeColours...)
+		if device.Zones != nil {
+			kept.Zones = make(map[string]int, len(device.Zones))
+			for zone, n := range device.Zones {
+				kept.Zones[zone] = n
+			}
+		}
 		out.Devices[name] = kept
 	}
 	return out

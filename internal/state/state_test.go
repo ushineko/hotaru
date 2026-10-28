@@ -194,3 +194,38 @@ func TestAStateFileFromBeforeSeveralColoursReadsAsOne(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"#123456"}, store.Snapshot().Devices["board"].Named())
 }
+
+func TestZoneSizesSurviveARestart(t *testing.T) {
+	// Spec 069 R3: the layout the colours were recorded for.
+	path := filepath.Join(t.TempDir(), "state.yml")
+	store, err := state.Open(path)
+	require.NoError(t, err)
+	require.NoError(t, store.Record("board", state.Device{
+		Mode: "Direct", Zones: map[string]int{"Aura Mainboard": 1, "Addressable RGB Header 1": 16},
+	}))
+	require.NoError(t, store.Flush())
+
+	again, err := state.Open(path)
+	require.NoError(t, err)
+	kept := again.Snapshot().Devices["board"]
+	require.Equal(t, map[string]int{"Aura Mainboard": 1, "Addressable RGB Header 1": 16}, kept.Zones)
+
+	kept.Zones["Aura Mainboard"] = 9
+	require.Equal(t, 1, again.Snapshot().Devices["board"].Zones["Aura Mainboard"],
+		"the snapshot's zones are the store's")
+}
+
+func TestAStateFileFromBeforeZoneSizesHasNone(t *testing.T) {
+	// Spec 069 R3.1.
+	path := filepath.Join(t.TempDir(), "state.yml")
+	require.NoError(t, os.WriteFile(path, []byte(`lighting:
+  devices:
+    board:
+      mode: Direct
+      colours: ['#123456']
+      applied: 2026-09-30T10:00:00Z
+`), 0o600))
+	store, err := state.Open(path)
+	require.NoError(t, err)
+	require.Nil(t, store.Snapshot().Devices["board"].Zones)
+}
