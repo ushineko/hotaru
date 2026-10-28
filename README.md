@@ -221,6 +221,16 @@ MIT. See [LICENSE](LICENSE).
 
 ## Changelog
 
+### Unreleased
+
+- A board's addressable headers get their size back after a restart (spec
+  069, [#194](https://github.com/ushineko/hotaru/issues/194)). OpenRGB 1.1
+  did not read the zone sizes 1.0 had saved, so an ASUS board's headers came
+  up at 0 LEDs. hotaru wrote the colours to the one LED left and reported the
+  board restored. hotaru now records each zone's size with the colours, and
+  a restore resizes a zone that came back smaller. `light health`, `hotaru
+  reconcile` and the service log name a device whose colours no longer fit.
+
 ### 0.1.27 (2026-10-12)
 
 - The Kraken's ring no longer loses writes or sticks on one green LED (spec

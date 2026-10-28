@@ -187,6 +187,15 @@ type Zone struct {
 	Shape Shape
 	First int // index of the zone's first LED within the device
 	Count int
+
+	/*
+		Min and Max are the fewest and most LEDs the zone can be given, as
+		the server reports them. A zone whose size is set by hand -- an
+		addressable header, a fan channel -- has a range; a fixed zone has
+		the same number for both, or nothing at all (spec 069).
+	*/
+	Min int
+	Max int
 }
 
 // Shape is how a zone's lights are arranged, as the device describes them.
@@ -207,6 +216,13 @@ func (z Zone) Chainable() bool { return z.Shape == ShapeLine && z.Count > 1 }
 
 // Last is the index of the zone's final LED.
 func (z Zone) Last() int { return z.First + z.Count - 1 }
+
+// Resizable reports whether the zone's size can be set, rather than being
+// what the hardware is.
+func (z Zone) Resizable() bool { return z.Max > z.Min }
+
+// Fits reports whether the zone can be given n LEDs.
+func (z Zone) Fits(n int) bool { return z.Resizable() && n >= z.Min && n <= z.Max }
 
 // Mode returns the device's own spelling of a mode, matched case-insensitively,
 // and whether it has one. The device's spelling is what gets sent back, so a

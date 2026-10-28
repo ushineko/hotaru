@@ -502,6 +502,11 @@ type Result struct {
 	// the top fan" with the fan misspelled is a device that went blue all over
 	// and said it worked.
 	Problems []string
+
+	// Resized are zones a restore gave back the size they were recorded
+	// with, each as a sentence: "Addressable RGB Header 1 from 0 to 16
+	// LEDs". See spec 069.
+	Resized []string
 }
 
 // Attempt is one mode hotaru tried, and what the device did with it.
@@ -659,7 +664,7 @@ func (s *Service) applyOne(ctx context.Context, client openrgb.Client, cfg *conf
 	})
 	result.Problems = problems
 	if result.Applied && !off && !req.Preview {
-		s.remember(device.Name, result.Mode, frame, want)
+		s.remember(device, result.Mode, frame, want)
 	}
 	if result.Applied && off && !req.Preview {
 		// A device deliberately turned off has nothing to restore: putting
@@ -1068,7 +1073,7 @@ func (s *Service) base(device *devices.Device) []colour.Colour {
 }
 
 // remember records what a user asked for, so it can be put back.
-func (s *Service) remember(name, mode string, frame devices.Frame, want preference) {
+func (s *Service) remember(device *devices.Device, mode string, frame devices.Frame, want preference) {
 	s.mu.RLock()
 	recorder := s.recorder
 	s.mu.RUnlock()
@@ -1098,7 +1103,13 @@ func (s *Service) remember(name, mode string, frame devices.Frame, want preferen
 			kept.ModeColours = append(kept.ModeColours, c.String())
 		}
 	}
-	_ = recorder.Record(name, kept)
+	if len(device.Zones) > 0 {
+		kept.Zones = make(map[string]int, len(device.Zones))
+		for _, z := range device.Zones {
+			kept.Zones[z.Name] = z.Count
+		}
+	}
+	_ = recorder.Record(device.Name, kept)
 }
 
 func (s *Service) forget(name string) {

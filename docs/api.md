@@ -37,6 +37,10 @@ $ curl -s --unix-socket $XDG_RUNTIME_DIR/hotaru/hotaru.sock http://hotaru/v1/hea
 }
 ```
 
+A recorded device whose LED count differs from its recorded colours stays
+`healthy`, because hotaru can still drive it. `detail` names it with both
+numbers, and `remedies` offers `hotaru reconcile` (spec 069).
+
 `health` answers when nothing else can, which is why it is a route of its own.
 With no OpenRGB server, `/v1/devices` returns a 503, and this route still
 tells you what to do about it.
@@ -765,6 +769,24 @@ $ curl -s --unix-socket … -X POST http://hotaru/v1/reconcile
 rather than a failure. OpenRGB enumerates once at server start, and a cold
 boot has found two devices of six. hotaru retries, and completes when the rest
 appear.
+
+**A zone that came back smaller than recorded gets its size back** before the
+colours go (spec 069). This covers a zone whose size a person sets, such as an
+addressable header, where the recorded size is within the zone's range. Each
+one is listed in that device's `resized`:
+
+```json
+{
+  "device": "ASUS ROG MAXIMUS Z790 HERO",
+  "applied": true,
+  "mode": "Direct",
+  "resized": ["Addressable RGB Header 1 from 0 to 16 LEDs"]
+}
+```
+
+A device that still has a different LED count from its recorded colours is
+written anyway, and `problems` says so with both numbers. A zone is never made
+smaller.
 
 ## POST /v1/reload
 
