@@ -137,7 +137,7 @@ window:
       that need no cgo.
 - [x] The pinned golangci-lint reports 0 issues on Windows, and for
       `GOOS=linux` on the packages that need no cgo.
-- [ ] `make test` and `make lint` pass on Linux, and `make lint-windows`
+- [x] `make test` and `make lint` pass on Linux, and `make lint-windows`
       reports 0 issues there.
 - [x] The reset test fails without R4.1 and passes with it.
 - [x] On Windows the socket's access list is one entry, for the current user,
@@ -159,10 +159,10 @@ window:
 
 ## Risks & Assumptions
 
-- **Linux is unverified from here.** hotaru has no CI, and this branch was
-  built and tested on Windows only. The Linux paths are the old code moved
-  into `paths_unix.go`, and `go vet` passes for `GOOS=linux`, but the Linux
-  test run is an open criterion.
+- **Linux was checked once, by hand.** hotaru has no CI. The branch was
+  built on Windows, and its tests, lints and build were then run on Linux
+  from the pushed branch. The Linux paths are the old code moved into
+  `paths_unix.go`.
 - **The access list is asserted, not attacked.** The test reads the list. No
   second user tried to connect. The default directory is inside the user's
   profile, which other users cannot open in any case.
@@ -277,4 +277,11 @@ and its window attaches to that service as a client.
   design on every system, filed as
   [#198](https://github.com/ushineko/hotaru/issues/198).
 
-Not run: anything on Linux, and a second Windows user.
+2026-11-10, Linux: CachyOS, Go 1.27.3 (lint under go1.26.0), golangci-lint v2.12.2, in a fresh clone of the pushed branch.
+
+- `make test`: every package ok. `go test -tags migrated_fynedo
+  ./internal/gui/...`: ok.
+- `make lint` and `make lint-windows`: 0 issues.
+- `make build gui`: `bin/hotaru` and `bin/hotaru-gui`, without `.exe`.
+
+Not run: a second Windows user.

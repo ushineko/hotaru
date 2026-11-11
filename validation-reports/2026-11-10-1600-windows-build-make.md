@@ -2,7 +2,7 @@
 
 **Date**: 2026-11-10 16:00
 **Commit**: on top of afd4c52, branch `feat/windows-build`
-**Status**: PASSED on Windows. Linux not run.
+**Status**: PASSED on Windows and Linux.
 
 Run on Windows 11 Pro 26200, Go 1.27.2 (lint under go1.26.0), MSYS2 UCRT64
 gcc, OpenRGB 1.1.0. Make was run from PowerShell; see the spec for why not
@@ -18,9 +18,10 @@ from Git Bash.
 - `make build gui`: `bin\hotaru.exe` and `bin\hotaru-gui.exe`.
 - Live: the service, the CLI and the window ran against each other and
   OpenRGB. The board's fault is outside hotaru (#197).
-- Not run: anything on Linux. ssh to the Linux machine refused this
-  machine's key.
-- Status: PASSED on Windows, INCOMPLETE on Linux.
+- Linux, at b211231: CachyOS, Go 1.27.3 (lint under go1.26.0), golangci-lint v2.12.2, in a fresh clone of the pushed branch. `make test`, the GUI
+  tests, `make lint` and `make lint-windows` pass, 0 issues. `make build gui`
+  names the binaries without `.exe`.
+- Status: PASSED
 
 ### Phase 4: Code Quality
 
@@ -48,4 +49,5 @@ from Git Bash.
 
 ### Overall
 
-- All gates passed on Windows: YES. The Linux run stays open in the spec.
+- All gates passed: YES, on Windows and Linux. A second Windows user
+  stays open in the spec.
