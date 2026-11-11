@@ -109,6 +109,10 @@ window:
   window, from any system.
 - R7.3 `restartPlan` moves into the Linux file that calls it, since nothing
   else does and the Windows lint reports it unused.
+- R7.4 `make build` and `make gui` name their output with `go env GOEXE`, so
+  Windows gets `hotaru.exe`. Elsewhere the suffix is empty.
+- R7.5 `make lint-windows` passes golangci-lint package directories, not
+  import paths, which it cannot read.
 
 ### R8. Documentation
 
@@ -119,6 +123,9 @@ window:
   [#191](https://github.com/ushineko/hotaru/issues/191): any release except
   1.0. OpenRGB 1.1 (2026-10-16) has it. When this was first written no
   release did, and the text asked for a build from `master`.
+- R8.4 `docs/hardware.md` says that LibreHardwareMonitor starting after
+  OpenRGB stops an MSI board's strip, and what brings it back
+  ([#197](https://github.com/ushineko/hotaru/issues/197)).
 
 ## Acceptance Criteria
 
@@ -228,5 +235,45 @@ UCRT64 gcc.
   5–9, hotaru's write path turned the strip red and then blue, watched.
 - The mouse is not explained. Its position and id matched. It may have been
   asleep, and it was not retested.
+
+2026-10-26, the OpenRGB 1.1.0 release from winget, at `afd4c52`. The
+installer runs OpenRGB as a Windows service (LocalSystem, automatic start),
+and its window attaches to that service as a client.
+
+- `live_test.go` passed: protocol 3, five devices, the memory sticks
+  included.
+- `hotaru serve` connected at protocol 3 and restored the five devices to
+  what it had recorded.
+- After a rescan from OpenRGB's window, a protocol 6 read of the server named
+  it "OpenRGB 1.1" and listed six controllers at positions 0–5 with ids
+  6–11. The sixth was the DualSense over Bluetooth.
+- `hotaru light set red`, then `blue`, watched: all six devices changed each
+  time, the board's strip and the Razer mouse included, and nothing else
+  changed. hotaru reported every device written, none unconfirmed. On 1.0
+  every one of these writes would have gone to another position or nowhere.
+
+2026-11-10, Go 1.27.2 (lint under go1.26.0), OpenRGB 1.1.0 as a service.
+
+- From PowerShell, `make build gui` built `bin\hotaru.exe` and
+  `bin\hotaru-gui.exe`, both reporting `0.1.26-afd4c52-dev`. Before R7.4 they
+  were `bin/hotaru` and `bin/hotaru-gui`, which Windows does not run by name.
+- `make lint`: 0 issues. `make lint-windows` failed before R7.5, with
+  `stat ...\github.com\ushineko\hotaru\internal\api: directory not found`, and
+  reported 0 issues after it.
+- The 2026-10-11 note blamed MSYS make for losing the profile variables. The
+  cause is Git Bash starting MSYS2's make: two different MSYS runtimes, and
+  every variable but `PATH` and `HOME` is dropped. Make run from PowerShell
+  passes them through.
+- `go test -count=1 ./...` and the GUI tests: every package ok.
+- `hotaru serve`, the CLI (`status`, `light list`, `light health`, `scene
+  list`, `keys`, `readings`) and `hotaru-gui.exe` ran against each other.
+- The board did not follow `scene apply purple`. A read of the server showed
+  the colour recorded. Watched: restarting OpenRGB brought the board back,
+  starting LibreHardwareMonitor stopped it again, and restarting OpenRGB after
+  that kept it working. Not hotaru's fault; documented per R8.4.
+- Restarting OpenRGB showed the first request after it fail on the dead
+  connection, after which the service redialled and restored. That is the
+  design on every system, filed as
+  [#198](https://github.com/ushineko/hotaru/issues/198).
 
 Not run: anything on Linux, and a second Windows user.

@@ -189,6 +189,27 @@ Restarting a 1.0 server puts positions and ids back in step. That lasts until
 the next device leaves the list. On Linux, hotaru restarts the server itself
 when a device is plugged in again (spec 058), which hides the fault there.
 
+### A hardware monitor stops an MSI board's lighting on Windows
+
+Start OpenRGB after LibreHardwareMonitor, or restart OpenRGB once
+LibreHardwareMonitor runs. Otherwise the board's strip keeps its colour and
+ignores every write
+([#197](https://github.com/ushineko/hotaru/issues/197)).
+
+- **What you see.** Every other device changes. The board's strip does not.
+  OpenRGB records the new colour, so hotaru reports the board as written.
+- **Why.** On boards such as the B450 Tomahawk Max, OpenRGB drives the strip
+  through the Super I/O chip (`SIO: 0x4E`). It sets the chip up once, when it
+  finds the board, and then writes only colours. LibreHardwareMonitor reads
+  its sensors through the same chip, and its start undoes that setup.
+- **What it is not.** Running LibreHardwareMonitor does no harm after its
+  start. Quitting it does not bring the strip back. Only a new setup by
+  OpenRGB does: a restart of its service, or a rescan from its window.
+- **Where it was found.** Windows 11, OpenRGB 1.1.0 as a service at boot, and
+  LibreHardwareMonitor at logon. That order breaks the strip on every boot.
+- **hotaru cannot see it.** The server accepts the colour and reports it back,
+  so `hotaru light health` shows the board as healthy.
+
 ### What each contributes
 
 **Lighting: OpenRGB.** Colours on any device it enumerates, per device, per
