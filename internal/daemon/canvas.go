@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"time"
 
@@ -149,6 +150,7 @@ func serveCanvas(ctx context.Context, svc *service.Service, device *canvas.Devic
 	animator := canvas.NewAnimator(device, nil, func(format string, args ...any) {
 		report(device.Name()+": "+format, args...)
 	})
+	device.SetReport(report)
 	attachment := canvas.Attached{Device: device, Animator: animator}
 	drawn := make(chan struct{})
 	go func() {
@@ -156,13 +158,37 @@ func serveCanvas(ctx context.Context, svc *service.Service, device *canvas.Devic
 		_ = animator.Run(drawing) // ErrGone closes the adapter, which Gone below sees
 	}()
 
+	restore := svc.Reconcile
+	if len(device.Effects()) > 0 {
+		// What the firmware runs, so that listings and reconciles compare
+		// against the device rather than ask it (spec 071 R5.1).
+		running, err := device.ReadFirmware(ctx)
+		switch {
+		case err != nil:
+			report("%s's own effect could not be read yet: %v", device.Name(), err)
+		case strings.EqualFold(running.Name, factoryEffect):
+			// Attached on its factory settings: switched off and on while
+			// nobody watched, as the watcher would have seen (R6.2).
+			restore = func(ctx context.Context, only []string) (service.Restore, error) {
+				return svc.PutBack(ctx, only[0])
+			}
+		}
+	}
 	svc.AttachCanvas(attachment)
 	report("drawing on %s at %s", device.Name(), device.Path())
-	if _, err := svc.Reconcile(ctx, []string{device.Name()}); err != nil {
+	if _, err := restore(ctx, []string{device.Name()}); err != nil {
 		// No server yet: the reconciler restores this device with the rest
 		// when one answers, because it is recorded and was missing.
 		report("%s waits for the OpenRGB server to put its scene back: %v", device.Name(), err)
 	}
+
+	watch := time.NewTicker(watchEvery)
+	defer watch.Stop()
+	watched := make(chan struct{})
+	go func() {
+		defer close(watched)
+		watchStored(drawing, svc, attachment, watch.C, time.Now, report)
+	}()
 
 	check := time.NewTicker(presentEvery)
 	defer check.Stop()
@@ -172,6 +198,7 @@ func serveCanvas(ctx context.Context, svc *service.Service, device *canvas.Devic
 		case <-ctx.Done():
 			stop()
 			<-drawn
+			<-watched
 			svc.DetachCanvas(attachment)
 			_ = device.Close()
 			return false
@@ -185,6 +212,7 @@ func serveCanvas(ctx context.Context, svc *service.Service, device *canvas.Devic
 	}
 	stop()
 	<-drawn
+	<-watched
 	svc.DetachCanvas(attachment)
 	report("%s went away; looking for it again", device.Name())
 	return true

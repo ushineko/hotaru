@@ -140,6 +140,12 @@ func effectSettings(window fyne.Window, device api.Device, effect api.Effect,
 		return nil
 	}
 	var out []fyne.CanvasObject
+	if slices.Contains(device.Stored, effect.Mode) {
+		// Said before it is chosen, because applying it writes the device
+		// itself rather than its lights (spec 071 R7.2).
+		out = append(out, effectIndent(widgets.Dim(
+			"The device's own effect. Applying the scene writes it to the device's storage.")))
+	}
 	if slots, ok := colourSlots(device, effect.Mode); ok {
 		out = append(out, effectIndent(effectColoursField(window, device, effect, slots, changed)))
 	}

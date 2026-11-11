@@ -556,6 +556,14 @@ func (s *Service) Apply(ctx context.Context, req Request) ([]Result, error) {
 
 	twins := twinsByCanvas(found)
 
+	// Why these writes are made, which decides whether a device's own
+	// storage may be written (spec 071 R5).
+	if req.Preview {
+		ctx = withPurpose(ctx, forPreview)
+	} else {
+		ctx = withPurpose(ctx, forApply)
+	}
+
 	var results []Result
 	for i := range found {
 		device := found[i]
@@ -810,7 +818,9 @@ func (s *Service) through(ctx context.Context, device string, write func(context
 	}
 
 	var result Result
-	outcome := q.Do(device, func(ctx context.Context) { result = write(ctx) })
+	// The queue's context is its own, so why the write is made is carried in.
+	why := writing(ctx)
+	outcome := q.Do(device, func(ctx context.Context) { result = write(withPurpose(ctx, why)) })
 	if outcome.Superseded {
 		return Result{Device: device, Superseded: true}
 	}
@@ -933,6 +943,14 @@ func (s *Service) writeFrame(ctx context.Context, client openrgb.Client,
 			if err := client.SetMode(ctx, device.Name, mode, style); err != nil {
 				attempt.Why = err.Error()
 				result.Attempts = append(result.Attempts, attempt)
+				var keeps *KeepsStored
+				if errors.As(err, &keeps) {
+					// Not a mode the device refused: one hotaru will not
+					// write now. The next candidate would draw over the
+					// effect the device shows (spec 071 R5).
+					result.Skipped = err.Error()
+					return result
+				}
 				continue
 			}
 			attempt.Accepted = true

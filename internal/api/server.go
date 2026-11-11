@@ -948,6 +948,9 @@ func describe(view service.View) Device {
 		if mode.ModeColour && !mode.PerLED {
 			device.OneColour = append(device.OneColour, mode.Name)
 		}
+		if mode.Stored {
+			device.Stored = append(device.Stored, mode.Name)
+		}
 		// How many colours of its own the mode takes, for the editor's
 		// pickers. Asked of every mode, not only those that show one colour:
 		// a Spectrum hotaru draws takes eight and shows the wheel without.
@@ -1004,11 +1007,22 @@ func canvases(in []service.CanvasState) []Canvas {
 }
 
 func asCanvas(c service.CanvasState) *Canvas {
-	out := &Canvas{Device: c.Device, Effect: c.Effect, Drawing: c.Drawing, Rate: c.Rate, Frames: c.Frames}
+	out := &Canvas{Device: c.Device, Effect: c.Effect, Drawing: c.Drawing, Rate: c.Rate, Frames: c.Frames, Own: c.Own}
 	if c.Drawing {
 		out.Interval = c.Interval.String()
 	}
+	if w := c.Watch; w != nil {
+		out.Watch = &Watch{Answering: w.Answering, Asked: stamp(w.Asked), PutBack: stamp(w.PutBack)}
+	}
 	return out
+}
+
+// stamp is a time for the wire, or "" for never.
+func stamp(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.Format(time.RFC3339)
 }
 
 func result(got service.Result) Result {

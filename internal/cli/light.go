@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"text/tabwriter"
 
@@ -73,7 +74,7 @@ func listCommand() *cobra.Command {
 
 			w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 			_, _ = fmt.Fprintln(w, "DEVICE\tLEDS\tACTIVE\tSCOPE\tMODES")
-			var previewing bool
+			var previewing, stored bool
 			var handed []string
 			for _, device := range list {
 				scope := "-"
@@ -91,13 +92,17 @@ func listCommand() *cobra.Command {
 					scope = "yes"
 				}
 				_, _ = fmt.Fprintf(w, "%s\t%d\t%s\t%s\t%s\n",
-					device.Name, device.LEDs, active(device), scope, strings.Join(device.Modes, ", "))
+					device.Name, device.LEDs, active(device), scope, strings.Join(markStored(device), ", "))
+				stored = stored || len(device.Stored) > 0
 			}
 			if err := w.Flush(); err != nil {
 				return fmt.Errorf("write the listing: %w", err)
 			}
 			if previewing {
 				cmd.Println("\nSome devices are showing a draft. `hotaru preview` says who is holding it.")
+			}
+			if stored {
+				cmd.Println("\n* is the device's own effect. Choosing one, or its colour, writes the device's storage.")
 			}
 			if len(handed) > 0 {
 				cmd.Println()
@@ -110,6 +115,19 @@ func listCommand() *cobra.Command {
 	}
 	withJSON(cmd)
 	return cmd
+}
+
+// markStored is a device's modes, its firmware's stored ones marked with a *
+// (spec 071 R7.2).
+func markStored(device api.Device) []string {
+	out := make([]string, 0, len(device.Modes))
+	for _, mode := range device.Modes {
+		if slices.Contains(device.Stored, mode) {
+			mode += "*"
+		}
+		out = append(out, mode)
+	}
+	return out
 }
 
 /*
@@ -132,10 +150,25 @@ func drawing(effect string, c api.Canvas) string {
 	if effect == "" {
 		effect = "nothing drawn"
 	}
-	if c.Drawing {
+	switch {
+	case c.Drawing:
 		return fmt.Sprintf("%s, %.1f fps", effect, c.Rate)
+	case c.Own:
+		return effect + ", its own effect"
 	}
 	return effect + ", holding"
+}
+
+// watching is the power-cycle watcher's state in a few words (spec 071 R7.3).
+func watching(w api.Watch) string {
+	out := "silent"
+	if w.Answering {
+		out = "answering"
+	}
+	if w.PutBack != "" {
+		out += ", put its effect back at " + w.PutBack
+	}
+	return out
 }
 
 func releaseCommand() *cobra.Command {
@@ -362,6 +395,9 @@ func healthCommand() *cobra.Command {
 				}
 				for _, c := range health.Canvases {
 					cmd.Printf("  drawing on %s: %s\n", c.Device, drawing(c.Effect, c))
+					if c.Watch != nil {
+						cmd.Printf("  watching %s for a power cycle: %s\n", c.Device, watching(*c.Watch))
+					}
 				}
 			}
 			if health.State != "healthy" {

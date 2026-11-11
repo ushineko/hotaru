@@ -9,7 +9,7 @@ require (
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.12.1
 	github.com/ushineko/fynedesygn v0.1.96
-	github.com/ushineko/sanshoku v0.1.16
+	github.com/ushineko/sanshoku v0.1.19
 	go.yaml.in/yaml/v3 v3.0.5
 	golang.org/x/image v0.46.0
 	golang.org/x/sys v0.49.0
