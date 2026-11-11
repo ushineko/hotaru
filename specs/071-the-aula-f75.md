@@ -19,8 +19,10 @@ per two seconds. A power cycle puts the keyboard on its factory settings;
 hotaru notices it come back and puts the effect and colour back, but does
 not undo a change made with the keyboard's own keys.
 
-Look first at how `SetMode` on the canvas-aware client splits firmware
-effects from drawn ones, then at the watcher that notices a power cycle.
+Look first at `chooseStored` in `internal/service/canvas.go`, which splits
+firmware effects from drawn ones and decides when the keyboard's storage is
+written, then at `watchStored` in `internal/daemon/stored.go`, which notices
+a power cycle.
 
 ## Context
 
@@ -53,7 +55,7 @@ second path. The F75 adds firmware modes to that list.
 
 - R1.1 `internal/canvas` adds sanshoku's `aula.Driver` to its drivers. The
   receiver's device is opened as a canvas device as today. hotaru depends on
-  the sanshoku release that carries spec 023.
+  the sanshoku release that carries spec 023: 0.1.19.
 - R1.2 A device that is also `lighting.Onboard` keeps that capability in the
   adapter, beside the canvas. A canvas device without it behaves as now.
 - R1.3 OpenRGB does not list the F75, so it has no twin. The twin rule is
@@ -107,6 +109,11 @@ second path. The F75 adds firmware modes to that list.
 - R4.3 When drawing stops, nothing is sent. The keyboard returns to its
   stored effect by itself. `light release` on the F75 stops drawing and
   sends nothing (sanshoku's `Release` sends nothing on this device).
+- R4.4 Added during the work: a moving effect runs no faster than 120 ms on
+  the F75. At sanshoku's 80 ms floor a moving frame flickered, hotaru's
+  Rainbow Wave and sanshoku's own bench wave alike, because a frame at the
+  message limit can take 110 ms to write. sanshoku 0.1.19 raises the floor
+  (sanshoku #68), and hotaru's animator already never goes under it.
 
 ### R5. Flash
 
@@ -123,18 +130,28 @@ second path. The F75 adds firmware modes to that list.
 - R5.3 At most one firmware write per device per two seconds. The device's
   single-slot queue already keeps only the latest request; a request inside
   the two seconds waits for the end of them, and a newer one replaces it.
+  The queue does not cancel a write that is already waiting, so in a burst
+  the first write lands, the second lands two seconds later, and every one
+  between them is replaced by the last.
 - R5.4 Every firmware write is logged with what was written, so a person can
   count them.
 
 ### R6. After a power cycle
 
 - R6.1 While the F75's recorded state is a firmware effect, a watcher asks
-  the keyboard its model (sanshoku's one-packet question) every 10 s. It
-  only notes whether the keyboard answers.
+  the keyboard its battery question every 10 s: one 20-byte report each way.
+  It only notes whether the keyboard answers. Changed from the model
+  question, which sanshoku keeps private; the cost is the same.
 - R6.2 When the keyboard answers after being silent (switched off, out of
-  range, or asleep), hotaru reads `Effect`. If the effect or colour differs
-  from what hotaru recorded, it calls `SetEffect` and then `SetColour`, and
-  logs that it put them back.
+  range, or asleep), hotaru reads `Effect`. If it reads the factory effect,
+  Neon stream, hotaru writes the recorded effect and colour back where they
+  differ, and logs that it put them back. Refined from "if the effect or
+  colour differs": sleep keeps the settings, so a keyboard that wakes on
+  anything but Neon stream is one somebody chose, and R6.3 keeps it. A read
+  that fails is tried again on the next tick: the first read after a
+  power-on lost 2 of 35 packets on the desk.
+- R6.2a The same check runs when the keyboard is attached, so a power cycle
+  while hotaru was not running is put back when it starts.
 - R6.3 While the keyboard keeps answering, a change of effect or colour is
   not undone. A person pressing the keyboard's own lighting keys has asked
   for something, and the latest write wins.
@@ -177,35 +194,37 @@ second path. The F75 adds firmware modes to that list.
 
 ## Acceptance Criteria
 
-- [ ] The F75 lists with its firmware effects and hotaru's renderers, the
+- [x] The F75 lists with its firmware effects and hotaru's renderers, the
       firmware ones marked stored, with the running effect active.
-- [ ] `light set` on a device with stored modes keeps a coloured running
+- [x] `light set` on a device with stored modes keeps a coloured running
       effect and sets its colour, uses Fixed on where the effect has none,
       and leaves every other device's resolution unchanged.
-- [ ] A firmware mode stops the animator and sets the effect, then the
+- [x] A firmware mode stops the animator and sets the effect, then the
       colour; a renderer draws and does not touch the stored effect.
-- [ ] A still frame on a `Fading` canvas is sent again at `Hold`, on a test
+- [x] A still frame on a `Fading` canvas is sent again at `Hold`, on a test
       clock; on a canvas that is not `Fading` it is sent once.
-- [ ] Reconcile, the reassert interval and previews write no flash, counted
+- [x] Reconcile, the reassert interval and previews write no flash, counted
       on the fake. A preview of a colour is drawn.
-- [ ] Two firmware writes inside two seconds reach the device as one, the
-      later one.
-- [ ] After silence, a keyboard that answers on its factory settings gets
+- [x] A firmware write inside two seconds of the last waits for the end of
+      them (R5.3 as amended).
+- [x] After silence, a keyboard that answers on its factory settings gets
       its recorded effect and colour back. One that changed while it kept
-      answering does not.
+      answering does not. A failed first read is tried again.
 - [ ] `make test`, the GUI tests and `make lint` pass, and
-      `make lint-windows`.
-- [ ] Live, with someone watching, on the Windows machine: `light set
+      `make lint-windows`. Windows done; Linux not run.
+- [x] Live, with someone watching, on the Windows machine: `light set
       purple` keeps the running effect and makes it purple; a scene with
       Rainbow Wave draws it, and a scene with a firmware effect brings the
       effect back.
-- [ ] Live, with someone watching: a still drawn colour holds for five
+- [x] Live, with someone watching: a still drawn colour holds for five
       minutes without flicker.
-- [ ] Live, with someone watching: after the keyboard is switched off and
-      on, hotaru puts the effect and colour back within 20 s. A change made
-      with the keyboard's own keys is kept.
-- [ ] The cost in R8.2 is measured and recorded.
-- [ ] Docs per R9.
+- [x] Live, with someone watching: after the keyboard is switched off and
+      on, hotaru puts the effect and colour back. A change made from outside
+      hotaru while the keyboard answers is kept.
+- [x] The CPU cost in R8.2 is measured and recorded. The battery half moves
+      to [#199](https://github.com/ushineko/hotaru/issues/199): the keyboard
+      was charging, which pins its level.
+- [x] Docs per R9.
 
 ## Out of scope
 
@@ -241,8 +260,13 @@ second path. The F75 adds firmware modes to that list.
 - **The vendor's program.** AULA's software writes the same flash and
   streams on the same receiver. hotaru cannot arbitrate; `docs/hardware.md`
   says so.
-- **Depends on #190 and a sanshoku release.** Neither has landed. The code
-  waits for both; the spec does not.
+- **Depends on #190 and a sanshoku release.** sanshoku 0.1.19 carries spec
+  023 and the 120 ms floor. #190 is the branch this one is built on.
+- **The listing can be stale.** hotaru reads the keyboard's effect when it
+  attaches, when it writes, and when the keyboard comes back from silence.
+  An effect chosen with the keyboard's own keys while it answers shows in
+  the keyboard and not in `light list` until then. Reading on every tick was
+  rejected for its radio cost (see Alternatives).
 - **Rollback**: revert the PR. The keyboard keeps whatever effect and colour
   were last written, until it is changed with its own keys or power-cycled.
 
@@ -263,4 +287,42 @@ second path. The F75 adds firmware modes to that list.
 
 ## Verification
 
-To be filled in as the work is done.
+2026-11-10, Windows 11, Go 1.27.2, OpenRGB 1.1.0, sanshoku 0.1.19, the F75
+through its receiver on 2.4 GHz with its cable in for charge. Each live check
+was watched by the user.
+
+- `go test ./...`, `go test -tags migrated_fynedo ./internal/gui/...`,
+  `make lint` and `make lint-windows`: pass, 0 issues. The watcher's tests
+  ran 50 times under `-race`.
+- Started with nothing recorded for the keyboard: listed with its 20 effects
+  marked `*` and the four renderers, on "Ripples shining, its own effect".
+  Nothing was written to it.
+- `light set purple`: "wrote the effect "Ripples shining" in #8000ff to its
+  storage", 1.4 s for the whole command. Seen: purple ripples.
+- A scene with Rainbow Wave drew it. At sanshoku 0.1.18's 80 ms floor it
+  flickered, and so did sanshoku's bench wave at 80 ms. The bench wave was
+  smooth at 120 ms and at 160 ms. With 0.1.19 hotaru's wave ran at 120 ms,
+  8.3 frames a second, and was smooth.
+- A scene with Reaction in cyan stopped the drawing. Seen: cyan on key press.
+- A still drawn orange frame, sent again every 500 ms, held for six and a
+  half minutes with no flicker.
+- Power cycle. The first try showed the watcher's read failing on the first
+  answer ("the palette: no reply: 33 of 35 packets"), and nothing was put
+  back. With the retry, the service's start put Reaction back on its own,
+  because the keyboard was still on Neon stream. A power cycle on Reaction in
+  cyan did not reset the keyboard: no palette colour had been written. On
+  Reaction in purple, which is written to the palette, the keyboard came back
+  on Neon stream and the log said "came back on its factory settings; put
+  "Reaction" back". Seen: Reaction in purple. The time from switch-on was not
+  taken with a clock; the watcher asks every 10 s.
+- A change from outside hotaru while the keyboard answered: sanshoku's bench
+  set Respire. 35 s later the keyboard still read Respire and hotaru had
+  written nothing. Seen: breathing. `light list` still said Reaction, as the
+  Risks section says.
+- CPU of the service, from Windows' process time over 60 s, whose resolution
+  is 15.6 ms: 62 ms with the firmware effect and the watcher, 62 ms with a
+  still drawn frame, 688 ms (1.2% of one core) with Rainbow Wave at 120 ms.
+  "No scene" was not separated from the firmware effect: both are the
+  watcher alone.
+
+Not run: anything on Linux, and the battery measurement (#199).

@@ -256,11 +256,23 @@ them.
   `internal/render` draws as pure functions of time. Scenes, targets and the
   wizard reach a canvas device through the same write path as an OpenRGB
   device (spec 060).
+- **Stored modes beside drawn ones.** A canvas device whose firmware also
+  runs effects of its own (sanshoku's `lighting.Onboard`, the AULA F75 first)
+  lists those effects first, as modes marked `Stored`. Choosing one stops the
+  animator and writes the effect and its colour to the device's storage. That
+  write happens only on an apply. A reconcile skips with the reason, and a
+  preview draws the colour instead (spec 071).
+- **A watcher for a power cycle.** A device with a stored effect recorded is
+  asked one short question every ten seconds. When it answers again after
+  silence, on its factory effect, the recorded effect is put back. Nothing is
+  asked while frames are drawn.
 - **One animator per canvas device.** The animator is the only writer to
   its device. A scene that does not move is one frame, because the device
   holds its last frame. A moving effect sends a frame every 56 ms, the pace
   of the vendor's own software, and never faster than the device's floor. A
-  frame identical to the last one is not sent. Stopping the service sends
+  frame identical to the last one is not sent, except on a device that takes
+  its lights back (sanshoku's `lighting.Fading`). There a still frame is sent
+  again at the device's hold. Stopping the service sends
   nothing, and the device keeps its last frame. `hotaru light release`
   hands the lighting back to the firmware, and that is the only call that
   does.

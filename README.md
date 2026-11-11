@@ -241,6 +241,16 @@ MIT. See [LICENSE](LICENSE).
   after OpenRGB stops an MSI board's strip, and that restarting OpenRGB
   brings it back ([#197](https://github.com/ushineko/hotaru/issues/197)).
 - `make build` and `make gui` name their output `.exe` on Windows.
+- The AULA F75 is lit through its 2.4 GHz receiver (spec 071,
+  [#193](https://github.com/ushineko/hotaru/issues/193)). Its own effects are
+  modes like any other: `light set purple` keeps the effect the keyboard runs
+  and makes it purple, and a scene can name an effect and a colour. The
+  effect and colour are stored in the keyboard, so hotaru writes them only
+  when a person asks, at most once in two seconds, and never to reconcile or
+  preview. hotaru's own effects draw frames over the keyboard's, and a still
+  frame is sent again before the keyboard takes its lights back. After a
+  power cycle, which loads the factory settings, hotaru puts the effect and
+  colour back. `light list` marks the keyboard's own effects with `*`.
 
 ### 0.1.29 (2026-10-28)
 
