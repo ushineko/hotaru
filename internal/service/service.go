@@ -45,6 +45,9 @@ type Service struct {
 	queue    *queue.Set
 	env      Environment
 	cooler   Cooler
+	// handback says the cooler's screen went to its own readout; see
+	// handback.go.
+	handback chan struct{}
 	// processor samples utilisation, which is a rate: one sampler for the
 	// whole service so the first answer is not always a dash.
 	processor *readings.CPU
@@ -244,7 +247,8 @@ func New(cfg *config.Config, client openrgb.Client, address string) *Service {
 	return &Service{
 		cfg: cfg, client: client, addr: address,
 		processor: readings.NewCPU(), memory: readings.NewMemory(),
-		history: readings.NewHistory(),
+		history:  readings.NewHistory(),
+		handback: make(chan struct{}, 1),
 	}
 }
 
@@ -502,6 +506,11 @@ type Result struct {
 	// the top fan" with the fan misspelled is a device that went blue all over
 	// and said it worked.
 	Problems []string
+
+	// Resized are zones a restore gave back the size they were recorded
+	// with, each as a sentence: "Addressable RGB Header 1 from 0 to 16
+	// LEDs". See spec 069.
+	Resized []string
 }
 
 // Attempt is one mode hotaru tried, and what the device did with it.
@@ -659,7 +668,7 @@ func (s *Service) applyOne(ctx context.Context, client openrgb.Client, cfg *conf
 	})
 	result.Problems = problems
 	if result.Applied && !off && !req.Preview {
-		s.remember(device.Name, result.Mode, frame, want)
+		s.remember(device, result.Mode, frame, want)
 	}
 	if result.Applied && off && !req.Preview {
 		// A device deliberately turned off has nothing to restore: putting
@@ -886,11 +895,10 @@ func (s *Service) writeFrame(ctx context.Context, client openrgb.Client,
 			reads.
 
 			For every other mode the order is unchanged and deliberate: the
-			mode packet goes first and goes every time, including when the
-			device is already in that mode. On an NZXT cooler it is what
-			commits the frame -- with it suppressed, the ring and the fans
-			ignored every write while the rest of the machine changed colour
-			around them. See spec 010, and spec 056 for the reordering.
+			mode packet goes first, and the frame behind it waits for the
+			mode to settle (openrgb.SettleDelay). A device already in the
+			per-LED mode asked for takes the frame alone; see below, and
+			spec 056 for the reordering.
 		*/
 		/*
 			commits is a mode that carries a colour of its own, and arriving
@@ -906,12 +914,29 @@ func (s *Service) writeFrame(ctx context.Context, client openrgb.Client,
 		commits := known && one.ModeColour && device.Canvas == nil
 		arriving := !strings.EqualFold(device.ActiveMode, mode)
 
-		if err := client.SetMode(ctx, device.Name, mode, style); err != nil {
-			attempt.Why = err.Error()
-			result.Attempts = append(result.Attempts, attempt)
-			continue
+		/*
+			No mode packet to a device already in the per-LED mode asked
+			for, when the packet would change nothing about it.
+
+			In OpenRGB 1.0 the packet is not inert. The server rewrites every
+			zone from the controller's own thread after answering, and the
+			frame behind it is written from the network thread, so the two
+			interleave on the device. On an NZXT cooler that lost frames and
+			left the ring's channel showing one wrong LED and ignoring every
+			frame until the next mode change (#24). The frame alone landed
+			180 times in 180. Spec 068 replaces spec 010's rule, measured
+			when a frame was one request for the whole device.
+		*/
+		if !arriving && unchanged(one, known, device, style) {
+			attempt.Accepted = true
+		} else {
+			if err := client.SetMode(ctx, device.Name, mode, style); err != nil {
+				attempt.Why = err.Error()
+				result.Attempts = append(result.Attempts, attempt)
+				continue
+			}
+			attempt.Accepted = true
 		}
-		attempt.Accepted = true
 
 		if !isOffMode(mode) {
 			if err := client.SetFrame(ctx, device.Name, frame); err != nil {
@@ -1052,7 +1077,7 @@ func (s *Service) base(device *devices.Device) []colour.Colour {
 }
 
 // remember records what a user asked for, so it can be put back.
-func (s *Service) remember(name, mode string, frame devices.Frame, want preference) {
+func (s *Service) remember(device *devices.Device, mode string, frame devices.Frame, want preference) {
 	s.mu.RLock()
 	recorder := s.recorder
 	s.mu.RUnlock()
@@ -1082,7 +1107,13 @@ func (s *Service) remember(name, mode string, frame devices.Frame, want preferen
 			kept.ModeColours = append(kept.ModeColours, c.String())
 		}
 	}
-	_ = recorder.Record(name, kept)
+	if len(device.Zones) > 0 {
+		kept.Zones = make(map[string]int, len(device.Zones))
+		for _, z := range device.Zones {
+			kept.Zones[z.Name] = z.Count
+		}
+	}
+	_ = recorder.Record(device.Name, kept)
 }
 
 func (s *Service) forget(name string) {
@@ -1112,13 +1143,26 @@ func without(list []string, drop string) []string {
 }
 
 /*
+unchanged is a per-LED mode that a mode packet would only re-send: no colour
+of its own, and no brightness or speed for the packet to carry. Not a device
+hotaru draws, whose mode is chosen and drawn in one step.
+*/
+func unchanged(mode devices.Mode, known bool, device *devices.Device, style openrgb.Style) bool {
+	return known && device.Canvas == nil &&
+		mode.PerLED && !mode.ModeColour &&
+		(style.Brightness == nil || !mode.Brightness) &&
+		(style.Speed == nil || mode.Speed == nil)
+}
+
+/*
 settleDelay is how long a slow controller is given to finish changing mode
 before its colours are written again.
 
 Long enough for an SMBus device, short enough that a person setting a colour
 does not notice. Only ever paid by a device that did not show the first frame.
+It is the connection's own settle period, so the two cannot drift apart.
 */
-const settleDelay = 120 * time.Millisecond
+const settleDelay = openrgb.SettleDelay
 
 // pause waits, and says whether it got to the end rather than being
 // cancelled. A write that is being given up on should not still sleep.
@@ -1342,6 +1386,7 @@ func (s *Service) Draw(ctx context.Context, what Screen) error {
 			return err //nolint:wrapcheck // the cooler's own words, as before
 		}
 		s.shown(state.Screen{Showing: "the cooler's own readout", Readout: true}, nil)
+		s.handedBack()
 		return nil
 	case len(what.Image) > 0:
 		if err := c.Show(ctx, what.Image); err != nil {

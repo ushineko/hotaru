@@ -69,3 +69,23 @@ func TestTwoColoursAreWrittenIntoATwoColourMode(t *testing.T) {
 	m := &sdk.Mode{ModeColorsMin: 1, ModeColorsMax: 2, ModeColors: []sdk.Color{{G: 255}}}
 	require.Equal(t, []sdk.Color{{R: 255}, {B: 255}}, modeColours(m, []colour.Colour{red, blue}))
 }
+
+func TestAZoneIsReadWithTheSizesItCanBeGiven(t *testing.T) {
+	// Spec 069 R1: the board's addressable header has a range, its
+	// mainboard light does not.
+	device := convert(&sdk.ControllerData{
+		Name: "board",
+		Zones: []*sdk.Zone{
+			{ZoneName: "Aura Mainboard", ZoneLedsMin: 1, ZoneLedsMax: 1, ZoneLedsCount: 1},
+			{ZoneName: "Addressable RGB Header 1", ZoneLedsMin: 0, ZoneLedsMax: 500, ZoneLedsCount: 16},
+		},
+	})
+	mainboard, _ := device.Zone("Aura Mainboard")
+	header, _ := device.Zone("Addressable RGB Header 1")
+	require.False(t, mainboard.Resizable())
+	require.True(t, header.Resizable())
+	require.Equal(t, 0, header.Min)
+	require.Equal(t, 500, header.Max)
+	require.True(t, header.Fits(16))
+	require.False(t, header.Fits(501))
+}

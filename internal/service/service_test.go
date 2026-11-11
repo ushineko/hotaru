@@ -490,15 +490,14 @@ func (s stuckColour) SetMode(ctx context.Context, device, mode string, style ope
 	return s.Fake.SetMode(ctx, device, mode, style)
 }
 
-func TestTheModePacketIsSentEvenWhenTheDeviceIsAlreadyInThatMode(t *testing.T) {
+func TestADeviceAlreadyInItsPerLEDModeTakesTheFrameAlone(t *testing.T) {
 	/*
-		It looks redundant. It is the commit.
-
-		Suppressing it was tried, on the grounds that a mode change the device
-		did not need could knock the frame behind it off. Built both ways and
-		looked at: with the packet suppressed, an NZXT cooler's ring and fans
-		ignored every write and held their old colour while the rest of the
-		machine changed around them. Spec 010.
+		The mode packet is not inert. OpenRGB 1.0 rewrites every zone from
+		the controller's own thread after it answers, while the frame behind
+		it is written from the network thread, and on an NZXT cooler the two
+		interleaved: frames were lost, and the ring's channel stuck on one
+		wrong LED until the next mode change (#24). The frame alone landed
+		180 times in 180. Spec 068, which replaces spec 010's rule.
 	*/
 	device := board()
 	device.ActiveMode = "Static" // the mode the default order picks first
@@ -508,8 +507,8 @@ func TestTheModePacketIsSentEvenWhenTheDeviceIsAlreadyInThatMode(t *testing.T) {
 	results, err := svc.Apply(t.Context(), service.Request{Assignments: solid("ASUS", "red")})
 	require.NoError(t, err)
 	require.True(t, results[0].Applied)
-	require.NotEmpty(t, server.Modes,
-		"the mode packet was skipped; on NZXT hardware that is the write not landing at all")
+	require.Equal(t, []string{"frame"}, server.Sequence,
+		"a mode packet to a device already in the mode races the frame behind it")
 }
 
 func TestBrightnessIsAssertedOnEveryWrite(t *testing.T) {
@@ -521,6 +520,9 @@ func TestBrightnessIsAssertedOnEveryWrite(t *testing.T) {
 	}}
 	device := board()
 	device.ActiveMode = "Static"
+	// A mode with a brightness of its own: the packet is how it is asserted,
+	// so it goes even to a device already in the mode (spec 068 R2).
+	device.Modes[0].Brightness = true
 	server := openrgb.NewFake(device)
 	svc := service.New(cfg, server, "")
 

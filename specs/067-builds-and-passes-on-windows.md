@@ -51,6 +51,7 @@ window:
 ### R1. Dependencies
 
 - R1.1 sanshoku moves to 0.1.14 and fynedesygn to 0.1.96.
+  `main` later moved sanshoku to 0.1.16 on its own, and the merge keeps that.
 
 ### R2. Where files go
 

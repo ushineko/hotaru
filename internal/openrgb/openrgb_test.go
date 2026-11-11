@@ -111,3 +111,29 @@ func TestDialingHonoursCancellation(t *testing.T) {
 	_, err := openrgb.Dial(ctx, openrgb.DefaultAddress)
 	require.Error(t, err)
 }
+
+func TestResizingAZoneMovesTheZonesAfterIt(t *testing.T) {
+	// Spec 069 R2: the fake does what the server does with a resize.
+	red, blue := colour.MustParse("red"), colour.MustParse("blue")
+	fake := openrgb.NewFake(devices.Device{
+		Name:     "board",
+		LEDCount: 4,
+		Zones: []devices.Zone{
+			{Name: "first", First: 0, Count: 2, Min: 0, Max: 8},
+			{Name: "second", First: 2, Count: 2, Min: 0, Max: 8},
+		},
+		Colours: []colour.Colour{red, red, blue, blue},
+	})
+
+	require.NoError(t, fake.ResizeZone(t.Context(), "board", "first", 3))
+
+	got, err := fake.Device(t.Context(), "board")
+	require.NoError(t, err)
+	require.Equal(t, 5, got.LEDCount)
+	second, _ := got.Zone("second")
+	require.Equal(t, 3, second.First)
+	require.Equal(t, []colour.Colour{red, red, colour.Black, blue, blue}, got.Colours)
+	require.Equal(t, []openrgb.Resize{{Device: "board", Zone: "first", Size: 3}}, fake.Resizes)
+
+	require.Error(t, fake.ResizeZone(t.Context(), "board", "second", 9), "past the zone's maximum")
+}

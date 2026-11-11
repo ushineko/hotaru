@@ -48,3 +48,12 @@ func AttachCanvases(ctx context.Context, svc *service.Service, open CanvasOpener
 ) {
 	attachCanvases(ctx, svc, open, backoff, report)
 }
+
+// Handback sets how long after the screen changes hands the cooler's lights
+// are sent again, for one test: the wait is the behaviour, and twelve seconds
+// of it would be a test nobody runs.
+func Handback(t interface{ Cleanup(func()) }, d time.Duration) {
+	was := handback
+	handback = d
+	t.Cleanup(func() { handback = was })
+}

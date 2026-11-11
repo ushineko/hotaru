@@ -3,6 +3,7 @@ package gui
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -71,6 +72,15 @@ func (s *ServiceSection) Build(sh *shell.Shell) fyne.CanvasObject {
 				onScreen(func() {
 					sh.Flash(fmt.Sprintf("%d device(s) restored; still waiting for %v",
 						done.Applied, done.Missing), fd.StatusWarn)
+				})
+				return nil
+			}
+			// A zone given its size back, or a device the colours no longer
+			// fit, is said: either one changes what "restored" means.
+			if notes := restoreNotes(done.Results); len(notes) > 0 {
+				onScreen(func() {
+					sh.Flash(fmt.Sprintf("%d device(s) restored. %s", done.Applied,
+						strings.Join(notes, " ")), fd.StatusWarn)
 				})
 				return nil
 			}
@@ -167,4 +177,17 @@ func scoped(devices []api.Device) int {
 		}
 	}
 	return n
+}
+
+// restoreNotes is what a restore did besides writing colours: zones given
+// their size back, and devices the recorded colours did not fit (spec 069).
+func restoreNotes(results []api.Result) []string {
+	var out []string
+	for _, result := range results {
+		for _, resized := range result.Resized {
+			out = append(out, fmt.Sprintf("%s: resized %s.", result.Device, resized))
+		}
+		out = append(out, result.Problems...)
+	}
+	return out
 }

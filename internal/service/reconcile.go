@@ -2,12 +2,14 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"sync"
 	"time"
 
 	"github.com/ushineko/hotaru/internal/colour"
 	"github.com/ushineko/hotaru/internal/devices"
+	"github.com/ushineko/hotaru/internal/openrgb"
 	"github.com/ushineko/hotaru/internal/state"
 )
 
@@ -171,7 +173,7 @@ func (s *Service) Reconcile(ctx context.Context, only []string) (Restore, error)
 			}
 		}
 		result := s.through(ctx, device.Name, func(ctx context.Context) Result {
-			return s.writeFrame(ctx, client, device, kept.Frame(name), false, want, nil)
+			return s.restoreOne(ctx, client, device, kept, want)
 		})
 		if result.Applied {
 			restore.Applied++
@@ -193,6 +195,71 @@ func (s *Service) Reconcile(ctx context.Context, only []string) (Restore, error)
 		}
 	}
 	return restore, nil
+}
+
+/*
+restoreOne writes one device's recorded state back, after giving its zones
+back the sizes the frame was recorded with.
+
+A zone's size lives in the OpenRGB server, not in the hardware, and a server
+can come back without it: OpenRGB 1.1 did not read the sizes 1.0 had saved,
+and a board's four addressable headers came up at 0 LEDs. The recorded frame
+was then written to the one LED left, the write succeeded, and the board sat
+in its firmware rainbow while every report said it was restored (spec 069).
+*/
+func (s *Service) restoreOne(ctx context.Context, client openrgb.Client,
+	device *devices.Device, kept state.Device, want preference,
+) Result {
+	device, resized, problems := regrow(ctx, client, device, kept.Zones)
+	if len(kept.Colours) != device.LEDCount {
+		/*
+			Written anyway. The LEDs the frame and the device share are still
+			the right colours, and a device left in the server's power-on
+			state is no better; but it is said, because "restored" is not
+			true of the rest.
+		*/
+		problems = append(problems, fmt.Sprintf(
+			"%s has an LED count of %d and its recorded colours are for %d; "+
+				"a zone may have lost its size in OpenRGB",
+			device.Name, device.LEDCount, len(kept.Colours)))
+	}
+	result := s.writeFrame(ctx, client, device, kept.Frame(device.Name), false, want, nil)
+	result.Resized = resized
+	result.Problems = append(result.Problems, problems...)
+	return result
+}
+
+/*
+regrow gives each of a device's zones that is smaller than recorded the size
+it was recorded with, and returns the device as the server reports it after.
+
+Only where the zone's size is one a person sets, the recorded size is within
+what the zone allows, and the zone is smaller now. Never smaller: a zone with
+more LEDs than recorded is somebody's change, not a loss.
+*/
+func regrow(ctx context.Context, client openrgb.Client, device *devices.Device,
+	recorded map[string]int,
+) (*devices.Device, []string, []string) {
+	var resized, problems []string
+	for _, zone := range device.Zones {
+		want, ok := recorded[zone.Name]
+		if !ok || zone.Count >= want || !zone.Fits(want) {
+			continue
+		}
+		if err := client.ResizeZone(ctx, device.Name, zone.Name, want); err != nil {
+			problems = append(problems, err.Error())
+			continue
+		}
+		resized = append(resized, fmt.Sprintf("%s from %d to %d LEDs", zone.Name, zone.Count, want))
+	}
+	if len(resized) == 0 {
+		return device, nil, problems
+	}
+	after, err := client.Device(ctx, device.Name)
+	if err != nil {
+		return device, resized, append(problems, err.Error())
+	}
+	return &after, resized, problems
 }
 
 /*

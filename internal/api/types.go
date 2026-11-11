@@ -283,6 +283,10 @@ type Result struct {
 	// Present even on a write that succeeded: an exception that did not apply
 	// is a scene quietly doing something other than what was asked.
 	Problems []string `json:"problems,omitempty"`
+
+	// Resized are zones a restore gave back their recorded size, each as a
+	// sentence. See spec 069.
+	Resized []string `json:"resized,omitempty"`
 }
 
 // Attempt is one mode that was tried, and what the device did with it.

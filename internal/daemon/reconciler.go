@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -71,8 +72,22 @@ func (r *Reconciler) restore(ctx context.Context) {
 	}
 
 	var said string
+	told := map[string]bool{}
 	for attempt := 0; ctx.Err() == nil; attempt++ {
 		got, err := r.Service.Reconcile(ctx, nil)
+		/*
+			A zone given its size back, and a device the colours do not fit,
+			are logged once each. The second is what a board in its firmware
+			rainbow behind a "restored" line looked like (spec 069).
+		*/
+		for _, result := range got.Results {
+			for _, resized := range result.Resized {
+				r.tell(told, "%s: resized %s", result.Device, resized)
+			}
+			for _, problem := range result.Problems {
+				r.tell(told, "%s", problem)
+			}
+		}
 		switch {
 		case err != nil:
 			// A server that has gone is not a server that is late. Retrying
@@ -101,6 +116,16 @@ func (r *Reconciler) restore(ctx context.Context) {
 			return
 		}
 	}
+}
+
+// tell reports a line unless it has been reported already.
+func (r *Reconciler) tell(told map[string]bool, format string, args ...any) {
+	line := fmt.Sprintf(format, args...)
+	if told[line] {
+		return
+	}
+	told[line] = true
+	r.report("%s", line)
 }
 
 func (r *Reconciler) reassert(ctx context.Context) {

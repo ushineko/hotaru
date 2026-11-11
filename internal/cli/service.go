@@ -84,6 +84,14 @@ func reconcileCommand() *cobra.Command {
 				cmd.Printf("restored %d devices; still waiting for %s\n",
 					out.Applied, strings.Join(out.Missing, ", "))
 			}
+			for _, result := range out.Results {
+				for _, resized := range result.Resized {
+					cmd.Printf("  %s: resized %s\n", result.Device, resized)
+				}
+				for _, problem := range result.Problems {
+					cmd.PrintErrf("  %s\n", problem)
+				}
+			}
 			return nil
 		},
 	}

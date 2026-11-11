@@ -3,6 +3,9 @@ package service
 import (
 	"context"
 	"fmt"
+	"strings"
+
+	"github.com/ushineko/hotaru/internal/devices"
 )
 
 /*
@@ -152,5 +155,33 @@ func (s *Service) Health(ctx context.Context) Health {
 
 	health.State = StateHealthy
 	health.Detail = fmt.Sprintf("%d of %d devices are in scope", health.InScope, len(found))
+	if short := s.misfits(found); len(short) > 0 {
+		/*
+			Still healthy: hotaru can drive every one of these. But a device
+			whose LED count differs from its recorded colours shows part of
+			what was asked for, and nothing else on the screen says so (spec
+			069).
+		*/
+		health.Detail += ". " + strings.Join(short, ". ")
+		health.Remedies = append(health.Remedies,
+			"Run `hotaru reconcile` to give a zone that lost its size the size it was recorded with.",
+			"A zone OpenRGB cannot resize from here is sized in OpenRGB's own window.")
+	}
 	return health
+}
+
+// misfits says, for each device whose LED count differs from the colours
+// recorded for it, both numbers.
+func (s *Service) misfits(found []devices.Device) []string {
+	desired := s.Desired()
+	var out []string
+	for _, device := range found {
+		kept, ok := desired.Devices[device.Name]
+		if !ok || device.HandedTo != "" || len(kept.Colours) == 0 || len(kept.Colours) == device.LEDCount {
+			continue
+		}
+		out = append(out, fmt.Sprintf("%s has an LED count of %d and its recorded colours are for %d",
+			device.Name, device.LEDCount, len(kept.Colours)))
+	}
+	return out
 }
