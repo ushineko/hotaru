@@ -76,6 +76,21 @@ type Canvas struct {
 	Rate float64
 	// Frames is every frame sent since the device was attached.
 	Frames int
+
+	// Own is the device showing its firmware's own stored effect, with
+	// nothing drawn over it (spec 071).
+	Own bool
+	// Watch is the power-cycle watcher's notes, for a device it watches.
+	Watch *Watch
+}
+
+// Watch is what the power-cycle watcher last learnt of a device (spec 071
+// R6): whether it answered its last question, when that was, and when the
+// watcher last put the device's effect back. Zero times are "never".
+type Watch struct {
+	Answering bool
+	Asked     time.Time
+	PutBack   time.Time
 }
 
 // Showing is the device's current lighting as a frame, for comparing against
@@ -125,6 +140,14 @@ type Mode struct {
 	*/
 	ColoursMin int
 	ColoursMax int
+
+	/*
+		Stored is a mode the device's own firmware runs, whose choice and
+		colour the device keeps in its storage (spec 071 R2.2). Setting it
+		writes that storage, so hotaru sets it only when a person asks, never
+		to reconcile or to preview. The AULA F75's effects are the first.
+	*/
+	Stored bool
 
 	// Speed is the range this mode runs at, and where in it the mode is now.
 	// Nil for a mode that has no speed, which is most of them.

@@ -26,6 +26,8 @@ import (
 	"time"
 
 	"github.com/ushineko/sanshoku"
+	"github.com/ushineko/sanshoku/aula"
+	"github.com/ushineko/sanshoku/battery"
 	"github.com/ushineko/sanshoku/lighting"
 	"github.com/ushineko/sanshoku/steelseries"
 )
@@ -39,7 +41,7 @@ too), so Open keeps only what satisfies lighting.Canvas and closes the rest
 unused.
 */
 func drivers() []sanshoku.Driver {
-	return []sanshoku.Driver{steelseries.Driver{}}
+	return []sanshoku.Driver{steelseries.Driver{}, aula.Driver{}}
 }
 
 // ErrNoCanvas is a machine with no device hotaru draws on. An ordinary state,
@@ -107,6 +109,54 @@ type Device struct {
 	// node is the kernel's name for the device behind the hidraw node, read
 	// when it was opened. See Present.
 	node string
+
+	// onboard is the device's own firmware effect, where it has one that
+	// keeps its choice and colour in storage (spec 071), and nil otherwise.
+	onboard lighting.Onboard
+	// hold is how long a frame shows before the device takes its lights
+	// back, for a lighting.Fading canvas, and zero for one that keeps it.
+	hold time.Duration
+
+	mu sync.Mutex
+	// firmware is the effect the device was last read or written to run.
+	// See Firmware.
+	firmware *lighting.Effect
+	report   func(format string, args ...any)
+	watch    Watch
+}
+
+/*
+Watch is what the power-cycle watcher last learnt of a device with a stored
+effect (spec 071 R6): whether it runs, whether the device answered its last
+question and when that was, and when the watcher last put the effect back.
+*/
+type Watch struct {
+	Watched   bool
+	Answering bool
+	Asked     time.Time
+	PutBack   time.Time
+}
+
+// Watch is the watcher's notes.
+func (d *Device) Watch() Watch {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.watch
+}
+
+// NoteAnswer records one question the watcher asked, and whether it was
+// answered.
+func (d *Device) NoteAnswer(answered bool, at time.Time) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.watch.Watched, d.watch.Answering, d.watch.Asked = true, answered, at
+}
+
+// NotePutBack records the watcher putting the device's effect back.
+func (d *Device) NotePutBack(at time.Time) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.watch.PutBack = at
 }
 
 // New adapts an open device, and says whether it is a canvas at all. Open
@@ -116,10 +166,125 @@ func New(dev sanshoku.Device) (*Device, bool) {
 	if !ok {
 		return nil, false
 	}
-	return &Device{
+	out := &Device{
 		dev: dev, draw: draw, keys: draw.Keys(), gone: make(chan struct{}),
 		node: kernelNode(dev.Identity().Path),
-	}, true
+	}
+	if onboard, ok := dev.(lighting.Onboard); ok {
+		out.onboard = onboard
+	}
+	if fading, ok := dev.(lighting.Fading); ok {
+		out.hold = fading.Hold()
+	}
+	return out, true
+}
+
+// Hold is how long a frame shows before the device takes its lights back,
+// or zero for a device that keeps its last frame.
+func (d *Device) Hold() time.Duration { return d.hold }
+
+// Effects is the firmware's own effects, in its order, or none for a device
+// without them.
+func (d *Device) Effects() []string {
+	if d.onboard == nil {
+		return nil
+	}
+	return d.onboard.Effects()
+}
+
+/*
+Firmware is the effect the device's firmware runs, as last read from it or
+written to it, and whether that is known.
+
+A cache, so that a listing costs no radio traffic: reading the F75's two
+blocks is about 200 ms on the air. ReadFirmware refreshes it, and the writes
+below keep it as they leave the device.
+*/
+func (d *Device) Firmware() (lighting.Effect, bool) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.firmware == nil {
+		return lighting.Effect{}, false
+	}
+	return *d.firmware, true
+}
+
+// ReadFirmware reads the effect the firmware runs now, and keeps it.
+func (d *Device) ReadFirmware(ctx context.Context) (lighting.Effect, error) {
+	if d.onboard == nil {
+		return lighting.Effect{}, fmt.Errorf("%s: %w", d.Name(), errNoFirmware)
+	}
+	effect, err := d.onboard.Effect(ctx)
+	if err != nil {
+		return lighting.Effect{}, d.check(err) //nolint:wrapcheck // the driver names the device
+	}
+	d.keep(effect)
+	return effect, nil
+}
+
+/*
+SetFirmware makes the firmware run an effect and, where it takes one, show a
+colour, and reports what it wrote. The effect is set first: a power cycle
+puts the F75 back on its factory effect, so the colour alone would land on
+the wrong one (sanshoku spec 023 R2.8a).
+
+sanshoku writes nothing where the stored value already matches, so a call
+that changes nothing costs the two reads and no flash.
+*/
+func (d *Device) SetFirmware(ctx context.Context, effect string, c *lighting.Colour) (wrote bool, err error) {
+	if d.onboard == nil {
+		return false, fmt.Errorf("%s: %w", d.Name(), errNoFirmware)
+	}
+	wroteEffect, err := d.onboard.SetEffect(ctx, effect)
+	if err != nil {
+		return false, d.check(err) //nolint:wrapcheck // the driver names the device
+	}
+	wroteColour := false
+	if c != nil {
+		wroteColour, err = d.onboard.SetColour(ctx, *c)
+		if err != nil && !errors.Is(err, lighting.ErrNoColour) {
+			return wroteEffect, d.check(err) //nolint:wrapcheck // the driver names the device
+		}
+	}
+	if _, err := d.ReadFirmware(ctx); err != nil {
+		return wroteEffect || wroteColour, err
+	}
+	return wroteEffect || wroteColour, nil
+}
+
+func (d *Device) keep(effect lighting.Effect) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.firmware = &effect
+}
+
+// errNoFirmware is a firmware call to a device whose firmware keeps no
+// effect of its own.
+var errNoFirmware = errors.New("the device has no stored effect")
+
+/*
+Answers reports whether the device answered one short question, and whether
+it can be asked one at all.
+
+The battery question on the F75: one 20-byte report each way. A keyboard
+that is off, asleep or out of range does not answer, which sanshoku reports
+as no reading and no error. Any reply, even one it cannot decode, is an
+answer. The watcher in the daemon asks this every ten seconds (spec 071 R6).
+*/
+func (d *Device) Answers(ctx context.Context) (answered, askable bool) {
+	source, ok := d.dev.(battery.Source)
+	if !ok {
+		return false, false
+	}
+	found, err := source.Batteries(ctx)
+	if ctx.Err() != nil {
+		return false, true // stopped asking, which is not an answer
+	}
+	if errors.Is(err, sanshoku.ErrGone) {
+		_ = d.check(err)
+		return false, true
+	}
+	return len(found) > 0 || err != nil, true
 }
 
 // Name is the kernel's name for the device, through sanshoku.
@@ -237,4 +402,21 @@ writer. What the daemon hands the service.
 type Attached struct {
 	*Device
 	*Animator
+}
+
+// SetReport gives the device the service's log, for Say. Nil says nothing.
+func (d *Device) SetReport(report func(format string, args ...any)) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.report = report
+}
+
+// Say puts a line in the service's log, naming the device.
+func (d *Device) Say(format string, args ...any) {
+	d.mu.Lock()
+	report := d.report
+	d.mu.Unlock()
+	if report != nil {
+		report(d.Name()+": "+format, args...)
+	}
 }

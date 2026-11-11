@@ -42,6 +42,16 @@ func (d *Device) SolidCandidates(rule Rule, want Want) []string {
 	}
 
 	/*
+		A device with stored modes keeps its own effect for a solid colour,
+		and only changes the colour (spec 071 R3). The running effect where
+		it takes a colour, and otherwise the firmware's first effect that
+		takes one, which on the AULA F75 is Fixed on.
+	*/
+	if !want.Off && !want.PerLED {
+		add(d.storedSolid())
+	}
+
+	/*
 		The named order first -- but where it is hotaru's default rather than
 		the user's, a mode whose colour hotaru sets per LED comes before one
 		that keeps its colour in the mode.
@@ -157,4 +167,18 @@ func isEffect(name string) bool {
 		return true // off is a mode, but never a way to show a colour
 	}
 	return true
+}
+
+// storedSolid is the stored mode a solid colour goes to on a device that has
+// them, or "" on one that does not. See SolidCandidates.
+func (d *Device) storedSolid() string {
+	if active, ok := d.Mode(d.ActiveMode); ok && active.Stored && active.ModeColour {
+		return active.Name
+	}
+	for _, mode := range d.Modes {
+		if mode.Stored && mode.ModeColour {
+			return mode.Name
+		}
+	}
+	return ""
 }

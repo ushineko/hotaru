@@ -32,8 +32,14 @@ type Surface interface {
 	Floor() time.Duration
 }
 
-// Show is what to draw: an effect, what the scene said about it, and how often
-// to send a frame while it moves.
+/*
+Show is what to draw: an effect, what the scene said about it, and how often
+to send a frame while it moves.
+
+The zero Show is nothing: the animator stops sending, and a device that takes
+its lights back (a lighting.Fading canvas) shows its firmware's own effect
+again (spec 071 R2.3).
+*/
 type Show struct {
 	Effect render.Renderer
 	Params render.Params
@@ -81,6 +87,11 @@ R3.1). The service hands it what to draw with Show; it sends one frame for an
 effect that does not move and a frame per tick for one that does, and it
 never sends a frame identical to the last one it sent.
 
+On a canvas that takes its lights back after Hold (lighting.Fading, the AULA
+F75), a still frame is sent again at Hold, identical or not, because that is
+what keeps it up (spec 071 R4.1). A canvas that is not Fading is sent one
+frame and then nothing, as before.
+
 Stopping it sends nothing. The device holds its last frame, and handing the
 lighting back to the firmware reboots the device on the first canvas device,
 so that is something a person asks for (Device.Release), never a side effect
@@ -88,6 +99,7 @@ of the service stopping.
 */
 type Animator struct {
 	surface Surface
+	hold    time.Duration
 	clock   Clock
 	report  func(format string, args ...any)
 	want    chan Show
@@ -110,7 +122,11 @@ func NewAnimator(surface Surface, clock Clock, report func(string, ...any)) *Ani
 	if report == nil {
 		report = func(string, ...any) {}
 	}
-	return &Animator{surface: surface, clock: clock, report: report, want: make(chan Show, 1), redraw: make(chan struct{}, 1)}
+	a := &Animator{surface: surface, clock: clock, report: report, want: make(chan Show, 1), redraw: make(chan struct{}, 1)}
+	if fading, ok := surface.(interface{ Hold() time.Duration }); ok {
+		a.hold = fading.Hold()
+	}
+	return a
 }
 
 /*
@@ -184,11 +200,13 @@ func (a *Animator) Run(ctx context.Context) error {
 		ticker  Ticker
 		tick    <-chan time.Time
 		said    bool
+		// held is the ticker being the hold's, which resends a still frame.
+		held bool
 	)
 	stop := func() {
 		if ticker != nil {
 			ticker.Stop()
-			ticker, tick = nil, nil
+			ticker, tick, held = nil, nil, false
 		}
 	}
 	defer stop()
@@ -210,6 +228,16 @@ func (a *Animator) Run(ctx context.Context) error {
 				write that changed nothing.
 			*/
 			if showing && same(next, current) {
+				continue
+			}
+			if next.Effect.Draw == nil {
+				// Nothing to draw: stop sending, and say so in the status.
+				stop()
+				current, showing, last = Show{}, false, nil
+				a.mu.Lock()
+				a.status.Effect, a.status.Drawing, a.status.Interval = "", false, 0
+				a.sent = a.sent[:0]
+				a.mu.Unlock()
 				continue
 			}
 			current, showing, start = next, true, a.clock.Now()
@@ -237,7 +265,7 @@ func (a *Animator) Run(ctx context.Context) error {
 		}
 
 		px := current.Effect.Draw(at.Sub(start), keys, current.Params)
-		if slices.Equal(px, last) {
+		if slices.Equal(px, last) && !a.holding(current) {
 			continue
 		}
 		err := a.surface.Frame(ctx, px)
@@ -245,7 +273,14 @@ func (a *Animator) Run(ctx context.Context) error {
 		case err == nil:
 			last = px
 			a.count()
-			if !current.Effect.Animated {
+			switch {
+			case a.holding(current) && !held:
+				// A device that takes its lights back is sent the frame
+				// again before it does.
+				stop()
+				ticker = a.clock.NewTicker(a.hold)
+				tick, held = ticker.C(), true
+			case !current.Effect.Animated && !a.holding(current):
 				stop() // the retry below has landed; the device holds it now
 			}
 		case errors.Is(err, sanshoku.ErrGone):
@@ -275,6 +310,12 @@ func (a *Animator) Run(ctx context.Context) error {
 			}
 		}
 	}
+}
+
+// holding is whether a show is a still frame on a canvas that takes its
+// lights back, and so is sent again at the hold.
+func (a *Animator) holding(s Show) bool {
+	return a.hold > 0 && !s.Effect.Animated
 }
 
 // interval is how often to tick for this show: what it asks, or the default,

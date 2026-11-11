@@ -24,6 +24,7 @@ A *canvas device* is the second exception. It has no lighting effects of its
 own, so hotaru draws them and streams the frames through sanshoku. The first
 canvas device is the SteelSeries Apex Pro TKL Wireless Gen 3. See
 [spec 060](../specs/060-effects-hotaru-draws.md) and "Canvas devices" below.
+The AULA F75 is a canvas device that also has effects of its own (spec 071).
 
 ## Tested
 
@@ -298,6 +299,35 @@ devices:
   - match: Apex Pro TKL Wireless Gen 3     # the kernel's name: the canvas device
     twin: Apex Pro TKL Gen 3 Wireless      # OpenRGB's name for the same board
 ```
+
+**The AULA F75: its own effects, and frames when asked.** Measured on Windows,
+through the keyboard's 2.4 GHz receiver (spec
+[071](../specs/071-the-aula-f75.md), sanshoku specs 019 and 023). OpenRGB
+does not list the keyboard. hotaru lists it with two kinds of mode.
+
+- **Its own effects come first.** Ripples shining, Reaction, Fixed on and the
+  rest are the firmware's own. `hotaru light list` marks each with `*`. The
+  effect and each effect's colour are stored in the keyboard's flash, so
+  choosing one writes the keyboard's storage.
+- **`light set purple` keeps the running effect and makes it purple.** An
+  effect that takes no colour (Off, Self-define) goes to Fixed on. `light
+  off` is the firmware's Off.
+- **hotaru writes the storage only when a person asks.** A scene, `light set`,
+  `light off`, a key or a rule writes it. A reconcile and a preview never do.
+  A preview of a colour draws the colour until the preview ends. Two writes
+  are at least two seconds apart, and the log names each one.
+- **hotaru's renderers draw frames over the effect.** The keyboard takes its
+  lights back about a second after the last frame. So a still colour is sent
+  again every 500 ms, and a moving effect runs at 120 ms or slower. At 80 ms a
+  moving frame flickered, because one can take 110 ms to write.
+- **A power cycle loads the factory settings.** The keyboard comes back on
+  Neon stream, with every effect on its factory colours. hotaru asks the
+  keyboard one short question every ten seconds while a stored effect is
+  recorded. When it answers again on Neon stream, hotaru puts the recorded
+  effect and colour back. Waking from sleep keeps the settings, and an effect
+  chosen with the keyboard's own keys is kept.
+- **AULA's own software writes the same storage.** hotaru cannot stop it, and
+  the last write wins.
 
 - **An OpenRGB profile can still write to the board.** A profile applied at
   login that includes the keyboard sets OpenRGB's Direct mode, and two

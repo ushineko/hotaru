@@ -95,6 +95,13 @@ type Device struct {
 	OneColour []string `json:"one_colour,omitempty"`
 
 	/*
+		Stored is the modes the device's own firmware runs and keeps in its
+		storage, by name (spec 071). Setting one writes the device's storage,
+		which a listing says before somebody chooses it.
+	*/
+	Stored []string `json:"stored,omitempty"`
+
+	/*
 		Coloured is the modes that take colours of their own, by name, with
 		how many each takes (spec 061 R1.3).
 
@@ -140,6 +147,22 @@ type Canvas struct {
 	Interval string  `json:"interval,omitempty"`
 	Rate     float64 `json:"rate,omitempty"`
 	Frames   int     `json:"frames"`
+	// Own is the device showing its firmware's own stored effect, Effect,
+	// with nothing drawn (spec 071).
+	Own bool `json:"own,omitempty"`
+	// Watch is the power-cycle watcher's notes, for a device it watches.
+	Watch *Watch `json:"watch,omitempty"`
+}
+
+/*
+Watch is the power-cycle watcher on a device with a stored effect (spec 071
+R6): whether the device answered its last question and when, and when the
+watcher last put its effect back. Times are RFC 3339; empty is never.
+*/
+type Watch struct {
+	Answering bool   `json:"answering"`
+	Asked     string `json:"asked,omitempty"`
+	PutBack   string `json:"put_back,omitempty"`
 }
 
 // ColourSlots is how many colours of its own a mode takes.

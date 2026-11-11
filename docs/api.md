@@ -124,6 +124,27 @@ frame it was sent. The OpenRGB listing of the same hardware carries
 `handed_to`, and hotaru writes nothing to it. This shape comes from the test
 suite; no live transcript is recorded yet.
 
+A canvas device with effects of its own (spec 071) lists them first in
+`modes`, and names them again in `stored`. Choosing one writes the device's
+storage. While one shows, `active_mode` is that effect and `canvas.own` is
+true. `canvas.watch` is the power-cycle watcher on such a device:
+`answering`, and `asked` and `put_back` as RFC 3339 times.
+
+```json
+{
+  "name": "AULA F75",
+  "leds": 80,
+  "modes": ["Off", "Fixed on", "Respire", "...", "Self-define",
+            "Static", "Breathing", "Spectrum", "Rainbow Wave"],
+  "active_mode": "Ripples shining",
+  "stored": ["Off", "Fixed on", "Respire", "...", "Self-define"],
+  "canvas": { "device": "AULA F75", "effect": "Ripples shining", "drawing": false,
+              "frames": 0, "own": true,
+              "watch": { "answering": true, "asked": "2026-11-10T21:40:12-08:00" } },
+  "in_scope": true
+}
+```
+
 ```json
 {
   "name": "SteelSeries Apex Pro TKL Wireless Gen 3",
