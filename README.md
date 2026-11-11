@@ -221,6 +221,27 @@ MIT. See [LICENSE](LICENSE).
 
 ## Changelog
 
+### Unreleased
+
+- The first step of a Windows port (spec 067,
+  [#190](https://github.com/ushineko/hotaru/issues/190)). The service, the
+  CLI and the window build on Windows and their tests pass there. Files go
+  under `%APPDATA%\hotaru` and `%LOCALAPPDATA%\hotaru`, the socket is
+  restricted to its user by its access list, and a lost OpenRGB server is
+  recognised from the errors Windows reports. `hotaru serve` in a terminal
+  drives lights through OpenRGB. Readings from the machine, hotkeys, running
+  in the background and an installer are not there yet. Nothing changes on
+  Linux. fynedesygn moves to 0.1.96.
+- `docs/hardware.md` says to use any OpenRGB release except 1.0. The 1.0
+  release sends a write from hotaru to the wrong device, or nowhere, once a
+  device has left its list
+  ([#191](https://github.com/ushineko/hotaru/issues/191)). OpenRGB 1.1 fixes
+  it.
+- `docs/hardware.md` says that on Windows, LibreHardwareMonitor starting
+  after OpenRGB stops an MSI board's strip, and that restarting OpenRGB
+  brings it back ([#197](https://github.com/ushineko/hotaru/issues/197)).
+- `make build` and `make gui` name their output `.exe` on Windows.
+
 ### 0.1.29 (2026-10-28)
 
 - The Kraken's ring is sent its colours again after the cooler's screen

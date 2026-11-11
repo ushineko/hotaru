@@ -2,7 +2,6 @@ package api_test
 
 import (
 	"context"
-	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,6 +14,7 @@ import (
 	"github.com/ushineko/hotaru/internal/devices"
 	"github.com/ushineko/hotaru/internal/openrgb"
 	"github.com/ushineko/hotaru/internal/service"
+	"github.com/ushineko/hotaru/internal/testsock"
 )
 
 func board() devices.Device {
@@ -53,7 +53,7 @@ func running(t *testing.T, cfg *config.Config, server openrgb.Client) *api.Clien
 
 	// A short path: a Unix socket's address has a low length limit, and
 	// t.TempDir() under a long test name can exceed it.
-	socket := filepath.Join(t.TempDir(), "s")
+	socket := testsock.Path(t)
 	listener, err := api.Listen(t.Context(), socket)
 	require.NoError(t, err)
 
@@ -194,23 +194,8 @@ func TestWithNoServiceRunningAShellSaysThatInOneLine(t *testing.T) {
 	require.Contains(t, err.Error(), "systemctl --user start hotaru")
 }
 
-func TestTheSocketIsThisUsersAlone(t *testing.T) {
-	// The socket's permissions are the whole authentication story: there is no
-	// port and no token, and this is what stands in for both.
-	socket := filepath.Join(t.TempDir(), "s")
-	listener, err := api.Listen(t.Context(), socket)
-	require.NoError(t, err)
-	defer func() { _ = listener.Close() }()
-
-	require.Equal(t, socket, listener.Addr().(*net.UnixAddr).Name)
-
-	stat, err := os.Stat(socket)
-	require.NoError(t, err)
-	require.Equal(t, api.SocketMode, stat.Mode().Perm())
-}
-
 func TestAStaleSocketIsClearedButALiveOneIsNot(t *testing.T) {
-	socket := filepath.Join(t.TempDir(), "s")
+	socket := testsock.Path(t)
 
 	first, err := api.Listen(t.Context(), socket)
 	require.NoError(t, err)

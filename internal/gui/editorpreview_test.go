@@ -4,13 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"path/filepath"
 	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 	"github.com/ushineko/hotaru/internal/api"
 	"github.com/ushineko/hotaru/internal/gui"
+	"github.com/ushineko/hotaru/internal/testsock"
 )
 
 /*
@@ -61,7 +61,7 @@ func (w *watched) routes() []string {
 func listening(t *testing.T, seen *watched) *api.Client {
 	t.Helper()
 
-	socket := filepath.Join(t.TempDir(), "s")
+	socket := testsock.Path(t)
 	listener, err := api.Listen(t.Context(), socket)
 	require.NoError(t, err)
 

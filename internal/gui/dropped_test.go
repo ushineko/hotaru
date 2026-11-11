@@ -22,6 +22,7 @@ import (
 	"github.com/ushineko/hotaru/internal/api"
 	"github.com/ushineko/hotaru/internal/gui"
 	"github.com/ushineko/hotaru/internal/images"
+	"github.com/ushineko/hotaru/internal/testsock"
 )
 
 // asked is one request the fake service took, with its body.
@@ -44,7 +45,7 @@ func recording(t *testing.T, routes map[string]any) (*api.Client, func() []asked
 	var mu sync.Mutex
 	var got []asked
 
-	socket := filepath.Join(t.TempDir(), "s")
+	socket := testsock.Path(t)
 	listener, err := api.Listen(t.Context(), socket)
 	require.NoError(t, err)
 

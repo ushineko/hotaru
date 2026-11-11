@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -288,7 +289,11 @@ func TestTheScriptIsWrittenWhereOnlyTheUserCanReadIt(t *testing.T) {
 	require.NoError(t, err)
 	info, err := os.Stat(written[0])
 	require.NoError(t, err)
-	require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+	// A mode says who may read a file everywhere but Windows, which reports
+	// 0666 whatever the file's access list is. KWin does not run there.
+	if runtime.GOOS != "windows" {
+		require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+	}
 
 	body, err := os.ReadFile(written[0]) //nolint:gosec // the test's own file
 	require.NoError(t, err)

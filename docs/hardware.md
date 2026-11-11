@@ -161,6 +161,55 @@ protocol, negotiates the version at connect, and reports it in `hotaru light
 health`. A server too old for your device is a reason to upgrade the server. A
 device missing from `openrgb --list-devices` is an upstream matter.
 
+### OpenRGB 1.0 sends writes to the wrong device
+
+Use any OpenRGB release except 1.0. The 1.0 release has a fault that hotaru
+cannot work around ([#191](https://github.com/ushineko/hotaru/issues/191)).
+OpenRGB 1.1 fixes it.
+
+- **What you see.** A device does not change and hotaru reports it as
+  unconfirmed, or a different device changes. It starts once any device has
+  left the server's list, or after a rescan.
+- **Why.** hotaru speaks protocol 3 and names a device by its position in the
+  list. The 1.0 server reads that position as the device's id, and the two
+  differ once a device has left.
+- **Which releases.** Only 1.0. The release candidates before it do not have
+  the fault. OpenRGB 1.1 (2026-10-16) has the fix, commit
+  [`2a9fca19`](https://gitlab.com/CalcProgrammer1/OpenRGB/-/commit/2a9fca19bc15053ad1ab4e3b594d8f468ec90549).
+  OpenRGB's merge request
+  [!3697](https://gitlab.com/CalcProgrammer1/OpenRGB/-/merge_requests/3697)
+  describes the fault.
+- **Where it was found.** On Windows, with the 1.0.0 package from winget. The
+  fault is in the server on every system.
+- **hotaru cannot tell 1.0 from 1.1.** Both report protocol 6, and a client
+  at protocol 3 does not receive the server's name. `hotaru light health`
+  cannot warn about it.
+
+Restarting a 1.0 server puts positions and ids back in step. That lasts until
+the next device leaves the list. On Linux, hotaru restarts the server itself
+when a device is plugged in again (spec 058), which hides the fault there.
+
+### A hardware monitor stops an MSI board's lighting on Windows
+
+Start OpenRGB after LibreHardwareMonitor, or restart OpenRGB once
+LibreHardwareMonitor runs. Otherwise the board's strip keeps its colour and
+ignores every write
+([#197](https://github.com/ushineko/hotaru/issues/197)).
+
+- **What you see.** Every other device changes. The board's strip does not.
+  OpenRGB records the new colour, so hotaru reports the board as written.
+- **Why.** On boards such as the B450 Tomahawk Max, OpenRGB drives the strip
+  through the Super I/O chip (`SIO: 0x4E`). It sets the chip up once, when it
+  finds the board, and then writes only colours. LibreHardwareMonitor reads
+  its sensors through the same chip, and its start undoes that setup.
+- **What it is not.** Running LibreHardwareMonitor does no harm after its
+  start. Quitting it does not bring the strip back. Only a new setup by
+  OpenRGB does: a restart of its service, or a rescan from its window.
+- **Where it was found.** Windows 11, OpenRGB 1.1.0 as a service at boot, and
+  LibreHardwareMonitor at logon. That order breaks the strip on every boot.
+- **hotaru cannot see it.** The server accepts the colour and reports it back,
+  so `hotaru light health` shows the board as healthy.
+
 ### What each contributes
 
 **Lighting: OpenRGB.** Colours on any device it enumerates, per device, per

@@ -3,8 +3,6 @@ package openrgb
 import (
 	"context"
 	"net"
-	"os"
-	"syscall"
 	"testing"
 	"time"
 
@@ -38,6 +36,9 @@ A socket pair rather than net.Pipe: a pipe blocks every write until the other
 end reads, so a server that hangs up fails the client's write instead of
 leaving it waiting for an answer, which is the failure in #181. Kernel
 sockets buffer and report EOF as TCP does, and need no listener.
+
+Where the system has no socket pair (Windows) the two ends are a loopback
+TCP connection, which is what the client meets there in any case.
 */
 func serve(t *testing.T, agreeing bool, list listing) (client net.Conn, asked <-chan struct{}) {
 	t.Helper()
@@ -46,21 +47,6 @@ func serve(t *testing.T, agreeing bool, list listing) (client net.Conn, asked <-
 	requests := make(chan struct{}, 8)
 	go answer(server, agreeing, list, requests)
 	return client, requests
-}
-
-func socketPair(t *testing.T) (net.Conn, net.Conn) {
-	t.Helper()
-	fds, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_STREAM|syscall.SOCK_CLOEXEC, 0)
-	require.NoError(t, err)
-	ends := make([]net.Conn, 2)
-	for i, fd := range fds {
-		file := os.NewFile(uintptr(fd), "socket pair")
-		ends[i], err = net.FileConn(file)
-		_ = file.Close()
-		require.NoError(t, err)
-		t.Cleanup(func() { _ = ends[i].Close() })
-	}
-	return ends[0], ends[1]
 }
 
 func answer(conn net.Conn, agreeing bool, list listing, requests chan<- struct{}) {

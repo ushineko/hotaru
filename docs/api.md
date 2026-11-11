@@ -6,6 +6,10 @@ hotaru's service serves HTTP and JSON over a Unix socket at
 would mean inventing an authentication scheme for a program that changes the
 colour of lights.
 
+On Windows the socket is at `%LOCALAPPDATA%\hotaru\run\hotaru.sock`, unless
+`XDG_RUNTIME_DIR` is set. A file mode says nothing there. The socket's access
+list has one entry, for the user the service runs as.
+
 **This is an interface, not a convenience.** The CLI is its first client, the
 window is its second, and a future Go rewrite of the battery monitor is
 intended as its third. Changing a field here breaks those clients.

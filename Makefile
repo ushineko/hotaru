@@ -24,6 +24,9 @@ VERSION    := $(if $(and $(ATTAG),$(if $(DIRTY),,x)),$(TAG),$(TAG)-$(COMMIT)-dev
 
 LDFLAGS    := -X $(MODULE)/internal/version.Version=$(VERSION)
 GOFLAGS    := -trimpath
+# `.exe` on Windows, empty elsewhere. `go build -o` writes the name it is
+# given, and Windows runs a binary by name only with the suffix.
+EXE        := $(shell go env GOEXE)
 
 # The window is built without Fyne's thread-safety check.
 #
@@ -46,7 +49,7 @@ GOLANGCI           := $(HOME)/go/bin/golangci-lint-$(LINT_VERSION)
 # panic on files it thinks are from the future.
 LINT_GO_TOOLCHAIN  ?= go1.26.0
 
-.PHONY: all test race lint vuln build gui install generate screenshots tidy clean
+.PHONY: all test race lint lint-windows vuln build gui install generate screenshots tidy clean
 
 all: test build
 
@@ -61,17 +64,30 @@ lint:
 	@go version
 	$(GOLANGCI) run --timeout 5m0s --config config/.golangci-$(LINT_VERSION).yml ./...
 
+# The files only Windows builds, checked from whichever system this runs on.
+# A linter sees one system's files at a time, so `lint` alone never reads a
+# _windows.go file on Linux, or the other way about.
+#
+# Without the window: it needs cgo, and a cross-build has none. The linter
+# takes directories, not import paths, so the module prefix becomes `.`.
+lint-windows: export GOTOOLCHAIN = $(LINT_GO_TOOLCHAIN)
+lint-windows: export GOOS = windows
+lint-windows: export CGO_ENABLED = 0
+lint-windows:
+	$(GOLANGCI) run --timeout 5m0s --config config/.golangci-$(LINT_VERSION).yml \
+		$$(go list -e ./... | grep -v -e /internal/gui -e /cmd/hotaru-gui | sed 's|^$(MODULE)|.|')
+
 vuln:
 	govulncheck ./...
 
 build:
-	go build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/hotaru ./cmd/hotaru
+	go build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/hotaru$(EXE) ./cmd/hotaru
 
 # The window. Separate from `build` because it needs cgo and the graphics
 # stack, which the service deliberately does not: a headless box builds and
 # runs everything above without any of this.
 gui:
-	go build $(GOFLAGS) $(GUITAGS) -ldflags "$(LDFLAGS)" -o bin/hotaru-gui ./cmd/hotaru-gui
+	go build $(GOFLAGS) $(GUITAGS) -ldflags "$(LDFLAGS)" -o bin/hotaru-gui$(EXE) ./cmd/hotaru-gui
 
 # What a developer runs. `go install ./cmd/...` builds the window without
 # GUITAGS, which is a window most of whose refresh time is a debug check.

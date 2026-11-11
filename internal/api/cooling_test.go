@@ -6,7 +6,6 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -15,6 +14,7 @@ import (
 	"github.com/ushineko/hotaru/internal/cooler"
 	"github.com/ushineko/hotaru/internal/openrgb"
 	"github.com/ushineko/hotaru/internal/service"
+	"github.com/ushineko/hotaru/internal/testsock"
 )
 
 /*
@@ -94,7 +94,7 @@ func TestACoolerThatWillNotAnswerIsNamedRatherThanHidden(t *testing.T) {
 func TestCoolingIsReachableThroughTheClient(t *testing.T) {
 	// Over a real socket, as a shell meets it: the wire type and the client
 	// have to agree, and a struct tag typo is invisible to the handler tests.
-	socket := filepath.Join(t.TempDir(), "s")
+	socket := testsock.Path(t)
 	listener, err := api.Listen(t.Context(), socket)
 	require.NoError(t, err)
 

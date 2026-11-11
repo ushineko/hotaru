@@ -2,6 +2,7 @@ package cli_test
 
 import (
 	"net/http"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/ushineko/hotaru/internal/openrgb"
 	"github.com/ushineko/hotaru/internal/service"
 	"github.com/ushineko/hotaru/internal/state"
+	"github.com/ushineko/hotaru/internal/testsock"
 )
 
 /*
@@ -32,6 +34,11 @@ func TestEveryRouteTheServiceServesIsReachableFromTheCommandLine(t *testing.T) {
 	seen := &recorder{}
 	socket := recording(t, seen)
 
+	// Any readable file, and somewhere to throw output away: what a command
+	// is given matters here only for the route it then asks for.
+	anyFile := filepath.Join(t.TempDir(), "any")
+	require.NoError(t, os.WriteFile(anyFile, []byte("not a picture"), 0o600))
+
 	for _, args := range [][]string{
 		{"light", "list"},
 		{"light", "set", "red"},
@@ -43,7 +50,7 @@ func TestEveryRouteTheServiceServesIsReachableFromTheCommandLine(t *testing.T) {
 		{"readings"},
 		{"dashboard", "list"},
 		{"dashboard", "use", "coolant"},
-		{"dashboard", "preview", "coolant", "--to", "/dev/null"},
+		{"dashboard", "preview", "coolant", "--to", os.DevNull},
 		{"dashboard", "save", "parity", "--from", "testdata/dashboard.yml"},
 		{"dashboard", "clone", "coolant", "parity-clone"},
 		{"dashboard", "rename", "parity-clone", "parity-renamed"},
@@ -61,8 +68,8 @@ func TestEveryRouteTheServiceServesIsReachableFromTheCommandLine(t *testing.T) {
 		{"keys"},
 		{"keys", "bind", "Ctrl+Alt+Shift+Num+1", "red"},
 		{"image", "list"},
-		{"image", "add", "parity", "/etc/hostname"},
-		{"image", "add", "parity", "/etc/hostname", "--convert-to", "/dev/null"},
+		{"image", "add", "parity", anyFile},
+		{"image", "add", "parity", anyFile, "--convert-to", os.DevNull},
 		{"image", "scene", "parity", "parity-scene"},
 		{"dashboard", "scene", "coolant", "parity-scene"},
 		{"image", "colours", "parity"},
@@ -153,7 +160,7 @@ func recording(t *testing.T, seen *recorder) string {
 	t.Helper()
 
 	dir := t.TempDir()
-	socket := filepath.Join(dir, "s")
+	socket := testsock.Path(t)
 	listener, err := api.Listen(t.Context(), socket)
 	require.NoError(t, err)
 

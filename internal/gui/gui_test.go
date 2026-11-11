@@ -33,6 +33,7 @@ import (
 	"github.com/ushineko/fynedesygn/shell"
 	"github.com/ushineko/hotaru/internal/api"
 	"github.com/ushineko/hotaru/internal/gui"
+	"github.com/ushineko/hotaru/internal/testsock"
 )
 
 /*
@@ -69,7 +70,7 @@ func TestTheWindowCannotReachADevice(t *testing.T) {
 func service(t *testing.T, routes map[string]any) *api.Client {
 	t.Helper()
 
-	socket := filepath.Join(t.TempDir(), "s")
+	socket := testsock.Path(t)
 	listener, err := api.Listen(t.Context(), socket)
 	require.NoError(t, err)
 
@@ -131,7 +132,7 @@ func watching(t *testing.T, routes map[string]any) (*api.Client, chan string) {
 	t.Helper()
 
 	asked := make(chan string, 8)
-	socket := filepath.Join(t.TempDir(), "s")
+	socket := testsock.Path(t)
 	listener, err := api.Listen(t.Context(), socket)
 	require.NoError(t, err)
 
@@ -1453,7 +1454,7 @@ func counting(t *testing.T, routes map[string]any) (*api.Client, func(string) in
 	var mu sync.Mutex
 	times := map[string]int{}
 
-	socket := filepath.Join(t.TempDir(), "s")
+	socket := testsock.Path(t)
 	listener, err := api.Listen(t.Context(), socket)
 	require.NoError(t, err)
 
@@ -1819,7 +1820,7 @@ func bound(t *testing.T, routes map[string]any) (*api.Client, func() []api.BindR
 	var mu sync.Mutex
 	var asked []api.BindRequest
 
-	socket := filepath.Join(t.TempDir(), "s")
+	socket := testsock.Path(t)
 	listener, err := api.Listen(t.Context(), socket)
 	require.NoError(t, err)
 

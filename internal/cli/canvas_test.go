@@ -2,7 +2,6 @@ package cli_test
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -12,6 +11,7 @@ import (
 	"github.com/ushineko/hotaru/internal/devices"
 	"github.com/ushineko/hotaru/internal/openrgb"
 	"github.com/ushineko/hotaru/internal/service"
+	"github.com/ushineko/hotaru/internal/testsock"
 )
 
 // drawnSocket is a service with one canvas device attached and its twin on
@@ -32,7 +32,7 @@ func drawnSocket(t *testing.T) (string, *canvastest.Device) {
 	}), "")
 	svc.AttachCanvas(canvas.Attached{Device: device, Animator: anim})
 
-	socket := filepath.Join(t.TempDir(), "s")
+	socket := testsock.Path(t)
 	listener, err := api.Listen(ctx, socket)
 	require.NoError(t, err)
 	go func() { _ = api.Serve(ctx, listener, svc) }()

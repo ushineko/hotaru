@@ -63,7 +63,7 @@ func TestAServiceThatLosesTheServerReconnectsAndPutsTheLightsBack(t *testing.T) 
 	// The server exits. Every exchange on that socket now fails the way a
 	// socket whose peer has gone fails, which is not how a missing device
 	// fails.
-	first.Vanish(syscall.EPIPE)
+	first.Vanish(openrgb.PeerGone)
 
 	// Nothing restarts the service, and nothing asks it to reconnect.
 	require.Eventually(t, func() bool { return pool.dials() >= 2 }, 2*time.Second, 5*time.Millisecond,
