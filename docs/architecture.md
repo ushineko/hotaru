@@ -303,6 +303,18 @@ them.
   machine with no liquid cooler is the ordinary case rather than an error, and
   it reports that through the same route a reading would take. The KWin script
   is a KDE convenience, and away from Plasma the CLI is the binding mechanism.
+- **One service layer.** `internal/host` is the only code that knows how
+  hotaru was started. Under the Windows service manager it answers the
+  manager and ends the service's context on a stop. Anywhere else it ends the
+  context on Ctrl+C or SIGTERM. `internal/services` asks the machine's
+  service manager about OpenRGB: systemd on Linux, the Windows service
+  manager on Windows. Installing hotaru's own service is packaging's job,
+  not the program's (spec 072).
+- **Files of the machine on Windows.** The installed Windows service runs as
+  `NT SERVICE\hotaru` and keeps everything under `%ProgramData%\hotaru`. It
+  makes that directory and sets who may use it before it opens anything.
+  Signed-in users may change the rules and use the socket, and only read the
+  rest. With no console, it writes its output to `state\hotaru.log`.
 - **The monitor is a consumer, eventually.** It keeps its own reads for now,
   which is an accepted and temporary overlap. It becomes an API client when
   somebody rewrites it in Go.

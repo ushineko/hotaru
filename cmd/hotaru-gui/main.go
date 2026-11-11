@@ -25,6 +25,7 @@ import (
 	"github.com/ushineko/hotaru/internal/api"
 	"github.com/ushineko/hotaru/internal/config"
 	"github.com/ushineko/hotaru/internal/gui"
+	"github.com/ushineko/hotaru/internal/host"
 )
 
 func main() { os.Exit(run()) }
@@ -46,6 +47,9 @@ func run() int {
 		"colour scheme for this run, not saved: "+strings.Join(fdtheme.SchemeNames(), ", "))
 	flag.Parse()
 
+	// The window of an installed Windows service finds the machine's
+	// socket (spec 072 R3.2). Its own settings stay the person's.
+	config.SetMachine(host.Installed(config.App))
 	path := *socket
 	if path == "" {
 		found, err := config.SocketPath()

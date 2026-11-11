@@ -6,9 +6,14 @@ hotaru's service serves HTTP and JSON over a Unix socket at
 would mean inventing an authentication scheme for a program that changes the
 colour of lights.
 
-On Windows the socket is at `%LOCALAPPDATA%\hotaru\run\hotaru.sock`, unless
-`XDG_RUNTIME_DIR` is set. A file mode says nothing there. The socket's access
-list has one entry, for the user the service runs as.
+On Windows a file mode says nothing, so the socket's access list does the
+same job. The installed service listens at
+`%ProgramData%\hotaru\run\hotaru.sock`. Its list lets any user signed in at
+the machine connect, and no service or network sign-in (spec 072). A
+`hotaru serve` in a terminal listens at
+`%LOCALAPPDATA%\hotaru\run\hotaru.sock`, with one entry, for its user. The CLI
+and the window look for the installed service first. `XDG_RUNTIME_DIR`, when
+set, wins on both systems.
 
 **This is an interface, not a convenience.** The CLI is its first client, the
 window is its second, and a future Go rewrite of the battery monitor is

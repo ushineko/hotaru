@@ -6,23 +6,47 @@ import (
 	"path/filepath"
 )
 
+// machineCapable is true: Windows has %ProgramData% (spec 072 R3).
+const machineCapable = true
+
 /*
 The directories used where an XDG variable is not set.
 
-Rules, scenes and dashboards are somebody's choices and go where Windows
-roams a user's settings. State, added files and the socket belong to this
-machine and go under the local profile, each in a directory of its own, so
-that what is a cache and what is somebody's work stay apart as they do under
-XDG.
+Run by a person, rules, scenes and dashboards are somebody's choices and go
+where Windows roams a user's settings. State, added files and the socket
+belong to this machine and go under the local profile, each in a directory of
+its own, so that what is a cache and what is somebody's work stay apart as
+they do under XDG.
+
+As a service, and for the clients of one, everything is the machine's and
+goes under %ProgramData%\hotaru, with the same split below it.
 */
 
-func configFallback() (string, error) { return underProfile("APPDATA") }
+func configFallback() (string, error) {
+	if Machine() {
+		return underProfile("ProgramData")
+	}
+	return userConfigFallback()
+}
 
-func stateFallback() (string, error) { return underProfile("LOCALAPPDATA", "state") }
+func userConfigFallback() (string, error) { return underProfile("APPDATA") }
 
-func dataFallback() (string, error) { return underProfile("LOCALAPPDATA", "data") }
+func stateFallback() (string, error) { return local("state") }
 
-func runtimeFallback() (string, error) { return underProfile("LOCALAPPDATA", "run") }
+func dataFallback() (string, error) { return local("data") }
+
+func runtimeFallback() (string, error) { return local("run") }
+
+// MachineDir is %ProgramData%\hotaru, whatever the mode: the root that the
+// service prepares (see PrepareMachine).
+func MachineDir() (string, error) { return underProfile("ProgramData") }
+
+func local(sub string) (string, error) {
+	if Machine() {
+		return underProfile("ProgramData", sub)
+	}
+	return underProfile("LOCALAPPDATA", sub)
+}
 
 func underProfile(env string, sub ...string) (string, error) {
 	base := os.Getenv(env)

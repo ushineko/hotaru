@@ -54,7 +54,7 @@ file is the rule the whole architecture rests on, and the editor is exactly
 where somebody would be tempted to break it.
 */
 func (a *App) settingsPath() string {
-	dir, err := config.Dir()
+	dir, err := config.UserDir()
 	if err != nil {
 		// Let the shell fall back to its own default rather than failing to
 		// open a window over a missing home directory.

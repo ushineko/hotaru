@@ -189,13 +189,13 @@ ushineko repositories.
 ## Releases
 
 The version of record is `.tag` (the Makefile stamps it into the binaries).
-`.tag`, the `**Version**` line in `README.md`, the newest changelog heading
-and `pkgver` in `packaging/PKGBUILD` are the same string, or the release is
-wrong. Ask the maintainer before bumping.
+`.tag`, the `**Version**` line in `README.md`, the newest changelog heading,
+`pkgver` in `packaging/PKGBUILD` and `app.version` in `fynstall.yaml` are the
+same string, or the release is wrong. Ask the maintainer before bumping.
 
 1. A commit `chore: release X.Y.Z` that sets `.tag`, the README Version
    line, turns `### Unreleased` into `### X.Y.Z (YYYY-MM-DD)`, and sets
-   `pkgver`.
+   `pkgver` and `fynstall.yaml`'s version.
 2. An annotated tag `vX.Y.Z` with the message `hotaru X.Y.Z`, pushed.
 3. A GitHub Release for the tag whose notes are that version's changelog
    entry. Every tag gets one.

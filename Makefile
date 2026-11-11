@@ -40,6 +40,15 @@ EXE        := $(shell go env GOEXE)
 # inside a Perform callback touches the interface unwrapped. The tag is only
 # safe because of that test, and removing either means removing both.
 GUITAGS    := -tags migrated_fynedo
+# On Windows the window is a program with a window, not a console program:
+# started from the Start Menu it opens no console beside it (spec 072 R6.3).
+GUILDFLAGS := $(LDFLAGS)$(if $(filter windows,$(shell go env GOOS)), -H windowsgui)
+# The Windows installer is built by fynstall (github.com/ushineko/fynstall)
+# from fynstall.yaml, and an installer is pinned to the fynstall that built
+# it. Run with `go run` at the pinned release, so nothing is installed. A
+# build tool, not a dependency of either program, so go.mod does not name it.
+FYNSTALL_VERSION := v0.2.7
+FYNSTALL   := go run github.com/ushineko/fynstall/cmd/fynstall@$(FYNSTALL_VERSION)
 # Pinned, like the other ushineko repositories: a linter that moves under you
 # turns an unrelated commit into a day of style changes.
 LINT_VERSION       := v2.12.2
@@ -49,7 +58,7 @@ GOLANGCI           := $(HOME)/go/bin/golangci-lint-$(LINT_VERSION)
 # panic on files it thinks are from the future.
 LINT_GO_TOOLCHAIN  ?= go1.26.0
 
-.PHONY: all test race lint lint-windows vuln build gui install generate screenshots tidy clean
+.PHONY: all test race lint lint-windows vuln build gui install installer generate screenshots tidy clean
 
 all: test build
 
@@ -87,7 +96,16 @@ build:
 # stack, which the service deliberately does not: a headless box builds and
 # runs everything above without any of this.
 gui:
-	go build $(GOFLAGS) $(GUITAGS) -ldflags "$(LDFLAGS)" -o bin/hotaru-gui$(EXE) ./cmd/hotaru-gui
+	go build $(GOFLAGS) $(GUITAGS) -ldflags "$(GUILDFLAGS)" -o bin/hotaru-gui$(EXE) ./cmd/hotaru-gui
+
+# The Windows installer, into dist/: the service, the CLI and the window, and
+# an uninstaller (spec 072 R6). Windows only; Linux is packaged for the AUR.
+# --windowed: the installer and the uninstaller never show a console.
+installer: build gui
+	@mkdir -p dist
+	go run ./scripts/icon packaging/hotaru.svg dist/hotaru.png 512
+	$(FYNSTALL) validate
+	$(FYNSTALL) build --windowed
 
 # What a developer runs. `go install ./cmd/...` builds the window without
 # GUITAGS, which is a window most of whose refresh time is a debug check.

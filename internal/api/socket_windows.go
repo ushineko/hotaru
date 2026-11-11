@@ -3,6 +3,7 @@ package api
 import (
 	"fmt"
 
+	"github.com/ushineko/hotaru/internal/config"
 	"golang.org/x/sys/windows"
 )
 
@@ -16,8 +17,17 @@ and marked protected so the directory's entries are not inherited back in.
 
 Connecting to a Unix socket on Windows needs write access to its file, which
 is what the list withholds from everyone else.
+
+The service of the machine shares it instead with the users signed in at the
+machine (spec 072 R3.5): see config.SharedSocketAccess.
 */
 func restrict(socket string) error {
+	if config.Machine() {
+		if err := config.SharedSocketAccess(socket); err != nil {
+			return fmt.Errorf("share the socket: %w", err)
+		}
+		return nil
+	}
 	user, err := currentUser()
 	if err != nil {
 		return err

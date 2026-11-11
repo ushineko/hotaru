@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"sync/atomic"
 )
 
 // App is the directory name and the D-Bus/application identifier stem.
@@ -20,6 +21,33 @@ const (
 	StateFile      = "state.yml" // the service's, never hand-edited
 	SocketFile     = "hotaru.sock"
 )
+
+/*
+machine is whether hotaru's files are the machine's rather than one user's:
+true for the Windows service, and for a client of an installed one (spec 072
+R3). Set once at start, by cmd/, before anything asks for a path.
+*/
+var machine atomic.Bool //nolint:gochecknoglobals // set once by main, read everywhere after
+
+/*
+SetMachine says whether hotaru's files are the machine's.
+
+Only Windows has such a place, %ProgramData%\hotaru. Elsewhere the setting is
+kept and changes nothing: a systemd user service and its clients share the
+user's directories already.
+*/
+func SetMachine(on bool) { machine.Store(on) }
+
+// Machine reports whether hotaru's files are the machine's on this system.
+func Machine() bool { return machineCapable && machine.Load() }
+
+/*
+UserDir is the user's own configuration directory whatever the mode: where
+the window keeps its view state, which is a person's and never the service's.
+*/
+func UserDir() (string, error) {
+	return xdgDir("XDG_CONFIG_HOME", userConfigFallback)
+}
 
 /*
 Dir is where the user's files live: $XDG_CONFIG_HOME/hotaru, or

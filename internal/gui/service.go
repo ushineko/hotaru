@@ -3,6 +3,7 @@ package gui
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"strings"
 
 	"fyne.io/fyne/v2"
@@ -151,10 +152,18 @@ func notRunning(err error) fyne.CanvasObject {
 	return container.NewVBox(
 		title("The service is not running"),
 		widgets.Card("Start it",
-			widget.NewLabel("systemctl --user start hotaru"),
+			widget.NewLabel(startCommand(runtime.GOOS)),
 			widgets.Note(err.Error(), fd.StatusWarn),
 		),
 	)
+}
+
+// startCommand is what starts the service on this system (spec 072 R5.1).
+func startCommand(goos string) string {
+	if goos == "windows" {
+		return "Start-Service hotaru"
+	}
+	return "systemctl --user start hotaru"
 }
 
 func healthStatus(state string) fd.Status {

@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -211,7 +212,7 @@ func TestAServiceThatIsNotRunningSaysWhatToType(t *testing.T) {
 
 	for _, section := range []string{"Service", "System", "Scenes", "Pictures", "Screen"} {
 		said := screen(t, absent, section)
-		require.Contains(t, said, "systemctl --user start hotaru",
+		require.Contains(t, said, gui.StartCommand(runtime.GOOS),
 			"%s did not say how to start the service", section)
 	}
 }

@@ -223,6 +223,15 @@ MIT. See [LICENSE](LICENSE).
 
 ### Unreleased
 
+- hotaru runs as a Windows service, and ships a Windows installer (spec 072,
+  [#202](https://github.com/ushineko/hotaru/issues/202)). The service starts
+  with the computer as `NT SERVICE\hotaru` and keeps its files under
+  `%ProgramData%\hotaru`. Any user signed in at the machine may use it. The
+  CLI and the window find it with no flag. `make installer` builds the
+  installer with fynstall 0.2.7. One package, `internal/host`, hides which
+  service manager started hotaru, and `internal/systemd` became
+  `internal/services`, with a Windows half for OpenRGB's service. Nothing
+  changes on Linux.
 - The first step of a Windows port (spec 067,
   [#190](https://github.com/ushineko/hotaru/issues/190)). The service, the
   CLI and the window build on Windows and their tests pass there. Files go

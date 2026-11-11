@@ -26,7 +26,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/ushineko/hotaru/internal/systemd"
+	"github.com/ushineko/hotaru/internal/services"
 )
 
 /*
@@ -103,22 +103,22 @@ func (c *Checker) Check(ctx context.Context, devices []string) Verdict {
 
 // held reuses the PID it found last time for as long as that PID is still an
 // OpenRGB server, and asks systemd again when it is not.
-func (c *Checker) held(ctx context.Context) systemd.Handles {
+func (c *Checker) held(ctx context.Context) services.Handles {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	if c.pid > 0 {
-		if held := systemd.HeldBy(c.pid); held.Known {
+		if held := services.HeldBy(c.pid); held.Known {
 			return held
 		}
 	}
-	pid, ok := systemd.ServerPID(ctx)
+	pid, ok := services.ServerPID(ctx)
 	if !ok {
 		c.pid = 0
-		return systemd.Handles{}
+		return services.Handles{}
 	}
 	c.pid = pid
-	return systemd.HeldBy(pid)
+	return services.HeldBy(pid)
 }
 
 /*
