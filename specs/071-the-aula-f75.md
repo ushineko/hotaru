@@ -2,7 +2,7 @@
 
 **Issue**: [#193](https://github.com/ushineko/hotaru/issues/193)
 
-## Status: INCOMPLETE
+## Status: COMPLETE
 
 ## Executive Summary
 
@@ -210,8 +210,8 @@ second path. The F75 adds firmware modes to that list.
 - [x] After silence, a keyboard that answers on its factory settings gets
       its recorded effect and colour back. One that changed while it kept
       answering does not. A failed first read is tried again.
-- [ ] `make test`, the GUI tests and `make lint` pass, and
-      `make lint-windows`. Windows done; Linux not run.
+- [x] `make test`, the GUI tests and `make lint` pass, and
+      `make lint-windows`, on Windows and on Linux.
 - [x] Live, with someone watching, on the Windows machine: `light set
       purple` keeps the running effect and makes it purple; a scene with
       Rainbow Wave draws it, and a scene with a firmware effect brings the
@@ -325,4 +325,13 @@ was watched by the user.
   "No scene" was not separated from the firmware effect: both are the
   watcher alone.
 
-Not run: anything on Linux, and the battery measurement (#199).
+2026-11-10, Linux: CachyOS, Go 1.27.3 (lint under go1.26.0), golangci-lint v2.12.2, in a fresh clone of the pushed branch.
+
+- `make test`: every package ok. `go test -tags migrated_fynedo
+  ./internal/gui/...`: ok.
+- `go test -race -count=20` on `internal/daemon`, `internal/canvas` and
+  `internal/service`: ok.
+- `make lint` and `make lint-windows`: 0 issues. `make build gui`: ok.
+
+Not run: the battery measurement, moved to #199. The F75 was not tried on
+Linux: the live criteria name the Windows machine.
