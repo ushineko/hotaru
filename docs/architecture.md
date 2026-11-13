@@ -291,8 +291,10 @@ them.
   Desired state lives outside the config directory. The window's own file
   holds view state and nothing else. Every file is YAML, which is why the file
   the user comments is never one the program writes back.
-- **The service starts at boot, not at login.** It is a user unit with no
-  desktop dependency, and it restores recorded state by reconciling toward it.
+- **The service starts at boot, not at login.** On Linux it is a user unit
+  with no desktop dependency. On Windows it is a service of the machine that
+  starts automatically. Either way it restores recorded state by reconciling
+  toward it.
   The OpenRGB server is a resource that appears, rather than a unit to order
   after. Started is not ready, as a cold boot that found two devices of six
   showed. The desktop pieces, such as the KWin script, attach when the session
