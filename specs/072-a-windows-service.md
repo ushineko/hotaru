@@ -2,7 +2,7 @@
 
 **Issue**: [#202](https://github.com/ushineko/hotaru/issues/202)
 
-## Status: INCOMPLETE
+## Status: COMPLETE
 
 ## Executive Summary
 
@@ -177,9 +177,9 @@ Decided with the maintainer:
 - [x] Live, on the Windows machine: the installer installs, the service
       runs as `NT SERVICE\hotaru`, and `hotaru light list` reaches it from
       the signed-in user's session with no flag.
-- [ ] Live, with someone watching: the window, opened from the Start Menu,
+- [x] Live, with someone watching: the window, opened from the Start Menu,
       shows the devices of the installed service.
-- [ ] Live, with someone watching: `hotaru light set` through the
+- [x] Live, with someone watching: `hotaru light set` through the
       installed service changes the board and the F75.
 - [x] Live: after `Restart-Service hotaru` the lights are put back and the
       log says so.
@@ -257,6 +257,8 @@ service, sanshoku 0.1.19, fynstall 0.2.7. Linux: CachyOS, Go 1.27.3.
   SERVICE\<name>` opened the F75, asked it a question, read its effect and
   reached OpenRGB.
 
-Not run: the window from the Start Menu, and a watched look at the lights,
-because nobody was at the machine. A restart of the computer. A second
-signed-in user.
+Watched by the maintainer: the window, opened from the Start Menu, showed
+the installed service's devices, and the lights were purple after the
+`light set`, the F75 included.
+
+Not run: a restart of the computer. A second signed-in user.
