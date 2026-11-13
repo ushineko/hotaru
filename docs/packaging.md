@@ -273,6 +273,35 @@ are not planned. A program whose job is to reach the user's own hardware and
 session bus fits a sandbox badly, and saying so once is better than
 half-supporting it.
 
+## Windows: the installer
+
+Windows has no AUR, so hotaru ships a fynstall installer there
+([spec 072](../specs/072-a-windows-service.md)). `fynstall.yaml` describes
+it, and `make installer` builds it into `dist/`. The target builds both
+programs and draws the icon from `packaging/hotaru.svg`. It then runs
+fynstall at the pinned release with `go run`, so nothing is installed to
+build it.
+
+The installer is for everyone on the computer and asks for an administrator.
+It installs:
+
+- `hotaru.exe` and `hotaru-gui.exe` in `C:\Program Files\hotaru\bin`, on the
+  computer's `PATH`;
+- the Windows service `hotaru`, which runs `hotaru.exe serve` as
+  `NT SERVICE\hotaru`, starts with the computer, and is started again after a
+  failure;
+- a Start Menu entry for the window.
+
+The service makes `%ProgramData%\hotaru` when it first starts. The
+uninstaller in `C:\Program Files\hotaru` removes the service and the
+programs, and keeps `%ProgramData%\hotaru`, which holds the rules, the record
+and the pictures. Remove that directory by hand to forget them. Windows also
+keeps the account's profile under `C:\Windows\ServiceProfiles\hotaru` until
+the computer restarts.
+
+`fynstall.yaml`'s version is `.tag`'s, and `installer_test.go` holds the two
+together.
+
 ## Settled
 
 Building the package answered both of the questions this document left open.

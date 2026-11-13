@@ -9,10 +9,15 @@ import (
 	"path/filepath"
 )
 
+// machineCapable is false: hotaru's files are always a user's here.
+const machineCapable = false
+
 // The directories used where an XDG variable is not set: the ones the XDG
 // specification gives as its defaults.
 
 func configFallback() (string, error) { return underHome(".config") }
+
+func userConfigFallback() (string, error) { return configFallback() }
 
 func stateFallback() (string, error) { return underHome(filepath.Join(".local", "state")) }
 

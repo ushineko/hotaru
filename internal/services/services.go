@@ -1,16 +1,18 @@
 /*
-Package systemd finds out what this machine could do about a problem.
+Package services finds out what this machine's service manager could do
+about OpenRGB: systemd on Linux, the Windows service manager on Windows
+(spec 072 R2).
 
 hotaru does not fix anything here. It looks at what is installed and what is
 running, and turns "nothing is happening" into a sentence with a command in it.
 Starting a daemon or enabling a user manager at boot is the user's decision,
 and a program that made it for them would be the other kind of annoying.
 
-Everything is build-tagged. A machine without systemd loses these suggestions
-and nothing else -- the remedies are advice, and advice is optional in a way
+Everything is build-tagged, one backend per manager. A machine without one
+loses these suggestions and nothing else -- the remedies are advice, and advice is optional in a way
 that lighting is not.
 */
-package systemd
+package services
 
 import (
 	"context"
@@ -28,8 +30,18 @@ on, rather than to report that something went wrong.
 */
 var ErrNotRestartable = errors.New("this OpenRGB server is not one hotaru can restart")
 
+// The service managers a backend speaks for.
+const (
+	Systemd = "systemd"
+	SCM     = "scm" // the Windows service manager
+)
+
 // Facts are what could be done about an unreachable OpenRGB server.
 type Facts struct {
+	// Manager is the service manager the facts came from: Systemd, SCM, or
+	// empty where there is none to ask.
+	Manager string
+
 	// Installed is whether an OpenRGB unit exists at all. Absent means the
 	// package is not installed, which is a different problem from a daemon
 	// that is not running.
@@ -71,7 +83,7 @@ func (f Facts) Remedies() []string {
 		out = append(out, "The OpenRGB server is installed and not running. Start it with `"+f.startCommand()+"`.")
 	}
 
-	if !f.Lingering {
+	if !f.Lingering && f.Manager == Systemd {
 		out = append(out, "Your services do not start until you log in. "+
 			"For lighting to come back at boot, enable lingering with `loginctl enable-linger $USER`.")
 	}
@@ -88,6 +100,9 @@ because a lighting daemon that stopped to ask for a password would be asking
 at a terminal nobody is looking at. See spec 058 R7.
 */
 func (f Facts) RestartCommand() string {
+	if f.Manager == SCM {
+		return "Restart-Service " + f.Unit + " (in PowerShell, as an administrator)"
+	}
 	if f.User {
 		return "systemctl --user restart " + f.Unit
 	}
@@ -95,6 +110,9 @@ func (f Facts) RestartCommand() string {
 }
 
 func (f Facts) startCommand() string {
+	if f.Manager == SCM {
+		return "Start-Service " + f.Unit + " (in PowerShell, as an administrator)"
+	}
 	if f.User {
 		return "systemctl --user start " + f.Unit
 	}
@@ -115,7 +133,9 @@ configuration, and it stays theirs. This is a restart asked for by a person
 running a command whose whole purpose is to perform one, which is a different
 question from whether a program should quietly reconfigure a machine.
 
-Only a user unit. A system one needs root, and RestartCommand says so instead.
+Only a user unit, or a system one this user holds passwordless root over. On
+Windows, an OpenRGB service whose access list lets this account restart it,
+which by default it does not. Otherwise RestartCommand says what to type.
 */
 func Bounce(ctx context.Context, f Facts) error { return bounce(ctx, f) }
 
@@ -140,10 +160,10 @@ and the system unit merely present and disabled, was told to
 sudo in front of it.
 */
 func choose(seen []unit, lingering bool) Facts {
-	facts := Facts{Lingering: lingering}
+	facts := Facts{Manager: Systemd, Lingering: lingering}
 	for _, u := range seen {
 		if u.active {
-			return Facts{Installed: true, Unit: u.name, User: u.user, Active: true, Lingering: lingering}
+			return Facts{Manager: Systemd, Installed: true, Unit: u.name, User: u.user, Active: true, Lingering: lingering}
 		}
 		if !facts.Installed {
 			facts.Installed = true

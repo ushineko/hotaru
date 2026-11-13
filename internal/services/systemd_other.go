@@ -1,6 +1,6 @@
-//go:build !linux
+//go:build !linux && !windows
 
-package systemd
+package services
 
 import "context"
 

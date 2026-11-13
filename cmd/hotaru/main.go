@@ -18,13 +18,17 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
-	"os/signal"
-	"syscall"
+	"path/filepath"
+	"runtime"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/ushineko/hotaru/internal/cli"
+	"github.com/ushineko/hotaru/internal/config"
 	"github.com/ushineko/hotaru/internal/daemon"
+	"github.com/ushineko/hotaru/internal/host"
 	"github.com/ushineko/hotaru/internal/version"
 )
 
@@ -33,21 +37,60 @@ func main() { os.Exit(run()) }
 /*
 run is main with a return value.
 
-os.Exit does not run deferred functions, so the signal handler has to be
-released before exiting rather than by a defer that never fires -- which is
-what this split buys and why main does nothing else.
+os.Exit does not run deferred functions, so everything that must be released
+is released inside host.Run, which returns the code -- which is what this
+split buys and why main does nothing else.
+
+host knows how the process was started (spec 072 R1). As a Windows service,
+hotaru's files are the machine's, prepared before anything opens them, and
+what it prints goes to its log. A person's command finds an installed
+service's files the same way.
 */
 func run() int {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
+	return host.Run(config.App, func(ctx context.Context) int {
+		cmd := root()
+		switch {
+		case host.Managed():
+			config.SetMachine(true)
+			log, err := machineLog()
+			if err != nil {
+				host.Report(config.App, err.Error())
+				return 1
+			}
+			defer func() { _ = log.Close() }()
+			cmd.SetOut(log)
+			cmd.SetErr(log)
+		case host.Installed(config.App):
+			config.SetMachine(true)
+		}
+		return execute(ctx, cmd)
+	})
+}
 
-	if err := root().ExecuteContext(ctx); err != nil {
+// machineLog prepares the machine's directories and opens the log in them.
+func machineLog() (io.WriteCloser, error) {
+	if err := config.PrepareMachine(); err != nil {
+		return nil, err
+	}
+	dir, err := config.StateDir()
+	if err != nil {
+		return nil, err
+	}
+	log, err := host.OpenLog(filepath.Join(dir, "hotaru.log"), host.LogLimit, time.Now)
+	if err != nil {
+		return nil, err
+	}
+	return log, nil
+}
+
+func execute(ctx context.Context, cmd *cobra.Command) int {
+	if err := cmd.ExecuteContext(ctx); err != nil {
 		// A silent error has already said everything it needs to on stdout --
 		// "nothing changed" after a list of devices that did not change.
 		// Anything else is one line: a keypress should not produce a wall of
 		// text.
 		if !cli.Silent(err) {
-			fmt.Fprintln(os.Stderr, "hotaru: "+err.Error())
+			_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "hotaru: "+err.Error())
 		}
 		return 1
 	}
@@ -62,8 +105,17 @@ func root() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
-	cmd.PersistentFlags().String("socket", "", "the service's socket (default: $XDG_RUNTIME_DIR/hotaru/hotaru.sock)")
+	cmd.PersistentFlags().String("socket", "", "the service's socket (default: "+defaultSocket()+")")
 	cmd.AddCommand(daemon.Command())
 	cmd.AddCommand(cli.Commands()...)
 	return cmd
+}
+
+// defaultSocket is where --socket's help says the socket is, on this system
+// (spec 072 R5.2).
+func defaultSocket() string {
+	if runtime.GOOS == "windows" {
+		return `%ProgramData%\hotaru\run\hotaru.sock with the service installed, else %LOCALAPPDATA%\hotaru\run\hotaru.sock`
+	}
+	return "$XDG_RUNTIME_DIR/hotaru/hotaru.sock"
 }

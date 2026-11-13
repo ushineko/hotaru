@@ -1,6 +1,6 @@
 //go:build !linux
 
-package systemd
+package services
 
 import "context"
 
@@ -9,6 +9,3 @@ import "context"
 func serverPID(context.Context) (int, bool) { return 0, false }
 
 func heldBy(int) Handles { return Handles{} }
-
-// bounce cannot restart what it cannot see. The caller offers the command.
-func bounce(context.Context, Facts) error { return ErrNotRestartable }

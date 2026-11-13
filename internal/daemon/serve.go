@@ -27,8 +27,8 @@ import (
 	"github.com/ushineko/hotaru/internal/queue"
 	"github.com/ushineko/hotaru/internal/scenes"
 	"github.com/ushineko/hotaru/internal/service"
+	"github.com/ushineko/hotaru/internal/services"
 	"github.com/ushineko/hotaru/internal/state"
-	"github.com/ushineko/hotaru/internal/systemd"
 	"github.com/ushineko/hotaru/internal/version"
 )
 
@@ -229,28 +229,29 @@ func run(cmd *cobra.Command) error {
 }
 
 /*
-environment answers "what could I do about it" from systemd.
+environment answers "what could I do about it" from the machine's service
+manager: systemd, or the Windows service manager.
 
-Here rather than in the service because it shells out, and because a machine
-without systemd should lose the suggestions and nothing else.
+Here rather than in the service because it asks outside the process, and
+because a machine without one should lose the suggestions and nothing else.
 */
 type environment struct{}
 
 func (environment) Remedies(ctx context.Context) []string {
-	return systemd.Look(ctx).Remedies()
+	return services.Look(ctx).Remedies()
 }
 
 /*
-Bounce restarts the server's unit, where it is one this user can restart.
+Bounce restarts the server's unit or service, where this account may.
 
 The translation between what the machine says and what the service can act on
-lives here, so that the service never learns what systemd is and the systemd
+lives here, so that the service never learns what systemd is and the services
 package never learns what a service error looks like.
 */
 func (environment) Bounce(ctx context.Context) error {
-	facts := systemd.Look(ctx)
-	if err := systemd.Bounce(ctx, facts); err != nil {
-		if errors.Is(err, systemd.ErrNotRestartable) {
+	facts := services.Look(ctx)
+	if err := services.Bounce(ctx, facts); err != nil {
+		if errors.Is(err, services.ErrNotRestartable) {
 			return &service.NotOurs{Command: facts.RestartCommand()}
 		}
 		return err
