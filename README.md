@@ -136,7 +136,8 @@ and GUI that are clients of it.
   "fontFamily":"Noto Sans, Segoe UI, sans-serif","fontSize":"14px"
 }}}%%
 flowchart TB
-    KEY["global shortcut"] --> KWIN["KWin script"]
+    KEY["global shortcut"] --> KWIN["KWin script<br/>KDE"]
+    SM["systemd or the<br/>Windows service manager"] -->|"start · stop"| svc
     GUI["hotaru-gui"] --> API
     CLI["hotaru CLI"] --> API
     KWIN -->|"D-Bus: the only IPC<br/>KWin scripting has"| DOOR
@@ -155,7 +156,7 @@ flowchart TB
     CORE --> STATE --> RECON --> MBOX
     CORE --> MBOX
     MBOX -->|"mode + frame"| ORGB["OpenRGB server"]
-    MBOX -->|"dashboard frames"| HID["cooler · hidraw + usbfs"]
+    MBOX -->|"dashboard frames"| HID["cooler · hidraw + usbfs<br/>Linux"]
     CORE -->|"telemetry"| HID
     ORGB --> LIT["lit devices"]
     HID --> COOL["cooler + LCD"]
@@ -164,7 +165,7 @@ flowchart TB
     classDef b fill:#1d1f22,stroke:#3c4045,color:#fcfcfc
     classDef h fill:#141618,stroke:#3c4045,color:#a1a9b1
     class API,DOOR,CORE,STATE,RECON,MBOX s
-    class ORGB,HID b
+    class ORGB,HID,SM b
     class LIT,COOL h
 ```
 

@@ -183,6 +183,9 @@ marketing language.
   `Start-Service`/`Stop-Service`/`Restart-Service hotaru` from an
   administrator shell. A `hotaru serve` in a terminal while the service is
   installed uses the machine's paths too, so stop the service first.
+- `make generate` works on Windows with mermaid-cli from npm and no
+  Puppeteer browser download: set `PUPPETEER_EXECUTABLE_PATH` to Edge's
+  `msedge.exe` first.
 - OpenRGB must be 1.1 or later (1.0 misroutes writes, #191), and on MSI
   boards it must start after LibreHardwareMonitor (#197).
 - Windows changes also run on Linux before merging (`make test`,
