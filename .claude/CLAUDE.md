@@ -8,10 +8,15 @@ is enforced by a test, the test is named.
 
 ## Project overview
 
-- **What it is**: a Linux service, CLI and desktop window for RGB lighting
-  and an NZXT Kraken cooler. `hotaru serve` is the only process that touches
-  the hardware; `hotaru` (CLI), `hotaru-gui` (Fyne window) and KDE global
-  shortcuts are clients of it.
+- **What it is**: a service, CLI and desktop window for RGB lighting and an
+  NZXT Kraken cooler, on Linux and Windows. `hotaru serve` is the only
+  process that touches the hardware; `hotaru` (CLI), `hotaru-gui` (Fyne
+  window) and KDE global shortcuts are clients of it.
+- **Platforms**: Linux is complete. On Windows the service, CLI, window,
+  OpenRGB lighting and the AULA F75 work (specs 067, 071, 072); the Kraken,
+  readings, hotkeys and sleep/resume do not yet. Code shared by both is the
+  default; a platform split is a `_windows.go`/`_unix.go` (or `_linux.go`)
+  pair behind one API, not `runtime.GOOS` branches through the logic.
 - **Module**: `github.com/ushineko/hotaru`. Public repository, MIT.
 - **Lighting**: through an OpenRGB server for most devices. Devices that
   only accept streamed frames (a sanshoku `lighting.Canvas`, the SteelSeries
@@ -31,8 +36,20 @@ is enforced by a test, the test is named.
 ## Architecture rules
 
 - **One actor on the hardware.** Only `hotaru serve` writes to devices.
-  Clients go through the HTTP/JSON API on the unix socket in
-  `$XDG_RUNTIME_DIR/hotaru/`. A client that opens a device is a bug.
+  Clients go through the HTTP/JSON API on the unix socket: in
+  `$XDG_RUNTIME_DIR/hotaru/` on Linux; on Windows in
+  `%ProgramData%\hotaru\run\` for the installed service, else
+  `%LOCALAPPDATA%\hotaru\run\`. A client that opens a device is a bug.
+- **One service layer.** `internal/host` is the only code that knows how
+  hotaru was started (systemd, the Windows service manager, or a terminal).
+  `internal/services` is the only code that asks a service manager about
+  OpenRGB. Installing hotaru's own service is packaging's job (the AUR unit,
+  the fynstall installer), never the program's.
+- **Machine mode on Windows.** The installed service runs as
+  `NT SERVICE\hotaru` and its files live in `%ProgramData%\hotaru`, with
+  access lists set by `config.PrepareMachine`. Clients switch to those paths
+  when `host.Installed` is true; the window's own `gui.yml` stays per user
+  (`config.UserDir`).
 - **CLI, window and API parity.** Every operation is an API route, reachable
   from both the CLI and the window. `internal/api` lists the routes
   explicitly; `internal/cli/parity_test.go` and `internal/api/guard_test.go`
@@ -151,6 +168,28 @@ marketing language.
   `~/.config/systemd/user/hotaru.service.d/dev.conf` pointing at a binary in
   `~/.local/bin`), then `systemctl --user daemon-reload` and restart.
   Remove the drop-in to go back.
+
+### Windows
+
+- Run `make` from PowerShell, not Git Bash: MSYS2's make drops the
+  environment Go needs. The window needs a C compiler on `PATH` (MSYS2
+  UCRT64 gcc). `make lint-windows` lints the Windows build (without the window, which
+  needs cgo) from any system.
+- `make installer` builds the fynstall installer into `dist/` (fynstall
+  pinned in the Makefile, run with `go run`). `fynstall.yaml`'s
+  `app.version` must equal `.tag`; `installer_test.go` checks it.
+- The installed service logs to `%ProgramData%\hotaru\state\hotaru.log`,
+  and reports a failure to start to the Event Log. Control it with
+  `Start-Service`/`Stop-Service`/`Restart-Service hotaru` from an
+  administrator shell. A `hotaru serve` in a terminal while the service is
+  installed uses the machine's paths too, so stop the service first.
+- `make generate` works on Windows with mermaid-cli from npm and no
+  Puppeteer browser download: set `PUPPETEER_EXECUTABLE_PATH` to Edge's
+  `msedge.exe` first.
+- OpenRGB must be 1.1 or later (1.0 misroutes writes, #191), and on MSI
+  boards it must start after LibreHardwareMonitor (#197).
+- Windows changes also run on Linux before merging (`make test`,
+  `make lint`), since there is no CI.
 
 ---
 

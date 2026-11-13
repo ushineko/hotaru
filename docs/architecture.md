@@ -30,7 +30,7 @@ flowchart TB
 
     subgraph svc["hotaru serve — the only actor on the hardware"]
         DBUS["D-Bus object<br/>thin: hotkey activations only"]
-        API["HTTP/JSON API<br/>unix socket in XDG_RUNTIME_DIR<br/>/v1/... + /v1/events stream"]
+        API["HTTP/JSON API<br/>unix socket: XDG_RUNTIME_DIR on Linux,<br/>%ProgramData%\hotaru\run on Windows<br/>/v1/... + /v1/events stream"]
         CORE["Service core<br/>operations, validation, health"]
         STATE["Desired state<br/>one frame per device + LCD<br/>preview leases held apart"]
         RECON["Reconcilers<br/>reassert per device rule<br/>dashboard render + push gate<br/>LCD keepalive"]
@@ -40,15 +40,15 @@ flowchart TB
     end
 
     subgraph backends["Backends"]
-        ORGB["OpenRGB server<br/>SDK protocol, TCP 6742<br/>systemd --user, enumeration gate"]
-        COOL["Cooler · sanshoku nzxt driver<br/>/dev/hidraw + usbfs<br/>NZXT protocol, no cgo"]
-        CANV["Canvas devices · sanshoku lighting.Canvas<br/>/dev/hidraw<br/>acknowledged frames"]
-        HWMON["Kernel sensors<br/>/sys/class/hwmon by label<br/>nvidia-smi where there is none"]
+        ORGB["OpenRGB server<br/>SDK protocol, TCP 6742<br/>systemd unit or Windows service,<br/>enumeration gate"]
+        COOL["Cooler · sanshoku nzxt driver<br/>/dev/hidraw + usbfs, Linux only<br/>NZXT protocol, no cgo"]
+        CANV["Canvas devices · sanshoku lighting.Canvas<br/>hidraw on Linux, HID on Windows<br/>acknowledged frames"]
+        HWMON["Kernel sensors, Linux only<br/>/sys/class/hwmon by label<br/>nvidia-smi where there is none"]
     end
 
     subgraph hw["Hardware"]
         LIT["Lit devices<br/>Kraken · GPU · Aura · MM700 · G502 · Keychron"]
-        KEYS["Apex Pro TKL Wireless Gen 3<br/>no effects of its own"]
+        KEYS["Keyboards hotaru draws on<br/>Apex Pro TKL Wireless Gen 3 · AULA F75"]
         LCD["Kraken LCD<br/>640x640, GIF only"]
         TELEM["Cooler telemetry<br/>coolant · pump · fans"]
         TEMP["CPU package · GPU"]
@@ -128,7 +128,7 @@ nothing reads "the unit started" as "the hardware is there".
   "fontFamily":"Noto Sans, Segoe UI, sans-serif","fontSize":"14px"
 }}}%%
 flowchart TB
-    BOOT(["boot · user manager, lingering"]) --> SERVE
+    BOOT(["boot · systemd user manager, lingering<br/>or the Windows service manager"]) --> SERVE
 
     SERVE["<b>Serving</b><br/>API up from this moment —<br/>no state below ever blocks it"]
     SERVE -->|"no recorded state"| INERT["<b>Inert</b><br/>nothing to restore,<br/>nothing written"]
@@ -185,7 +185,8 @@ dashboard. A fresh install records nothing, so the dashboard draws (spec 065).
 ## Session attachment
 
 The desktop is a precondition for nothing. It appears, and it may appear more
-than once.
+than once. This is KDE on Linux. On Windows hotaru has no hotkeys yet, so
+there is nothing to attach.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{
@@ -291,8 +292,10 @@ them.
   Desired state lives outside the config directory. The window's own file
   holds view state and nothing else. Every file is YAML, which is why the file
   the user comments is never one the program writes back.
-- **The service starts at boot, not at login.** It is a user unit with no
-  desktop dependency, and it restores recorded state by reconciling toward it.
+- **The service starts at boot, not at login.** On Linux it is a user unit
+  with no desktop dependency. On Windows it is a service of the machine that
+  starts automatically. Either way it restores recorded state by reconciling
+  toward it.
   The OpenRGB server is a resource that appears, rather than a unit to order
   after. Started is not ready, as a cold boot that found two devices of six
   showed. The desktop pieces, such as the KWin script, attach when the session

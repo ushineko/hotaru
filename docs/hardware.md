@@ -11,10 +11,11 @@ Two things, and they are different claims:
 hotaru does not maintain a lighting device list. If OpenRGB can set your
 keyboard's colour, so can hotaru. If OpenRGB cannot see the device, neither
 can hotaru, and no configuration changes that. This is also why installing
-hotaru installs OpenRGB: the lighting support lives there.
+hotaru from the AUR installs OpenRGB: the lighting support lives there. On
+Windows, install OpenRGB yourself.
 
-The cooler is the exception. hotaru writes NZXT's protocol directly over
-`/dev/hidraw` and usbfs, with no Python, no subprocess and no cgo. That gives a
+The cooler is the exception, and only on Linux so far. hotaru writes NZXT's
+protocol directly over `/dev/hidraw` and usbfs, with no Python, no subprocess and no cgo. That gives a
 short device list rather than a borrowed one. See
 [spec 012](../specs/012-the-cooler-without-liquidctl.md). The driver is the
 `nzxt` package of [sanshoku](https://github.com/ushineko/sanshoku), which was
@@ -49,6 +50,7 @@ support list.
 | Machine | Status |
 |---|---|
 | CachyOS, unrelated hardware, OpenRGB already running in service mode, keyboard shared from another machine over [deskflow](https://github.com/deskflow/deskflow) | **Done**, at 0.1.0 and again at 0.1.1. hotaru found nine devices and drove them with nothing written by hand. Three faults appeared, and this desk could not have shown any of them. See below |
+| Windows 11, MSI B450 Tomahawk Max, OpenRGB 1.1 as a service at boot | **Done** for lighting, after 0.1.29 (specs 067, 071 and 072). The installed service found six devices and set all of them: the board's strip, two Corsair Vengeance RGB modules, a Razer Basilisk Ultimate and its dock, and the AULA F75. The board's strip has the fault in "A hardware monitor stops an MSI board's lighting on Windows" below |
 
 What that installation found, in the order it was found:
 

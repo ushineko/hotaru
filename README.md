@@ -4,17 +4,20 @@
 
 **Version**: 0.1.29
 
-RGB lighting and AIO cooler control for Linux, as a CLI, a user service and a
-desktop GUI. 
+RGB lighting and AIO cooler control for Linux and Windows, as a CLI, a
+background service and a desktop GUI.
 
-It drives lighting through [OpenRGB](https://openrgb.org/) and has direct support for an NZXT Kraken Elite LCD screen via direct `/dev/hidraw` and usbfs. The user can set colours down to individual
-fans, define scenes, put a live dashboard on the cooler's screen, and bind it
-all to keys.
+It drives lighting through [OpenRGB](https://openrgb.org/). On Linux it also
+drives an NZXT Kraken Elite and its LCD screen directly, over `/dev/hidraw` and
+usbfs. The user can set colours down to individual fans, define scenes, put a
+live dashboard on the cooler's screen, and bind it all to keys.
 
-> **Status**: working. lighting, the cooler, its screen, scenes, the
-> hotkeys, the CLI, the service and its API, the mapping wizard and the
-> window. Tested on two machines with different hardware.
-> Remaining items are listed in the [Roadmap](#roadmap).
+> **Status**: working on Linux: lighting, the cooler, its screen, scenes,
+> the hotkeys, the CLI, the service and its API, the mapping wizard and the
+> window. Tested on two Linux machines with different hardware.
+> **On Windows**: lighting, scenes, the CLI, the window and the service work.
+> The cooler, readings and hotkeys do not yet. See
+> [What it runs on](#what-it-runs-on) and the [Roadmap](#roadmap).
 
 ## Contents
 
@@ -68,7 +71,7 @@ The service unit, the desktop entry and the udev rule are in
 [`packaging/`](packaging/) to copy into place. A release also carries built
 binaries.
 
-### Then, once
+### Then, once (Linux)
 
 ```console
 $ systemctl --user enable --now hotaru
@@ -82,6 +85,28 @@ The cooler needs no root. logind puts an ACL on a device the package's udev
 rule tags, but the rule only applies to a device plugged in after it lands.
 The first run after installing may want a reboot or
 `udevadm trigger`. `hotaru light health` will report the devices it can see.
+
+### Windows
+
+There is no published Windows installer yet. Build one from a checkout with
+Go and a C compiler for the window (MSYS2's UCRT64 gcc works):
+
+```console
+> make installer      # writes the installer to dist\
+```
+
+Run it as an administrator. It installs `hotaru.exe` and `hotaru-gui.exe` on
+the `PATH`, a Start Menu entry for the window, and the Windows service
+`hotaru`. The service starts with the computer as `NT SERVICE\hotaru` and
+keeps its files in `%ProgramData%\hotaru`. Any user signed in at the machine
+can use it, from the CLI or the window, with no flag.
+
+The installer does not install OpenRGB. Install OpenRGB 1.1 or later, not
+1.0, and start its SDK server, ideally as a service at boot.
+[docs/hardware.md](docs/hardware.md) explains why 1.0 is excluded. The
+uninstaller keeps `%ProgramData%\hotaru`, so a reinstall puts the lights back
+as they were. [docs/packaging.md](docs/packaging.md#windows-the-installer) has
+the details.
 
 ### And then
 
@@ -111,7 +136,8 @@ and GUI that are clients of it.
   "fontFamily":"Noto Sans, Segoe UI, sans-serif","fontSize":"14px"
 }}}%%
 flowchart TB
-    KEY["global shortcut"] --> KWIN["KWin script"]
+    KEY["global shortcut"] --> KWIN["KWin script<br/>KDE"]
+    SM["systemd or the<br/>Windows service manager"] -->|"start · stop"| svc
     GUI["hotaru-gui"] --> API
     CLI["hotaru CLI"] --> API
     KWIN -->|"D-Bus: the only IPC<br/>KWin scripting has"| DOOR
@@ -130,7 +156,7 @@ flowchart TB
     CORE --> STATE --> RECON --> MBOX
     CORE --> MBOX
     MBOX -->|"mode + frame"| ORGB["OpenRGB server"]
-    MBOX -->|"dashboard frames"| HID["cooler · hidraw + usbfs"]
+    MBOX -->|"dashboard frames"| HID["cooler · hidraw + usbfs<br/>Linux"]
     CORE -->|"telemetry"| HID
     ORGB --> LIT["lit devices"]
     HID --> COOL["cooler + LCD"]
@@ -139,7 +165,7 @@ flowchart TB
     classDef b fill:#1d1f22,stroke:#3c4045,color:#fcfcfc
     classDef h fill:#141618,stroke:#3c4045,color:#a1a9b1
     class API,DOOR,CORE,STATE,RECON,MBOX s
-    class ORGB,HID b
+    class ORGB,HID,SM b
     class LIT,COOL h
 ```
 
@@ -147,10 +173,12 @@ Salient design decisions:
 
 - **The service is the only writer.** No shell ever holds a device handle. Two
   callers cannot fight over a device because there is only ever one caller.
-- **The API is the contract.** HTTP and JSON over a Unix socket in
-  `$XDG_RUNTIME_DIR`.
-- **Machine, not desktop scoped.** The service is a user
-  unit with no session dependency, so the lights come back at boot. Hotaru waits intelligently for OpenRGB to fully identify its devices before proceeding.
+- **The API is the contract.** HTTP and JSON over a Unix socket, in
+  `$XDG_RUNTIME_DIR` on Linux and in `%ProgramData%\hotaru\run` for the
+  Windows service.
+- **Machine, not desktop scoped.** On Linux the service is a user unit with
+  no session dependency. On Windows it is a service of the machine. Either
+  way the lights come back at boot. Hotaru waits intelligently for OpenRGB to fully identify its devices before proceeding.
 - **The service reconciles state.** hotaru maintains the scene as an active daemon so devices can't drift or fail to configure.
 - **It is fast.** Native Go, callouts to OpenRGB SDK, backend is REST over UNIX domain sockets. Cooler LCD display support is native Go. No external programs needed. No python needed.
 - **Plays nice with others.** With nothing recorded, hotaru discovers your
@@ -159,10 +187,15 @@ Salient design decisions:
 
 Full detail is in [docs/architecture.md](docs/architecture.md).
 
-## Supported platforms
+## What it runs on
 
-Linux, KDE Plasma 6.x. Developed on Arch/CachyOS but may work on other distros. The core is
-portable. You will have the best experience on KDE Plasma/CachyOS.
+**Linux**, KDE Plasma 6.x. Developed on Arch/CachyOS but may work on other distros. You will have the best experience on KDE Plasma/CachyOS.
+
+**Windows 11**, in part. The service, the CLI, the window, lighting through
+OpenRGB, scenes and the AULA F75 work, and the service runs at boot. Not yet:
+the Kraken and its screen, readings for the dashboard, the hotkeys, and
+putting the lights back after sleep. The port is tracked in specs 067, 071
+and 072.
 
 **Lighting is owned by OpenRGB**. hotaru does not do lighting itself. The cooler is the
 exception: hotaru speaks NZXT's protocol directly, so telemetry and the screen
@@ -184,6 +217,10 @@ Nothing is assumed about your hardware. All features should work consistently ev
 | 005 | The GUI on [fynedesygn](https://github.com/ushineko/fynedesygn) | **done** — [#5](https://github.com/ushineko/hotaru/issues/5), built out over specs 017 to 034 |
 | 006 | Hotkeys and the cutover | **done** — [#6](https://github.com/ushineko/hotaru/issues/6) |
 | 007 | Packaging and release | **done** — [#7](https://github.com/ushineko/hotaru/issues/7) |
+| 067 | Windows: the service, the CLI and the window build and run | **done** — [#190](https://github.com/ushineko/hotaru/issues/190) |
+| 071 | The AULA F75 | **done** — [#193](https://github.com/ushineko/hotaru/issues/193) |
+| 072 | Windows: a service at boot, and an installer | **done** — [#202](https://github.com/ushineko/hotaru/issues/202) |
+| — | Windows: readings, hotkeys, the Kraken, sleep and resume | not started |
 
 
 ## Where it comes from
@@ -202,8 +239,17 @@ its own through sanshoku's lighting capability, `lighting.Canvas` (spec 060).
 
 ## Documentation
 
-* specs - design decisions and feature development.
-* docs - adjunct documentation such as architecture.
+* [specs/](specs/) - design decisions and feature development, one file per
+  change.
+* [docs/architecture.md](docs/architecture.md) - the shape of the system and
+  the decisions behind it.
+* [docs/api.md](docs/api.md) - the HTTP and JSON API, route by route.
+* [docs/hardware.md](docs/hardware.md) - what has been tested, and the known
+  faults of particular devices and OpenRGB releases.
+* [docs/packaging.md](docs/packaging.md) - the AUR packages and the Windows
+  installer.
+* [docs/migration.md](docs/migration.md) - the move from
+  `peripheral-battery-monitor`.
 * [docs/gallery.md](docs/gallery.md) - what the window looks like, section by
   section. Kept out of this file on purpose: the About section renders this
   README, and a gallery of the window inside the window is a program showing
@@ -223,6 +269,9 @@ MIT. See [LICENSE](LICENSE).
 
 ### Unreleased
 
+- The README and the docs describe Windows: how to build and run the
+  installer, what works there and what does not yet, and the Windows test
+  machine in `docs/hardware.md`.
 - hotaru runs as a Windows service, and ships a Windows installer (spec 072,
   [#202](https://github.com/ushineko/hotaru/issues/202)). The service starts
   with the computer as `NT SERVICE\hotaru` and keeps its files under

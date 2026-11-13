@@ -280,7 +280,8 @@ Windows has no AUR, so hotaru ships a fynstall installer there
 it, and `make installer` builds it into `dist/`. The target builds both
 programs and draws the icon from `packaging/hotaru.svg`. It then runs
 fynstall at the pinned release with `go run`, so nothing is installed to
-build it.
+build it. The window needs cgo, so the build needs a C compiler, such as
+MSYS2's UCRT64 gcc. No release carries a built installer yet.
 
 The installer is for everyone on the computer and asks for an administrator.
 It installs:
@@ -291,6 +292,9 @@ It installs:
   `NT SERVICE\hotaru`, starts with the computer, and is started again after a
   failure;
 - a Start Menu entry for the window.
+
+It does not install OpenRGB. Install OpenRGB 1.1 or later and run its
+SDK server. `docs/hardware.md` says why 1.0 is excluded.
 
 The service makes `%ProgramData%\hotaru` when it first starts. The
 uninstaller in `C:\Program Files\hotaru` removes the service and the
