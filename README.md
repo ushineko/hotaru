@@ -269,6 +269,11 @@ MIT. See [LICENSE](LICENSE).
 
 ### Unreleased
 
+- `docs/hardware.md` records the timing of the development machine's MSI
+  GeForce RTX 4090 Suprim Liquid X, measured in the live-effects spike
+  ([#205](https://github.com/ushineko/hotaru/issues/205)). A frame takes
+  about 150 ms, and a frame that follows within about 100 ms cancels it, so
+  the card cannot show a stream. The finding is for that model only.
 - The README and the docs describe Windows: how to build and run the
   installer, what works there and what does not yet, and the Windows test
   machine in `docs/hardware.md`.
