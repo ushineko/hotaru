@@ -37,7 +37,7 @@ support list.
 | Device | Through | Notes |
 |---|---|---|
 | NZXT Kraken 2024 Elite (`1e71:3012`) | both | Lighting through OpenRGB. The radiator fans' RGB daisy-chains into the cooler, and OpenRGB exposes **only** the colour channels. Telemetry and the 640x640 panel are hotaru's own, over `/dev/hidraw` and usbfs. The two Hue 2 channels are separate controllers, so hotaru writes them separately (spec 011). hotaru never writes into the bucket the panel is displaying, because the panel blanks for the length of that transfer (spec 013). OpenRGB 1.0 finishes a mode change on another thread, and a frame sent straight after it interleaves with it on the channel. The ring then lost frames and stuck on one wrong LED. So a frame waits 120 ms after a mode change, and a device already in Direct gets no mode packet (spec 068). The firmware can also turn one ring LED green some seconds after the screen goes to its own readout. So hotaru sends the ring its frame again 12 s after it takes the screen, and 12 s after each switch to the readout (spec 070) |
-| MSI GeForce RTX 4090 Suprim Liquid X | OpenRGB | Accepts `direct/breathing/flashing/off`. It **rejects `static`** and goes dark when it receives it. **Its LEDs wash out.** A pale colour looks close to white, and its middle greens look too bright. A `colour` rule corrects both (spec 066) |
+| MSI GeForce RTX 4090 Suprim Liquid X | OpenRGB | Accepts `direct/breathing/flashing/off`. It **rejects `static`** and goes dark when it receives it. **Its LEDs wash out.** A pale colour looks close to white, and its middle greens look too bright. A `colour` rule corrects both (spec 066). **A frame takes about 150 ms, and a second frame within about 100 ms cancels the first.** See [One GPU that needs time between frames](#one-gpu-that-needs-time-between-frames) |
 | ASUS ROG Maximus Z790 Hero | OpenRGB | Onboard LEDs and four addressable headers. Static drives the onboard LED only. The headers need Direct. **OpenRGB keeps the header sizes, not the board.** OpenRGB 1.1 did not read the sizes 1.0 had saved, so the headers came up at 0 LEDs and the board showed its firmware rainbow. hotaru records each zone's size with the colours, and a restore sizes a header back before writing it (spec 069) |
 | Corsair MM700 | OpenRGB | Its logo has no blue channel, so a request for purple appears as dim red. The write does not fail, and nothing in the protocol reports the limit. OpenRGB's own command line behaves the same way (spec 009). Its LEDs wash out like the 4090's, and a `colour` rule corrects them (spec 066) |
 | Logitech G502 X PLUS | OpenRGB | Wireless. It restores its onboard state on wake, so hotaru rewrites its colour on a timer. Solaar cannot set its colour at all, because its command line drops the colour argument without saying so |
@@ -144,6 +144,48 @@ one. After a restart it has no record until its first write to the device.
 
 These numbers are one desk's, matched by eye. Tune them by looking: change
 the rule, run `hotaru reload`, and apply the scene again.
+
+### One GPU that needs time between frames
+
+**This section describes one card: the MSI GeForce RTX 4090 Suprim Liquid X
+on the development machine.** It is not a finding about the RTX 4090, or
+about MSI cards. Another model, or another revision of this one, can have a
+different controller and different timing. Measure a card before you rely
+on these numbers for it.
+
+The card shows a frame only when no other frame follows it for about 100 ms.
+A stream of frames therefore never shows on it, and an animation drawn by
+the host is not possible.
+
+- **What you see.** The card keeps one colour while frames arrive. The last
+  frame of a stream appears once the stream stops. OpenRGB reports every
+  frame as written, and nothing reports an error.
+- **One frame is seven writes.** OpenRGB 1.1 drives this card with its
+  `MSIGPUv2Controller` driver, at address `0x68` on the GPU's I2C bus. In
+  Direct mode, every frame sets the mode to idle, then the red, green, blue
+  and brightness registers, and then the mode to static.
+- **One frame takes about 150 ms.** The driver waits 20 ms after each write.
+  Measured from the SDK, a frame took 149 ms to 177 ms.
+- **The card needs time in static.** A frame shows only if the card stays in
+  static for between 70 and 100 ms before the next frame sets it to idle.
+  A frame that arrives sooner cancels the frame before it.
+- **The card cannot be read back.** Every register reads `0x00`, and OpenRGB
+  does not read the card either. The 70 to 100 ms comes from single frames
+  at set gaps, watched by a person.
+- **The limit is about 4 frames a second.** That is 150 ms to write a frame
+  and about 100 ms in static. A stream also costs the OpenRGB server 12% to
+  14% of one core.
+
+The server does not drop a frame the card is too slow for. OpenRGB 1.1
+writes `UpdateZoneLeds` requests to one device in order, one at a time. A
+stream faster than about 6 frames a second builds a queue on this card. A
+20 fps stream of 57 seconds left the card about three minutes behind.
+
+Scenes are not affected. Of two writes less than 100 ms apart, the card
+shows the later one, and that is the write hotaru wants
+([#205](https://github.com/ushineko/hotaru/issues/205)). The card's firmware
+modes, such as Breathing, Lightning and Fade In, animate it at no cost to
+the host.
 
 ## Everything else
 
