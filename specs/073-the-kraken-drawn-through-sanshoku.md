@@ -119,8 +119,9 @@ Three things in hotaru stand in the way of drawing it as a canvas (spec 060):
 
 ### R6. sanshoku
 
-- R6.1 hotaru depends on the sanshoku release that carries spec 024. Until
-  it is tagged, the branch's pseudo-version; the PR does not merge on it.
+- R6.1 hotaru depends on the sanshoku release that carries specs 024 and 025
+  (the firmware effects, sanshoku #72). Until it is tagged, the branch's
+  pseudo-version; the PR does not merge on it.
 - R6.2 `screen.Panel.Floor(bytes)` is `ImageFloor(bytes)`:
   `internal/cooler` and `coolertest` follow. hotaru's own `Floor(int)`
   interfaces are left as they are.
@@ -167,8 +168,8 @@ Three things in hotaru stand in the way of drawing it as a canvas (spec 060):
       keep working throughout.
 - [x] R7.2 measured and recorded.
 - [x] Docs per R8.
-- [ ] `go.mod` requires a tagged sanshoku release that carries spec 024, not
-      the branch's pseudo-version (R6.1).
+- [ ] `go.mod` requires a tagged sanshoku release that carries specs 024 and
+      025, not the branch's pseudo-version (R6.1).
 
 ## Risks & Assumptions
 
@@ -178,8 +179,9 @@ Three things in hotaru stand in the way of drawing it as a canvas (spec 060):
   accessory list at start and holds a handle; it writes nothing on its own
   (sanshoku spec 024, Verification), but a person using OpenRGB's window
   would write the same buffer. hardware.md says so.
-- **The firmware effects** (sanshoku #72) are not here. With OpenRGB's
-  detector off they are not reachable until #72 lands.
+- **The firmware effects** come from sanshoku spec 025 as `lighting.Onboard`,
+  which hotaru's spec 071 already lists and sets. Nothing in hotaru changes
+  for them; the attach logs once that the cooler's effect cannot be read.
 - **Rollback:** revert, and switch OpenRGB's detector back on. The former
   record is never removed, so OpenRGB's path finds its colours again.
 
@@ -239,6 +241,15 @@ R4.1 added to the maintainer's `kraken` rule.
   sent the cooler nothing, and its colours stayed. The release's message
   read as the Apex's ("re-enumerates"); it now says the cooler keeps its
   colours and stays attached.
+
+- With sanshoku spec 025 (PR ushineko/sanshoku#74): `hotaru light list`
+  showed the cooler's 14 effects marked `*` before hotaru's renderers, with
+  hotaru's Breathing replaced by the cooler's. A preview of a scene running
+  Tai Chi did not set it ("a preview does not write the device's storage").
+  Applying it ran Tai Chi; at first as a still red ring, because sanshoku put
+  the scene's red in both of Tai Chi's colours. sanshoku now replaces the
+  first colour only, and Tai Chi in red chased red and blue on the ring and
+  the fans.
 
 ### Cost (R7.2)
 
