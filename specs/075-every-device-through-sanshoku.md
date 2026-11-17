@@ -130,8 +130,8 @@ What the drivers need from hotaru, beyond what spec 060 gives a canvas:
 ### Tests
 
 `make test`, `make lint` (0 issues), the GUI tests and govulncheck pass, on
-sanshoku `v0.1.20-0.20261117153911-9691066abda5` (main, with #85 merged, and
-#87, the keyboard's effects).
+sanshoku `v0.1.20-0.20261117161130-afa4e685911f` (main, with #85 and #87
+merged).
 
 - `internal/canvas/zoned_test.go`, `drivers_internal_test.go`: a keyless
   canvas is not one; a zoned canvas gives its zones and a header's length
