@@ -131,3 +131,27 @@ func TestAChainFollowsAndALoopDoesNot(t *testing.T) {
 	assert.Equal(t, "Spectrum Wave", viewOf(t, svc, "Corsair MM700").Device.ActiveMode, "the chain stopped")
 	assert.NotEqual(t, "Spectrum Wave", viewOf(t, svc, "Other Pad").Device.ActiveMode, "a loop followed")
 }
+
+// A full restore writes the leader before its followers, so they start in
+// step as they did when applied (spec 077 R3.5).
+func TestARestoreWritesTheLeaderFirst(t *testing.T) {
+	store := recorder(t)
+	cfg := &config.Config{Devices: []config.DeviceRule{{Match: "maximus", Follow: "kraken"}}}
+	first := servicetest.New(t, cfg,
+		canvastest.NewBoard("ASUS ROG MAXIMUS Z790 HERO", canvastest.Zone("Addressable 1", 4)), leaderCooler())
+	first.SetRecorder(store)
+	red := colour.MustParse("red")
+	_, err := first.Apply(t.Context(), service.Request{
+		Colour: &red, Effects: map[string]scenes.Effect{"kraken": {Mode: "Tai Chi"}},
+	})
+	require.NoError(t, err)
+
+	again := servicetest.New(t, cfg,
+		canvastest.NewBoard("ASUS ROG MAXIMUS Z790 HERO", canvastest.Zone("Addressable 1", 4)), leaderCooler())
+	again.SetRecorder(store)
+	restore, err := again.Reconcile(t.Context(), nil)
+	require.NoError(t, err)
+	require.Len(t, restore.Results, 2)
+	assert.Equal(t, "NZXT Kraken Elite V2", restore.Results[0].Device, "a follower was restored before its leader")
+	assert.Equal(t, "Tai Chi", restore.Results[1].Mode)
+}

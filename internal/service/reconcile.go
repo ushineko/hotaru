@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -105,8 +106,33 @@ func (s *Service) Reconcile(ctx context.Context, only []string) (Restore, error)
 	}
 	desired = adopted(desired, found, s.config())
 
-	var restore Restore
+	/*
+		On a full restore, leaders before the devices that follow them, and
+		each of them started again, so their effects begin in step as they
+		did when applied (spec 077 R3.5).
+	*/
+	cfg := s.config()
+	inStep := map[string]bool{}
+	var order []string
+	for _, d := range leadersFirst(cfg, found) {
+		if _, ok := desired.Devices[d.Name]; ok {
+			order = append(order, d.Name)
+		}
+		if f := devices.RuleFor(cfg, d.Name).Follow; f != "" && len(only) == 0 {
+			inStep[d.Name] = true
+			if l := leaderOf(found, f, d.Name); l != nil {
+				inStep[l.Name] = true
+			}
+		}
+	}
 	for _, name := range sorted(desired.Names()) {
+		if !slices.Contains(order, name) {
+			order = append(order, name)
+		}
+	}
+
+	var restore Restore
+	for _, name := range order {
 		if len(only) > 0 && !named(only, name) {
 			continue
 		}
@@ -155,12 +181,12 @@ func (s *Service) Reconcile(ctx context.Context, only []string) (Restore, error)
 			frame reduces to. See spec 051.
 		*/
 		kept := desired.Devices[name]
-		want := preference{mode: kept.Mode, insist: true, speed: kept.Speed}
+		want := preference{mode: kept.Mode, insist: true, speed: kept.Speed, restart: inStep[name]}
 		if _, has := device.Mode(kept.Mode); !has {
 			// Recorded through OpenRGB, in a mode the canvas does not have
 			// ("Direct", or a firmware mode OpenRGB drove): the colours, in
 			// Static (spec 075).
-			want = preference{mode: canvasStill, insist: true}
+			want = preference{mode: canvasStill, insist: true, restart: inStep[name]}
 		}
 		for _, named := range kept.Named() {
 			if c, err := colour.Parse(named); err == nil {
