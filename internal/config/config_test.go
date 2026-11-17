@@ -219,7 +219,7 @@ func TestTheShippedExampleParsesAndMeansWhatItSays(t *testing.T) {
 		"a segment that addresses nothing is a scene silently doing less than it says")
 
 	require.True(t, cfg.RulesFor("Keychron K4 HE")[0].NeverBlank)
-	require.Equal(t, time.Minute, cfg.RulesFor("G502 X PLUS")[0].Reassert.Duration())
+	require.Equal(t, time.Minute, cfg.RulesFor("Logitech USB Receiver")[0].Reassert.Duration())
 	card := cfg.RulesFor("MSI GeForce RTX 4090 Suprim Liquid X")[0].Colour
 	require.InDelta(t, 2.15, *card.Curve.Green, 1e-9)
 
