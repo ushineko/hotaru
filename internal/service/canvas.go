@@ -40,6 +40,8 @@ type Canvas interface {
 	// Borrowed is a device that stays attached when released: the
 	// cooler's, which another owner holds (spec 073).
 	Borrowed() bool
+	// Hold is how long a frame lasts on a device whose frames fade, or zero.
+	Hold() time.Duration
 
 	// Effects is the firmware's own stored effects, or none (spec 071).
 	Effects() []string
@@ -270,6 +272,7 @@ func (d *drawn) canvasOf() devices.Canvas {
 	d.mu.Unlock()
 	out := devices.Canvas{
 		Drawing: status.Drawing, Interval: status.Interval, Rate: status.Rate, Frames: status.Frames, Own: own,
+		Fades: d.Hold() > 0,
 	}
 	if watch := d.Watch(); watch.Watched {
 		out.Watch = &devices.Watch{Answering: watch.Answering, Asked: watch.Asked, PutBack: watch.PutBack}

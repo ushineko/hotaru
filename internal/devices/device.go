@@ -80,6 +80,9 @@ type Canvas struct {
 	// Own is the device showing its firmware's own stored effect, with
 	// nothing drawn over it (spec 071).
 	Own bool
+	// Fades is a device whose frames do not last (lighting.Fading): the
+	// firmware takes its lights back when frames stop.
+	Fades bool
 	// Watch is the power-cycle watcher's notes, for a device it watches.
 	Watch *Watch
 }
