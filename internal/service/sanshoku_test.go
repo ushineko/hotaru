@@ -95,3 +95,35 @@ func TestAnOpenRGBDeviceOfTheCanvassNameIsItsTwin(t *testing.T) {
 	}
 	assert.Equal(t, 1, handed)
 }
+
+/*
+A record laid out for OpenRGB's sizes is fitted zone by zone: the header's two
+recorded colours are stretched over its four lights, and the board's light
+keeps its own (spec 075).
+*/
+func TestARecordIsFittedToTheZonesAsTheyAre(t *testing.T) {
+	svc := service.New(nil, nil, noServer)
+	store := recorder(t)
+	svc.SetRecorder(store)
+	require.NoError(t, store.Record(boardName, state.Device{
+		Mode:    "Direct",
+		Colours: []colour.Colour{colour.MustParse("white"), colour.MustParse("red"), colour.MustParse("blue")},
+		Zones:   map[string]int{"Header 1": 2},
+	}))
+	board := attachBoard(t, svc)
+
+	restore, err := svc.Reconcile(t.Context(), nil)
+	require.NoError(t, err)
+	require.Len(t, restore.Results, 1)
+	assert.Empty(t, restore.Results[0].Problems)
+	want := [][3]uint8{{255, 255, 255}, {255, 0, 0}, {255, 0, 0}, {0, 0, 255}, {0, 0, 255}}
+	require.Eventually(t, func() bool {
+		for i, w := range want {
+			p, ok := board.Showing(byte(i + 1)) // the fake's keys are 1 on
+			if !ok || [3]uint8{p.R, p.G, p.B} != w {
+				return false
+			}
+		}
+		return true
+	}, eventually, every)
+}

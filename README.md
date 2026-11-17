@@ -275,8 +275,10 @@ MIT. See [LICENSE](LICENSE).
   mainboard, the Corsair MM700, the Keychron K4 HE, the G502 X PLUS and the
   MSI RTX 4090, beside the Apex, the F75 and the Kraken. Zones are named as
   OpenRGB named them; a header's length is a `lengths` rule; a record in
-  OpenRGB's Direct restores in Static. The package no longer depends on
-  `openrgb`, and the udev rules grant the new devices.
+  OpenRGB's Direct restores in Static, fitted zone by zone to the new
+  lengths; the keyboard's own effects come back. With no OpenRGB server and
+  devices drawn, `hotaru light health` is healthy. The package no longer
+  depends on `openrgb`, and the udev rules grant the new devices.
 - The devices hotaru draws itself (the Apex, the F75, the Kraken's lights)
   work with no OpenRGB server: listed, lit by scenes and colours, and
   restored at start (spec

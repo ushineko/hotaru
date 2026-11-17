@@ -349,7 +349,9 @@ sanshoku does not drive.
 
 - **Names are OpenRGB's.** Each driver names the device, its zones and its
   lights as OpenRGB did, so scenes, segments and recorded colours find them.
-  A record in OpenRGB's Direct restores in Static.
+  A record in OpenRGB's Direct restores in Static. A record laid out for
+  OpenRGB's header sizes is fitted to the lengths now: each header's colours
+  are stretched over its strip.
 - **A header's length is a rule.** The mainboard cannot read how many LEDs a
   strip has. OpenRGB kept the length in its profile; now a rule does:
 
@@ -370,6 +372,9 @@ devices:
     formerly: {name: G502 X PLUS}
 ```
 
+- **The keyboard's own effects** are its firmware's 22, named as OpenRGB names
+  them (sanshoku spec 031), so a keyboard recorded in Solid Reactive
+  Multinexus comes back in it.
 - **Stop OpenRGB, or switch off its detectors** for the devices hotaru draws.
   Two writers on one device fight over its lights. While OpenRGB runs, hotaru
   lists its listing of a device it draws as handed over, by node or by name.

@@ -2,11 +2,18 @@
 
 **Issue**: [#211](https://github.com/ushineko/hotaru/issues/211)
 
-## Status: INCOMPLETE
+## Status: COMPLETE
 
 ## Executive Summary
 
-Written last.
+hotaru draws every device on the maintainer's desk through sanshoku and runs
+with OpenRGB stopped; OpenRGB becomes an optional dependency. Zones come from
+the drivers, named as OpenRGB named them; a header's length is a `lengths`
+rule; records made through OpenRGB restore, fitted to the new lengths. The
+live run with OpenRGB stopped found two gaps, both fixed here: the keyboard's
+own effects (sanshoku spec 031) and the zone fit (R3.4). Review
+`internal/service/reconcile.go` (`refit`, the Static fallback) and
+`internal/service/health.go` first.
 
 ## Context
 
@@ -45,7 +52,7 @@ What the drivers need from hotaru, beyond what spec 060 gives a canvas:
 - R1.2 A device that is a `lighting.Canvas` with no keys is not a canvas and is
   closed: every Logitech receiver node is a canvas, empty where nothing behind
   it has per-key lighting.
-- R1.3 sanshoku is the release that carries specs 026 to 030 and the MM700's
+- R1.3 sanshoku is the release that carries specs 026 to 031 and the MM700's
   zones (sanshoku #85) (a pseudo-version until it is tagged).
 
 ### R2. Zones and lengths
@@ -74,6 +81,13 @@ What the drivers need from hotaru, beyond what spec 060 gives a canvas:
 - R3.2 While an OpenRGB server still runs, an OpenRGB device with the same name
   as a canvas is the canvas's twin, as one at the canvas's node is (spec 060):
   the GPU's OpenRGB location is an I2C one, not a node.
+- R3.3 With no OpenRGB server and a canvas drawn, health is healthy and says
+  there is no server; it is unreachable only when nothing is drawn. This
+  replaces spec 074 R2.1, written while OpenRGB was required.
+- R3.4 A record laid out for other zone sizes (OpenRGB's 16 a header) is
+  fitted to the canvas's zones, zone by zone: each recorded zone's colours are
+  stretched or shrunk over the zone's length. Without it, a header's colours
+  start where the sizes before it put them, and a fan's gradient is cut.
 
 ### R4. Packaging
 
@@ -95,8 +109,9 @@ What the drivers need from hotaru, beyond what spec 060 gives a canvas:
       zoned canvas lists its zones; a `lengths` rule resizes before keys are
       read, and a refused length is reported; regrow leaves a canvas alone; a
       record in "Direct" restores a canvas in Static; a same-named OpenRGB
-      device is the canvas's twin.
-- [ ] Live, with someone watching, OpenRGB stopped: every device on the desk
+      device is the canvas's twin; a record is fitted zone by zone; health
+      with canvases and no server is healthy.
+- [x] Live, with someone watching, OpenRGB stopped: every device on the desk
       restores its scene; a scene applies to all of them; the Aura's headers
       light to their full lengths.
 - [x] Docs per R5; packaging per R4.
@@ -115,7 +130,8 @@ What the drivers need from hotaru, beyond what spec 060 gives a canvas:
 ### Tests
 
 `make test`, `make lint` (0 issues), the GUI tests and govulncheck pass, on
-sanshoku `v0.1.20-0.20261117085247-d53af835f479` (main and sanshoku #85).
+sanshoku `v0.1.20-0.20261117153911-9691066abda5` (main, with #85 merged, and
+#87, the keyboard's effects).
 
 - `internal/canvas/zoned_test.go`, `drivers_internal_test.go`: a keyless
   canvas is not one; a zoned canvas gives its zones and a header's length
@@ -126,7 +142,9 @@ sanshoku `v0.1.20-0.20261117085247-d53af835f479` (main and sanshoku #85).
 - `internal/service/sanshoku_test.go`: a zoned canvas is listed with its own
   zones; a record in OpenRGB's Direct restores the canvas in Static and the
   record's zone sizes do not resize it; an OpenRGB device named as a canvas is
-  its twin.
+  its twin; a record of a two-light header is stretched over four lights.
+- `internal/service/absent_test.go`: with a canvas and no server, health is
+  healthy and names the missing server; with neither, unreachable.
 
 ### Discovery on the desk (2026-11-17, read-only, OpenRGB running)
 
@@ -144,7 +162,44 @@ would (18, 16, 20); nothing drawn:
 The MM700's missing zones (its scenes use Left, Right and Logo) are sanshoku
 #85.
 
-### Live
+### Live (2026-11-17, OpenRGB stopped, the maintainer watching)
 
-Not yet run: it needs OpenRGB stopped, the maintainer's rules given the
-lengths and the G502's `formerly`, and someone watching.
+The maintainer's rules gained the Aura's `lengths` (18, 16, 20) and a
+`logitech usb receiver` rule with `formerly: {name: G502 X PLUS}`;
+`openrgb-server.service` was stopped and the dev build restarted.
+
+1. **Attach.** Every device was drawn through sanshoku: the Kraken, the
+   receiver, the Z790, the MM700, the RTX 4090 and the K4 HE. Each restored
+   Static, holding; the G502 and the Kraken's OpenRGB names were listed as
+   handed over.
+2. **The keyboard did not come back in Solid Reactive Multinexus.** Its record
+   (`mode: Solid Reactive Multinexus`, `mode_colour: '#9fc95f'`) had no mode on
+   the canvas, so R3.1 drew it Static. The driver had no firmware effects:
+   sanshoku spec 031 (#86, PR #87) added them. With them, the restore left the
+   keyboard alone, because it found the per-key effect the first run had left
+   and hotaru writes a device's own effect only when asked (spec 071 R6.3).
+   Setting its recorded colour wrote Multinexus in `#9fc95f`: "there it is,
+   fixed." It held through every restart after.
+3. **The rear fan was missing a LED.** A magenta preview lit all 20 LEDs. The
+   record was laid out for OpenRGB's 16 a header (65 colours for 55 lights)
+   and was written flat, so each header's colours started late and the rear
+   fan's ran into header 4's. R3.4 fits the record zone by zone: "yes, full
+   gradient on the rear fan."
+4. **A scene on every device.** `custom3`: "6 of 6 device(s) lit", "everything
+   looks right, no dark leds", and the keyboard in "white multiwide". The
+   scene's 14 targets on the empty header 4 were each reported. The first
+   apply's keyboard effect was covered by a preview started by mistake and
+   then killed; a second apply showed it.
+5. `hotaru light health` with no server: "healthy: 6 devices drawn by hotaru;
+   no OpenRGB server" (R3.3); before R3.3 it said unreachable.
+
+The desk was put back after: the record from before the run, the keyboard in
+Multinexus, the scene label `landscape-mountains`.
+
+### Not covered
+
+- Scenes address each header by LED index as OpenRGB had it (0 to 15). On the
+  18- and 20-LED strips the last LEDs keep what they showed; they looked right
+  in `custom3`. A target on the empty header 4 is reported per LED.
+- A preview killed while it held a firmware effect's colour left it Static
+  until the next apply (step 4); not reproduced.
