@@ -101,7 +101,8 @@ What sanshoku has and lacks (sanshoku #89):
   device with no `follow` is set on its own, as today. A scene that names an
   effect for a follower overrides it for that device, for that scene. Any
   device may lead; a follower of a follower takes the first leader's, and a
-  loop is a rules problem reported at load. The window and `light map` set
+  loop of follows takes nothing, since none of it is given an effect first. A
+  device with one light takes its own best fit (R3.6) over a drawn copy. The window and `light map` set
   and clear `follow`, as they set every other rule. The maintainer's rules
   start with the Aura and the RTX 4090 following the Kraken; the rest are the
   maintainer's to choose.
@@ -210,7 +211,7 @@ What sanshoku has and lacks (sanshoku #89):
     and are restored;
   - a follower takes the leader's effect, colours and speed, and a scene's own
     effect for it wins; a device with no `follow` is untouched; a chain
-    resolves to the first leader; a loop is reported at load;
+    resolves to the first leader; a loop takes nothing;
   - each renderer draws per thing on a ring and a line, at its speed;
   - renderers restart in phase on apply;
   - the 4090 table maps each of the 14;

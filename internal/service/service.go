@@ -521,6 +521,11 @@ func (s *Service) Apply(ctx context.Context, req Request) ([]Result, error) {
 		ctx = withPurpose(ctx, forApply)
 	}
 
+	// Followers take their leader's effect, and leaders are written first
+	// (spec 077 R3.2, R3.5).
+	req, _ = withFollowers(cfg, found, req)
+	found = leadersFirst(cfg, found)
+
 	var results []Result
 	for i := range found {
 		device := found[i]
