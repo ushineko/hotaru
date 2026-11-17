@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -67,6 +68,41 @@ func yamlFor(cfg *config.Config) string {
 		}
 		if rule.Reassert > 0 {
 			fmt.Fprintf(&out, "    reassert: %s\n", rule.Reassert.Duration())
+		}
+		if rule.FrameInterval > 0 {
+			fmt.Fprintf(&out, "    frame_interval: %s\n", rule.FrameInterval.Duration())
+		}
+		if rule.Twin != "" {
+			fmt.Fprintf(&out, "    twin: %q\n", rule.Twin)
+		}
+		if rule.Follow != "" {
+			fmt.Fprintf(&out, "    follow: %q\n", rule.Follow)
+		}
+		/*
+			The keys whose values are maps, as JSON, which YAML reads as its own
+			flow style: whatever a key holds is written back exactly, so a
+			re-run of light map or a trim from light match loses nothing a
+			person or another command set (spec 077).
+		*/
+		for _, field := range []struct {
+			name  string
+			value any
+			set   bool
+		}{
+			{"formerly", rule.Formerly, rule.Formerly != nil},
+			{"lengths", rule.Lengths, len(rule.Lengths) > 0},
+			{"shapes", rule.Shapes, len(rule.Shapes) > 0},
+			{"pace", rule.Pace, len(rule.Pace) > 0},
+			{"colour", rule.Colour, rule.Colour != nil},
+		} {
+			if !field.set {
+				continue
+			}
+			value, err := json.Marshal(field.value)
+			if err != nil {
+				continue // a value that came from JSON marshals back
+			}
+			fmt.Fprintf(&out, "    %s: %s\n", field.name, value)
 		}
 		if len(rule.Segments) == 0 {
 			continue
