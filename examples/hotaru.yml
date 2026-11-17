@@ -64,11 +64,14 @@ devices:
       value: 1
       curve: {green: 2.15}
 
-  - match: g502
-    # Wireless. Under OpenRGB it restored its onboard colour when it woke, so
-    # the colour was re-sent on an interval. Drawn through sanshoku, a frame
-    # held through the mouse's idle timer on the bench (sanshoku spec 030),
-    # and a re-assert does not yet reach a device hotaru draws.
+  - match: logitech usb receiver
+    # The G502 X PLUS, drawn on its receiver's node, which is the name it has
+    # now; scenes made under "G502 X PLUS" still find it.
+    formerly: {name: G502 X PLUS}
+    # Wireless. A re-assert sends the frame it holds again on the interval,
+    # for a mouse that wakes on its own lighting. On the bench a frame held
+    # through its idle timer (sanshoku spec 030), so this may cost radio
+    # traffic for nothing; spec 077's E3 measures it.
     reassert: 60s
 
 # Three of this machine's nine zones -- Kraken channel 1, board headers 1 and 4
