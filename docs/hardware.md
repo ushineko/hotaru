@@ -37,11 +37,11 @@ support list.
 | Device | Through | Notes |
 |---|---|---|
 | NZXT Kraken 2024 Elite (`1e71:3012`) | both | hotaru draws the ring and the fans itself, through sanshoku, on the same handle that reads the telemetry and draws the 640x640 panel (spec 073). OpenRGB's detector for the cooler is switched off; see below. The radiator fans' RGB daisy-chains into the cooler. hotaru never writes into the bucket the panel is displaying, because the panel blanks for the length of that transfer (spec 013) |
-| MSI GeForce RTX 4090 Suprim Liquid X | OpenRGB | Accepts `direct/breathing/flashing/off`. It **rejects `static`** and goes dark when it receives it. **Its LEDs wash out.** A pale colour looks close to white, and its middle greens look too bright. A `colour` rule corrects both (spec 066) |
-| ASUS ROG Maximus Z790 Hero | OpenRGB | Onboard LEDs and four addressable headers. Static drives the onboard LED only. The headers need Direct. **OpenRGB keeps the header sizes, not the board.** OpenRGB 1.1 did not read the sizes 1.0 had saved, so the headers came up at 0 LEDs and the board showed its firmware rainbow. hotaru records each zone's size with the colours, and a restore sizes a header back before writing it (spec 069) |
-| Corsair MM700 | OpenRGB | Its logo has no blue channel, so a request for purple appears as dim red. The write does not fail, and nothing in the protocol reports the limit. OpenRGB's own command line behaves the same way (spec 009). Its LEDs wash out like the 4090's, and a `colour` rule corrects them (spec 066) |
-| Logitech G502 X PLUS | OpenRGB | Wireless. It restores its onboard state on wake, so hotaru rewrites its colour on a timer. Solaar cannot set its colour at all, because its command line drops the colour argument without saying so |
-| Keychron K4 HE | OpenRGB | The board advertises no Off mode, so `off` resolves to Direct with black and kills the backlight. hotaru colours the board instead, and never blanks it. **Per-key colour takes hue but not value.** `#ffffff` and `#101010` look the same on the board, and `#000000` is as lit as any other colour. A red row beside a green one draws correctly. OpenRGB's own command line reproduces this, so it is not hotaru's fault. Firmware `v1.1.1 2025-06-17`. **The lock keys belong to the firmware.** It paints Caps Lock and Num Lock white while they are engaged, over whatever hotaru wrote, and nothing on the host overrides that. The firmware does this deliberately: an indicator the host can switch off is an indicator that is off when it matters. Both findings are why spec 043 colours those keys rather than blanking them (#110) |
+| MSI GeForce RTX 4090 Suprim Liquid X | sanshoku | Drawn through sanshoku over the card's I2C adapter (spec 075; sanshoku spec 029). One light: a colour is the card's static mode, at most about four a second, and its own effects (Breathing and the rest) carry it moving. **Its LEDs wash out.** A pale colour looks close to white, and its middle greens look too bright. A `colour` rule corrects it (spec 066) |
+| ASUS ROG Maximus Z790 Hero | sanshoku | Drawn through sanshoku (spec 075; sanshoku spec 027): the onboard LED and four addressable headers, named as OpenRGB named them. **The board cannot read a header's length**, so a `lengths` rule gives it. On this desk the accent strip has 18, the side fans 16 and the rear fan 20; OpenRGB had 16 for each |
+| Corsair MM700 | sanshoku | Drawn through sanshoku (spec 075; sanshoku spec 026). It keeps a frame. Its logo has no blue channel, so a request for purple appears as dim red (spec 009). Its LEDs wash out like the graphics card's |
+| Logitech G502 X PLUS | sanshoku | Wireless, drawn through sanshoku on its receiver's node (spec 075; sanshoku spec 030), whose name is the receiver's: a `formerly` rule maps "G502 X PLUS" onto it. A frame holds; asleep, the mouse answers nothing, and the next frame after it wakes takes it again |
+| Keychron K4 HE | sanshoku | Drawn through sanshoku over VIA (spec 075; sanshoku spec 028). **The firmware takes each key's hue and saturation and ignores its value.** The board's one brightness follows the brightest key. A key cannot be dark beside a lit one: a black key shows white |
 | Intel Core i9-14900K | kernel | CPU package temperature from `coretemp`, read by label. Never by hwmon index: the kernel assigns those numbers in probe order, and they move between boots |
 | MSI GeForce RTX 4090 | `nvidia-smi` | NVIDIA's driver registers no hwmon, so the dashboard reads the GPU temperature from the tool. It costs 18 ms, once per update. hotaru reads AMD and nouveau cards from `/sys/class/hwmon` like anything else |
 
@@ -341,6 +341,38 @@ devices:
       name: NZXT Kraken 2024 ELITE Series RGB
       zones: {"Hue 2 Channel 1": Ring, "Hue 2 Channel 2": Fan}
 ```
+
+**Every device without OpenRGB.** Since spec 075 hotaru draws the mainboard,
+the mousepad, the keyboard, the mouse and the graphics card through sanshoku
+too, so it runs with OpenRGB stopped. OpenRGB is optional: it adds hardware
+sanshoku does not drive.
+
+- **Names are OpenRGB's.** Each driver names the device, its zones and its
+  lights as OpenRGB did, so scenes, segments and recorded colours find them.
+  A record in OpenRGB's Direct restores in Static.
+- **A header's length is a rule.** The mainboard cannot read how many LEDs a
+  strip has. OpenRGB kept the length in its profile; now a rule does:
+
+```yaml
+devices:
+  - match: maximus
+    lengths: {"Addressable RGB Header 1": 18, "Addressable RGB Header 2": 16,
+              "Addressable RGB Header 3": 20}
+```
+
+- **The mouse is drawn on its receiver's node**, which is named "Logitech USB
+  Receiver". A `formerly` rule keeps scenes written for OpenRGB's "G502 X
+  PLUS":
+
+```yaml
+devices:
+  - match: logitech usb receiver
+    formerly: {name: G502 X PLUS}
+```
+
+- **Stop OpenRGB, or switch off its detectors** for the devices hotaru draws.
+  Two writers on one device fight over its lights. While OpenRGB runs, hotaru
+  lists its listing of a device it draws as handed over, by node or by name.
 
 **The AULA F75: its own effects, and frames when asked.** Measured on Windows,
 through the keyboard's 2.4 GHz receiver (spec

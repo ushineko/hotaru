@@ -280,3 +280,45 @@ func (t *Ticker) Stopped() bool {
 	defer t.mu.Unlock()
 	return t.stopped
 }
+
+/*
+Zoned is a canvas that names its zones, as sanshoku's Aura does (spec 075):
+a fixed zone of Fixed lights, then a resizable header of Header lights, 0 to
+Max. Resize changes Lights.
+*/
+type Zoned struct {
+	*Device
+	Fixed, Header, Max int
+}
+
+// NewZoned is a board with fixed lights and a header of none.
+func NewZoned(fixed, most int) *Zoned {
+	z := &Zoned{Device: New(fixed), Fixed: fixed, Max: most}
+	z.Name, z.Path = "fake board", "fake:board"
+	return z
+}
+
+// Zones is the fixed zone, "Board", and the header, "Header 1".
+func (z *Zoned) Zones() []lighting.Zone {
+	z.mu.Lock()
+	defer z.mu.Unlock()
+	return []lighting.Zone{
+		{Name: "Board", First: 0, Count: z.Fixed},
+		{Name: "Header 1", First: z.Fixed, Count: z.Header, Max: z.Max},
+	}
+}
+
+// Resize sets the header's length, refusing another zone or a length out of
+// range.
+func (z *Zoned) Resize(zone string, lights int) error {
+	z.mu.Lock()
+	defer z.mu.Unlock()
+	if zone != "Header 1" {
+		return fmt.Errorf("%q: %w", zone, lighting.ErrNoZone)
+	}
+	if lights < 0 || lights > z.Max {
+		return fmt.Errorf("%d lights: out of range", lights)
+	}
+	z.Header, z.Lights = lights, z.Fixed+lights
+	return nil
+}

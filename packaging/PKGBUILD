@@ -24,7 +24,7 @@ makedepends=('go' 'libglvnd' 'libx11' 'libxcursor' 'libxrandr' 'libxinerama'
 # PKGBUILD to declare at the top what its packages depend on, and it is right
 # to: this is the answer to "what does installing hotaru pull in", and reading
 # it should not mean reading two shell functions.
-depends=('glibc' 'openrgb')
+depends=('glibc')
 source=("$pkgbase-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
 sha256sums=('4fbaff588b7191cd3ee27e05f1fee638adac4e90b063643a45124e52f70f2ab0')
 
@@ -63,12 +63,12 @@ check() {
 }
 
 package_hotaru() {
-  # namcap reports openrgb as possibly unneeded, because nothing in the
-  # binary links against it. Nothing would: it is a daemon hotaru speaks to
-  # over a socket, and it is a hard dependency on purpose -- see
-  # docs/packaging.md, "The rule that decides everything else".
+  # OpenRGB is optional (spec 075): hotaru draws every device it supports
+  # through sanshoku, and speaks to an OpenRGB server only for devices sanshoku
+  # does not drive.
   optdepends=('nvidia-utils: GPU temperature on the dashboard'
-              'hotaru-gui: the desktop window')
+              'hotaru-gui: the desktop window'
+              'openrgb: lighting for devices sanshoku does not drive')
 
   cd "$pkgbase-$pkgver"
 

@@ -29,3 +29,16 @@ SUBSYSTEM=="usb", ATTRS{idVendor}=="1e71", TAG+="uaccess"
 # reason as the one above.
 
 KERNEL=="hidraw*", SUBSYSTEMS=="usb", ATTRS{idVendor}=="1038", TAG+="uaccess"
+
+# The rest of what hotaru draws through sanshoku (spec 075), on the same terms
+# and from sanshoku's packaging/60-sanshoku.rules: 0b05 ASUS (the Aura
+# mainboard controller), 1b1c Corsair (the MM700), 3434 Keychron (VIA's raw
+# interface), 046d Logitech (the receivers, over HID++), and the NVIDIA
+# driver's I2C adapters, where an MSI graphics card's lighting controller sits
+# (which also needs the i2c-dev module loaded).
+
+KERNEL=="hidraw*", SUBSYSTEMS=="usb", ATTRS{idVendor}=="0b05", TAG+="uaccess"
+KERNEL=="hidraw*", SUBSYSTEMS=="usb", ATTRS{idVendor}=="1b1c", TAG+="uaccess"
+KERNEL=="hidraw*", SUBSYSTEMS=="usb", ATTRS{idVendor}=="3434", TAG+="uaccess"
+KERNEL=="hidraw*", SUBSYSTEMS=="usb", ATTRS{idVendor}=="046d", TAG+="uaccess"
+SUBSYSTEM=="i2c-dev", ATTR{name}=="NVIDIA i2c adapter *", TAG+="uaccess"

@@ -170,6 +170,12 @@ func (s *Service) Reconcile(ctx context.Context, only []string) (Restore, error)
 		*/
 		kept := desired.Devices[name]
 		want := preference{mode: kept.Mode, insist: true, speed: kept.Speed}
+		if _, has := device.Mode(kept.Mode); device.Canvas != nil && !has {
+			// Recorded through OpenRGB, in a mode the canvas does not have
+			// ("Direct", or a firmware mode OpenRGB drove): the colours, in
+			// Static (spec 075).
+			want = preference{mode: canvasStill, insist: true}
+		}
 		for _, named := range kept.Named() {
 			if c, err := colour.Parse(named); err == nil {
 				want.colours = append(want.colours, c)
@@ -291,6 +297,11 @@ more LEDs than recorded is somebody's change, not a loss.
 func regrow(ctx context.Context, client openrgb.Client, device *devices.Device,
 	recorded map[string]int,
 ) (*devices.Device, []string, []string) {
+	if device.Canvas != nil {
+		// Its lengths are the rules', and a size OpenRGB recorded for the
+		// same name may be wrong (spec 075).
+		return device, nil, nil
+	}
 	var resized, problems []string
 	for _, zone := range device.Zones {
 		want, ok := recorded[zone.Name]

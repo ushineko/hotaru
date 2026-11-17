@@ -32,6 +32,9 @@ type Rule struct {
 	// Formerly is the device's OpenRGB name and zones, for one OpenRGB no
 	// longer lists (spec 073). See config.DeviceRule.
 	Formerly *config.Former
+	// Lengths are the LED counts of zones the device cannot read (spec
+	// 075). See config.DeviceRule.
+	Lengths map[string]int
 	// Colour corrects what is written to lights that wash out (spec 066).
 	Colour Profile
 }
@@ -87,6 +90,12 @@ func MergeRules(rules []config.DeviceRule) Rule {
 		}
 		if strings.TrimSpace(r.Twin) != "" {
 			out.Twin = strings.TrimSpace(r.Twin)
+		}
+		for zone, n := range r.Lengths {
+			if out.Lengths == nil {
+				out.Lengths = map[string]int{}
+			}
+			out.Lengths[zone] = n
 		}
 		if r.Formerly != nil && strings.TrimSpace(r.Formerly.Name) != "" {
 			former := *r.Formerly

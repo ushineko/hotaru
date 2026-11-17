@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -147,6 +148,10 @@ func serveCanvas(ctx context.Context, svc *service.Service, device *canvas.Devic
 	drawing, stop := context.WithCancel(ctx)
 	defer stop()
 
+	// Before the animator reads the keys: a header's length changes them
+	// (spec 075).
+	lengthen(svc, device, report)
+
 	animator := canvas.NewAnimator(device, nil, func(format string, args ...any) {
 		report(device.Name()+": "+format, args...)
 	})
@@ -216,4 +221,23 @@ func serveCanvas(ctx context.Context, svc *service.Service, device *canvas.Devic
 	svc.DetachCanvas(attachment)
 	report("%s went away; looking for it again", device.Name())
 	return true
+}
+
+/*
+lengthen gives each zone a rule names its length (spec 075): an addressable
+header's strip, which its board cannot read. A length the device refuses is
+reported and the zone keeps the one it had.
+*/
+func lengthen(svc *service.Service, device *canvas.Device, report func(string, ...any)) {
+	lengths := svc.Lengths(device.Name())
+	zones := make([]string, 0, len(lengths))
+	for zone := range lengths {
+		zones = append(zones, zone)
+	}
+	sort.Strings(zones)
+	for _, zone := range zones {
+		if err := device.Resize(zone, lengths[zone]); err != nil {
+			report("could not give %s %d lights: %v", zone, lengths[zone], err)
+		}
+	}
 }

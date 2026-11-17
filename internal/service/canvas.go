@@ -42,6 +42,9 @@ type Canvas interface {
 	Borrowed() bool
 	// Hold is how long a frame lasts on a device whose frames fade, or zero.
 	Hold() time.Duration
+	// Zones is the device's own zones, where it names them, or nil (spec
+	// 075).
+	Zones() []lighting.Zone
 
 	// Effects is the firmware's own stored effects, or none (spec 071).
 	Effects() []string
@@ -181,6 +184,30 @@ func formerly(canvas devices.Device, former config.Former) devices.Device {
 }
 
 /*
+zones is a canvas's zones: the device's own where it names them (spec 075),
+as OpenRGB named them, so scenes and segments written against OpenRGB find
+them; else spec 073's, from the key names.
+*/
+func (d *drawn) zones(keys []lighting.Key) []devices.Zone {
+	own := d.Zones()
+	if len(own) == 0 {
+		return keyZones(keys)
+	}
+	out := make([]devices.Zone, 0, len(own))
+	for _, z := range own {
+		zone := devices.Zone{Name: z.Name, Shape: devices.ShapeLine, First: z.First, Count: z.Count}
+		if z.Count == 1 && !z.Resizable() {
+			zone.Shape = devices.ShapeSingle
+		}
+		if z.Resizable() {
+			zone.Min, zone.Max = z.Min, z.Max
+		}
+		out = append(out, zone)
+	}
+	return out
+}
+
+/*
 keyZones is a canvas's zones. Where every key is named a word and a number
 ("ring 3", "fan 12"), as the cooler's are, each word is a zone in key order
 (Ring, Fan), so a scene can address the ring as OpenRGB's listing could
@@ -221,6 +248,11 @@ func (s *Service) Stays(name string) bool {
 		}
 	}
 	return false
+}
+
+// Lengths are the zone lengths the rules give a device (spec 075).
+func (s *Service) Lengths(name string) map[string]int {
+	return devices.RuleFor(s.config(), name).Lengths
 }
 
 // settleWait bounds the wait for an animator to stop drawing.
@@ -537,7 +569,7 @@ func (d *drawn) device() devices.Device {
 		Name:       d.Name(),
 		Location:   d.Path(),
 		ActiveMode: active.effect.Name,
-		Zones:      keyZones(keys),
+		Zones:      d.zones(keys),
 		LEDCount:   len(keys),
 		Colours:    colours,
 	}
@@ -784,6 +816,11 @@ func twinOf(device devices.Device, all []*drawn, cfg *config.Config) string {
 		}
 		where := strings.TrimSpace(strings.TrimPrefix(device.Location, "HID:"))
 		if where != "" && where == d.Path() {
+			return d.Name()
+		}
+		// A canvas named as OpenRGB names the same hardware (spec 075): the
+		// graphics card's OpenRGB location is an I2C one, not a node.
+		if strings.EqualFold(device.Name, d.Name()) && device.Canvas == nil {
 			return d.Name()
 		}
 	}
