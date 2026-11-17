@@ -81,6 +81,9 @@ on Return.
 
 ### R4. light map goes
 
+Decided by the maintainer on 2026-11-17: removed entirely, not kept as a
+guided list, and the settings only it wrote are set by hand.
+
 - R4.1 `hotaru light map` is removed. Run, it says which commands replace it.
 - R4.2 What only the wizard set:
   - `never_blank` and a stay-dark `solid_modes` (a keyboard that cannot go
@@ -140,6 +143,8 @@ and the README changelog and first-run steps.
 
 ## Alternatives Considered
 
+- Keep `light map` as a short guided list that runs these commands in turn.
+  Rejected by the maintainer: removed entirely.
 - Keep the wizard and fix it further. Rejected: the bugs were fixed, and it
   is still a long run of judgements with one place to go wrong per answer.
 - Find a header's length by halving, as spec 077 R4.3 does. Rejected: one
