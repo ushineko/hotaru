@@ -181,7 +181,9 @@ func Map(ctx context.Context, client *api.Client, asker Asker, only ...string) e
 	m := &mapping{client: client, asker: asker, list: list, existing: existing, learned: map[string]notes{}}
 	var order []string
 	for _, device := range list {
-		if !device.InScope || device.LEDs == 0 || !wanted(only, device.Name) {
+		if !device.InScope || device.LEDs == 0 || device.HandedTo != "" || !wanted(only, device.Name) {
+			// A name a device was formerly called is the same lights, asked
+			// about under the name it has now.
 			continue
 		}
 		if err := m.device(ctx, device); err != nil {
@@ -501,7 +503,7 @@ func mapDevice(ctx context.Context, client *api.Client, asker Asker, device api.
 			continue // nothing attached to this one
 		}
 
-		parts, err := split(ctx, client, asker, device, zone, what, mode)
+		parts, err := split(ctx, client, asker, device, zone, what, mode, existing, present)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -606,7 +608,7 @@ division arithmetically. Bisection is the fallback for a division that is not
 clean, not the opening move.
 */
 func split(ctx context.Context, client *api.Client, asker Asker,
-	device api.Device, zone api.Zone, what, mode string,
+	device api.Device, zone api.Zone, what, mode string, existing *config.Config, present []string,
 ) ([]namedSegment, error) {
 	whole := namedSegment{Device: device.Name, Zone: zone.Name, Name: what, Whole: true,
 		First: 0, Last: zone.Count - 1}
@@ -629,6 +631,9 @@ func split(ctx context.Context, client *api.Client, asker Asker,
 		the accessories in its slots) is divided as the device says, with
 		nothing asked (spec 077 R4.1).
 	*/
+	if len(zone.Parts) == 1 {
+		return []namedSegment{whole}, nil // one thing, as the device counts it
+	}
 	if len(zone.Parts) > 1 {
 		var parts []namedSegment
 		first := 0
@@ -636,8 +641,28 @@ func split(ctx context.Context, client *api.Client, asker Asker,
 			parts = append(parts, namedSegment{Device: device.Name, Zone: zone.Name, First: first, Last: first + n - 1})
 			first += n
 		}
+		/*
+			Each still named: lit a colour apiece and asked, with last time's
+			names as the defaults. Left unnamed, the Kraken's fans were
+			written as nothing (the live run).
+		*/
 		asker.Say("  %s is %d things, as the device counts them.", what, len(parts))
-		return parts, nil
+		if err := light(ctx, client, asker, device.Name, mode, partAssignments(device.Name, zone, parts)); err != nil {
+			return nil, err
+		}
+		for i := range parts {
+			was := knownRange(existing, device.Name, zone.Name, parts[i].First, parts[i].Last, present)
+			question := fmt.Sprintf("  What is %s?", palette[i%len(palette)])
+			if was != "" {
+				question = fmt.Sprintf("  What is %s? [%s]", palette[i%len(palette)], was)
+			}
+			name, err := askNameOr(asker, question, was)
+			if err != nil {
+				return nil, err
+			}
+			parts[i].Name = name
+		}
+		return keepNamed(parts), nil
 	}
 
 	/*
@@ -826,6 +851,9 @@ func bisect(ctx context.Context, client *api.Client, asker Asker,
 func names(list []api.Device) []string {
 	out := make([]string, 0, len(list))
 	for _, device := range list {
+		if device.HandedTo != "" {
+			continue // a name the device formerly had: the same lights
+		}
 		out = append(out, device.Name)
 	}
 	return out
