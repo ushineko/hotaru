@@ -329,3 +329,33 @@ best fit, Fade In, fading between red and blue.
 - **E2:** the Aura and the Kraken in step at 1, 5 and 15 minutes: no drift.
 - **E3:** the G502 left untouched past its sleep, then moved: it showed the
   scene's colours.
+
+### E4: the RTX 4090's best fits (2026-11-17, the maintainer watching)
+
+Each of the Kraken's effects given to the Kraken alone, the 4090 following.
+Three faults found and fixed on the way, each with a test:
+
+- Pulse: the card's Breathing takes two colours and filled the second with
+  its own green. One colour now fills every slot of a firmware effect.
+- Breathing: the card's own Breathing was given the Kraken's speed as it
+  stood, out of the card's range, and held Static. The speed now goes across
+  as a share of each range.
+- Rainbow Flow: the scene's two colours made the Kraken's driver refuse an
+  effect that takes none, and the cooler held red. A firmware effect is now
+  given only the colours it takes.
+
+| Kraken | 4090 | Seen |
+|---|---|---|
+| Fading | Color Cycle | yes, close enough |
+| Spectrum Wave | Rainbow Wave | yes, close enough |
+| Covering Marquee | Flowing | yes, close enough |
+| Alternating | Fade In | yes, close enough |
+| Pulse | Breathing | was red and green (card filled slot 2); fixed, red only, fair |
+| Breathing | Breathing (own) | was Static (Kraken speed out of card range); fixed, red, fair |
+| Candle | Breathing | close enough |
+| Starry Night | Breathing | close enough |
+| Rainbow Flow | Rainbow Wave | Kraken held red (colours on a colourless effect); fixed, fair |
+| Super Rainbow | Rainbow Wave | close enough |
+| Rainbow Pulse | Rainbow Wave | close enough |
+| Tai Chi | Fade In | fair (E2 run, red/blue) |
+| Water Cooler | Fade In | close enough |
