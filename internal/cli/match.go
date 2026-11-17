@@ -11,7 +11,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/ushineko/hotaru/internal/api"
-	"github.com/ushineko/hotaru/internal/config"
 )
 
 /*
@@ -68,7 +67,7 @@ Match runs effect on the device named by device and on its leader, and lets a
 person trim the device's pace until the two look alike, then writes the trim.
 */
 func Match(ctx context.Context, client *api.Client, asker Asker, device, effect, with, shade string) error {
-	cfg, path := existingRules(asker)
+	cfg, _ := existingRules(asker)
 	found, err := client.Devices(ctx)
 	if err != nil {
 		return quiet(err)
@@ -146,43 +145,23 @@ func Match(ctx context.Context, client *api.Client, asker Asker, device, effect,
 			asker.Say("Left as it was. Nothing was written.")
 			return nil
 		case "":
-			return keepPace(ctx, client, asker, cfg, path, target.Name, effect, pace)
+			return keepPace(ctx, client, asker, target.Name, effect, pace)
 		default:
 			asker.Say("  f, s, F, S, a pace, r, Return or q.")
 		}
 	}
 }
 
-// keepPace writes a device's pace for an effect to the rules.
-func keepPace(ctx context.Context, client *api.Client, asker Asker, cfg *config.Config, path, device, effect string, pace float64) error {
-	if path == "" {
-		return errors.New("there is no rules file to write the pace to")
-	}
+// keepPace writes a device's pace for an effect to the rules, through the
+// service, as the window does.
+func keepPace(ctx context.Context, client *api.Client, asker Asker, device, effect string, pace float64) error {
 	pace = math.Round(pace*100) / 100
-	rule := ruleFor(cfg, device)
-	if rule.Pace == nil {
-		rule.Pace = map[string]float64{}
+	out, err := client.Rule(ctx, api.RuleRequest{Device: device, Pace: map[string]float64{effect: pace}})
+	if err != nil {
+		return quiet(err)
 	}
-	for name := range rule.Pace {
-		if strings.EqualFold(name, effect) {
-			delete(rule.Pace, name)
-		}
-	}
-	rule.Pace[effect] = pace
-	asker.Say("%s's pace for %s is %.2f.", device, effect, pace)
-	return offerToWrite(ctx, client, asker, yamlFor(cfg), path)
-}
-
-// ruleFor is the rule a device's own settings go in: the last that matches
-// it, or a new one for it.
-func ruleFor(cfg *config.Config, device string) *config.DeviceRule {
-	for i := len(cfg.Devices) - 1; i >= 0; i-- {
-		if strings.Contains(strings.ToLower(device), strings.ToLower(cfg.Devices[i].Match)) {
-			return &cfg.Devices[i]
-		}
-	}
-	cfg.Devices = append(cfg.Devices, config.DeviceRule{Match: strings.ToLower(device)})
-	return &cfg.Devices[len(cfg.Devices)-1]
+	asker.Say("%s's pace for %s is %.2f, written to %s and in use now.", device, effect, pace, out.RulesFile)
+	return nil
 }
 
 // named is the device a name means, by any part of it, leaving out a name a
@@ -246,6 +225,46 @@ lengths to keep it; ` + "`hotaru light map`" + ` finds and writes it for you.
 				return quiet(err)
 			}
 			cmd.Printf("%s's %s has %d lights until the service stops.\n", target.Name, zone, lights)
+			return nil
+		},
+	}
+	return cmd
+}
+
+/*
+followCommand sets what a device follows, or stops it following (spec 077
+R3.2), as the window's Follows does.
+*/
+func followCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "follow <device> <leader|none>",
+		Short: "Make a device take another's effect, colours and speed",
+		Long: `Make a device follow another: whenever the leader is given an effect, the
+device takes it too, in step, with the leader's colours and speed. It starts
+now, on the leader's current effect. "none" stops it following, and it keeps
+what it shows until it is given something else.
+
+	hotaru light follow maximus kraken
+	hotaru light follow maximus none`,
+		Args: cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, err := client(cmd)
+			if err != nil {
+				return err
+			}
+			leader := args[1]
+			if strings.EqualFold(leader, "none") {
+				leader = ""
+			}
+			out, err := client.Rule(cmd.Context(), api.RuleRequest{Device: args[0], Follow: &leader})
+			if err != nil {
+				return quiet(err)
+			}
+			if leader == "" {
+				cmd.Printf("%q follows nothing now; written to %s.\n", out.Match, out.RulesFile)
+				return nil
+			}
+			cmd.Printf("%q follows %s now; written to %s.\n", out.Match, leader, out.RulesFile)
 			return nil
 		},
 	}

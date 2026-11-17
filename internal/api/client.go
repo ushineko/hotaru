@@ -92,6 +92,14 @@ func (c *Client) Apply(ctx context.Context, req ApplyRequest) (ApplyResponse, er
 	return out, err
 }
 
+// Rule changes one device's rule: what it follows, and its pace per effect
+// (spec 077).
+func (c *Client) Rule(ctx context.Context, req RuleRequest) (RuleResponse, error) {
+	var out RuleResponse
+	err := c.do(ctx, http.MethodPost, "/"+Version+"/rules/device", req, &out)
+	return out, err
+}
+
 // Length gives a zone of a device hotaru draws a length until the service
 // stops (spec 077 R4.3).
 func (c *Client) Length(ctx context.Context, device, zone string, lights int) error {

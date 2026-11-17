@@ -233,6 +233,23 @@ type Zone struct {
 }
 
 /*
+RuleRequest is the body of POST /v1/rules/device: a change to one device's
+rule (spec 077 R3.2, R3.9). Follow names a device to follow, empty to stop;
+absent leaves it. Pace sets the pace for each effect named, zero to remove it.
+*/
+type RuleRequest struct {
+	Device string             `json:"device"`
+	Follow *string            `json:"follow,omitempty"`
+	Pace   map[string]float64 `json:"pace,omitempty"`
+}
+
+// RuleResponse says which rule was changed, and in which file.
+type RuleResponse struct {
+	RulesFile string `json:"rules_file"`
+	Match     string `json:"match"`
+}
+
+/*
 LengthRequest is the body of POST /v1/lighting/length: a zone of a device
 hotaru draws, by the device's full name and the zone's, given a length until
 the service stops (spec 077 R4.3). The rules' lengths are what lasts.

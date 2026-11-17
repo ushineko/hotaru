@@ -71,6 +71,7 @@ func Routes() []string {
 		"POST /" + Version + "/preview/release",
 		"POST /" + Version + "/reconcile",
 		"POST /" + Version + "/reload",
+		"POST /" + Version + "/rules/device",
 	}
 }
 
@@ -833,6 +834,24 @@ func Handler(svc *service.Service) http.Handler {
 		reaches: a device unplugged and plugged back in, which the server
 		cannot see until it enumerates again. See spec 058.
 	*/
+
+	mux.HandleFunc("POST /"+Version+"/rules/device", func(w http.ResponseWriter, r *http.Request) {
+		var req RuleRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			write(w, http.StatusBadRequest, Error{Error: "that request does not decode", Detail: err.Error()})
+			return
+		}
+		match, err := svc.SetRule(r.Context(), req.Device, service.RuleChange{Follow: req.Follow, Pace: req.Pace})
+		var bad *service.BadRule
+		switch {
+		case errors.As(err, &bad):
+			write(w, http.StatusBadRequest, Error{Error: err.Error()})
+		case err != nil:
+			fail(w, err)
+		default:
+			write(w, http.StatusOK, RuleResponse{RulesFile: svc.RulesPath(), Match: match})
+		}
+	})
 
 	mux.HandleFunc("POST /"+Version+"/reload", func(w http.ResponseWriter, _ *http.Request) {
 		problems, err := svc.Reload()
