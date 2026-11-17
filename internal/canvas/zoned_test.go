@@ -20,7 +20,7 @@ func TestAKeylessCanvasIsNotOne(t *testing.T) {
 
 // A zoned canvas gives its zones, and a header's length changes its keys.
 func TestAZonedCanvasIsResized(t *testing.T) {
-	board := canvastest.NewZoned(1, 500)
+	board := canvastest.NewBoard("fake board", canvastest.Zone("Board", 1), canvastest.Header("Header 1", 0, 500))
 	device, ok := canvas.New(board)
 	require.True(t, ok)
 	assert.Len(t, device.Keys(), 1)
@@ -30,6 +30,7 @@ func TestAZonedCanvasIsResized(t *testing.T) {
 	assert.Len(t, device.Keys(), 19, "the keys were not read again")
 
 	require.ErrorIs(t, device.Resize("Board", 2), lighting.ErrNoZone)
+	require.ErrorIs(t, device.Resize("Header 9", 2), lighting.ErrNoZone)
 	require.Error(t, device.Resize("Header 1", 501))
 	assert.Len(t, device.Keys(), 19)
 

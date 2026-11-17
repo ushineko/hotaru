@@ -7,8 +7,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 	hw "github.com/ushineko/hotaru/internal/cooler" // `cooler` is a fixture in this package
-	"github.com/ushineko/hotaru/internal/openrgb"
 	"github.com/ushineko/hotaru/internal/service"
+	"github.com/ushineko/hotaru/internal/service/servicetest"
 )
 
 // panel is a cooler that only has a screen, which is the part of it this file
@@ -41,7 +41,7 @@ func (d *screenAuthor) Redraw()  { d.redrawn++ }
 
 func drawn(t *testing.T) (*service.Service, *panel, *screenAuthor) {
 	t.Helper()
-	svc := service.New(nil, openrgb.NewFake(), "")
+	svc := servicetest.New(t, nil)
 	screen, board := &panel{}, &screenAuthor{}
 	svc.SetCooler(screen)
 	svc.SetDashboard(board)
@@ -90,7 +90,7 @@ func TestBrightnessLeavesTheAuthorshipAlone(t *testing.T) {
 }
 
 func TestAMachineWithNoDashboardSaysSo(t *testing.T) {
-	svc := service.New(nil, openrgb.NewFake(), "")
+	svc := servicetest.New(t, nil)
 	svc.SetCooler(&panel{})
 
 	require.ErrorContains(t, svc.Draw(t.Context(), service.Screen{Dashboard: true}), "no dashboard")

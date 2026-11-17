@@ -8,11 +8,13 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"github.com/ushineko/hotaru/internal/canvas/canvastest"
 	"github.com/ushineko/hotaru/internal/colour"
 	"github.com/ushineko/hotaru/internal/devices"
 	"github.com/ushineko/hotaru/internal/openrgb"
 	"github.com/ushineko/hotaru/internal/scenes"
 	"github.com/ushineko/hotaru/internal/service"
+	"github.com/ushineko/hotaru/internal/service/servicetest"
 )
 
 /*
@@ -148,7 +150,7 @@ func TestASavedSceneKeepsEveryColourTheModeWasGiven(t *testing.T) {
 }
 
 func TestACanvasBreathesBetweenTheColoursItIsGiven(t *testing.T) {
-	svc := service.New(nil, openrgb.NewFake(board()), "")
+	svc := service.New(nil, nil, servicetest.NoServer)
 	attachDrawn(t, svc)
 
 	effect := scenes.Effect{Mode: "Breathing"}
@@ -172,7 +174,7 @@ func TestACanvasSpectrumWithNoColoursIsNotGivenTheFramesColour(t *testing.T) {
 		own. Spectrum shows the wheel without colours, and given the frame's
 		one it would hold still in it.
 	*/
-	svc := service.New(nil, openrgb.NewFake(board()), "")
+	svc := service.New(nil, nil, servicetest.NoServer)
 	attachDrawn(t, svc)
 
 	_, err := svc.Apply(t.Context(), service.Request{
@@ -208,8 +210,8 @@ func threeToOne(t *testing.T) []byte {
 
 func picturing(t *testing.T) *service.Service {
 	t.Helper()
-	svc, server := lit(t)
-	server.Add(graphics())
+	svc, _ := litCanvas(t)
+	servicetest.Attach(t, svc, canvastest.NewBoard(graphicsName, canvastest.Zone("Card", 3)))
 	withPictures(t, svc)
 	_, err := svc.AddImage("sunset", threeToOne(t))
 	require.NoError(t, err)
@@ -227,7 +229,8 @@ func TestMakingASceneGivesAnEffectThePicturesColours(t *testing.T) {
 	// The picture is stored as a GIF, so its red is a red and not #ff0000.
 	breathing := scene.Effects["Graphics"]
 	picked := breathing.Palette()
-	require.Len(t, picked, 2)
+	require.GreaterOrEqual(t, len(picked), 2)
+	require.LessOrEqual(t, len(picked), 4, "more than a canvas's Breathing takes")
 	require.True(t, redder(picked[0]), "the colour covering most is not first: %v", picked)
 	require.True(t, bluer(picked[1]), "%v", picked)
 	require.Equal(t, scenes.ColoursFromPicture, breathing.ColoursFrom)
@@ -242,7 +245,7 @@ func TestTheColoursAPictureGivesAreTheOnesThePreviewShowed(t *testing.T) {
 	// R5.3: the window shows the colours before the scene is made.
 	svc := picturing(t)
 
-	shown, err := svc.Picked("sunset", 2, 1)
+	shown, err := svc.Picked("sunset", 4, 1) // a canvas's Breathing takes 4
 	require.NoError(t, err)
 	scene, err := svc.SceneFromImage(t.Context(), "sunset", "themed", 1,
 		map[string]scenes.Effect{"Graphics": {Mode: "Breathing"}})
@@ -274,7 +277,7 @@ func TestRecolouringPicksPickedColoursAgainAndKeepsChosenOnes(t *testing.T) {
 	again, err := svc.RecolourScene(t.Context(), "themed", 1.5)
 	require.NoError(t, err)
 	picked := again.Effects["Graphics"].Palette()
-	require.Len(t, picked, 2)
+	require.GreaterOrEqual(t, len(picked), 2)
 	require.True(t, redder(picked[0]) && bluer(picked[1]), "the stale colours were kept: %v", picked)
 	require.Equal(t, []string{"#00ff00"}, again.Effects["Keychron"].Palette(), "a chosen colour was picked over")
 	require.Empty(t, again.Effects["Keychron"].ColoursFrom)

@@ -10,8 +10,8 @@ import (
 	"github.com/ushineko/hotaru/internal/canvas"
 	"github.com/ushineko/hotaru/internal/canvas/canvastest"
 	"github.com/ushineko/hotaru/internal/colour"
-	"github.com/ushineko/hotaru/internal/openrgb"
 	"github.com/ushineko/hotaru/internal/service"
+	"github.com/ushineko/hotaru/internal/service/servicetest"
 	"github.com/ushineko/sanshoku"
 	"github.com/ushineko/sanshoku/lighting"
 )
@@ -44,7 +44,7 @@ effect: on the Kraken that is Fading, and the colour came out fading (spec
 074).
 */
 func TestASolidColourOnAHoldingCanvasIsDrawn(t *testing.T) {
-	svc := service.New(nil, openrgb.NewFake(board()), "")
+	svc := servicetest.New(t, nil)
 	svc.SetRecorder(recorder(t))
 	fake := canvastest.NewKeyboard(6)
 	fake.Name, fake.Path = "Test Holding Keyboard", "fake:holding"

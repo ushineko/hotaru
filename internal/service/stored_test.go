@@ -11,9 +11,9 @@ import (
 	"github.com/ushineko/hotaru/internal/canvas/canvastest"
 	"github.com/ushineko/hotaru/internal/colour"
 	"github.com/ushineko/hotaru/internal/devices"
-	"github.com/ushineko/hotaru/internal/openrgb"
 	"github.com/ushineko/hotaru/internal/scenes"
 	"github.com/ushineko/hotaru/internal/service"
+	"github.com/ushineko/hotaru/internal/service/servicetest"
 	"github.com/ushineko/sanshoku/lighting"
 )
 
@@ -75,7 +75,7 @@ func writes(k *fadingKeyboard) int {
 
 func TestAKeyboardListsItsOwnEffectsAsStoredModesBeforeTheRenderers(t *testing.T) {
 	// R2.1, R2.2, R7.2.
-	svc := service.New(nil, openrgb.NewFake(), "")
+	svc := service.New(nil, nil, servicetest.NoServer)
 	k := attachKeyboard(t, svc)
 	k.fake.Press("Reaction", &lighting.Colour{R: 0x80, B: 0xff})
 	_, err := k.device.ReadFirmware(t.Context())
@@ -106,7 +106,7 @@ func TestAKeyboardListsItsOwnEffectsAsStoredModesBeforeTheRenderers(t *testing.T
 func TestASolidColourKeepsTheRunningEffectAndSetsItsColour(t *testing.T) {
 	// R3.1: light set purple on a keyboard running Reaction.
 	waited := noWaiting(t)
-	svc := service.New(nil, openrgb.NewFake(), "")
+	svc := service.New(nil, nil, servicetest.NoServer)
 	svc.SetRecorder(recorder(t))
 	k := attachKeyboard(t, svc)
 	k.fake.Press("Reaction", nil)
@@ -143,7 +143,7 @@ func TestASolidColourKeepsTheRunningEffectAndSetsItsColour(t *testing.T) {
 func TestASolidColourOnAColourlessEffectGoesToFixedOn(t *testing.T) {
 	// R3.2.
 	noWaiting(t)
-	svc := service.New(nil, openrgb.NewFake(), "")
+	svc := service.New(nil, nil, servicetest.NoServer)
 	svc.SetRecorder(recorder(t))
 	k := attachKeyboard(t, svc)
 	k.fake.Press("Off", nil)
@@ -161,7 +161,7 @@ func TestASolidColourOnAColourlessEffectGoesToFixedOn(t *testing.T) {
 func TestOffIsTheFirmwaresOff(t *testing.T) {
 	// R3.3.
 	noWaiting(t)
-	svc := service.New(nil, openrgb.NewFake(), "")
+	svc := service.New(nil, nil, servicetest.NoServer)
 	svc.SetRecorder(recorder(t))
 	k := attachKeyboard(t, svc)
 
@@ -177,7 +177,7 @@ func TestOffIsTheFirmwaresOff(t *testing.T) {
 func TestARendererDrawsAndLeavesTheStoredEffectAlone(t *testing.T) {
 	// R2.4, and then R2.3: a firmware mode stops the animator.
 	noWaiting(t)
-	svc := service.New(nil, openrgb.NewFake(), "")
+	svc := service.New(nil, nil, servicetest.NoServer)
 	svc.SetRecorder(recorder(t))
 	k := attachKeyboard(t, svc)
 
@@ -208,7 +208,7 @@ func TestARendererDrawsAndLeavesTheStoredEffectAlone(t *testing.T) {
 func TestAReconcileWritesNoStorageAndKeepsAPersonsChange(t *testing.T) {
 	// R5.1, R6.3.
 	noWaiting(t)
-	svc := service.New(nil, openrgb.NewFake(), "")
+	svc := service.New(nil, nil, servicetest.NoServer)
 	svc.SetRecorder(recorder(t))
 	k := attachKeyboard(t, svc)
 	_, err := svc.Apply(t.Context(), service.Request{Colour: ptr(colour.MustParse("#8000ff"))})
@@ -250,7 +250,7 @@ func neonOrRunning(t *testing.T, svc *service.Service) string {
 func TestAPreviewDrawsAColourAndSkipsAnotherEffect(t *testing.T) {
 	// R5.2.
 	noWaiting(t)
-	svc := service.New(nil, openrgb.NewFake(), "")
+	svc := service.New(nil, nil, servicetest.NoServer)
 	svc.SetRecorder(recorder(t))
 	k := attachKeyboard(t, svc)
 	_, err := svc.Apply(t.Context(), service.Request{Colour: ptr(colour.MustParse("#8000ff"))})
@@ -277,7 +277,7 @@ func TestAPreviewDrawsAColourAndSkipsAnotherEffect(t *testing.T) {
 func TestFirmwareWritesAreTwoSecondsApart(t *testing.T) {
 	// R5.3: the second write waits for the end of the first's two seconds.
 	waited := noWaiting(t)
-	svc := service.New(nil, openrgb.NewFake(), "")
+	svc := service.New(nil, nil, servicetest.NoServer)
 	svc.SetRecorder(recorder(t))
 	k := attachKeyboard(t, svc)
 

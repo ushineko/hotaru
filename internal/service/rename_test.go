@@ -8,9 +8,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/ushineko/hotaru/internal/dashboard"
 	"github.com/ushineko/hotaru/internal/images"
-	"github.com/ushineko/hotaru/internal/openrgb"
 	"github.com/ushineko/hotaru/internal/scenes"
 	"github.com/ushineko/hotaru/internal/service"
+	"github.com/ushineko/hotaru/internal/service/servicetest"
 )
 
 /*
@@ -29,7 +29,7 @@ func renaming(t *testing.T, saved ...scenes.Scene) (
 ) {
 	t.Helper()
 	dir := t.TempDir()
-	svc := service.New(nil, openrgb.NewFake(board(), keyboard()), "")
+	svc := servicetest.New(t, nil, auraBoard(), k4())
 
 	kept, err := scenes.Open(filepath.Join(dir, "scenes.yml"))
 	require.NoError(t, err)

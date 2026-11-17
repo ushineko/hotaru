@@ -15,6 +15,7 @@ import (
 	"github.com/ushineko/hotaru/internal/api"
 	"github.com/ushineko/hotaru/internal/openrgb"
 	"github.com/ushineko/hotaru/internal/service"
+	"github.com/ushineko/hotaru/internal/service/servicetest"
 )
 
 /*
@@ -87,7 +88,7 @@ func called(call *ast.CallExpr) string {
 // Every route is reachable and answers, so a client of this package can rely
 // on the list rather than on reading the handler.
 func TestEveryRouteIsServed(t *testing.T) {
-	client := running(t, nil, openrgb.NewFake(board()))
+	client := drawing(t, nil, auraBoard())
 	require.NotEmpty(t, api.Routes())
 
 	// Exercised through the client, which is the only way a shell reaches
@@ -100,18 +101,23 @@ func TestEveryRouteIsServed(t *testing.T) {
 	require.NoError(t, err)
 	_, err = client.Apply(t.Context(), api.ApplyRequest{Colour: "red"})
 	require.NoError(t, err)
-	_, err = client.Probe(t.Context(), api.ProbeRequest{})
-	require.NoError(t, err)
 	_, err = client.Reconcile(t.Context())
 	require.NoError(t, err)
 	_, err = client.Reload(t.Context())
 	require.NoError(t, err)
 }
 
+// The probe asks an OpenRGB server, so it is served on one.
+func TestTheProbeRouteIsServed(t *testing.T) {
+	client := running(t, nil, openrgb.NewFake(board()))
+	_, err := client.Probe(t.Context(), api.ProbeRequest{})
+	require.NoError(t, err)
+}
+
 // An unknown path is a 404 rather than something worse, so a client that is
 // newer than the service gets a clear answer.
 func TestAnUnknownRouteIsPlainlyNotFound(t *testing.T) {
-	server := httptest.NewServer(api.Handler(service.New(nil, openrgb.NewFake(board()), "")))
+	server := httptest.NewServer(api.Handler(service.New(nil, nil, servicetest.NoServer)))
 	defer server.Close()
 
 	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, server.URL+"/v1/nonsense", nil)

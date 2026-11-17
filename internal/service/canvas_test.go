@@ -15,6 +15,7 @@ import (
 	"github.com/ushineko/hotaru/internal/openrgb"
 	"github.com/ushineko/hotaru/internal/scenes"
 	"github.com/ushineko/hotaru/internal/service"
+	"github.com/ushineko/hotaru/internal/service/servicetest"
 	"github.com/ushineko/sanshoku/lighting"
 )
 
@@ -97,7 +98,7 @@ func viewOf(t *testing.T, svc *service.Service, name string) service.View {
 func TestACanvasIsListedAsADeviceWithItsRenderersAsModes(t *testing.T) {
 	// R1.2: one zone, a light per key named by the key, and hotaru's
 	// renderers where a firmware device has modes.
-	svc := service.New(nil, openrgb.NewFake(board()), "")
+	svc := service.New(nil, nil, servicetest.NoServer)
 	attachDrawn(t, svc)
 
 	view := viewOf(t, svc, drawnName)
@@ -115,9 +116,6 @@ func TestACanvasIsListedAsADeviceWithItsRenderersAsModes(t *testing.T) {
 	static, _ := device.Mode("static")
 	require.True(t, static.PerLED)
 	require.True(t, static.Brightness)
-
-	// And the OpenRGB devices are all still there.
-	viewOf(t, svc, board().Name)
 }
 
 func TestTheTwinIsMatchedByItsHidrawNode(t *testing.T) {
@@ -201,8 +199,7 @@ func TestTheTwinIsNeverWrittenWhileTheCanvasIsAttached(t *testing.T) {
 }
 
 func TestAStaticSceneIsOneFrameOnTheCanvas(t *testing.T) {
-	server := openrgb.NewFake()
-	svc := service.New(nil, server, "")
+	svc := service.New(nil, nil, servicetest.NoServer)
 	svc.SetRecorder(recorder(t))
 	d := attachDrawn(t, svc)
 
@@ -241,7 +238,7 @@ func TestAStaticSceneIsOneFrameOnTheCanvas(t *testing.T) {
 func TestASceneEffectIsARendererOnTheCanvas(t *testing.T) {
 	// R5.1: a scene names a canvas's renderer as it names a firmware mode,
 	// with its colour and speed.
-	svc := service.New(nil, openrgb.NewFake(), "")
+	svc := service.New(nil, nil, servicetest.NoServer)
 	svc.SetRecorder(recorder(t))
 	d := attachDrawn(t, svc)
 	speed := 100
@@ -278,7 +275,7 @@ func TestTheDeviceRulesBrightnessIsAMultiply(t *testing.T) {
 	// R2.4.
 	half := 50
 	cfg := &config.Config{Devices: []config.DeviceRule{{Match: "canvas", Brightness: &half}}}
-	svc := service.New(cfg, openrgb.NewFake(), "")
+	svc := service.New(cfg, nil, servicetest.NoServer)
 	d := attachDrawn(t, svc)
 
 	_, err := svc.Apply(t.Context(), service.Request{Colour: ptr(colour.Colour{R: 200, G: 100, B: 50})})
@@ -289,7 +286,7 @@ func TestTheDeviceRulesBrightnessIsAMultiply(t *testing.T) {
 
 func TestTheFrameIntervalIsTheRulesAndNeverUnderTheFloor(t *testing.T) {
 	cfg := &config.Config{Devices: []config.DeviceRule{{Match: "canvas", FrameInterval: config.Duration(time.Millisecond)}}}
-	svc := service.New(cfg, openrgb.NewFake(), "")
+	svc := service.New(cfg, nil, servicetest.NoServer)
 	d := attachDrawn(t, svc)
 
 	_, err := svc.Apply(t.Context(), service.Request{
@@ -302,7 +299,7 @@ func TestTheFrameIntervalIsTheRulesAndNeverUnderTheFloor(t *testing.T) {
 }
 
 func TestOffIsABlackFrameAndForgetsTheDevice(t *testing.T) {
-	svc := service.New(nil, openrgb.NewFake(), "")
+	svc := service.New(nil, nil, servicetest.NoServer)
 	svc.SetRecorder(recorder(t))
 	d := attachDrawn(t, svc)
 
@@ -323,7 +320,7 @@ func TestReleaseHandsTheLightingBackAndForgetsTheScene(t *testing.T) {
 	// R4.2, and the half of its criterion the service owns: once released,
 	// nothing is recorded, so the device attached again is sent nothing
 	// until a scene asks.
-	svc := service.New(nil, openrgb.NewFake(), "")
+	svc := service.New(nil, nil, servicetest.NoServer)
 	svc.SetRecorder(recorder(t))
 	d := attachDrawn(t, svc)
 	_, err := svc.Apply(t.Context(), service.Request{Colour: ptr(colour.MustParse("red"))})
@@ -385,14 +382,16 @@ func TestAFullRestoreRedrawsACanvasAndANamedOneDoesNot(t *testing.T) {
 	// never changes, so a restore -- OpenRGB reconnecting, whose exit is
 	// what reboots it -- sends the frame again even though it is unchanged.
 	// A reconcile of named devices (re-assert, a preview ending) does not.
-	svc := service.New(nil, openrgb.NewFake(board()), "")
+	svc := service.New(nil, nil, servicetest.NoServer)
 	svc.SetRecorder(recorder(t))
 	d := attachDrawn(t, svc)
+	other := genericStrip()
+	servicetest.Attach(t, svc, other)
 	_, err := svc.Apply(t.Context(), service.Request{Colour: ptr(colour.MustParse("blue"))})
 	require.NoError(t, err)
 	d.frames(t, 1)
 
-	_, err = svc.Reconcile(t.Context(), []string{board().Name})
+	_, err = svc.Reconcile(t.Context(), []string{other.Name})
 	require.NoError(t, err)
 	time.Sleep(50 * time.Millisecond)
 	require.Equal(t, 1, d.fake.Frames(), "a named reconcile redrew the canvas")

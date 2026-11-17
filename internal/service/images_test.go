@@ -5,8 +5,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"github.com/ushineko/hotaru/internal/openrgb"
 	"github.com/ushineko/hotaru/internal/service"
+	"github.com/ushineko/hotaru/internal/service/servicetest"
 )
 
 func TestAMissingLibrarySaysWhyItIsMissing(t *testing.T) {
@@ -17,7 +17,7 @@ func TestAMissingLibrarySaysWhyItIsMissing(t *testing.T) {
 		that -- "read-only file system" -- was in the startup log and nowhere
 		that somebody adding a picture would look.
 	*/
-	svc := service.New(nil, openrgb.NewFake(), "")
+	svc := servicetest.New(t, nil)
 	svc.NoImages(errors.New("mkdir /home/x/.local/share/hotaru: read-only file system"))
 
 	_, err := svc.AddImage("anything", []byte("not a picture"))
@@ -26,7 +26,7 @@ func TestAMissingLibrarySaysWhyItIsMissing(t *testing.T) {
 
 	// And a service that was never given one says the plain thing, because
 	// there is nothing more to say.
-	plain := service.New(nil, openrgb.NewFake(), "")
+	plain := servicetest.New(t, nil)
 	_, err = plain.AddImage("anything", []byte("not a picture"))
 	require.EqualError(t, err, service.ErrNoImages.Error())
 }

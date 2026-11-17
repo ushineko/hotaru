@@ -14,6 +14,7 @@ import (
 	"github.com/ushineko/hotaru/internal/devices"
 	"github.com/ushineko/hotaru/internal/openrgb"
 	"github.com/ushineko/hotaru/internal/service"
+	"github.com/ushineko/hotaru/internal/service/servicetest"
 	"github.com/ushineko/hotaru/internal/state"
 )
 
@@ -82,33 +83,33 @@ func withState(t *testing.T, svc *service.Service) *state.Store {
 }
 
 func TestAFreshInstallRunsEveryMechanismAndWritesToNothing(t *testing.T) {
-	server := openrgb.NewFake(strip())
-	svc := service.New(nil, server, "")
+	strip := stripCanvas()
+	svc := servicetest.New(t, nil, strip)
 	withState(t, svc)
 
 	ctx, cancel := context.WithTimeout(t.Context(), 120*time.Millisecond)
 	defer cancel()
 	(&daemon.Reconciler{Service: svc, Every: 10 * time.Millisecond}).Run(ctx)
 
-	require.Empty(t, server.Writes, "a machine that has been asked for nothing was written to")
-	require.Empty(t, server.Modes)
+	require.Zero(t, strip.Frames(), "a machine that has been asked for nothing was written to")
 }
 
 func TestARestoreWaitsForDevicesThatHaveNotEnumeratedYet(t *testing.T) {
-	// A cold boot with OpenRGB running before the hardware settled: the
-	// recorded devices are not all there, and the restore is unfinished
-	// rather than successful.
-	full := openrgb.NewFake(strip(), mouse())
-	svc := service.New(nil, full, "")
+	// A cold boot before the hardware settled: the recorded devices are not
+	// all there, and the restore is unfinished rather than successful.
+	svc := service.New(nil, nil, servicetest.NoServer)
 	withState(t, svc)
+	strip := servicetest.Attach(t, svc, stripCanvas())
+	mouse := servicetest.Attach(t, svc, mouseCanvas())
 	asked(t, svc, "Generic", "red")
 	asked(t, svc, "G502", "blue")
 
-	partial := openrgb.NewFake(strip())
-	svc.SetClient(partial)
-	require.NoError(t, partial.SetFrame(t.Context(), "Generic Strip", devices.Frame{
-		Device: "Generic Strip", Colours: make([]colour.Colour, 2),
-	}))
+	// Both go; the strip comes back on its power-on colours, the mouse not
+	// yet.
+	svc.DetachCanvas(strip.Attach)
+	svc.DetachCanvas(mouse.Attach)
+	partial := stripCanvas()
+	servicetest.Attach(t, svc, partial)
 
 	said := &lines{}
 	ctx, cancel := context.WithCancel(t.Context())
@@ -124,18 +125,15 @@ func TestARestoreWaitsForDevicesThatHaveNotEnumeratedYet(t *testing.T) {
 	}()
 
 	// What is present is put back immediately, without waiting for the rest.
-	require.Eventually(t, func() bool {
-		showing, _ := partial.Showing("Generic Strip")
-		return showing.Colours[0] == colour.MustParse("red")
-	}, time.Second, 5*time.Millisecond, "the device that was there was not restored")
+	require.Eventually(t, func() bool { return first(partial.Device, colour.MustParse("red")) },
+		time.Second, 5*time.Millisecond, "the device that was there was not restored")
 
 	// It keeps trying, and finishes when the mouse turns up, with nobody
 	// asking it to.
-	partial.Add(mouse())
-	require.Eventually(t, func() bool {
-		showing, ok := partial.Showing("G502 X PLUS")
-		return ok && showing.Colours[0] == colour.MustParse("blue")
-	}, time.Second, 5*time.Millisecond, "the late device was never picked up")
+	late := mouseCanvas()
+	servicetest.Attach(t, svc, late)
+	require.Eventually(t, func() bool { return first(late.Device, colour.MustParse("blue")) },
+		time.Second, 5*time.Millisecond, "the late device was never picked up")
 
 	cancel()
 	<-done
@@ -144,12 +142,13 @@ func TestARestoreWaitsForDevicesThatHaveNotEnumeratedYet(t *testing.T) {
 func TestWaitingIsSaidOncePerChangeNotOncePerAttempt(t *testing.T) {
 	// A machine waiting on one device should say so once, not fill its journal
 	// with a fact that is not changing.
-	full := openrgb.NewFake(strip(), mouse())
-	svc := service.New(nil, full, "")
+	svc := service.New(nil, nil, servicetest.NoServer)
 	withState(t, svc)
+	servicetest.Attach(t, svc, stripCanvas())
+	mouse := servicetest.Attach(t, svc, mouseCanvas())
 	asked(t, svc, "Generic", "red")
 	asked(t, svc, "G502", "blue")
-	svc.SetClient(openrgb.NewFake(strip()))
+	svc.DetachCanvas(mouse.Attach)
 
 	said := &lines{}
 	ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)

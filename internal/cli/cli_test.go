@@ -27,6 +27,7 @@ import (
 	"github.com/ushineko/hotaru/internal/service"
 	"github.com/ushineko/hotaru/internal/state"
 	"github.com/ushineko/hotaru/internal/testsock"
+	"github.com/ushineko/sanshoku/lighting"
 )
 
 /*
@@ -87,22 +88,6 @@ func board() devices.Device {
 	}
 }
 
-// keyboard is a device with a mode that shows one colour at a speed, which is
-// the shape an effect's own settings exist for.
-func keyboard() devices.Device {
-	return devices.Device{
-		Name:     "Keychron K4 HE",
-		LEDCount: 2,
-		Modes: []devices.Mode{
-			{Name: "Direct", PerLED: true},
-			{Name: "Solid Reactive", ModeColour: true,
-				Speed: &devices.Speed{Slowest: 0, Fastest: 255, Now: 127}},
-		},
-		Zones:      []devices.Zone{{Name: "Keyboard", First: 0, Count: 2}},
-		ActiveMode: "Direct",
-	}
-}
-
 // run executes a command against a running service and returns its output.
 func run(t *testing.T, socket string, args ...string) (string, error) {
 	t.Helper()
@@ -124,6 +109,13 @@ func run(t *testing.T, socket string, args ...string) (string, error) {
 // serving starts a service over a socket and returns its path.
 func serving(t *testing.T, cfg *config.Config, server openrgb.Client) string {
 	t.Helper()
+	return serve(t, service.New(cfg, server, "127.0.0.1:6742"))
+}
+
+// serve gives svc what the daemon gives it, serves it over a socket, and
+// returns the socket's path.
+func serve(t *testing.T, svc *service.Service) string {
+	t.Helper()
 
 	dir := t.TempDir()
 
@@ -142,7 +134,6 @@ func serving(t *testing.T, cfg *config.Config, server openrgb.Client) string {
 	// hardware and remembers nothing, so there is nothing to restore.
 	desired, err := state.Open(filepath.Join(dir, "state.yml"))
 	require.NoError(t, err)
-	svc := service.New(cfg, server, "127.0.0.1:6742")
 	svc.SetRecorder(desired)
 	// Where its rules live, as the daemon tells it at startup. Without this a
 	// reload is a no-op, and the wizard's "in use now" would be a lie.
@@ -177,7 +168,7 @@ func serving(t *testing.T, cfg *config.Config, server openrgb.Client) string {
 }
 
 func TestListShowsWhatIsThereAndWhetherItIsDriven(t *testing.T) {
-	socket := serving(t, &config.Config{Scope: []string{"maximus"}}, openrgb.NewFake(board()))
+	socket := drawing(t, &config.Config{Scope: []string{"maximus"}}, auraBoard())
 
 	out, err := run(t, socket, "light", "list")
 	require.NoError(t, err)
@@ -187,27 +178,31 @@ func TestListShowsWhatIsThereAndWhetherItIsDriven(t *testing.T) {
 }
 
 func TestSetTakesOneColourForEverything(t *testing.T) {
-	server := openrgb.NewFake(board())
-	socket := serving(t, nil, server)
+	board := auraBoard()
+	socket := drawing(t, nil, board)
 
 	out, err := run(t, socket, "light", "set", "red")
 	require.NoError(t, err)
 	require.Contains(t, out, "ASUS ROG MAXIMUS Z790 HERO: Static")
 
-	showing, _ := server.Showing("ASUS ROG MAXIMUS Z790 HERO")
-	require.Equal(t, "#ff0000", showing.Colours[0].String())
+	require.Eventually(t, func() bool {
+		c, _ := shows(t, board.Device, 0)
+		return c.String() == "#ff0000"
+	}, eventually, every)
 }
 
 func TestSetTakesExceptionsAfterTheColour(t *testing.T) {
-	server := openrgb.NewFake(board())
-	socket := serving(t, nil, server)
+	board := auraBoard()
+	socket := drawing(t, nil, board)
 
 	_, err := run(t, socket, "light", "set", "blue", "ASUS/Addressable 1[0:0]=red")
 	require.NoError(t, err)
 
-	showing, _ := server.Showing("ASUS ROG MAXIMUS Z790 HERO")
-	require.Equal(t, "#ff0000", showing.Colours[0].String(), "the exception")
-	require.Equal(t, "#0000ff", showing.Colours[1].String(), "and the rest")
+	require.Eventually(t, func() bool {
+		first, _ := shows(t, board.Device, 0)
+		second, _ := shows(t, board.Device, 1)
+		return first.String() == "#ff0000" && second.String() == "#0000ff"
+	}, eventually, every, "the exception, and the rest")
 }
 
 func TestWhatTheDeviceDidInsteadIsPrintedNotHidden(t *testing.T) {
@@ -222,7 +217,7 @@ func TestWhatTheDeviceDidInsteadIsPrintedNotHidden(t *testing.T) {
 }
 
 func TestASceneThatLitNothingExitsNonZero(t *testing.T) {
-	socket := serving(t, &config.Config{Scope: []string{"absent"}}, openrgb.NewFake(board()))
+	socket := drawing(t, &config.Config{Scope: []string{"absent"}}, auraBoard())
 
 	_, err := run(t, socket, "light", "set", "red")
 	require.Error(t, err, "a scene that lit nothing has not worked")
@@ -240,7 +235,7 @@ func TestHealthExplainsAndExitsNonZeroWhenItIsNotHealthy(t *testing.T) {
 }
 
 func TestJSONIsAStableShapeForScripts(t *testing.T) {
-	socket := serving(t, nil, openrgb.NewFake(board()))
+	socket := drawing(t, nil, auraBoard())
 
 	out, err := run(t, socket, "light", "list", "--json")
 	require.NoError(t, err)
@@ -275,19 +270,17 @@ func TestWithNoServiceEveryCommandSaysSoInOneLine(t *testing.T) {
 }
 
 func TestTwoColoursWithoutTargetsIsAUsageErrorNotAGuess(t *testing.T) {
-	socket := serving(t, nil, openrgb.NewFake(board()))
+	socket := drawing(t, nil, auraBoard())
 
 	_, err := run(t, socket, "light", "set", "red", "blue")
 	require.ErrorContains(t, err, "one colour for everything")
 }
 
 func TestStatusSaysWhatIsRunningAndWhatItRemembers(t *testing.T) {
-	server := openrgb.NewFake(board())
-	socket := serving(t, nil, server)
+	socket := drawing(t, nil, auraBoard())
 
 	out, err := run(t, socket, "status")
 	require.NoError(t, err)
-	require.Contains(t, out, "OpenRGB")
 	require.Contains(t, out, "remembers nothing yet, so it restores nothing",
 		"the inert state said plainly rather than left as an absence")
 
@@ -302,7 +295,7 @@ func TestStatusSaysWhatIsRunningAndWhatItRemembers(t *testing.T) {
 
 // The scene and the screen, as the window's System card shows them (#184).
 func TestStatusSaysTheSceneAndTheScreen(t *testing.T) {
-	socket := serving(t, nil, openrgb.NewFake(board()))
+	socket := drawing(t, nil, auraBoard())
 	boards, err := dashboard.Open(filepath.Join(t.TempDir(), "dashboards.yml"))
 	require.NoError(t, err)
 	shipped := boards.Active().Name
@@ -324,25 +317,28 @@ func TestStatusSaysTheSceneAndTheScreen(t *testing.T) {
 }
 
 func TestReconcileFromTheCommandLinePutsThingsBack(t *testing.T) {
-	server := openrgb.NewFake(board())
-	socket := serving(t, nil, server)
+	board := auraBoard()
+	socket := drawing(t, nil, board)
 
 	out, err := run(t, socket, "reconcile")
 	require.NoError(t, err)
 	require.Contains(t, out, "nothing to put back")
 
+	teal := colour.MustParse("teal")
 	_, err = run(t, socket, "light", "set", "teal")
 	require.NoError(t, err)
-	require.NoError(t, server.SetFrame(t.Context(), "ASUS ROG MAXIMUS Z790 HERO", devices.Frame{
-		Device: "ASUS ROG MAXIMUS Z790 HERO", Colours: make([]colour.Colour, 4),
-	}))
+	require.Eventually(t, func() bool { c, _ := shows(t, board.Device, 0); return c == teal }, eventually, every)
+	// Something else writes the board black behind hotaru's back.
+	dark := make([]lighting.Pixel, board.Lights)
+	for i := range dark {
+		dark[i].ID = byte(i + 1)
+	}
+	require.NoError(t, board.Frame(t.Context(), dark))
 
 	out, err = run(t, socket, "reconcile")
 	require.NoError(t, err)
 	require.Contains(t, out, "restored 1 devices")
-
-	showing, _ := server.Showing("ASUS ROG MAXIMUS Z790 HERO")
-	require.Equal(t, colour.MustParse("teal"), showing.Colours[0])
+	require.Eventually(t, func() bool { c, _ := shows(t, board.Device, 0); return c == teal }, eventually, every)
 }
 
 func TestProbeReportsWhatTookAndWhatDidNot(t *testing.T) {
@@ -362,7 +358,7 @@ func TestProbeReportsWhatTookAndWhatDidNot(t *testing.T) {
 func TestReloadOnAMachineWithNoRulesFileIsFine(t *testing.T) {
 	// Running with no configuration at all is the supported case, not an
 	// error: every device present is driven and nothing is corrected.
-	socket := serving(t, nil, openrgb.NewFake(board()))
+	socket := drawing(t, nil, auraBoard())
 
 	out, err := run(t, socket, "reload")
 	require.NoError(t, err)
@@ -378,16 +374,16 @@ func TestAPreviewedColourIsWrittenButNotRemembered(t *testing.T) {
 		somebody was still looking -- which reads as the hardware misbehaving,
 		and did, for most of an evening. See #18.
 	*/
-	server := openrgb.NewFake(board())
-	socket := serving(t, nil, server)
+	board := auraBoard()
+	socket := drawing(t, nil, board)
 
 	_, err := run(t, socket, "light", "set", "red", "--preview")
 	require.NoError(t, err)
 
-	showing, ok := server.Showing("ASUS ROG MAXIMUS Z790 HERO")
-	require.True(t, ok)
-	require.Equal(t, colour.MustParse("red"), showing.Colours[0],
-		"a previewed colour still has to reach the hardware")
+	require.Eventually(t, func() bool {
+		c, ok := shows(t, board.Device, 0)
+		return ok && c == colour.MustParse("red")
+	}, eventually, every, "a previewed colour still has to reach the hardware")
 
 	// And nothing to put back: a preview is not what the machine should
 	// return to.
@@ -399,8 +395,7 @@ func TestAPreviewedColourIsWrittenButNotRemembered(t *testing.T) {
 
 func TestAColourSetWithoutPreviewIsRemembered(t *testing.T) {
 	// The other half: the flag has to be the difference, not the test setup.
-	server := openrgb.NewFake(board())
-	socket := serving(t, nil, server)
+	socket := drawing(t, nil, auraBoard())
 
 	_, err := run(t, socket, "light", "set", "red")
 	require.NoError(t, err)
@@ -418,7 +413,7 @@ func TestAdoptTakesAScenesOwnPictureIntoTheLibrary(t *testing.T) {
 		than every GIF on the machine, so a scene made by hand could not be
 		edited in the same place as one made in the window.
 	*/
-	socket := serving(t, &config.Config{}, openrgb.NewFake(board()))
+	socket := drawing(t, &config.Config{}, auraBoard())
 
 	elsewhere := filepath.Join(t.TempDir(), "rain.gif")
 	require.NoError(t, os.WriteFile(elsewhere, gif(t), 0o600))
@@ -458,7 +453,7 @@ func gif(t *testing.T) []byte {
 func TestASceneFromAPictureTakesAnEffect(t *testing.T) {
 	// The parity rule: the window can set what a device does with a scene's
 	// colours, so the terminal can too.
-	socket := serving(t, &config.Config{}, openrgb.NewFake(board()))
+	socket := drawing(t, &config.Config{}, auraBoard())
 
 	picture := filepath.Join(t.TempDir(), "wallpaper.png")
 	require.NoError(t, os.WriteFile(picture, gif(t), 0o600))
@@ -484,7 +479,7 @@ func TestASceneFromAPictureTakesAnEffect(t *testing.T) {
 func TestASceneCanNameAnEffectsColourAndSpeed(t *testing.T) {
 	// The reduction is the fallback; a person who has decided their keyboard
 	// ripples blue says so, from the terminal as well as from the window.
-	socket := serving(t, &config.Config{}, openrgb.NewFake(board(), keyboard()))
+	socket := drawing(t, &config.Config{}, auraBoard(), k4())
 
 	_, err := run(t, socket, "scene", "write", "evening", "keychron=blue",
 		"--effect", "keychron=Solid Reactive",
@@ -500,7 +495,7 @@ func TestASceneCanNameAnEffectsColourAndSpeed(t *testing.T) {
 func TestAnEffectsColourWithoutAnEffectIsRefused(t *testing.T) {
 	// A setting for a mode nobody named is a line in the file that does
 	// nothing, which is worse than a usage error.
-	socket := serving(t, &config.Config{}, openrgb.NewFake(board(), keyboard()))
+	socket := drawing(t, &config.Config{}, auraBoard(), k4())
 
 	_, err := run(t, socket, "scene", "write", "evening", "keychron=blue",
 		"--effect-colour", "keychron=#0000ff")
@@ -509,7 +504,7 @@ func TestAnEffectsColourWithoutAnEffectIsRefused(t *testing.T) {
 }
 
 func TestASpeedThatIsNotANumberSaysSo(t *testing.T) {
-	socket := serving(t, &config.Config{}, openrgb.NewFake(board(), keyboard()))
+	socket := drawing(t, &config.Config{}, auraBoard(), k4())
 
 	_, err := run(t, socket, "scene", "write", "evening", "keychron=blue",
 		"--effect", "keychron=Solid Reactive", "--effect-speed", "keychron=quick")
@@ -524,7 +519,7 @@ func TestASceneFromAPictureCanShowASavedScreen(t *testing.T) {
 		library and scene store, because the screen is a field the service
 		has to carry all the way into the saved scene.
 	*/
-	socket := serving(t, &config.Config{}, openrgb.NewFake(board()))
+	socket := drawing(t, &config.Config{}, auraBoard())
 
 	picture := filepath.Join(t.TempDir(), "wallpaper.png")
 	require.NoError(t, os.WriteFile(picture, gif(t), 0o600))
@@ -560,7 +555,7 @@ func TestASceneFromAPictureCanShowASavedScreen(t *testing.T) {
 func TestTheLibraryReportsWhereAPictureCameFrom(t *testing.T) {
 	// Spec 062: the hash the window compares a dropped file against, from
 	// the real library through the socket.
-	socket := serving(t, &config.Config{}, openrgb.NewFake(board()))
+	socket := drawing(t, &config.Config{}, auraBoard())
 
 	source := gif(t)
 	picture := filepath.Join(t.TempDir(), "wallpaper.png")

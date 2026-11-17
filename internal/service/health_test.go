@@ -9,6 +9,7 @@ import (
 	"github.com/ushineko/hotaru/internal/config"
 	"github.com/ushineko/hotaru/internal/openrgb"
 	"github.com/ushineko/hotaru/internal/service"
+	"github.com/ushineko/hotaru/internal/service/servicetest"
 )
 
 /*
@@ -90,7 +91,7 @@ func TestHealthCarriesWhatAPersonCouldDoAboutIt(t *testing.T) {
 func TestAHealthyMachineIsOfferedNothing(t *testing.T) {
 	// Advice when everything works is noise, and noise is what people learn
 	// to skip past.
-	svc := service.New(nil, openrgb.NewFake(board()), "")
+	svc := servicetest.New(t, nil, auraBoard())
 	svc.SetEnvironment(machine{says: []string{"do something"}})
 
 	require.Empty(t, svc.Health(t.Context()).Remedies)

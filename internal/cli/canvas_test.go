@@ -39,7 +39,7 @@ func drawnSocket(t *testing.T) (string, *canvastest.Device) {
 	return socket, fake
 }
 
-func TestTheListingSaysWhatACanvasIsDoingAndWhyItsTwinIsLeftAlone(t *testing.T) {
+func TestTheListingSaysWhyACanvasesTwinIsLeftAlone(t *testing.T) {
 	socket, _ := drawnSocket(t)
 
 	out, err := run(t, socket, "light", "list")
@@ -47,6 +47,20 @@ func TestTheListingSaysWhatACanvasIsDoingAndWhyItsTwinIsLeftAlone(t *testing.T) 
 	require.Contains(t, out, "Test Canvas Board (OpenRGB)")
 	require.Contains(t, out, "handed")
 	require.Contains(t, out, "Test Canvas Board (OpenRGB) is drawn by hotaru as Test Canvas Board")
+}
+
+// canvasBoard is a canvas of three lights at a node, as the daemon finds one.
+func canvasBoard() *canvastest.Device {
+	fake := canvastest.New(3)
+	fake.Name, fake.Path = "Test Canvas Board", "/dev/hidraw-test9"
+	return fake
+}
+
+func TestTheListingSaysWhatACanvasIsDoing(t *testing.T) {
+	socket := drawing(t, nil, canvasBoard())
+
+	out, err := run(t, socket, "light", "list")
+	require.NoError(t, err)
 	require.Contains(t, out, "Static, Breathing, Spectrum, Rainbow Wave, Off", "the canvas does not offer its renderers")
 
 	_, err = run(t, socket, "light", "set", "red")
@@ -60,7 +74,8 @@ func TestTheListingSaysWhatACanvasIsDoingAndWhyItsTwinIsLeftAlone(t *testing.T) 
 }
 
 func TestReleaseSaysTheDeviceReenumerates(t *testing.T) {
-	socket, fake := drawnSocket(t)
+	fake := canvasBoard()
+	socket := drawing(t, nil, fake)
 
 	out, err := run(t, socket, "light", "release", "canvas board")
 	require.NoError(t, err)

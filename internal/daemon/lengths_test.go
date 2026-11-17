@@ -11,8 +11,8 @@ import (
 	"github.com/ushineko/hotaru/internal/canvas/canvastest"
 	"github.com/ushineko/hotaru/internal/config"
 	"github.com/ushineko/hotaru/internal/daemon"
-	"github.com/ushineko/hotaru/internal/openrgb"
 	"github.com/ushineko/hotaru/internal/service"
+	"github.com/ushineko/hotaru/internal/service/servicetest"
 )
 
 // A rule's lengths are given before anything reads the keys, and a length the
@@ -22,8 +22,8 @@ func TestARulesLengthsAreGivenAtAttach(t *testing.T) {
 		Match:   "fake board",
 		Lengths: map[string]int{"Header 1": 18, "Header 9": 4},
 	}}}
-	svc := service.New(cfg, openrgb.NewFake(), "")
-	device, ok := canvas.New(canvastest.NewZoned(1, 500))
+	svc := service.New(cfg, nil, servicetest.NoServer)
+	device, ok := canvas.New(canvastest.NewBoard("fake board", canvastest.Zone("Board", 1), canvastest.Header("Header 1", 0, 500)))
 	require.True(t, ok)
 	var said []string
 	daemon.Lengthen(svc, device, func(format string, args ...any) { said = append(said, fmt.Sprintf(format, args...)) })

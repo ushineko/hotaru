@@ -8,11 +8,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/ushineko/hotaru/internal/api"
+	"github.com/ushineko/hotaru/internal/canvas/canvastest"
 	"github.com/ushineko/hotaru/internal/config"
-	"github.com/ushineko/hotaru/internal/devices"
 	"github.com/ushineko/hotaru/internal/gui"
-	"github.com/ushineko/hotaru/internal/openrgb"
-	svcpkg "github.com/ushineko/hotaru/internal/service" // `service` is a fixture in this package
+	"github.com/ushineko/hotaru/internal/service/servicetest"
 	"github.com/ushineko/hotaru/internal/state"
 	"github.com/ushineko/hotaru/internal/testsock"
 )
@@ -36,8 +35,7 @@ func previewing(t *testing.T) *gui.App {
 	desired, err := state.Open(filepath.Join(dir, "state.yml"))
 	require.NoError(t, err)
 
-	svc := svcpkg.New(&config.Config{Scope: []string{"maximus"}},
-		openrgb.NewFake(lit()), "127.0.0.1:6742")
+	svc := servicetest.New(t, &config.Config{Scope: []string{"maximus"}}, lit())
 	svc.SetRecorder(desired)
 
 	ctx, cancel := context.WithCancel(t.Context())
@@ -56,14 +54,8 @@ func previewing(t *testing.T) *gui.App {
 }
 
 // lit is a device in scope, which is what a preview covers.
-func lit() devices.Device {
-	return devices.Device{
-		Name:       "ASUS ROG MAXIMUS Z790 HERO",
-		LEDCount:   4,
-		Modes:      []devices.Mode{{Name: "Direct", PerLED: true}},
-		Zones:      []devices.Zone{{Name: "Addressable 1", First: 0, Count: 4}},
-		ActiveMode: "Direct",
-	}
+func lit() *canvastest.Board {
+	return canvastest.NewBoard("ASUS ROG MAXIMUS Z790 HERO", canvastest.Zone("Addressable 1", 4))
 }
 
 func TestTheWindowsPreviewIsALeaseTakenOnceAndGivenBack(t *testing.T) {
