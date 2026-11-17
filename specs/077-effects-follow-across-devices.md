@@ -234,9 +234,9 @@ What sanshoku has and lacks (sanshoku #89):
   - E2's drift recorded;
   - a scene with "Solid Reactive Multinexus at 55" keeps its speed through a
     restart;
-  - `light map` asks the K4 HE nothing about chaining;
-  - `light map` finds the Z790's three header lengths (18, 16, 20) and the
-    empty fourth;
+  - `light map`'s live checks moved to spec 078 (#220): run on the desk on
+    2026-11-17, the wizard proved too hard to use, and 078 replaces it. Its
+    chaining and header-length behaviour here is held by tests;
   - `light match` and the window's slider match the rear fan's Breathing to
     the Kraken's, and the trim survives a restart.
 - [ ] The cost of R3.7 measured and recorded.
