@@ -43,6 +43,30 @@ func TestMatchWritesThePaceItWasLeftAt(t *testing.T) {
 	require.Equal(t, "Fading", running, "the leader did not run the effect")
 }
 
+// A pace can be typed, and a finer step taken from it (E5: Breathing sat
+// between two of the coarse steps).
+func TestMatchTakesATypedPaceAndAFineStep(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", home)
+	rules := filepath.Join(home, "hotaru", "hotaru.yml")
+	require.NoError(t, os.MkdirAll(filepath.Dir(rules), 0o700))
+	require.NoError(t, os.WriteFile(rules, []byte("devices:\n  - match: maximus\n    follow: kraken\n"), 0o600))
+
+	cooler := canvastest.NewFirmware(canvastest.NewBoard("NZXT Kraken Elite V2", canvastest.Ring("Ring", 24)), "Fading")
+	board := canvastest.NewBoard("ASUS ROG MAXIMUS Z790 HERO", canvastest.Zone("Addressable 1", 4))
+	cfg, _, err := config.Load(rules)
+	require.NoError(t, err)
+	client := api.NewClient(drawing(t, cfg, cooler, board))
+
+	person := &scripted{answers: []string{"2.14", "S", "11", "", "y"}}
+	require.NoError(t, cli.Match(t.Context(), client, person, "maximus", "Fading", "", "red"))
+
+	written, _, err := config.Load(rules)
+	require.NoError(t, err)
+	require.Equal(t, map[string]float64{"Fading": 2.18}, written.RulesFor("ASUS ROG MAXIMUS Z790 HERO")[0].Pace,
+		"2.14, a fine step slower, and 11 refused")
+}
+
 // A device that follows nothing needs --with.
 func TestMatchAsksWhatToMatchAgainst(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())

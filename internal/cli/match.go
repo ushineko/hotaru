@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -28,8 +29,9 @@ func matchCommand() *cobra.Command {
 		Long: `Match a device's pace of an effect to its leader's, by eye.
 
 Runs the effect on the device and on the device it follows, together and from
-the start. Type f to make the device faster, s slower, r to start both again,
-and press Return to keep the pace; q leaves without keeping it. The pace is
+the start. Type f to make the device faster, s slower, F and S for a finer
+step, or a pace itself (2.2 is 2.2 times as long), r to start both again, and
+press Return to keep the pace; q leaves without keeping it. The pace is
 written to the rules as the device's pace for that effect, and the lights go
 back to what they were showing.`,
 		Args: cobra.ExactArgs(2),
@@ -54,8 +56,12 @@ back to what they were showing.`,
 	return cmd
 }
 
-// paceStep is how much one f or s changes the pace: a tenth.
-const paceStep = 1.1
+// paceStep is how much one f or s changes the pace, a tenth, and fineStep
+// one F or S: a tenth was too coarse to match Breathing (E5).
+const (
+	paceStep = 1.1
+	fineStep = 1.02
+)
 
 /*
 Match runs effect on the device named by device and on its leader, and lets a
@@ -113,23 +119,36 @@ func Match(ctx context.Context, client *api.Client, asker Asker, device, effect,
 		if err := show(); err != nil {
 			return err
 		}
-		answer, err := asker.Ask(fmt.Sprintf("  pace %.2f: f faster, s slower, r again, Return to keep, q to leave:", pace))
+		answer, err := asker.Ask(fmt.Sprintf("  pace %.2f: f faster, s slower, F S finer, or a pace; r again, Return to keep, q to leave:", pace))
 		if err != nil {
 			return err
 		}
-		switch strings.ToLower(strings.TrimSpace(answer)) {
+		answer = strings.TrimSpace(answer)
+		if given, err := strconv.ParseFloat(answer, 64); err == nil {
+			if given <= 0 || given > 10 {
+				asker.Say("  A pace above 0 and at most 10.")
+				continue
+			}
+			pace = given
+			continue
+		}
+		switch answer {
+		case "F":
+			pace /= fineStep
+		case "S":
+			pace *= fineStep
 		case "f":
 			pace /= paceStep
 		case "s":
 			pace *= paceStep
 		case "r":
-		case "q":
+		case "q", "Q":
 			asker.Say("Left as it was. Nothing was written.")
 			return nil
 		case "":
 			return keepPace(ctx, client, asker, cfg, path, target.Name, effect, pace)
 		default:
-			asker.Say("  f, s, r, Return or q.")
+			asker.Say("  f, s, F, S, a pace, r, Return or q.")
 		}
 	}
 }
