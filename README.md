@@ -276,7 +276,8 @@ MIT. See [LICENSE](LICENSE).
   for the cooler is switched off. A rule's `formerly` keeps scenes written
   for OpenRGB's listing working. The 12 s resend of spec 070 is gone,
   because sanshoku stores the frame before the screen's readout puts the
-  stored lighting back. Fixes
+  stored lighting back. The cooler's 14 firmware effects are listed and run
+  from a scene's `effects` (sanshoku spec 025). Fixes
   [#206](https://github.com/ushineko/hotaru/issues/206).
 - The README and the docs describe Windows: how to build and run the
   installer, what works there and what does not yet, and the Windows test

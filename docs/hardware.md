@@ -323,8 +323,12 @@ on a Kraken 2024 Elite on firmware 1.2.12 (spec
   every switch to it. The 12 s resend of spec 070 is gone.
 - **`hotaru light release` keeps the cooler attached.** It stores the frame
   in the cooler and stops drawing. The cooler does not reboot.
-- **The cooler's own effects** (Fading, Breathing and the rest) are not
-  reachable while OpenRGB's detector is off. sanshoku #72 brings them back.
+- **The cooler's own effects come first.** Fading, Tai Chi, Loading and the
+  rest of its 14 are the firmware's (sanshoku spec 025). `hotaru light list`
+  marks each with `*`, and a scene's `effects` runs one at no cost to the
+  host. Where a name is both, the firmware's wins: Breathing is the cooler's.
+  The cooler does not report which effect runs, so hotaru knows only what it
+  set. A preview does not set one, as for the F75.
 - **Scenes written for OpenRGB's listing still apply.** A rule's `formerly`
   names the cooler as OpenRGB listed it, and maps its zones. Targets,
   segments and the recorded colours under the old name land on the same
