@@ -265,4 +265,55 @@ What sanshoku has and lacks (sanshoku #89):
 
 ## Verification
 
-Not yet run.
+### E1: the Kraken's effects (2026-11-17, the maintainer watching)
+
+`sanshoku-bench onboard --yes` on the Kraken, hotaru stopped, each effect in
+chosen colours at CAM's speed, and the slowest and fastest where it has more
+than one. Every speed was linear: the period grows with the number.
+
+- **Fading** (01), RGB, speed 40: ~6 s per full cycle of 3 colours; smooth crossfade throughout; ring and fans in step, every LED the same colour.
+  - speed 80: ~12 s per cycle, smooth.
+  - speed 10: ~1.5 s per cycle, smooth. Linear: ~0.05 s per speed unit per colour.
+- **Spectrum Wave** (02), no colours, speed 250: full spectrum around each ring at once, rotating clockwise (facing the pump), ~5 s per revolution; each fan its own full rainbow, clockwise, in step with the ring.
+  - speed 350: ~7 s per revolution. Linear: ~0.02 s per speed unit per revolution.
+  - speed 80: ~1.5 s per revolution.
+- **Covering Marquee** (04), red/blue, fixed speed 150: one colour sweeps clockwise and covers the other, then the other sweeps over it, alternating; ~2-3 s to cover the ring. The fan channel is one chain: the sweep runs fan 1, then 2, then 3, taking as long as the ring takes once.
+- **Alternating** (05), red/blue, speed 500: blocks of ~4 LEDs alternating red/blue (6 blocks on the 24-LED ring) stepping clockwise by ~2 LEDs (half a block), 2-3 steps a second; fans the same, in step with the ring.
+  - speed 1600: ~1 step a second, clockwise. ~0.7 ms per speed unit per step. (500 is the fastest listed.)
+- **Pulse** (06), red, speed 15: brightens fast, fades out smoothly, dark very briefly, ~1 pulse a second; ring and fans together.
+  - speed 25: ~1.5-2 s per pulse, same shape. ~0.07 s per speed unit per pulse.
+- **Breathing** (07), red, speed 20: ~2 s per breath, smooth both ways, fully dark at the bottom. ~0.1 s per speed unit (40 slow and 4 fast seen in sanshoku spec 032).
+- **Candle** (08), amber, fixed speed 50: each LED flickers separately, slight dips, fast flutter; fans the same.
+- **Starry Night** (09), blue, speed 15: overall blue; LEDs twinkle at random between dim and brighter blue (no dark background); about Candle's pace, a little slower.
+- **Rainbow Flow** (0B), no colours, speed 250: part of the spectrum spread round the ring, moving clockwise ~3-4 s per revolution, the hue band shifting so later turns show more of the spectrum; the fan channel shows one rainbow stretched along the chain of three fans, in step with the ring.
+- **Super Rainbow** (0C), no colours, speed 150: the whole spectrum as a smooth gradient round the ring, clockwise ~2 s per revolution; fans one gradient stretched along the chain; smoother than Rainbow Flow.
+- **Rainbow Pulse** (0D), no colours, speed 250: two blobs of colour circling the ring clockwise ~3 s per revolution, grading to black between them; their colours cycle through the rainbow. Each fan has one blob (its own colour, differing fan to fan), sweeping clockwise at the ring's pace.
+- **Tai Chi** (0E), red/blue, fixed speed 30: on the ring, two halves chasing clockwise ~3 s per revolution, blended edges. On each fan (offset fan to fan), one colour advances over the other until the fan is full, then the other takes it back.
+- **Water Cooler** (0F), red/blue, fixed speed 30: a still Tai Chi base (red half, blue half, not chasing) with a brighter section travelling round it clockwise, ~6 s per revolution, a dim-to-bright gradient. Fans do the same with half the effect each, staggered fan to fan.
+- **Loading** (10), red, fixed speed 10: like Water Cooler, in the one colour on a base that fades to black: a red section runs clockwise from the top, ~6 s per revolution; when its leading edge reaches the top it waits for the tail to catch up until the ring is dark, then starts again. Fans the same, staggered fan to fan.
+
+### E1: the copies tuned beside the Kraken (2026-11-17)
+
+Each effect on the Kraken (its firmware) and the Aura (hotaru's copy, the
+rear fan given `shapes: {Addressable RGB Header 3: ring}`), together, the
+maintainer comparing:
+
+- Spectrum Wave: full rainbow, clockwise, about the same pace. As written.
+- Fading: slow red and blue "very close"; the copy a little fast, so its step
+  went from 50 to 52 ms a unit.
+- Covering Marquee, Starry Night, Super Rainbow, Rainbow Pulse, Tai Chi, Water
+  Cooler: "close enough". As written.
+- Alternating: "choppier"; the copy now moves smoothly, each light blended by
+  how much of it each block covers: "much better".
+- Pulse: the copy's fade was too quick; it now fades over 87% of the pulse
+  with a 3% dark moment, and runs at 74 ms a unit, not 70: "close enough".
+- Breathing: the copy matched only near 4.5 s a breath where E1's count was
+  2 s. Pace by eye depends on the device and the person, so R3.9 (a pace
+  trim, set by matching) was added rather than tuning each pace here.
+- Candle: dips deepened from 30% to 50%: "closer".
+- Rainbow Flow: "chunky" from the seam where its band's ends met; the band
+  now runs out and back: "smoother".
+- Loading: "choppy" on the side fans' 16-LED strip; the head and tail now
+  glide between lights: "smoother, close enough".
+
+Not yet run: E2 to E5, and the live criteria.

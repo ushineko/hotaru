@@ -67,11 +67,11 @@ has more than one speed. An effect the Kraken runs at one speed is given it
 here as its rate at that speed.
 */
 var krakenPace = map[string]time.Duration{
-	Fading:          50 * time.Millisecond,  // each colour's crossfade; 40 is 2 s a colour
+	Fading:          52 * time.Millisecond,  // each colour's crossfade; 40 is 2.1 s a colour (tuned)
 	SpectrumWave:    20 * time.Millisecond,  // a turn; 250 is 5 s
 	CoveringMarquee: 17 * time.Millisecond,  // one colour covering the chain; 150 is 2.5 s
 	Alternating:     700 * time.Microsecond, // a step of half a block; 500 is 0.35 s
-	Pulse:           70 * time.Millisecond,  // a pulse; 15 is 1 s
+	Pulse:           74 * time.Millisecond,  // a pulse; 15 is 1.1 s (tuned)
 	Breathing:       100 * time.Millisecond, // a breath; 20 is 2 s
 	Candle:          4 * time.Millisecond,   // a flicker; 50 is 0.2 s
 	StarryNight:     20 * time.Millisecond,  // a twinkle; 15 is 0.3 s
@@ -282,21 +282,43 @@ func coveringMarquee(t time.Duration, keys []lighting.Key, p Params) []lighting.
 }
 
 /*
-alternating is blocks of four lights in the two colours, stepping clockwise
-by half a block each step, each thing alike.
+alternating is blocks of four lights in the two colours moving clockwise, half
+a block a step's time, each thing alike. It moves smoothly, each light blended
+by how much of it each block covers: stepped two lights at a time it looked
+choppier than the Kraken (spec 077, tuning).
 */
 func alternating(t time.Duration, keys []lighting.Key, p Params) []lighting.Pixel {
 	cs := colours(p, 2, camPurple, colour.Colour{G: 0xBC, B: 0x83})
-	const block = 4
-	shift := int(t/max(krakenPeriod(Alternating, p), time.Millisecond)) * block / 2
+	const block = 4.0
+	shift := float64(t) / float64(max(krakenPeriod(Alternating, p), time.Millisecond)) * block / 2
 	place := layout(keys, p)
 	return paint(keys, p, func(i int) colour.Colour {
-		k := ((place[i].index-shift)%(2*block) + 2*block) % (2 * block)
-		if k < block {
-			return cs[0]
-		}
-		return cs[len(cs)-1]
+		return blend(cs[len(cs)-1], cs[0], firstShare(float64(place[i].index)-shift, block))
 	})
+}
+
+/*
+firstShare is how much of the light from x to x+1 lies in the first colour's
+blocks, which repeat every two blocks and start at 0.
+*/
+func firstShare(x, block float64) float64 {
+	period := 2 * block
+	x = math.Mod(x, period)
+	if x < 0 {
+		x += period
+	}
+	in := func(from, to float64) float64 {
+		// length of [from, to) inside [0, block) and [period, period+block)
+		overlap := 0.0
+		for _, start := range []float64{0, period} {
+			lo, hi := math.Max(from, start), math.Min(to, start+block)
+			if hi > lo {
+				overlap += hi - lo
+			}
+		}
+		return overlap
+	}
+	return in(x, x+1)
 }
 
 /*
@@ -307,11 +329,13 @@ func pulse(t time.Duration, keys []lighting.Key, p Params) []lighting.Pixel {
 	period := krakenPeriod(Pulse, p)
 	x := phase(t, period)
 	var level float64
+	// Tuned beside the Kraken: the fade takes most of the pulse, and the
+	// moment dark is short.
 	switch {
-	case x < 0.12:
-		level = x / 0.12
-	case x < 0.92:
-		level = (1 + math.Cos(math.Pi*(x-0.12)/0.8)) / 2
+	case x < 0.10:
+		level = x / 0.10
+	case x < 0.97:
+		level = (1 + math.Cos(math.Pi*(x-0.10)/0.87)) / 2
 	}
 	cs := p.palette(cycleColours)
 	return paint(keys, p, func(i int) colour.Colour {
@@ -346,7 +370,8 @@ func noise(light int, x float64) float64 {
 func candle(t time.Duration, keys []lighting.Key, p Params) []lighting.Pixel {
 	c := colours(p, 1, camAmber)[0]
 	x := float64(t) / float64(max(krakenPeriod(Candle, p), time.Millisecond))
-	return paint(keys, p, func(i int) colour.Colour { return scaled(c, 1-0.3*noise(i, x)) })
+	// Dips of up to half, tuned beside the Kraken: a third looked too subtle.
+	return paint(keys, p, func(i int) colour.Colour { return scaled(c, 1-0.5*noise(i, x)) })
 }
 
 // starryNight is each light twinkling on its own between dim and bright.
@@ -369,7 +394,10 @@ func rainbowFlow(t time.Duration, keys []lighting.Key, p Params) []lighting.Pixe
 	drift := 360 * float64(t) / float64(6*period)
 	place := layout(keys, p)
 	return paint(keys, p, func(i int) colour.Colour {
-		return hue(drift + 120*math.Mod(place[i].chain-turn+1, 1))
+		// Out through the band and back, so there is no seam where its ends
+		// meet: a band once round showed one, chunky beside the Kraken.
+		x := math.Mod(place[i].chain-turn+1, 1)
+		return hue(drift + 120*(1-math.Abs(2*x-1)))
 	})
 }
 
@@ -485,10 +513,19 @@ func loading(t time.Duration, keys []lighting.Key, p Params) []lighting.Pixel {
 		}
 		head := math.Min(1, lap/0.6)
 		tail := math.Max(0, (lap-0.4)/0.6)
-		if x.pos > head || x.pos < tail || head <= tail {
+		if head <= tail {
 			return colour.Black
 		}
-		return scaled(c, (x.pos-tail)/math.Max(head-tail, 1e-9))
+		// How much of the light, from pos to the next, is lit, so the head
+		// and the tail glide between lights rather than jump: lights switched
+		// whole were choppy beside the Kraken (spec 077, tuning).
+		width := 1 / float64(max(x.size, 1))
+		lit := (math.Min(x.pos+width, head) - math.Max(x.pos, tail)) / width
+		if lit <= 0 {
+			return colour.Black
+		}
+		centre := math.Min(math.Max(x.pos+width/2, tail), head)
+		return scaled(c, math.Min(1, lit)*(centre-tail)/(head-tail))
 	})
 }
 

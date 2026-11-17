@@ -57,7 +57,7 @@ func TestTheKrakensSpeedIsTheSamePace(t *testing.T) {
 // Fading shows each colour in turn on every light, crossfading between them.
 func TestFadingGoesThroughItsColoursInOrder(t *testing.T) {
 	p := render.Params{Palette: []colour.Colour{red, green, blue}, Speed: speed(render.FastestSpeed)}
-	step, _ := time.ParseDuration("500ms") // Fading's fastest step, 10 × 50 ms
+	step, _ := time.ParseDuration("520ms") // Fading's fastest step, 10 × 52 ms
 	for i, want := range []colour.Colour{red, green, blue, red} {
 		px := draw(t, render.Fading, time.Duration(i)*step, lights(4), p)
 		for _, x := range px {
@@ -111,10 +111,10 @@ func TestAlternatingStepsHalfABlock(t *testing.T) {
 // Pulse rises quickly, falls smoothly, and is dark for a moment between.
 func TestPulseRisesFastAndRestsDark(t *testing.T) {
 	p := render.Params{Palette: []colour.Colour{red}, Speed: speed(render.SlowestSpeed)}
-	period := 25 * 70 * time.Millisecond
-	rise := draw(t, render.Pulse, period*12/100, lights(1), p)
-	assert.Equal(t, red, rgb(rise[0]), "full after an eighth of the period")
-	gap := draw(t, render.Pulse, period*95/100, lights(1), p)
+	period := 25 * 74 * time.Millisecond
+	rise := draw(t, render.Pulse, period*10/100, lights(1), p)
+	assert.Equal(t, red, rgb(rise[0]), "full after a tenth of the period")
+	gap := draw(t, render.Pulse, period*98/100, lights(1), p)
 	assert.Equal(t, colour.Black, rgb(gap[0]), "no moment dark between pulses")
 }
 
