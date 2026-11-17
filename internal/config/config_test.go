@@ -305,3 +305,18 @@ devices:
 	require.Contains(t, problems[1].Error(), "colour saturation 1.5 is outside 0-1")
 	require.Contains(t, problems[2].Error(), "colour value -1 is outside 0-1")
 }
+
+// A zone's shape is ring or line, and anything else is reported and ignored
+// (spec 077 R3.4).
+func TestAZonesShapeIsRingOrLine(t *testing.T) {
+	cfg, problems, err := config.Parse("hotaru.yml", []byte(`
+devices:
+  - match: maximus
+    shapes: {"Addressable RGB Header 3": Ring, "Addressable RGB Header 1": line, "Addressable RGB Header 2": star}
+`))
+	require.NoError(t, err)
+	require.Len(t, problems, 1)
+	require.Contains(t, problems[0].Why, "star")
+	shapes := cfg.RulesFor("ASUS ROG MAXIMUS Z790 HERO")[0].Shapes
+	require.Equal(t, map[string]string{"Addressable RGB Header 3": "Ring", "Addressable RGB Header 1": "line"}, shapes)
+}

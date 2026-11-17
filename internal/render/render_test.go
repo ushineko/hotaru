@@ -161,12 +161,18 @@ func TestOffIsBlackAndHeld(t *testing.T) {
 	}
 }
 
-func TestTheNamesAreOpenRGBs(t *testing.T) {
+func TestTheNamesAreTheFirmwaresTheyImitate(t *testing.T) {
 	// A scene that says Breathing means the same thing on every device, so
-	// the names are the ones OpenRGB gives the firmware modes they imitate.
+	// the names are the ones the firmware modes they imitate have: OpenRGB's
+	// for hotaru's own, the Kraken's for its (spec 077).
 	var names []string
 	for _, r := range render.Renderers() {
 		names = append(names, r.Name)
 	}
-	require.Equal(t, []string{"Static", "Breathing", "Spectrum", "Rainbow Wave", "Off"}, names)
+	require.Equal(t, []string{
+		"Static", "Breathing", "Spectrum", "Rainbow Wave", "Off",
+		"Fading", "Spectrum Wave", "Covering Marquee", "Alternating", "Pulse", "Candle",
+		"Starry Night", "Rainbow Flow", "Super Rainbow", "Rainbow Pulse", "Tai Chi",
+		"Water Cooler", "Loading",
+	}, names)
 }

@@ -54,6 +54,13 @@ type Params struct {
 	// Brightness is 0 to 100, a multiply on every channel as it is in
 	// SteelSeries GG. Nil is full brightness.
 	Brightness *int
+
+	/*
+		Things are the device's fans, rings and strips, each its lights in
+		order, for the effects that draw per thing or along a chain of them
+		(spec 077 R3.4). Empty is the whole canvas as one strip.
+	*/
+	Things []Thing
 }
 
 /*
@@ -154,13 +161,13 @@ Off is listed because "off" is something a scene asks of every device, and a
 canvas device turns its lights off by being sent a black frame.
 */
 func Renderers() []Renderer {
-	return []Renderer{
+	return append([]Renderer{
 		{Name: Static, Draw: static, PerLight: true},
 		{Name: Breathing, Draw: breathing, Animated: true, OneColour: true, Paced: true, Colours: breathingColours},
 		{Name: Spectrum, Draw: spectrum, Animated: true, Paced: true, Colours: cycleColours},
 		{Name: Wave, Draw: wave, Animated: true, Paced: true, Colours: cycleColours},
 		{Name: Off, Draw: blank, Blank: true},
-	}
+	}, krakenRenderers()...)
 }
 
 // Lookup is a renderer by name, matched case-insensitively as a mode's name

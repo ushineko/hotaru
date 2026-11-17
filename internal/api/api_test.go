@@ -41,7 +41,8 @@ func TestTheDeviceListingAnswersWhyNothingHappened(t *testing.T) {
 	asus := byName["ASUS ROG MAXIMUS Z790 HERO"]
 
 	require.True(t, asus.InScope)
-	require.Equal(t, []string{"Static", "Breathing", "Spectrum", "Rainbow Wave", "Off"}, asus.Modes)
+	require.Equal(t, []string{"Static", "Breathing", "Spectrum", "Rainbow Wave", "Off"}, asus.Modes[:5])
+	require.Contains(t, asus.Modes, "Tai Chi", "the Kraken's effects are offered (spec 077)")
 	require.Equal(t, "Static", asus.ActiveMode)
 	require.Equal(t, 4, asus.LEDs)
 	require.Len(t, asus.Colours, 4, "what it is showing now")
@@ -203,11 +204,17 @@ func TestTheListingSaysHowManyColoursEachModeTakes(t *testing.T) {
 		byName[device.Name] = device
 	}
 
-	require.Equal(t, map[string]api.ColourSlots{
+	coloured := byName["ASUS ROG MAXIMUS Z790 HERO"].Coloured
+	for name, want := range map[string]api.ColourSlots{
 		"Breathing":    {Least: 0, Most: 4},
 		"Spectrum":     {Least: 0, Most: 8},
 		"Rainbow Wave": {Least: 0, Most: 8},
-	}, byName["ASUS ROG MAXIMUS Z790 HERO"].Coloured)
+		"Tai Chi":      {Least: 0, Most: 2}, // the Kraken's, drawn (spec 077)
+	} {
+		require.Equal(t, want, coloured[name], name)
+	}
+	_, static := coloured["Static"]
+	require.False(t, static, "a mode whose colour is the frame takes none of its own")
 	// A firmware effect that carries one colour takes one.
 	require.Equal(t, api.ColourSlots{Least: 1, Most: 1}, byName["Keychron K4 HE"].Coloured["Solid Reactive"])
 }

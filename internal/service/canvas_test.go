@@ -82,7 +82,8 @@ func TestACanvasIsListedAsADeviceWithItsRenderersAsModes(t *testing.T) {
 	require.Equal(t, 6, device.LEDCount)
 	require.Equal(t, []devices.Zone{{Name: "Keys", Shape: devices.ShapeGrid, First: 0, Count: 6}}, device.Zones)
 	require.Equal(t, "L1", device.LEDNames[0])
-	require.Equal(t, []string{"Static", "Breathing", "Spectrum", "Rainbow Wave", "Off"}, device.ModeNames())
+	require.Equal(t, []string{"Static", "Breathing", "Spectrum", "Rainbow Wave", "Off"}, device.ModeNames()[:5])
+	require.Contains(t, device.ModeNames(), "Water Cooler", "the Kraken's effects are offered (spec 077)")
 
 	breathing, _ := device.Mode("breathing")
 	require.True(t, breathing.ModeColour, "Breathing does not say it shows one colour")

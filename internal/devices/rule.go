@@ -34,6 +34,9 @@ type Rule struct {
 	// Lengths are the LED counts of zones the device cannot read (spec
 	// 075). See config.DeviceRule.
 	Lengths map[string]int
+	// Shapes are what zones the device cannot describe hold (spec 077). See
+	// config.DeviceRule.
+	Shapes map[string]string
 	// Colour corrects what is written to lights that wash out (spec 066).
 	Colour Profile
 }
@@ -92,6 +95,12 @@ func MergeRules(rules []config.DeviceRule) Rule {
 				out.Lengths = map[string]int{}
 			}
 			out.Lengths[zone] = n
+		}
+		for zone, shape := range r.Shapes {
+			if out.Shapes == nil {
+				out.Shapes = map[string]string{}
+			}
+			out.Shapes[zone] = strings.ToLower(strings.TrimSpace(shape))
 		}
 		if r.Formerly != nil && strings.TrimSpace(r.Formerly.Name) != "" {
 			former := *r.Formerly

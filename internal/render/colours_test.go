@@ -27,6 +27,11 @@ func rgb(px lighting.Pixel) colour.Colour { return colour.Colour{R: px.R, G: px.
 func TestEachRendererSaysHowManyColoursItTakes(t *testing.T) {
 	want := map[string]int{
 		render.Static: 0, render.Breathing: 4, render.Spectrum: 8, render.Wave: 8, render.Off: 0,
+		// The Kraken's, as its catalogue gives them (spec 077).
+		render.Fading: 8, render.SpectrumWave: 0, render.CoveringMarquee: 2, render.Alternating: 2,
+		render.Pulse: 8, render.Candle: 1, render.StarryNight: 1, render.RainbowFlow: 0,
+		render.SuperRainbow: 0, render.RainbowPulse: 0, render.TaiChi: 2, render.WaterCooler: 2,
+		render.Loading: 1,
 	}
 	for _, r := range render.Renderers() {
 		require.Equal(t, want[r.Name], r.Colours, "%s takes the wrong number of colours", r.Name)

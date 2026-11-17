@@ -124,6 +124,13 @@ type DeviceRule struct {
 	Lengths map[string]int `json:"lengths,omitempty"`
 
 	/*
+		Shapes says what a zone whose device cannot tell holds: "ring" for
+		fans, "line" for a strip (spec 077 R3.4). An addressable header's
+		shape is whatever is plugged in. A zone not named is drawn as a line.
+	*/
+	Shapes map[string]string `json:"shapes,omitempty"`
+
+	/*
 		Colour corrects what is written to a device whose lights wash out: a
 		pale colour that the fans show as written looks close to white on a
 		graphics card's LEDs (spec 066). Absent is no correction.
@@ -286,6 +293,12 @@ func decodeRule(i int, raw json.RawMessage) (*DeviceRule, []Problem) {
 	if rule.FrameInterval < 0 {
 		problems = append(problems, Problem{where, "frame_interval is negative, ignored"})
 		rule.FrameInterval = 0
+	}
+	for zone, shape := range rule.Shapes {
+		if s := strings.ToLower(strings.TrimSpace(shape)); s != "ring" && s != "line" {
+			problems = append(problems, Problem{where, fmt.Sprintf("shape %q of %q is not ring or line, ignored", shape, zone)})
+			delete(rule.Shapes, zone)
+		}
 	}
 
 	if rule.Colour != nil {

@@ -211,6 +211,66 @@ func (d *drawn) zones(keys []lighting.Key) []devices.Zone {
 }
 
 /*
+thingsOf is the device's fans, rings and strips, for the effects that draw
+per thing or along a zone's chain of them (spec 077 R3.4). A zone is split as
+its device counts its parts (the Kraken's fans), else as the rules' segments
+tile it (the Aura's side fans, as light map wrote them), else it is one
+thing. It is a ring where the device or a rule's shapes says so.
+*/
+func thingsOf(zones []devices.Zone, rule devices.Rule) []render.Thing {
+	var out []render.Thing
+	for z, zone := range zones {
+		if zone.Count == 0 {
+			continue
+		}
+		ring := zone.Shape == devices.ShapeRing || rule.Shapes[zone.Name] == "ring"
+		parts := zone.Parts
+		if len(parts) < 2 {
+			parts = tiles(zone, rule)
+		}
+		if len(parts) == 0 {
+			parts = []int{zone.Count}
+		}
+		first := zone.First
+		for _, n := range parts {
+			lights := make([]int, n)
+			for i := range lights {
+				lights[i] = first + i
+			}
+			out = append(out, render.Thing{Lights: lights, Zone: z, Ring: ring})
+			first += n
+		}
+	}
+	return out
+}
+
+// tiles is how the rules' segments divide a zone, each segment's size in
+// order, where they cover it end to end with no gap; else none.
+func tiles(zone devices.Zone, rule devices.Rule) []int {
+	var spans [][2]int
+	for _, seg := range rule.Segments {
+		if !strings.EqualFold(seg.Zone, zone.Name) || seg.LEDs == nil {
+			continue
+		}
+		spans = append(spans, [2]int{seg.LEDs.First, seg.LEDs.Last})
+	}
+	slices.SortFunc(spans, func(a, b [2]int) int { return a[0] - b[0] })
+	var sizes []int
+	next := 0
+	for _, sp := range spans {
+		if sp[0] != next || sp[1] < sp[0] {
+			return nil
+		}
+		sizes = append(sizes, sp[1]-sp[0]+1)
+		next = sp[1] + 1
+	}
+	if next != zone.Count {
+		return nil
+	}
+	return sizes
+}
+
+/*
 shapeOf is a zone's shape as the driver gives it (sanshoku spec 032). One the
 driver does not know, an addressable header's, is a line until somebody says
 otherwise: it may be a strip or fans in a chain, and only a line or a ring is
@@ -577,6 +637,7 @@ func (d *drawn) showLocked(colours []colour.Colour, rule devices.Rule) {
 		Params: render.Params{
 			Colours: d.colours, Palette: pick.style.Palette(),
 			Speed: pick.style.Speed, Brightness: pick.style.Brightness,
+			Things: thingsOf(d.zones(d.Keys()), rule),
 		},
 		Interval: rule.FrameInterval,
 	})
