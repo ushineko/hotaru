@@ -150,6 +150,11 @@ type Mode struct {
 	*/
 	Stored bool
 
+	// WritesStorage is a Stored mode whose choice wears the device's storage
+	// (the F75's flash), set only when a person asks. A Stored mode that does
+	// not is held in memory, and a restore puts it back (spec 077 R2.3).
+	WritesStorage bool
+
 	// Speed is the range this mode runs at, and where in it the mode is now.
 	// Nil for a mode that has no speed, which is most of them.
 	Speed *Speed

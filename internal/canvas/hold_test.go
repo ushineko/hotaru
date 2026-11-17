@@ -91,19 +91,19 @@ func TestAKeyboardsFirmwareIsCachedAndWritten(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, canvastest.FactoryEffect, got.Name)
 
-	wrote, err := device.SetFirmware(t.Context(), "reaction", &lighting.Colour{R: 1})
+	wrote, err := device.SetFirmware(t.Context(), "reaction", []lighting.Colour{{R: 1}}, nil)
 	require.NoError(t, err)
 	require.True(t, wrote)
 	now, _ := device.Firmware()
 	require.Equal(t, "Reaction", now.Name)
 	require.Equal(t, lighting.Colour{R: 1}, *now.Colour)
 
-	wrote, err = device.SetFirmware(t.Context(), "Reaction", &lighting.Colour{R: 1})
+	wrote, err = device.SetFirmware(t.Context(), "Reaction", []lighting.Colour{{R: 1}}, nil)
 	require.NoError(t, err)
 	require.False(t, wrote, "an unchanged effect and colour were written")
 
 	// Off takes no colour, and asking for one is not an error.
-	_, err = device.SetFirmware(t.Context(), "Off", &lighting.Colour{R: 1})
+	_, err = device.SetFirmware(t.Context(), "Off", []lighting.Colour{{R: 1}}, nil)
 	require.NoError(t, err)
 
 	answered, askable := device.Answers(t.Context())

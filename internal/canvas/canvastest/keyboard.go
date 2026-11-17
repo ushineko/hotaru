@@ -71,6 +71,12 @@ func (k *Keyboard) Hold() time.Duration {
 	return 500 * time.Millisecond
 }
 
+var _ lighting.Storing = (*Keyboard)(nil)
+
+// StoresEffects marks the keyboard's effect and colour as kept in its flash,
+// as the F75's are (sanshoku spec 034).
+func (k *Keyboard) StoresEffects() {}
+
 // Effects are the firmware's effects, in its order.
 func (k *Keyboard) Effects() []string { return append([]string(nil), keyboardEffects...) }
 

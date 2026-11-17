@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	"github.com/ushineko/hotaru/internal/canvas/canvastest"
 	"github.com/ushineko/hotaru/internal/colour"
 	"github.com/ushineko/hotaru/internal/config"
@@ -66,4 +67,18 @@ func zoned(name string, zones ...lighting.Zone) *canvastest.Board {
 // keychron is a keyboard of n keys whose firmware runs the effects given.
 func keychron(n int, effects ...string) *canvastest.Firmware {
 	return canvastest.NewFirmware(canvastest.NewBoard("Keychron K4 HE", canvastest.Zone("Keyboard", n)), effects...)
+}
+
+// The listing says choosing a device's own effect writes its storage only
+// where that storage wears: the F75's flash, not an effect held in memory
+// (spec 077).
+func TestTheListingMentionsStorageOnlyWhereItWears(t *testing.T) {
+	out, err := run(t, drawing(t, nil, k4()), "light", "list")
+	require.NoError(t, err)
+	require.Contains(t, out, "* is the device's own effect.")
+	require.NotContains(t, out, "storage", "an effect in memory was said to write storage")
+
+	out, err = run(t, drawing(t, nil, canvastest.NewKeyboard(4)), "light", "list")
+	require.NoError(t, err)
+	require.Contains(t, out, "writes that storage")
 }

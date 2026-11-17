@@ -889,6 +889,7 @@ func describe(view service.View) Device {
 		}
 		if mode.Stored {
 			device.Stored = append(device.Stored, mode.Name)
+			device.WritesStorage = device.WritesStorage || mode.WritesStorage
 		}
 		// How many colours of its own the mode takes, for the editor's
 		// pickers. Asked of every mode, not only those that show one colour:

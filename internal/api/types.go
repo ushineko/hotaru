@@ -95,11 +95,18 @@ type Device struct {
 	OneColour []string `json:"one_colour,omitempty"`
 
 	/*
-		Stored is the modes the device's own firmware runs and keeps in its
-		storage, by name (spec 071). Setting one writes the device's storage,
-		which a listing says before somebody chooses it.
+		Stored is the modes the device's own firmware runs, by name (spec
+		071).
 	*/
 	Stored []string `json:"stored,omitempty"`
+
+	/*
+		WritesStorage is a device whose own effects are kept in storage that
+		wears (the F75's flash), so setting one writes it, which a listing
+		says before somebody chooses one. Absent for a device that holds its
+		effect in memory (spec 077).
+	*/
+	WritesStorage bool `json:"writes_storage,omitempty"`
 
 	/*
 		Coloured is the modes that take colours of their own, by name, with

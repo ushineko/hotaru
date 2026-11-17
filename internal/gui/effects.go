@@ -140,9 +140,10 @@ func effectSettings(window fyne.Window, device api.Device, effect api.Effect,
 		return nil
 	}
 	var out []fyne.CanvasObject
-	if slices.Contains(device.Stored, effect.Mode) {
+	if device.WritesStorage && slices.Contains(device.Stored, effect.Mode) {
 		// Said before it is chosen, because applying it writes the device
-		// itself rather than its lights (spec 071 R7.2).
+		// itself rather than its lights (spec 071 R7.2). Only where that
+		// storage wears: an effect held in memory costs nothing (spec 077).
 		out = append(out, effectIndent(widgets.Dim(
 			"The device's own effect. Applying the scene writes it to the device's storage.")))
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -47,13 +48,18 @@ type Canvas interface {
 
 	// Effects is the firmware's own stored effects, or none (spec 071).
 	Effects() []string
+	// Catalogue describes each effect's colours and speeds, where the
+	// device does (spec 077).
+	Catalogue() []lighting.EffectInfo
+	// Stores is whether an effect write wears the device's storage.
+	Stores() bool
 	// Firmware is the effect the firmware was last read or written to run.
 	Firmware() (lighting.Effect, bool)
 	// ReadFirmware reads it from the device.
 	ReadFirmware(ctx context.Context) (lighting.Effect, error)
-	// SetFirmware writes an effect and its colour to the device's storage,
-	// where they differ.
-	SetFirmware(ctx context.Context, effect string, c *lighting.Colour) (bool, error)
+	// SetFirmware writes an effect, its colours and speed to the device,
+	// where they differ. Nil colours and speed keep what it has.
+	SetFirmware(ctx context.Context, effect string, colours []lighting.Colour, speed *int) (bool, error)
 	// Say puts a line in the service's log, naming the device.
 	Say(format string, args ...any)
 	// Watch is the power-cycle watcher's notes (spec 071 R6).
@@ -418,19 +424,32 @@ chosen it with the keyboard's own keys (R6.3). A preview draws the colour
 instead, and skips a different effect (R5.2).
 */
 func (d *drawn) chooseStored(ctx context.Context, name string, style devices.Style) error {
+	var colours []lighting.Colour
+	for _, c := range style.Palette() {
+		colours = append(colours, lighting.Colour{R: c.R, G: c.G, B: c.B})
+	}
 	var want *lighting.Colour
-	if palette := style.Palette(); len(palette) > 0 {
-		want = &lighting.Colour{R: palette[0].R, G: palette[0].G, B: palette[0].B}
+	if len(colours) > 0 {
+		want = &colours[0]
 	}
 	now, known := d.Firmware()
 	sameEffect := known && strings.EqualFold(now.Name, name)
-	if sameEffect && (want == nil || !now.Coloured || (now.Colour != nil && *now.Colour == *want)) {
+	if sameEffect && showsColours(now, colours) && (style.Speed == nil || (now.Speed != nil && *now.Speed == *style.Speed)) {
 		d.showStored()
 		return nil
 	}
 
 	switch writing(ctx) {
-	case forPreview:
+	case forPreview, forReconcile:
+		if !d.Stores() {
+			// Held in memory: putting it back, or showing it for a lease
+			// that puts the record back after, costs nothing (spec 077
+			// R2.3).
+			break
+		}
+		if writing(ctx) == forReconcile {
+			return &KeepsStored{Device: d.Name(), Effect: name, Why: "hotaru writes the device's storage only when a person asks"}
+		}
 		if !sameEffect {
 			return &KeepsStored{Device: d.Name(), Effect: name, Why: "a preview does not write the device's storage"}
 		}
@@ -441,20 +460,20 @@ func (d *drawn) chooseStored(ctx context.Context, name string, style devices.Sty
 		d.stored = false
 		d.chosen = &choice{effect: static, style: style}
 		return nil
-	case forReconcile:
-		return &KeepsStored{Device: d.Name(), Effect: name, Why: "hotaru writes the device's storage only when a person asks"}
 	case forApply:
 	}
 
 	d.showStored()
-	d.mu.Lock()
-	wait := d.flashed.Add(flashGap).Sub(flashNow())
-	d.mu.Unlock()
-	if wait > 0 && !flashWait(ctx, wait) {
-		return ctx.Err() //nolint:wrapcheck // the caller's own cancellation
+	if d.Stores() {
+		d.mu.Lock()
+		wait := d.flashed.Add(flashGap).Sub(flashNow())
+		d.mu.Unlock()
+		if wait > 0 && !flashWait(ctx, wait) {
+			return ctx.Err() //nolint:wrapcheck // the caller's own cancellation
+		}
 	}
-	wrote, err := d.SetFirmware(ctx, name, want)
-	if wrote {
+	wrote, err := d.SetFirmware(ctx, name, colours, style.Speed)
+	if wrote && d.Stores() {
 		d.mu.Lock()
 		d.flashed = flashNow()
 		d.mu.Unlock()
@@ -609,20 +628,61 @@ func (d *drawn) device() devices.Device {
 }
 
 /*
+showsColours is whether a running effect shows the colours asked for: all of
+them where it says what they are, its first where it says only that. No
+colours asked for, or an effect without colours, is always so.
+*/
+func showsColours(now lighting.Effect, want []lighting.Colour) bool {
+	switch {
+	case len(want) == 0 || !now.Coloured:
+		return true
+	case len(now.Colours) > 0:
+		return slices.Equal(now.Colours, want)
+	default:
+		return now.Colour != nil && *now.Colour == want[0]
+	}
+}
+
+/*
 storedModes is the firmware's effects as modes, marked Stored, in the
-firmware's order. A coloured effect takes one colour of its own, and the
-running one says what it is, where it was read.
+firmware's order. Where the device has a catalogue, each says how many
+colours it takes and the speeds it runs at (spec 077 R2.1); otherwise a
+coloured effect takes one. The running one says its colours and speed, where
+they were read.
 */
 func (d *drawn) storedModes(firmware lighting.Effect, known bool) []devices.Mode {
+	catalogue := map[string]lighting.EffectInfo{}
+	for _, info := range d.Catalogue() {
+		catalogue[strings.ToLower(info.Name)] = info
+	}
 	var out []devices.Mode
 	for _, name := range d.Effects() {
-		mode := devices.Mode{Name: name, Stored: true}
-		if !colourlessEffect(name) {
+		mode := devices.Mode{Name: name, Stored: true, WritesStorage: d.Stores()}
+		running := known && strings.EqualFold(firmware.Name, name)
+		info, described := catalogue[strings.ToLower(name)]
+		switch {
+		case described:
+			mode.ModeColour, mode.ColoursMin, mode.ColoursMax = info.MaxColours > 0, info.MinColours, info.MaxColours
+			if len(info.Speeds) > 1 {
+				now := info.Speed
+				if running && firmware.Speed != nil {
+					now = *firmware.Speed
+				}
+				mode.Speed = &devices.Speed{Slowest: info.Speeds[0], Fastest: info.Speeds[len(info.Speeds)-1], Now: now}
+			}
+		case !colourlessEffect(name):
 			mode.ModeColour, mode.ColoursMin, mode.ColoursMax = true, 1, 1
 		}
-		if known && strings.EqualFold(firmware.Name, name) && firmware.Colour != nil {
-			c := colour.Colour{R: firmware.Colour.R, G: firmware.Colour.G, B: firmware.Colour.B}
-			mode.Colour, mode.Colours = c, []colour.Colour{c}
+		if running {
+			for _, c := range firmware.Colours {
+				mode.Colours = append(mode.Colours, colour.Colour{R: c.R, G: c.G, B: c.B})
+			}
+			if len(mode.Colours) == 0 && firmware.Colour != nil {
+				mode.Colours = []colour.Colour{{R: firmware.Colour.R, G: firmware.Colour.G, B: firmware.Colour.B}}
+			}
+			if len(mode.Colours) > 0 {
+				mode.Colour = mode.Colours[0]
+			}
 		}
 		out = append(out, mode)
 	}
