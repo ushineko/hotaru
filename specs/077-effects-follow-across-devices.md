@@ -149,6 +149,10 @@ What sanshoku has and lacks (sanshoku #89):
   asks how many things are chained only on a line or a ring.
 - R4.2 `light map` asks about dimming once a run, and per device only for the
   devices a person names.
+- R4.3 `light map` finds a header's length, which the board cannot report:
+  it lights the header one LED further at a time (halving the range, as the
+  maintainer's bench did) and asks where the light stops, then writes the
+  `lengths` rule. A header with nothing on it is written as 0.
 
 ### R5. Re-assert on a canvas (gap 2)
 
@@ -202,6 +206,7 @@ What sanshoku has and lacks (sanshoku #89):
   - the 4090 table maps each of the 14;
   - shapes come from the driver or the rule;
   - `light map` asks chaining only on a line or ring, and dimming once;
+  - `light map` finds a header's length from a person's answers and writes it;
   - a re-assert resends a still canvas frame;
   - latest-wins holds on a slow canvas.
 - [ ] Live, with someone watching:
@@ -216,7 +221,9 @@ What sanshoku has and lacks (sanshoku #89):
   - E2's drift recorded;
   - a scene with "Solid Reactive Multinexus at 55" keeps its speed through a
     restart;
-  - `light map` asks the K4 HE nothing about chaining.
+  - `light map` asks the K4 HE nothing about chaining;
+  - `light map` finds the Z790's three header lengths (18, 16, 20) and the
+    empty fourth.
 - [ ] The cost of R3.7 measured and recorded.
 - [ ] Docs per R7.
 
@@ -237,6 +244,8 @@ What sanshoku has and lacks (sanshoku #89):
   not to follow.
 - **sanshoku's API grows.** A new optional interface beside `Onboard`, so
   existing consumers are untouched.
+- **Also before the release:** sanshoku #90 widens each lighting driver's
+  allow-list to every product sharing its protocol, as expected.
 - **Rollback:** revert. A rules file with `follow` or `shapes` loads on an
   older hotaru with a problem reported for each unknown key.
 
