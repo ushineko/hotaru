@@ -27,6 +27,15 @@ func leaderCooler() *canvastest.Firmware {
 	return f
 }
 
+// krakenWithBreathing is the leader with Breathing of its own firmware, as
+// the Kraken has.
+func krakenWithBreathing() *canvastest.Firmware {
+	f := canvastest.NewFirmware(canvastest.NewBoard("NZXT Kraken Elite V2", canvastest.Ring("Ring", 24)),
+		"Fading", "Spectrum Wave", "Tai Chi", "Breathing")
+	f.MaxColours, f.Speeds = 3, []int{350, 300, 250, 150, 80}
+	return f
+}
+
 // msiCard is a graphics card with effects of its own, none of them the Kraken's
 // but Breathing.
 func msiCard() *canvastest.Firmware {
@@ -173,12 +182,18 @@ func TestAFollowerIsLitWhenOnlyTheLeaderIs(t *testing.T) {
 
 // A one-colour effect stays one colour on a best fit that takes two (E4).
 func TestABestFitOfOneColourFillsEverySlot(t *testing.T) {
+	for _, effect := range []string{"Pulse", "Breathing"} {
+		t.Run(effect, func(t *testing.T) { oneColour(t, effect) })
+	}
+}
+
+func oneColour(t *testing.T, effect string) {
 	gpu := msiCard()
 	svc := servicetest.New(t, &config.Config{Devices: []config.DeviceRule{{Match: "msi", Follow: "kraken"}}},
-		gpu, leaderCooler())
+		gpu, krakenWithBreathing())
 	red := colour.MustParse("red")
 	_, err := svc.Apply(t.Context(), service.Request{
-		Colour: &red, Effects: map[string]scenes.Effect{"kraken": {Mode: "Pulse", Colours: []string{"#ff0000"}}},
+		Colour: &red, Effects: map[string]scenes.Effect{"kraken": {Mode: effect, Colours: []string{"#ff0000"}}},
 	})
 	require.NoError(t, err)
 	running, _ := gpu.Running()

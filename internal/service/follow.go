@@ -123,8 +123,13 @@ func translate(given scenes.Effect, leader, follower *devices.Device) (scenes.Ef
 		mode, _ = follower.Mode(name)
 		out.Speed = fitSpeed(leader, given.Mode, speed, mode)
 	} else if speed != nil {
-		if mode.Stored {
+		from, _ := leader.Mode(given.Mode)
+		if mode.Stored && from.Stored && sameRange(from.Speed, mode.Speed) {
 			out.Speed = speed // the same firmware, in the same units
+		} else if mode.Stored {
+			// Another firmware's effect of the same name, in its own units:
+			// the RTX 4090's Breathing for the Kraken's (E4).
+			out.Speed = fitSpeed(leader, given.Mode, speed, mode)
 		} else if s, ok := render.SpeedFor(given.Mode, *speed); ok {
 			out.Speed = &s
 		}
@@ -134,11 +139,11 @@ func translate(given scenes.Effect, leader, follower *devices.Device) (scenes.Ef
 	if len(colours) > most {
 		colours = colours[:most]
 	}
-	if fitted := out.Mode != given.Mode; fitted && len(colours) == 1 && most > 1 {
+	if mode.Stored && len(colours) == 1 && most > 1 {
 		/*
-			A one-colour effect on a best fit that takes more: the colour in
-			every slot, so it stays one colour. Left short, the card fills the
-			rest with its own (Breathing went red and green; E4).
+			A one-colour effect on a firmware effect that takes more: the
+			colour in every slot, so it stays one colour. Left short, the card
+			fills the rest with its own (Breathing went red and green; E4).
 		*/
 		colours = slices.Repeat(colours, most)
 	}
@@ -193,6 +198,11 @@ func fitSpeed(leader *devices.Device, effect string, speed *int, to devices.Mode
 	fraction = math.Min(1, math.Max(0, fraction))
 	out := int(math.Round(float64(to.Speed.Slowest) + fraction*float64(to.Speed.Fastest-to.Speed.Slowest)))
 	return &out
+}
+
+// sameRange is whether two speeds are in the same units: the same range.
+func sameRange(a, b *devices.Speed) bool {
+	return a != nil && b != nil && a.Slowest == b.Slowest && a.Fastest == b.Fastest
 }
 
 // leadersFirst is the devices with every leader a rule names before the
