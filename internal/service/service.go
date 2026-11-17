@@ -547,6 +547,20 @@ func (s *Service) Apply(ctx context.Context, req Request) ([]Result, error) {
 			whole := devices.Assignment{Target: devices.Target{Device: device.Name}, Colour: *req.Colour}
 			assignments = append([]devices.Assignment{whole}, assignments...)
 		}
+		if effect := effectFor(req.Effects, device.Name); len(assignments) == 0 && effect.Named() {
+			/*
+				Given an effect and no colours: a follower of a leader the
+				request lit (spec 077 R3.2). Its frame is the effect's first
+				colour, or white for an effect that draws its own.
+			*/
+			whole := colour.MustParse("white")
+			if palette := effect.Palette(); len(palette) > 0 {
+				if c, err := colour.Parse(palette[0]); err == nil {
+					whole = c
+				}
+			}
+			assignments = []devices.Assignment{{Target: devices.Target{Device: device.Name}, Colour: whole}}
+		}
 		if len(assignments) == 0 && !req.Off {
 			continue
 		}

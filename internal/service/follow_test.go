@@ -9,6 +9,7 @@ import (
 	"github.com/ushineko/hotaru/internal/canvas/canvastest"
 	"github.com/ushineko/hotaru/internal/colour"
 	"github.com/ushineko/hotaru/internal/config"
+	"github.com/ushineko/hotaru/internal/devices"
 	"github.com/ushineko/hotaru/internal/render"
 	"github.com/ushineko/hotaru/internal/scenes"
 	"github.com/ushineko/hotaru/internal/service"
@@ -154,4 +155,18 @@ func TestARestoreWritesTheLeaderFirst(t *testing.T) {
 	require.Len(t, restore.Results, 2)
 	assert.Equal(t, "NZXT Kraken Elite V2", restore.Results[0].Device, "a follower was restored before its leader")
 	assert.Equal(t, "Tai Chi", restore.Results[1].Mode)
+}
+
+// A scene that lights only the leader still lights its followers.
+func TestAFollowerIsLitWhenOnlyTheLeaderIs(t *testing.T) {
+	cooler := leaderCooler()
+	board := canvastest.NewBoard("ASUS ROG MAXIMUS Z790 HERO", canvastest.Zone("Addressable 1", 4))
+	cfg := &config.Config{Devices: []config.DeviceRule{{Match: "maximus", Follow: "kraken"}}}
+	svc := servicetest.New(t, cfg, board, cooler)
+	_, err := svc.Apply(t.Context(), service.Request{
+		Assignments: []devices.Assignment{{Target: devices.Target{Device: "NZXT Kraken Elite V2"}, Colour: colour.MustParse("red")}},
+		Effects:     map[string]scenes.Effect{"kraken": {Mode: "Tai Chi"}},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "Tai Chi", viewOf(t, svc, "ASUS ROG MAXIMUS Z790 HERO").Device.ActiveMode)
 }
