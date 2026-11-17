@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/ushineko/sanshoku/lighting"
 )
@@ -25,6 +26,9 @@ type Firmware struct {
 	MaxColours int
 	// Speeds are every effect's speeds, slowest first; nil is none.
 	Speeds []int
+	// Delay is how long each effect or colour write takes, as a device's
+	// own exchange does; zero is none.
+	Delay time.Duration
 
 	fmu     sync.Mutex
 	names   []string
@@ -70,6 +74,7 @@ func (f *Firmware) info(i int) lighting.EffectInfo {
 // SetEffectWith runs an effect with its colours and speed, checked as a
 // driver checks them.
 func (f *Firmware) SetEffectWith(_ context.Context, name string, s lighting.Settings) (bool, error) {
+	time.Sleep(f.Delay)
 	i := slices.IndexFunc(f.names, func(n string) bool { return strings.EqualFold(n, name) })
 	if i < 0 {
 		return false, fmt.Errorf("%q: %w", name, lighting.ErrNoEffect)
@@ -127,6 +132,7 @@ func (f *Firmware) Effect(context.Context) (lighting.Effect, error) {
 
 // SetEffect runs a named effect, matched without regard to case.
 func (f *Firmware) SetEffect(_ context.Context, name string) (bool, error) {
+	time.Sleep(f.Delay)
 	f.fmu.Lock()
 	defer f.fmu.Unlock()
 	i := slices.IndexFunc(f.names, func(n string) bool { return strings.EqualFold(n, name) })
