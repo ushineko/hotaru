@@ -1,4 +1,4 @@
-# Spec 077: effects follow across fans, and the canvas gaps
+# Spec 077: effects follow across devices, and the canvas gaps
 
 **Issue**: [#218](https://github.com/ushineko/hotaru/issues/218)
 
@@ -30,16 +30,21 @@ them ship:
 5. The write queue's latest-wins was covered only through a slow OpenRGB
    fake.
 
-**The requirement: every supported fan effect follows on all fan devices.**
-On this desk the fan devices are the Kraken (ring and fans), the ASUS Aura's
-headers (side fans, rear fan, mirror accent) and the RTX 4090. An effect the
-Kraken runs shows on the others, as close as each can.
+**The requirement: every supported effect can follow on every device that
+can show one.** On this desk that is the Kraken (ring and fans), the ASUS
+Aura's headers (side fans, rear fan, mirror accent), the RTX 4090, the Corsair
+MM700, the G502 X PLUS, the K4 HE, and the Apex and the F75 where they are
+attached. An effect the leader runs shows on each follower, as close as each
+can. Which devices follow, and which are set on their own, is hotaru's
+configuration, device by device.
 
 Decided on 2026-11-17:
 
 - **The Aura draws hotaru's renderers** of the Kraken's effects, matched by
   eye on the bench. The Aura's own firmware effects have nothing like Tai Chi,
-  Water Cooler, Loading, Candle or Starry Night.
+  Water Cooler, Loading, Candle or Starry Night. Every other device hotaru
+  draws (the MM700, the G502, the K4 HE, the Apex, the F75) draws the same
+  renderers.
 - **The Kraken runs its own firmware effect.** It costs nothing while it runs.
   The renderers start in step with it, and restart in step on every apply.
 - **The RTX 4090 takes its closest firmware effect**: one light at four
@@ -85,14 +90,21 @@ What sanshoku has and lacks (sanshoku #89):
 ### R3. Effects follow (the requirement)
 
 - R3.1 **One set of names.** Each of the Kraken's 14 effects is offered by
-  every fan device under the Kraken's name: on the Kraken, its firmware; on a
-  drawn device (the Aura), a hotaru renderer; on the RTX 4090, its best fit
-  (R3.6). A device lists which it draws and which it maps.
-- R3.2 **Following.** A rule's `follow: <device>` makes a device take the
-  leader's effect, colours and speed whenever the leader is given one: an
-  apply, a scene, a restore. A scene that names an effect for a follower too
-  overrides it for that device. The maintainer's rules give the Aura and the
-  RTX 4090 `follow: kraken`.
+  every device that can show an effect, under the Kraken's name: on the
+  Kraken, its firmware; on every drawn device (the Aura, the MM700, the G502,
+  the K4 HE, the Apex, the F75), a hotaru renderer; on the RTX 4090, its best
+  fit (R3.6). A device lists which it draws and which it maps. A device's own
+  firmware effects stay offered beside them.
+- R3.2 **Following is configured, device by device.** A rule's
+  `follow: <device>` makes a device take the leader's effect, colours and
+  speed whenever the leader is given one: an apply, a scene, a restore. A
+  device with no `follow` is set on its own, as today. A scene that names an
+  effect for a follower overrides it for that device, for that scene. Any
+  device may lead; a follower of a follower takes the first leader's, and a
+  loop is a rules problem reported at load. The window and `light map` set
+  and clear `follow`, as they set every other rule. The maintainer's rules
+  start with the Aura and the RTX 4090 following the Kraken; the rest are the
+  maintainer's to choose.
 - R3.3 **Renderers.** Each of the 14 effects is a hotaru renderer taking the
   Kraken's colours and speed in the Kraken's units, the period mapped to time
   as E1 measures it. Each is matched to the Kraken by eye on the bench (E1):
@@ -115,10 +127,21 @@ What sanshoku has and lacks (sanshoku #89):
   Alternating, Tai Chi and Water Cooler to Fade In with both colours; Covering
   Marquee and Loading to Flowing. The speed is the nearest of the card's
   three.
-- R3.7 **Cost.** A renderer on the Aura draws at the pace E1 finds smooth for
-  the effect, never under the device's floor, and stops when a still scene
-  replaces it. The CPU and USB cost of the Aura following the Kraken is
-  measured and stated, against the same desk with a still scene.
+- R3.7 **Cost.** A renderer draws at the pace E1 finds smooth for the effect,
+  never under the device's floor, and stops when a still scene replaces it.
+  The CPU, USB and radio cost of every device following the Kraken is measured
+  and stated, against the same desk with a still scene.
+- R3.8 **Each device's limits, stated and kept.** Where a device cannot show
+  part of an effect, it shows the nearest and the listing says so:
+  - the K4 HE takes each key's hue, and one brightness for the board, so an
+    effect that dims keys apart (Candle, Starry Night) dims the board;
+  - the MM700's logo has no blue channel (spec 009);
+  - the F75 through its receiver shows a merged palette, and a moving effect
+    is radio traffic for as long as it runs;
+  - the G502 is wireless: a moving effect costs battery, and E5 measures how
+    much an hour of one costs against a still colour;
+  - a single light (the MM700's, the RTX 4090's) shows an effect's colour over
+    time, not across lights.
 
 ### R4. Shapes and the map (gaps 1, 4)
 
@@ -158,6 +181,10 @@ What sanshoku has and lacks (sanshoku #89):
   the frame, or its own lighting?
 - **E4. The RTX 4090.** Each mapping in R3.6 beside the Kraken: the closest of
   the card's effects, and its speed.
+- **E5. The other drawn devices.** Tai Chi, Spectrum Wave, Breathing and
+  Candle following the Kraken on the MM700, the G502, the K4 HE (and the Apex
+  and F75 where attached): does each read as the same effect? The G502's
+  battery over an hour of a moving effect against a still colour.
 
 ## Acceptance Criteria
 
@@ -168,7 +195,8 @@ What sanshoku has and lacks (sanshoku #89):
   - an effect's colours and speed reach a `canvastest.Firmware`, are recorded,
     and are restored;
   - a follower takes the leader's effect, colours and speed, and a scene's own
-    effect for it wins;
+    effect for it wins; a device with no `follow` is untouched; a chain
+    resolves to the first leader; a loop is reported at load;
   - each renderer draws per thing on a ring and a line, at its speed;
   - renderers restart in phase on apply;
   - the 4090 table maps each of the 14;
@@ -179,6 +207,10 @@ What sanshoku has and lacks (sanshoku #89):
 - [ ] Live, with someone watching:
   - each of the 14 effects follows on the Kraken, the Aura's three headers
     and the RTX 4090;
+  - E5's four effects follow on the MM700, the G502 and the K4 HE (and the
+    Apex and F75 where attached);
+  - a device with no `follow` keeps its own effect while the Kraken's changes,
+    and one given `follow` in the window starts following;
   - Tai Chi in two colours and Fading in three, on all of them;
   - a speed change on all of them;
   - E2's drift recorded;
@@ -196,9 +228,13 @@ What sanshoku has and lacks (sanshoku #89):
 - **Cost.** Following streams frames to the Aura for as long as an effect
   moves, which a still scene does not. Measured (R3.7), and the cost rule
   holds: the effect's pace, not the device's floor.
-- **`follow` is a rule key.** Assumed here as the way a device follows. A
-  scene could name the effect for each device instead; the rule keeps every
-  scene short.
+- **`follow` is a rule key**, set device by device (the maintainer, on
+  2026-11-17): following is configuration, and a device can as well be set on
+  its own. A scene could name the effect for each device instead; the rule
+  keeps every scene short.
+- **Battery and radio.** Following puts moving effects on wireless devices
+  that showed still colours. E5 measures it; the default for a new device is
+  not to follow.
 - **sanshoku's API grows.** A new optional interface beside `Onboard`, so
   existing consumers are untouched.
 - **Rollback:** revert. A rules file with `follow` or `shapes` loads on an
