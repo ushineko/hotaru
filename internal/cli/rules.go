@@ -207,6 +207,12 @@ func merge(existing *config.Config, segmentsFound []namedSegment, learned map[st
 			// brightness belongs to a mode rather than to a device.
 			rule.Brightness = nil
 		}
+		for zone, n := range note.lengths {
+			if rule.Lengths == nil {
+				rule.Lengths = map[string]int{}
+			}
+			rule.Lengths[zone] = n
+		}
 		rule.Segments = map[string]config.Segment{}
 		for _, segment := range segments {
 			entry := config.Segment{Zone: segment.Zone}

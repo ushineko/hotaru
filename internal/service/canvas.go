@@ -45,6 +45,8 @@ type Canvas interface {
 	// Zones is the device's own zones, where it names them, or nil (spec
 	// 075).
 	Zones() []lighting.Zone
+	// Resize gives a zone whose length the device cannot read its lights.
+	Resize(zone string, lights int) error
 
 	// Effects is the firmware's own stored effects, or none (spec 071).
 	Effects() []string
@@ -895,6 +897,40 @@ func (l *lights) refuse(device string) error {
 	}
 	return &NoDevice{Name: device}
 }
+
+/*
+SetLength gives a zone of a device hotaru draws a length, now and until the
+service stops: how light map finds a header's length by trying lengths
+(spec 077 R4.3). Not recorded; the rules' lengths are what a restart uses.
+*/
+func (s *Service) SetLength(_ context.Context, device, zone string, lights int) error {
+	s.mu.RLock()
+	all := s.drawnNow()
+	s.mu.RUnlock()
+	for _, d := range all {
+		if !strings.EqualFold(d.Name(), device) {
+			continue
+		}
+		if err := d.Resize(zone, lights); err != nil {
+			return &BadLength{Device: device, Zone: zone, Lights: lights, Why: err}
+		}
+		return nil
+	}
+	return &NoDevice{Name: device}
+}
+
+// BadLength is a length a device refused for a zone.
+type BadLength struct {
+	Device, Zone string
+	Lights       int
+	Why          error
+}
+
+func (e *BadLength) Error() string {
+	return fmt.Sprintf("%s's %s cannot have %d lights: %v", e.Device, e.Zone, e.Lights, e.Why)
+}
+
+func (e *BadLength) Unwrap() error { return e.Why }
 
 // Handed is a write refused because the device's lights are drawn by hotaru
 // under another name.

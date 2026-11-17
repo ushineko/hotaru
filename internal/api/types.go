@@ -227,6 +227,20 @@ type Zone struct {
 	// Parts are the lights of each thing chained in the zone, where the
 	// device knows them (spec 077).
 	Parts []int `json:"parts,omitempty"`
+	// Max is the most lights a zone whose length is set may have; absent
+	// for a zone the device counts (spec 077 R4.3).
+	Max int `json:"max,omitempty"`
+}
+
+/*
+LengthRequest is the body of POST /v1/lighting/length: a zone of a device
+hotaru draws, by the device's full name and the zone's, given a length until
+the service stops (spec 077 R4.3). The rules' lengths are what lasts.
+*/
+type LengthRequest struct {
+	Device string `json:"device"`
+	Zone   string `json:"zone"`
+	Lights int    `json:"lights"`
 }
 
 // DevicesResponse is the body of GET /v1/devices.

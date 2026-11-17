@@ -186,3 +186,49 @@ func hasMode(d api.Device, mode string) bool {
 	}
 	return false
 }
+
+/*
+lengthCommand gives a zone whose length its device cannot read a length, for
+as long as the service runs: to try one before writing it to the rules'
+lengths, which light map does for you (spec 077 R4.3).
+*/
+func lengthCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "length <device>/<zone> <lights>",
+		Short: "Try a length for a zone its device cannot count",
+		Long: `Try a length for a zone its device cannot count, such as an addressable
+header's strip or fans, until the service stops. Write it to the rules'
+lengths to keep it; ` + "`hotaru light map`" + ` finds and writes it for you.
+
+	hotaru light length maximus/"Addressable RGB Header 3" 20`,
+		Args: cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, err := client(cmd)
+			if err != nil {
+				return err
+			}
+			device, zone, ok := strings.Cut(args[0], "/")
+			if !ok || zone == "" {
+				return fmt.Errorf("%q: a device and a zone, device/zone", args[0])
+			}
+			var lights int
+			if _, err := fmt.Sscan(args[1], &lights); err != nil || lights < 0 {
+				return fmt.Errorf("%q: a number of lights", args[1])
+			}
+			found, err := client.Devices(cmd.Context())
+			if err != nil {
+				return quiet(err)
+			}
+			target, ok := named(found, device)
+			if !ok {
+				return fmt.Errorf("no device called %q", device)
+			}
+			if err := client.Length(cmd.Context(), target.Name, zone, lights); err != nil {
+				return quiet(err)
+			}
+			cmd.Printf("%s's %s has %d lights until the service stops.\n", target.Name, zone, lights)
+			return nil
+		},
+	}
+	return cmd
+}

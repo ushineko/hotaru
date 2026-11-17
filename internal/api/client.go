@@ -92,6 +92,13 @@ func (c *Client) Apply(ctx context.Context, req ApplyRequest) (ApplyResponse, er
 	return out, err
 }
 
+// Length gives a zone of a device hotaru draws a length until the service
+// stops (spec 077 R4.3).
+func (c *Client) Length(ctx context.Context, device, zone string, lights int) error {
+	var out LengthRequest
+	return c.do(ctx, http.MethodPost, "/"+Version+"/lighting/length", LengthRequest{Device: device, Zone: zone, Lights: lights}, &out)
+}
+
 // Release hands a device hotaru draws back to its firmware, which on the first
 // such device reboots it.
 func (c *Client) Release(ctx context.Context, device string) (ReleaseResponse, error) {

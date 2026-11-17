@@ -37,6 +37,7 @@ func Routes() []string {
 		"POST /" + Version + "/screen",
 		"POST /" + Version + "/lighting/apply",
 		"POST /" + Version + "/lighting/release",
+		"POST /" + Version + "/lighting/length",
 		"GET /" + Version + "/scenes",
 		"PUT /" + Version + "/scenes/{name}",
 		"DELETE /" + Version + "/scenes/{name}",
@@ -143,6 +144,24 @@ func Handler(svc *service.Service) http.Handler {
 		Something a person asks for and never a side effect (spec 060 R4):
 		on the first such device it reboots the board.
 	*/
+	mux.HandleFunc("POST /"+Version+"/lighting/length", func(w http.ResponseWriter, r *http.Request) {
+		var req LengthRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			write(w, http.StatusBadRequest, Error{Error: "that request does not decode", Detail: err.Error()})
+			return
+		}
+		err := svc.SetLength(r.Context(), req.Device, req.Zone, req.Lights)
+		var bad *service.BadLength
+		switch {
+		case errors.As(err, &bad):
+			write(w, http.StatusBadRequest, Error{Error: err.Error()})
+		case err != nil:
+			fail(w, err)
+		default:
+			write(w, http.StatusOK, req)
+		}
+	})
+
 	mux.HandleFunc("POST /"+Version+"/lighting/release", func(w http.ResponseWriter, r *http.Request) {
 		var req ReleaseRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -914,7 +933,7 @@ func describe(view service.View) Device {
 	for _, zone := range view.Device.Zones {
 		device.Zones = append(device.Zones, Zone{
 			Name: zone.Name, Shape: string(zone.Shape), First: zone.First, Count: zone.Count,
-			Parts: append([]int(nil), zone.Parts...),
+			Parts: append([]int(nil), zone.Parts...), Max: zone.Max,
 		})
 	}
 	for _, col := range view.Device.Colours {

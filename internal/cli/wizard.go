@@ -211,10 +211,11 @@ func Map(ctx context.Context, client *api.Client, asker Asker, only ...string) e
 			asker.Say("  Noted: %s only lights one particular way, and that is written down.", device.Name)
 		}
 
-		segments, err := mapDevice(ctx, client, asker, device, working.mode, existing, names(list))
+		segments, lengths, err := mapDevice(ctx, client, asker, device, working.mode, existing, names(list))
 		if err != nil {
 			return err
 		}
+		note.lengths = lengths
 		if len(segments) == 0 {
 			continue // nothing named on it, so nothing to treat specially
 		}
@@ -403,7 +404,7 @@ came on. No colour matching, nothing else competing for the answer, and
 */
 func mapDevice(ctx context.Context, client *api.Client, asker Asker, device api.Device, mode string,
 	existing *config.Config, present []string,
-) ([]namedSegment, error) {
+) ([]namedSegment, map[string]int, error) {
 	zones := device.Zones
 	if len(zones) == 0 {
 		zones = []api.Zone{{Name: "", First: 0, Count: device.LEDs}}
@@ -412,18 +413,31 @@ func mapDevice(ctx context.Context, client *api.Client, asker Asker, device api.
 	// Everything else off, so the only lit thing in the case is the thing
 	// being asked about.
 	if err := darken(ctx, client, present, device.Name); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if len(zones) > 1 {
 		asker.Say("  It has %d parts that light separately. Going through them one at a time.", len(zones))
 	}
 
 	var named []namedSegment
+	lengths := map[string]int{}
 	for _, zone := range zones {
+		if zone.Max > 0 {
+			// A header: its device cannot count what is plugged in, so the
+			// length is found first, by looking (spec 077 R4.3).
+			n, err := findLength(ctx, client, asker, device, zone, mode)
+			if err != nil {
+				return nil, nil, err
+			}
+			lengths[zone.Name], zone.Count = n, n
+			if n == 0 {
+				continue
+			}
+		}
 		if err := light(ctx, client, asker, device.Name, mode, []api.Assignment{{
 			Target: target(device.Name, zone.Name), Colour: probeColour,
 		}}); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
 		question := "  What is lit now?"
@@ -434,7 +448,7 @@ func mapDevice(ctx context.Context, client *api.Client, asker Asker, device api.
 
 		what, err := askNameOr(asker, question, knownAs(existing, device.Name, zone.Name, present))
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if what == "" {
 			continue // nothing attached to this one
@@ -442,11 +456,69 @@ func mapDevice(ctx context.Context, client *api.Client, asker Asker, device api.
 
 		parts, err := split(ctx, client, asker, device, zone, what, mode)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		named = append(named, parts...)
 	}
-	return named, nil
+	return named, lengths, nil
+}
+
+// lengthCap is the longest a header is tried at: a hundred and twenty lights
+// is more than any fan chain or strip on a desk.
+const lengthCap = 120
+
+/*
+findLength finds how many lights are plugged into a header, which its board
+cannot count. The header is given the most it is tried at and lit; nothing lit
+is an empty header. Then the range is halved, the lights up to the middle
+green and the rest red, and only one thing is asked: is any red showing? Seven
+questions for a hundred and twenty lights, as the maintainer found the Z790's
+by hand (spec 077 R4.3).
+*/
+func findLength(ctx context.Context, client *api.Client, asker Asker, device api.Device, zone api.Zone, mode string) (int, error) {
+	top := min(zone.Max, lengthCap)
+	if err := client.Length(ctx, device.Name, zone.Name, top); err != nil {
+		return 0, quiet(err)
+	}
+	asker.Say("  %s cannot count what is plugged into %s, so this finds out.", knownName(device), zone.Name)
+	if err := light(ctx, client, asker, device.Name, mode, []api.Assignment{{
+		Target: target(device.Name, zone.Name), Colour: probeColour,
+	}}); err != nil {
+		return 0, err
+	}
+	lit, err := asker.Confirm(fmt.Sprintf("  Is anything plugged into %s lit now?", zone.Name))
+	if err != nil {
+		return 0, err
+	}
+	if !lit {
+		asker.Say("    Nothing on it, then.")
+		return 0, client.Length(ctx, device.Name, zone.Name, 0)
+	}
+	lo, hi := 0, top
+	for hi-lo > 1 {
+		mid := (lo + hi) / 2
+		zoned := target(device.Name, zone.Name)
+		if err := light(ctx, client, asker, device.Name, mode, []api.Assignment{
+			{Target: fmt.Sprintf("%s[0:%d]", zoned, mid-1), Colour: "green"},
+			{Target: fmt.Sprintf("%s[%d:%d]", zoned, mid, top-1), Colour: "red"},
+		}); err != nil {
+			return 0, err
+		}
+		red, err := asker.Confirm("  Is any red showing on it?")
+		if err != nil {
+			return 0, err
+		}
+		if red {
+			lo = mid
+		} else {
+			hi = mid
+		}
+	}
+	if err := client.Length(ctx, device.Name, zone.Name, hi); err != nil {
+		return 0, quiet(err)
+	}
+	asker.Say("    %s has %d lights.", zone.Name, hi)
+	return hi, nil
 }
 
 // target names a zone, or the whole device where it has none.
@@ -1186,6 +1258,9 @@ type notes struct {
 	undimmable bool
 	// plainAgain undoes a stay-dark mode chosen on an earlier run.
 	plainAgain bool
+	// lengths are the zones whose length the wizard found, by trying them
+	// (spec 077 R4.3).
+	lengths map[string]int
 }
 
 // dimLevel is what "turned down" means when the wizard offers it. A number

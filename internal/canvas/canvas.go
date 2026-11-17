@@ -242,7 +242,10 @@ func (d *Device) Resize(zone string, lights int) error {
 	if err := z.Resize(zone, lights); err != nil {
 		return fmt.Errorf("%s: %w", d.Name(), err)
 	}
-	d.keys = d.draw.Keys()
+	keys := d.draw.Keys()
+	d.mu.Lock()
+	d.keys = keys
+	d.mu.Unlock()
 	return nil
 }
 
@@ -394,7 +397,11 @@ func (d *Device) Name() string { return d.dev.Identity().Name }
 func (d *Device) Path() string { return d.dev.Identity().Path }
 
 // Keys are the lights a frame may address, in the device's order.
-func (d *Device) Keys() []lighting.Key { return append([]lighting.Key(nil), d.keys...) }
+func (d *Device) Keys() []lighting.Key {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return append([]lighting.Key(nil), d.keys...)
+}
 
 // Floor is the shortest interval at which the device shows every frame.
 func (d *Device) Floor() time.Duration { return d.draw.Floor() }

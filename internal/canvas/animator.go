@@ -247,6 +247,9 @@ func (a *Animator) Run(ctx context.Context) error {
 			}
 			current, showing, start = next, true, a.clock.Now()
 			at = start
+			// Read again: a zone given a new length changes the lights
+			// (spec 077 R4.3).
+			keys = a.surface.Keys()
 			stop()
 			interval := a.interval(next)
 			if next.Effect.Animated {
