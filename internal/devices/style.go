@@ -21,6 +21,12 @@ type Style struct {
 	Colours []colour.Colour
 	// Speed is in the mode's own units, within the range it gives.
 	Speed *int
+	// Pace trims a drawn effect's period for this write; zero is the
+	// device rule's (spec 077 R3.9).
+	Pace float64
+	// Restart starts the effect again from its beginning, even where nothing
+	// about it changed.
+	Restart bool
 }
 
 // Palette is every colour the style names, first to last.

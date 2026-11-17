@@ -843,7 +843,7 @@ func parse(req ApplyRequest) (service.Request, error) {
 	out := service.Request{
 		Off: req.Off, Devices: req.Devices,
 		Mode: req.Mode, Exactly: req.Exactly, Preview: req.Preview,
-		Brightness: req.Brightness,
+		Brightness: req.Brightness, Pace: req.Pace, Restart: req.Restart,
 	}
 	if req.Colour != "" {
 		col, err := colour.Parse(req.Colour)

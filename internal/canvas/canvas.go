@@ -315,13 +315,14 @@ the wrong one (sanshoku spec 023 R2.8a).
 sanshoku writes nothing where the stored value already matches, so a call
 that changes nothing costs the two reads and no flash.
 */
-func (d *Device) SetFirmware(ctx context.Context, effect string, colours []lighting.Colour, speed *int) (wrote bool, err error) {
+func (d *Device) SetFirmware(ctx context.Context, effect string, colours []lighting.Colour, speed *int, restart bool) (wrote bool, err error) {
 	if d.onboard == nil {
 		return false, fmt.Errorf("%s: %w", d.Name(), errNoFirmware)
 	}
-	if tuned, ok := d.onboard.(lighting.Tuned); ok && (len(colours) > 1 || speed != nil) {
-		// All the colours and the speed, in one write (sanshoku spec 032).
-		wrote, err := tuned.SetEffectWith(ctx, effect, lighting.Settings{Colours: colours, Speed: speed})
+	if tuned, ok := d.onboard.(lighting.Tuned); ok && (len(colours) > 1 || speed != nil || restart) {
+		// All the colours and the speed, in one write (sanshoku spec 032),
+		// and again from its beginning where asked (sanshoku spec 035).
+		wrote, err := tuned.SetEffectWith(ctx, effect, lighting.Settings{Colours: colours, Speed: speed, Restart: restart})
 		if err != nil {
 			return wrote, d.check(err) //nolint:wrapcheck // the driver names the device
 		}

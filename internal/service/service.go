@@ -424,6 +424,12 @@ type Request struct {
 	// reporting it as a success answers a question nobody asked, and looks to
 	// the caller like the mode they named having worked.
 	Exactly bool
+
+	// Pace trims each named device's copy of its effect for this request
+	// only, by any part of its name (spec 077 R3.9).
+	Pace map[string]float64
+	// Restart starts each effect again from its beginning.
+	Restart bool
 }
 
 /*
@@ -554,7 +560,7 @@ func (s *Service) applyOne(ctx context.Context, client machine, cfg *config.Conf
 	device *devices.Device, assignments []devices.Assignment, req Request,
 ) Result {
 	off := req.Off
-	want := preference{mode: req.Mode, exactly: req.Exactly}
+	want := preference{mode: req.Mode, exactly: req.Exactly, restart: req.Restart, pace: paceFor(req.Pace, device.Name)}
 	result := Result{Device: device.Name}
 	/*
 		insist says the preferred mode is not to be dropped for carrying fewer
@@ -599,7 +605,7 @@ func (s *Service) applyOne(ctx context.Context, client machine, cfg *config.Conf
 			*/
 			result.Problems = append(result.Problems,
 				fmt.Sprintf("%s has no effect called %q", device.Name, effect.Mode))
-			want = preference{mode: req.Mode, exactly: req.Exactly}
+			want = preference{mode: req.Mode, exactly: req.Exactly, restart: req.Restart, pace: paceFor(req.Pace, device.Name)}
 		}
 	}
 	rule := devices.RuleFor(cfg, device.Name)
@@ -732,6 +738,21 @@ type preference struct {
 	colours []colour.Colour
 	// speed is the mode's, in the device's units, where it advertises a range.
 	speed *int
+	// pace trims a drawn effect's period for this write; zero is the rule's.
+	pace float64
+	// restart starts the effect again from its beginning.
+	restart bool
+}
+
+// paceFor is the trim a request names for one device, by any part of its
+// name, or zero.
+func paceFor(pace map[string]float64, device string) float64 {
+	for name, factor := range pace {
+		if strings.Contains(strings.ToLower(device), strings.ToLower(strings.TrimSpace(name))) {
+			return factor
+		}
+	}
+	return 0
 }
 
 /*
@@ -830,6 +851,7 @@ func (s *Service) writeFrame(ctx context.Context, client machine,
 	for _, mode := range candidates {
 		attempt := Attempt{Mode: mode}
 		style := styleOf(rule.Brightness, modeColoursFor(device, mode, frame, off, want.colours), want.speed)
+		style.Pace, style.Restart = want.pace, want.restart
 
 		// The mode, then the frame: a canvas chooses its renderer and draws
 		// in one step (see drawn, in canvas.go).

@@ -59,7 +59,7 @@ type Canvas interface {
 	ReadFirmware(ctx context.Context) (lighting.Effect, error)
 	// SetFirmware writes an effect, its colours and speed to the device,
 	// where they differ. Nil colours and speed keep what it has.
-	SetFirmware(ctx context.Context, effect string, colours []lighting.Colour, speed *int) (bool, error)
+	SetFirmware(ctx context.Context, effect string, colours []lighting.Colour, speed *int, restart bool) (bool, error)
 	// Say puts a line in the service's log, naming the device.
 	Say(format string, args ...any)
 	// Watch is the power-cycle watcher's notes (spec 071 R6).
@@ -519,7 +519,7 @@ func (d *drawn) chooseStored(ctx context.Context, name string, style devices.Sty
 	}
 	now, known := d.Firmware()
 	sameEffect := known && strings.EqualFold(now.Name, name)
-	if sameEffect && showsColours(now, colours) && (style.Speed == nil || (now.Speed != nil && *now.Speed == *style.Speed)) {
+	if !style.Restart && sameEffect && showsColours(now, colours) && (style.Speed == nil || (now.Speed != nil && *now.Speed == *style.Speed)) {
 		d.showStored()
 		return nil
 	}
@@ -557,7 +557,7 @@ func (d *drawn) chooseStored(ctx context.Context, name string, style devices.Sty
 			return ctx.Err() //nolint:wrapcheck // the caller's own cancellation
 		}
 	}
-	wrote, err := d.SetFirmware(ctx, name, colours, style.Speed)
+	wrote, err := d.SetFirmware(ctx, name, colours, style.Speed, style.Restart)
 	if wrote && d.Stores() {
 		d.mu.Lock()
 		d.flashed = flashNow()
@@ -638,9 +638,19 @@ func (d *drawn) showLocked(colours []colour.Colour, rule devices.Rule) {
 			Colours: d.colours, Palette: pick.style.Palette(),
 			Speed: pick.style.Speed, Brightness: pick.style.Brightness,
 			Things: thingsOf(d.zones(d.Keys()), rule),
+			Pace:   paceOr(pick.style.Pace, rule.Pace[strings.ToLower(pick.effect.Name)]),
 		},
 		Interval: rule.FrameInterval,
+		Restart:  pick.style.Restart,
 	})
+}
+
+// paceOr is a write's own trim, or the rule's where it names none.
+func paceOr(own, rule float64) float64 {
+	if own > 0 {
+		return own
+	}
+	return rule
 }
 
 /*

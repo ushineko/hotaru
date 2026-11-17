@@ -2,6 +2,7 @@ package service_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -109,4 +110,34 @@ func TestAnEffectInMemoryIsPutBackAfterARestart(t *testing.T) {
 	assert.Equal(t, []lighting.Colour{{R: 255}, {B: 255}}, colours)
 	require.NotNil(t, sp)
 	assert.Equal(t, 10, *sp)
+}
+
+/*
+A request's own pace trims a drawn effect for that write, as light match tries
+a trim before keeping it (spec 077 R3.9): at Fading's one step, a copy trimmed
+to twice the period is halfway between its colours.
+*/
+func TestARequestsPaceTrimsTheCopy(t *testing.T) {
+	board := canvastest.NewBoard("ASUS ROG MAXIMUS Z790 HERO", canvastest.Zone("Addressable 1", 1))
+	svc := service.New(nil)
+	drawn := servicetest.Attach(t, svc, board)
+	red := colour.MustParse("red")
+	_, err := svc.Apply(t.Context(), service.Request{
+		Colour:  &red,
+		Effects: map[string]scenes.Effect{"maximus": {Mode: "Fading", Colours: []string{"#ff0000", "#0000ff"}}},
+		Pace:    map[string]float64{"maximus": 2},
+	})
+	require.NoError(t, err)
+	require.Eventually(t, func() bool { return drawn.Clock.Running() > 0 }, eventually, every)
+
+	step := 40 * 52 * time.Millisecond
+	start := drawn.Clock.Now()
+	for drawn.Clock.Now().Sub(start) < step {
+		require.True(t, drawn.Clock.Tick(t.Context()))
+	}
+	require.True(t, drawn.Clock.Tick(t.Context())) // the frame drawn at the step is taken
+	require.Eventually(t, func() bool {
+		p, ok := board.Showing(1)
+		return ok && p.R > 90 && p.B > 90
+	}, eventually, every, "the trim did not slow the copy")
 }

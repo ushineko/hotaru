@@ -61,6 +61,20 @@ type Params struct {
 		(spec 077 R3.4). Empty is the whole canvas as one strip.
 	*/
 	Things []Thing
+
+	/*
+		Pace trims the effect's period for this device: 2 is half as fast,
+		0.5 twice. Zero is no trim (spec 077 R3.9).
+	*/
+	Pace float64
+}
+
+// trim is the period trimmed by the device's pace.
+func (p Params) trim(d time.Duration) time.Duration {
+	if p.Pace <= 0 {
+		return d
+	}
+	return time.Duration(float64(d) * p.Pace)
 }
 
 /*
@@ -247,6 +261,9 @@ beside it.
 */
 func wave(t time.Duration, keys []lighting.Key, p Params) []lighting.Pixel {
 	speed := waveSlowest + (waveFastest-waveSlowest)*float64(speedOf(p)-SlowestSpeed)/(FastestSpeed-SlowestSpeed)
+	if p.Pace > 0 {
+		speed /= p.Pace
+	}
 	shift := float64(t.Nanoseconds()) * speed / float64(time.Second)
 	width := float64(max(len(keys), 1))
 	place := positions(keys)
@@ -337,7 +354,7 @@ func speedOf(p Params) int {
 // pace is a period between slowest and fastest, at the speed asked for.
 func pace(p Params, slowest, fastest time.Duration) time.Duration {
 	fraction := float64(speedOf(p)-SlowestSpeed) / (FastestSpeed - SlowestSpeed)
-	return slowest - time.Duration(fraction*float64(slowest-fastest))
+	return p.trim(slowest - time.Duration(fraction*float64(slowest-fastest)))
 }
 
 // scaled is a colour with every channel multiplied by f, rounded to nearest.

@@ -155,3 +155,16 @@ func TestEveryKrakenEffectDrawsWithNoLayout(t *testing.T) {
 		draw(t, name, 1234*time.Millisecond, lights(5), render.Params{})
 	}
 }
+
+// A device's pace trim lengthens or shortens a copy's period (spec 077 R3.9).
+func TestAPaceTrimChangesThePeriod(t *testing.T) {
+	plain := render.Params{Palette: []colour.Colour{red, blue}}
+	slow := render.Params{Palette: []colour.Colour{red, blue}, Pace: 2}
+	step := 40 * 52 * time.Millisecond // Fading at CAM's speed
+	assert.Equal(t, blue, rgb(draw(t, render.Fading, step, lights(1), plain)[0]))
+	assert.Equal(t, colour.Colour{R: 128, B: 128}, rgb(draw(t, render.Fading, step, lights(1), slow)[0]),
+		"twice the period is halfway at one step")
+	breathe := render.Params{Palette: []colour.Colour{red}, Speed: speed(render.FastestSpeed), Pace: 2}
+	assert.Equal(t, red, rgb(draw(t, render.Breathing, time.Second, lights(1), breathe)[0]),
+		"hotaru's own effects take the trim too: a 1 s breath trimmed to 2 s is full at 1 s")
+}

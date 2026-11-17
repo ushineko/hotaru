@@ -50,7 +50,7 @@ func (h *host) PutBack(ctx context.Context, _ string) (service.Restore, error) {
 	h.mu.Lock()
 	h.putBacks++
 	h.mu.Unlock()
-	_, err := h.device.SetFirmware(ctx, h.recorded, []lighting.Colour{{R: 0x80, B: 0xff}}, nil)
+	_, err := h.device.SetFirmware(ctx, h.recorded, []lighting.Colour{{R: 0x80, B: 0xff}}, nil, false)
 	return service.Restore{Applied: 1}, err
 }
 
@@ -77,7 +77,7 @@ func watchingWith(t *testing.T, recorded, drawing string) (*host, *watchedKeyboa
 	w := &watchedKeyboard{Device: device, fake: fake}
 	w.drawing.Store(drawing)
 	h := &host{recorded: recorded, device: w}
-	_, err := device.SetFirmware(t.Context(), "Ripples shining", []lighting.Colour{{R: 0x80, B: 0xff}}, nil)
+	_, err := device.SetFirmware(t.Context(), "Ripples shining", []lighting.Colour{{R: 0x80, B: 0xff}}, nil, false)
 	require.NoError(t, err)
 
 	tick := make(chan time.Time)

@@ -239,7 +239,7 @@ func phase(t, period time.Duration) float64 {
 // where none was.
 func krakenPeriod(name string, p Params) time.Duration {
 	if p.Speed == nil {
-		return time.Duration(krakenDefault[name]) * krakenPace[name]
+		return p.trim(time.Duration(krakenDefault[name]) * krakenPace[name])
 	}
 	slowest, fastest := periods(name)
 	return pace(p, slowest, fastest)

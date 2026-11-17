@@ -287,6 +287,17 @@ type ApplyRequest struct {
 	// this device" cannot be answered by quietly trying Direct instead and
 	// reporting that it worked.
 	Exactly bool `json:"exactly,omitempty"`
+
+	/*
+		Pace trims the pace of the effect each named device's copy runs, by
+		any part of its name, for this request only (spec 077 R3.9): how
+		light match tries a trim before it is written to the rules.
+	*/
+	Pace map[string]float64 `json:"pace,omitempty"`
+
+	// Restart starts each effect again from its beginning, even where
+	// nothing about it changed: how effects are started in step.
+	Restart bool `json:"restart,omitempty"`
 }
 
 /*

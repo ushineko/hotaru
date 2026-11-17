@@ -3,6 +3,7 @@ package canvas
 import (
 	"context"
 	"errors"
+	"reflect"
 	"slices"
 	"sync"
 	"time"
@@ -46,6 +47,10 @@ type Show struct {
 	// Interval is for an animated effect; zero is DefaultInterval. Never
 	// shorter than the canvas's floor, whatever it says.
 	Interval time.Duration
+	// Restart starts the effect again from its beginning even where it is
+	// the one showing: how effects on several devices start in step (spec
+	// 077 R3.5).
+	Restart bool
 }
 
 /*
@@ -227,7 +232,7 @@ func (a *Animator) Run(ctx context.Context) error {
 				first frame: a breathing keyboard going dark mid-breath for a
 				write that changed nothing.
 			*/
-			if showing && same(next, current) {
+			if showing && !next.Restart && same(next, current) {
 				continue
 			}
 			if next.Effect.Draw == nil {
@@ -346,7 +351,8 @@ func same(x, y Show) bool {
 		slices.Equal(x.Params.Colours, y.Params.Colours) &&
 		slices.Equal(x.Params.Palette, y.Params.Palette) &&
 		samePointer(x.Params.Speed, y.Params.Speed) &&
-		samePointer(x.Params.Brightness, y.Params.Brightness)
+		samePointer(x.Params.Brightness, y.Params.Brightness) &&
+		x.Params.Pace == y.Params.Pace && reflect.DeepEqual(x.Params.Things, y.Params.Things)
 }
 
 func samePointer[T int | colour.Colour](x, y *T) bool {
