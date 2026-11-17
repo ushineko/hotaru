@@ -971,4 +971,3 @@ func TestDimmingIsAskedAboutOnce(t *testing.T) {
 	require.Equal(t, 1, strings.Count(asked, "dimmer than full"))
 	require.NotContains(t, asked, "Keep it dimmer?", "a device was offered dimming after a no")
 }
-
