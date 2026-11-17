@@ -180,6 +180,8 @@ func Map(ctx context.Context, client *api.Client, asker Asker, only ...string) e
 
 	var found []namedSegment
 	learned := map[string]notes{}
+	// dimming is whether this run dims anything, once asked (spec 077 R4.2).
+	var dimming *bool
 	for _, device := range list {
 		if !device.InScope || device.LEDs == 0 || !wanted(only, device.Name) {
 			continue
@@ -251,8 +253,9 @@ func Map(ctx context.Context, client *api.Client, asker Asker, only ...string) e
 		}
 
 		// Brightness is offered only where the mode that will be used takes
-		// one, which is rare enough that most runs are never asked.
-		level, dimmable, err := dimmer(ctx, client, asker, device, working.mode)
+		// one, and asked about once a run before any device is (spec 077
+		// R4.2): every device hotaru draws can be dimmed.
+		level, dimmable, err := dimmed(ctx, client, asker, device, working.mode, &dimming)
 		if err != nil {
 			return err
 		}
@@ -498,8 +501,24 @@ func split(ctx context.Context, client *api.Client, asker Asker,
 		are lines, which are grids and which are single lights; a question
 		about chaining belongs only to the first.
 	*/
-	if zone.Shape != "" && zone.Shape != api.ShapeLine {
+	if zone.Shape != "" && zone.Shape != api.ShapeLine && zone.Shape != api.ShapeRing {
 		return []namedSegment{whole}, nil
+	}
+
+	/*
+		A zone whose things the device counts itself (the Kraken's fans, from
+		the accessories in its slots) is divided as the device says, with
+		nothing asked (spec 077 R4.1).
+	*/
+	if len(zone.Parts) > 1 {
+		var parts []namedSegment
+		first := 0
+		for _, n := range zone.Parts {
+			parts = append(parts, namedSegment{Device: device.Name, Zone: zone.Name, First: first, Last: first + n - 1})
+			first += n
+		}
+		asker.Say("  %s is %d things, as the device counts them.", what, len(parts))
+		return parts, nil
 	}
 
 	/*
@@ -1425,6 +1444,30 @@ func blanking(ctx context.Context, client *api.Client, asker Asker,
 		learned[device.Name] = note
 	}
 	return nil
+}
+
+/*
+dimmed asks once a run whether any light should be dimmer than full, the
+first time a device that can be dimmed comes up, and offers to turn each
+device down only where the answer was yes. Every device hotaru draws can be
+dimmed, and asking after each was a question most runs answer no to again and
+again.
+*/
+func dimmed(ctx context.Context, client *api.Client, asker Asker, device api.Device, mode string, dimming **bool) (*int, bool, error) {
+	if !slices.Contains(device.Dimmable, mode) {
+		return nil, false, nil
+	}
+	if *dimming == nil {
+		yes, err := asker.Confirm("  Should any of the lights be dimmer than full? [n]")
+		if err != nil {
+			return nil, true, err
+		}
+		*dimming = &yes
+	}
+	if !**dimming {
+		return nil, true, nil
+	}
+	return dimmer(ctx, client, asker, device, mode)
 }
 
 // dimmer offers to turn a device down, for devices that have a brightness at

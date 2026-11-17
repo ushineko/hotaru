@@ -211,16 +211,22 @@ const (
 	ShapeSingle = "single"
 	ShapeLine   = "line"
 	ShapeGrid   = "grid"
+	ShapeRing   = "ring"
+	ShapeSet    = "set"
 )
 
 // Zone is a contiguous run of LEDs, as the device groups them.
 type Zone struct {
 	Name string `json:"name"`
-	// Shape is "single", "line" or "grid". Only a line can be several separate
-	// things sharing one connector; a grid is one object with many lights.
+	// Shape is "single", "line", "ring", "grid" or "set". Only a line or a
+	// ring can be several separate things sharing one connector; a grid or a
+	// set is one object with many lights.
 	Shape string `json:"shape,omitempty"`
 	First int    `json:"first"`
 	Count int    `json:"count"`
+	// Parts are the lights of each thing chained in the zone, where the
+	// device knows them (spec 077).
+	Parts []int `json:"parts,omitempty"`
 }
 
 // DevicesResponse is the body of GET /v1/devices.

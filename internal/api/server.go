@@ -914,6 +914,7 @@ func describe(view service.View) Device {
 	for _, zone := range view.Device.Zones {
 		device.Zones = append(device.Zones, Zone{
 			Name: zone.Name, Shape: string(zone.Shape), First: zone.First, Count: zone.Count,
+			Parts: append([]int(nil), zone.Parts...),
 		})
 	}
 	for _, col := range view.Device.Colours {

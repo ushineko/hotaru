@@ -1,11 +1,14 @@
 package cli_test
 
 import (
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"github.com/ushineko/hotaru/internal/api"
 	"github.com/ushineko/hotaru/internal/canvas/canvastest"
+	"github.com/ushineko/hotaru/internal/cli"
 	"github.com/ushineko/hotaru/internal/colour"
 	"github.com/ushineko/hotaru/internal/config"
 	"github.com/ushineko/hotaru/internal/service/servicetest"
@@ -81,4 +84,27 @@ func TestTheListingMentionsStorageOnlyWhereItWears(t *testing.T) {
 	out, err = run(t, drawing(t, nil, canvastest.NewKeyboard(4)), "light", "list")
 	require.NoError(t, err)
 	require.Contains(t, out, "writes that storage")
+}
+
+// A keyboard is a grid, and is never asked how many things are chained on it
+// (spec 077 R4.1).
+func TestAKeyboardIsNotAskedAboutChaining(t *testing.T) {
+	client := api.NewClient(drawing(t, nil,
+		canvastest.NewBoard("Keychron K4 HE", canvastest.Grid("Keyboard", 100))))
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	person := &scripted{answers: []string{"y", "keyboard"}}
+	require.NoError(t, cli.Map(t.Context(), client, person))
+	require.NotContains(t, person.questions(), "chained", "a keyboard was asked about chaining")
+}
+
+// Fans the device counts itself are divided as it counts them, with nothing
+// asked (spec 077 R4.1).
+func TestFansTheDeviceCountsAreNotAskedAbout(t *testing.T) {
+	client := api.NewClient(drawing(t, nil,
+		canvastest.NewBoard("NZXT Kraken Elite V2", canvastest.Ring("Fan", 8, 8, 8))))
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	person := &scripted{answers: []string{"y", "fans"}}
+	require.NoError(t, cli.Map(t.Context(), client, person))
+	require.NotContains(t, person.questions(), "chained")
+	require.Contains(t, strings.Join(person.said, "\n"), "is 3 things, as the device counts them")
 }

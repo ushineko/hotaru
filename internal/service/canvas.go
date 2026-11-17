@@ -198,9 +198,9 @@ func (d *drawn) zones(keys []lighting.Key) []devices.Zone {
 	}
 	out := make([]devices.Zone, 0, len(own))
 	for _, z := range own {
-		zone := devices.Zone{Name: z.Name, Shape: devices.ShapeLine, First: z.First, Count: z.Count}
-		if z.Count == 1 && !z.Resizable() {
-			zone.Shape = devices.ShapeSingle
+		zone := devices.Zone{
+			Name: z.Name, Shape: shapeOf(z), First: z.First, Count: z.Count,
+			Parts: append([]int(nil), z.Parts...),
 		}
 		if z.Resizable() {
 			zone.Min, zone.Max = z.Min, z.Max
@@ -208,6 +208,31 @@ func (d *drawn) zones(keys []lighting.Key) []devices.Zone {
 		out = append(out, zone)
 	}
 	return out
+}
+
+/*
+shapeOf is a zone's shape as the driver gives it (sanshoku spec 032). One the
+driver does not know, an addressable header's, is a line until somebody says
+otherwise: it may be a strip or fans in a chain, and only a line or a ring is
+asked about chaining.
+*/
+func shapeOf(z lighting.Zone) devices.Shape {
+	switch z.Shape {
+	case lighting.ShapeSingle:
+		return devices.ShapeSingle
+	case lighting.ShapeRing:
+		return devices.ShapeRing
+	case lighting.ShapeGrid:
+		return devices.ShapeGrid
+	case lighting.ShapeSet:
+		return devices.ShapeSet
+	case lighting.ShapeLine:
+		return devices.ShapeLine
+	}
+	if z.Count == 1 && !z.Resizable() {
+		return devices.ShapeSingle
+	}
+	return devices.ShapeLine
 }
 
 /*

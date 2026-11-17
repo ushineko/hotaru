@@ -225,6 +225,11 @@ type Zone struct {
 	*/
 	Min int
 	Max int
+
+	// Parts are the lights of each thing chained in the zone, first to
+	// last, where the device knows them: the Kraken's fans are 8, 8 and 8
+	// (spec 077).
+	Parts []int
 }
 
 // Shape is how a zone's lights are arranged, as the device describes them.
@@ -238,10 +243,17 @@ const (
 	ShapeLine Shape = "line"
 	// ShapeGrid is lights laid out in rows and columns, which is one object.
 	ShapeGrid Shape = "grid"
+	// ShapeRing is lights in a circle: a fan, a pump's ring. Several fans
+	// can share one zone, as several strips can share a line (spec 077).
+	ShapeRing Shape = "ring"
+	// ShapeSet is lights in no order, on one object: a mouse's.
+	ShapeSet Shape = "set"
 )
 
 // Chainable reports whether several separate things could share this zone.
-func (z Zone) Chainable() bool { return z.Shape == ShapeLine && z.Count > 1 }
+func (z Zone) Chainable() bool {
+	return (z.Shape == ShapeLine || z.Shape == ShapeRing) && z.Count > 1
+}
 
 // Last is the index of the zone's final LED.
 func (z Zone) Last() int { return z.First + z.Count - 1 }
