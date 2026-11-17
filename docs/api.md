@@ -186,7 +186,9 @@ Each zone has a `shape`: `single`, `line`, `ring` (a fan), `grid` (a keyboard)
 or `set` (lights in no order, a mouse's). `parts` are the lights of each fan
 in a zone where the device counts them, and `max` is the most lights a zone
 whose length is set may have. A device whose own effects are kept in storage
-that wears says `writes_storage` (spec 077).
+that wears says `writes_storage` (spec 077). `follows` is the device a
+device's rule follows, and `pace` its pace per effect, by the effect's name in
+lower case.
 
 ## POST /v1/lighting/apply
 
@@ -820,6 +822,31 @@ $ curl -s --unix-socket … -X POST http://hotaru/v1/reload
   "rules_file": "/home/you/.config/hotaru/hotaru.yml"
 }
 ```
+
+## POST /v1/rules/device
+
+Changes one device's rule: what it follows, and its pace per effect. The
+window's Follows and Match pace use it, and so do `hotaru light follow` and
+`hotaru light match`. The service writes the rules file and uses it at once.
+
+```console
+$ curl -s --unix-socket $XDG_RUNTIME_DIR/hotaru/hotaru.sock \
+    -d '{"device":"maximus","follow":"kraken","pace":{"Breathing":2.16}}' \
+    http://hotaru/v1/rules/device
+{"rules_file":"/home/you/.config/hotaru/hotaru.yml","match":"maximus"}
+```
+
+- `follow` names the device to follow, by any part of its name. An empty
+  string stops following, and an absent one leaves it as it is. A device
+  given a leader takes the leader's current effect at once, in step.
+- `pace` sets the pace for each effect named, from above 0 to 10. A pace of 0
+  removes it.
+- The rule changed is the last one that matches the device, or a new one.
+  The file before is kept as `hotaru.yml.bak`. Comments in the file are not
+  kept.
+
+A device hotaru does not list is a 404. A leader that is not there, or a pace
+out of range, is a 400, and nothing is written.
 
 ## POST /v1/lighting/length
 

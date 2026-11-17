@@ -172,10 +172,17 @@ devices:
   one, else the rule's segments that cover the zone end to end. `shapes` says
   whether a header holds fans (`ring`) or a strip (`line`), since the board
   cannot tell.
+- **Following.** Each device's card in the window's System section has a
+  Follows choice. `hotaru light follow maximus kraken` does the same, and
+  `hotaru light follow maximus none` stops it. A device given a leader starts
+  on the leader's effect at once.
 - **Pace.** The copies run at the Kraken's pace as measured. `hotaru light
   match <device> <effect>` runs the effect on a device and its leader
-  together: f, s and r until they look alike, and Return writes the device's
-  `pace` for that effect.
+  together. Keys f and s change it by a tenth, F and S by a fiftieth, and a
+  number sets it. Return writes the device's `pace` for that effect. A
+  follower's card in the window has Match pace, with a slider and a field.
+  A shape that differs from the Kraken's, as Breathing's does, drifts apart
+  over minutes whatever the pace.
 - **In step.** The leader is written first and every effect starts again, on
   an apply and on a full restore.
 - **Limits.** The K4 HE has one brightness for the board, so an effect that

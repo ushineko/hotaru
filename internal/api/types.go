@@ -79,6 +79,10 @@ type Device struct {
 	Reassert string `json:"reassert,omitempty"`
 	// Segments are the names this machine's owner gave parts of the device.
 	Segments []string `json:"segments,omitempty"`
+	// Follows is the device this one's rule follows, as the rule says it;
+	// Pace its pace per effect, by the effect's name lowercased (spec 077).
+	Follows string             `json:"follows,omitempty"`
+	Pace    map[string]float64 `json:"pace,omitempty"`
 
 	// Toggles are the segments that are switches rather than decoration, so
 	// an editor can offer them their own control.

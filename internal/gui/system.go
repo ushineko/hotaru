@@ -138,6 +138,9 @@ func (s *SystemSection) Build(sh *shell.Shell) fyne.CanvasObject {
 	body := []fyne.CanvasObject{title("This machine"), s.loaded, s.cooling}
 	for _, device := range got.Devices {
 		var actions []fyne.CanvasObject
+		if device.HandedTo == "" && device.InScope && device.LEDs > 0 {
+			actions = append(actions, s.follows(sh, device, got.Devices))
+		}
 		if device.Canvas != nil {
 			actions = append(actions, s.release(sh, device))
 		}

@@ -283,7 +283,9 @@ MIT. See [LICENSE](LICENSE).
   speed, in step, and a device with one light takes its closest own effect.
   Firmware effects take all their colours and their speed, and one held in
   memory is put back after a restart. `hotaru light match` sets a device's
-  `pace` by eye; `hotaru light map` finds a header's length and asks a
+  `pace` by eye, from the CLI or a follower's card in the window, and `hotaru
+  light follow` or the card's Follows sets what a device follows, written to
+  the rules by the service; `hotaru light map` finds a header's length and asks a
   keyboard nothing about chaining; `shapes` says what a header holds. A
   `reassert` rule reaches a device hotaru draws. `light map` now writes back
   every rule key, where it dropped several.

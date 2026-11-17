@@ -15,6 +15,7 @@ package gui
 
 import (
 	"context"
+	"maps"
 	"sync"
 	"time"
 
@@ -105,6 +106,10 @@ func sameDevice(a, b api.Device) bool {
 		return false
 	}
 	if (a.Preview == nil) != (b.Preview == nil) || a.HandedTo != b.HandedTo {
+		return false
+	}
+	// What it follows and its paces, set from its card (spec 077).
+	if a.Follows != b.Follows || !maps.Equal(a.Pace, b.Pace) {
 		return false
 	}
 	// Drawing or holding is the change a person sees. The rate moves on

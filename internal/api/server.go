@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"time"
 
@@ -959,6 +960,10 @@ func describe(view service.View) Device {
 		device.Colours = append(device.Colours, col.String())
 	}
 	device.Preview = asPreview(view.Preview)
+	device.Follows = view.Rule.Follow
+	if len(view.Rule.Pace) > 0 {
+		device.Pace = maps.Clone(view.Rule.Pace)
+	}
 	if view.Rule.Reassert > 0 {
 		device.Reassert = view.Rule.Reassert.String()
 	}
