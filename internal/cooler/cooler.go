@@ -98,6 +98,13 @@ func New(dev sanshoku.Device) *Cooler {
 	return c
 }
 
+/*
+Shared is the open device itself, for the canvas that draws the cooler's
+lights on the same handle (spec 073). The cooler still owns it: only the
+cooler closes it.
+*/
+func (c *Cooler) Shared() sanshoku.Device { return c.dev }
+
 // Status is the cooler's reading, taken now or within the driver's freshness.
 func (c *Cooler) Status(ctx context.Context) (Status, error) {
 	if c.source == nil {
@@ -155,7 +162,7 @@ func (c *Cooler) Floor(size int) time.Duration {
 	if c.panel == nil {
 		return 0
 	}
-	return c.panel.Floor(size)
+	return c.panel.ImageFloor(size)
 }
 
 // Close closes the device, handing the panel back if anything drew on it.

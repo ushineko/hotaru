@@ -36,7 +36,7 @@ support list.
 
 | Device | Through | Notes |
 |---|---|---|
-| NZXT Kraken 2024 Elite (`1e71:3012`) | both | Lighting through OpenRGB. The radiator fans' RGB daisy-chains into the cooler, and OpenRGB exposes **only** the colour channels. Telemetry and the 640x640 panel are hotaru's own, over `/dev/hidraw` and usbfs. The two Hue 2 channels are separate controllers, so hotaru writes them separately (spec 011). hotaru never writes into the bucket the panel is displaying, because the panel blanks for the length of that transfer (spec 013). OpenRGB 1.0 finishes a mode change on another thread, and a frame sent straight after it interleaves with it on the channel. The ring then lost frames and stuck on one wrong LED. So a frame waits 120 ms after a mode change, and a device already in Direct gets no mode packet (spec 068). The firmware can also turn one ring LED green some seconds after the screen goes to its own readout. So hotaru sends the ring its frame again 12 s after it takes the screen, and 12 s after each switch to the readout (spec 070) |
+| NZXT Kraken 2024 Elite (`1e71:3012`) | both | hotaru draws the ring and the fans itself, through sanshoku, on the same handle that reads the telemetry and draws the 640x640 panel (spec 073). OpenRGB's detector for the cooler is switched off; see below. The radiator fans' RGB daisy-chains into the cooler. hotaru never writes into the bucket the panel is displaying, because the panel blanks for the length of that transfer (spec 013) |
 | MSI GeForce RTX 4090 Suprim Liquid X | OpenRGB | Accepts `direct/breathing/flashing/off`. It **rejects `static`** and goes dark when it receives it. **Its LEDs wash out.** A pale colour looks close to white, and its middle greens look too bright. A `colour` rule corrects both (spec 066) |
 | ASUS ROG Maximus Z790 Hero | OpenRGB | Onboard LEDs and four addressable headers. Static drives the onboard LED only. The headers need Direct. **OpenRGB keeps the header sizes, not the board.** OpenRGB 1.1 did not read the sizes 1.0 had saved, so the headers came up at 0 LEDs and the board showed its firmware rainbow. hotaru records each zone's size with the colours, and a restore sizes a header back before writing it (spec 069) |
 | Corsair MM700 | OpenRGB | Its logo has no blue channel, so a request for purple appears as dim red. The write does not fail, and nothing in the protocol reports the limit. OpenRGB's own command line behaves the same way (spec 009). Its LEDs wash out like the 4090's, and a `colour` rule corrects them (spec 066) |
@@ -300,6 +300,42 @@ through them. Without colours each draws as it did before.
 devices:
   - match: Apex Pro TKL Wireless Gen 3     # the kernel's name: the canvas device
     twin: Apex Pro TKL Gen 3 Wireless      # OpenRGB's name for the same board
+```
+
+**The Kraken's ring and fans: hotaru draws them through sanshoku.** Measured
+on a Kraken 2024 Elite on firmware 1.2.12 (spec
+[073](../specs/073-the-kraken-drawn-through-sanshoku.md), sanshoku spec 024).
+
+- **One owner of the cooler.** sanshoku's driver reads the cooler's status,
+  draws on its screen and lights its ring and fans, on one handle. Two
+  programs writing that node cost specs 068 and 070, and #206.
+- **Switch off OpenRGB's detector for the cooler.** In OpenRGB's
+  `OpenRGB.json`, under `Detectors`, set `"NZXT Kraken 2024 ELITE Series
+  RGB"` to `false`, then restart its server. With it on, OpenRGB and hotaru
+  write the same LED buffer on the cooler.
+- **The lights are two zones, Ring and Fan.** Each key is named as sanshoku
+  names it (`ring 1` to `ring 24`, `fan 1` and on), and hotaru makes a zone
+  of each word.
+- **A still scene is one frame.** The cooler keeps it with nothing sent. A
+  moving effect is a stream at 56 ms; the cooler's floor is 16 ms.
+- **The screen's readout no longer turns a ring LED green.** The readout
+  puts back what the cooler has stored, and sanshoku stores the frame before
+  every switch to it. The 12 s resend of spec 070 is gone.
+- **`hotaru light release` keeps the cooler attached.** It stores the frame
+  in the cooler and stops drawing. The cooler does not reboot.
+- **The cooler's own effects** (Fading, Breathing and the rest) are not
+  reachable while OpenRGB's detector is off. sanshoku #72 brings them back.
+- **Scenes written for OpenRGB's listing still apply.** A rule's `formerly`
+  names the cooler as OpenRGB listed it, and maps its zones. Targets,
+  segments and the recorded colours under the old name land on the same
+  lights. No file is rewritten.
+
+```yaml
+devices:
+  - match: kraken
+    formerly:
+      name: NZXT Kraken 2024 ELITE Series RGB
+      zones: {"Hue 2 Channel 1": Ring, "Hue 2 Channel 2": Fan}
 ```
 
 **The AULA F75: its own effects, and frames when asked.** Measured on Windows,

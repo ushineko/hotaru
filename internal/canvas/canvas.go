@@ -116,6 +116,9 @@ type Device struct {
 	// hold is how long a frame shows before the device takes its lights
 	// back, for a lighting.Fading canvas, and zero for one that keeps it.
 	hold time.Duration
+	// borrowed is a device something else owns: the cooler's (spec 073).
+	// See Borrow.
+	borrowed bool
 
 	mu sync.Mutex
 	// firmware is the effect the device was last read or written to run.
@@ -178,6 +181,28 @@ func New(dev sanshoku.Device) (*Device, bool) {
 	}
 	return out, true
 }
+
+/*
+Borrow adapts a device another part of hotaru owns and closes: the cooler's,
+whose handle also reads its status and draws on its screen (spec 073).
+
+Losing, closing or releasing a borrowed canvas never closes the device, and
+releasing it does not lose it: the cooler's lights do not reboot when they are
+handed back. A device with no keys yet (the cooler's accessory list did not
+answer) is not a canvas yet, and the caller asks again later.
+*/
+func Borrow(dev sanshoku.Device) (*Device, bool) {
+	out, ok := New(dev)
+	if !ok || len(out.keys) == 0 {
+		return nil, false
+	}
+	out.borrowed = true
+	return out, true
+}
+
+// Borrowed is whether the device is another owner's (see Borrow): it stays
+// attached when released.
+func (d *Device) Borrowed() bool { return d.borrowed }
 
 // Hold is how long a frame shows before the device takes its lights back,
 // or zero for a device that keeps its last frame.
@@ -313,14 +338,18 @@ Gone fires here rather than waiting for a frame nobody may ever send.
 */
 func (d *Device) Release(ctx context.Context) error {
 	err := d.draw.Release(ctx)
-	if err == nil {
+	if err == nil && !d.borrowed {
 		d.lose()
 	}
 	return d.check(err) //nolint:wrapcheck // the driver names the device
 }
 
-// Close closes the device. Closing twice is not an error.
+// Close closes the device, unless it is borrowed. Closing twice is not an
+// error.
 func (d *Device) Close() error {
+	if d.borrowed {
+		return nil
+	}
 	if err := d.dev.Close(); err != nil {
 		return fmt.Errorf("close %s: %w", d.Name(), err)
 	}
@@ -368,7 +397,9 @@ func (d *Device) Lose() { d.lose() }
 
 func (d *Device) lose() {
 	d.once.Do(func() {
-		_ = d.dev.Close()
+		if !d.borrowed {
+			_ = d.dev.Close()
+		}
 		close(d.gone)
 	})
 }

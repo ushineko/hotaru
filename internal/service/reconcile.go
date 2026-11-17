@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/ushineko/hotaru/internal/colour"
+	"github.com/ushineko/hotaru/internal/config"
 	"github.com/ushineko/hotaru/internal/devices"
 	"github.com/ushineko/hotaru/internal/openrgb"
 	"github.com/ushineko/hotaru/internal/state"
@@ -105,6 +107,7 @@ func (s *Service) Reconcile(ctx context.Context, only []string) (Restore, error)
 	for i := range found {
 		present[found[i].Name] = &found[i]
 	}
+	desired = adopted(desired, found, s.config())
 
 	var restore Restore
 	for _, name := range sorted(desired.Names()) {
@@ -196,6 +199,54 @@ func (s *Service) Reconcile(ctx context.Context, only []string) (Restore, error)
 	}
 	return restore, nil
 }
+
+/*
+adopted is desired state with each canvas that has nothing recorded under its
+own name given the record under its former one (spec 073), where that record
+has a colour for each of the canvas's lights. The canvas draws a light at a
+time in its Static mode; OpenRGB's mode and zone sizes mean nothing to it. The
+recording itself is unchanged: the next write records the canvas under its own
+name, and the former record stays for a rollback.
+*/
+func adopted(desired state.Snapshot, found []devices.Device, cfg *config.Config) state.Snapshot {
+	var out map[string]state.Device
+	for _, device := range found {
+		if device.Canvas == nil {
+			continue
+		}
+		if _, own := desired.Devices[device.Name]; own {
+			continue
+		}
+		former := devices.RuleFor(cfg, device.Name).Formerly
+		if former == nil {
+			continue
+		}
+		for _, twin := range found {
+			if twin.HandedTo != device.Name || !strings.EqualFold(twin.Name, former.Name) {
+				continue
+			}
+			kept, ok := desired.Devices[twin.Name]
+			if !ok || len(kept.Colours) != device.LEDCount {
+				continue
+			}
+			if out == nil {
+				out = make(map[string]state.Device, len(desired.Devices)+1)
+				for name, d := range desired.Devices {
+					out[name] = d
+				}
+			}
+			out[device.Name] = state.Device{Mode: canvasStill, Colours: kept.Colours, Applied: kept.Applied}
+			break
+		}
+	}
+	if out != nil {
+		desired.Devices = out
+	}
+	return desired
+}
+
+// canvasStill is the canvas mode that takes a colour per light.
+const canvasStill = "Static"
 
 /*
 restoreOne writes one device's recorded state back, after giving its zones

@@ -453,7 +453,8 @@ ReleaseResponse is what a release did.
 
 Detail says what happens next in a sentence for a person: on the first such
 device the board reboots and re-enumerates, and hotaru attaches it again and
-sends it nothing until a scene asks.
+sends it nothing until a scene asks. The cooler's lights keep their colours
+and stay attached (spec 073).
 */
 type ReleaseResponse struct {
 	Device string `json:"device"`

@@ -148,8 +148,8 @@ func (p *Panel) Readouts() int {
 // Appearance returns Refuse.
 func (p *Panel) Appearance(context.Context, int, int) error { return p.Refuse }
 
-// Floor is two seconds, the measured floor for a dashboard-sized frame.
-func (p *Panel) Floor(int) time.Duration { return 2 * time.Second }
+// ImageFloor is two seconds, the measured floor for a dashboard-sized frame.
+func (p *Panel) ImageFloor(int) time.Duration { return 2 * time.Second }
 
 // Images is how many pictures were drawn.
 func (p *Panel) Images() int {

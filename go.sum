@@ -68,6 +68,8 @@ github.com/ushineko/fynedesygn v0.1.96 h1:MwsC+5koV4AA1lqMdcp/f2Pdt7U5JtVwlmKVbG
 github.com/ushineko/fynedesygn v0.1.96/go.mod h1:8zpNN1/E6y6L8S9H+b/3SorOfCdjqNRfPJsnYJVPCL8=
 github.com/ushineko/sanshoku v0.1.19 h1:M/cOrwFATU52ZA4FQFnODMuwt7DZjaZ9WEnsvLFFtoU=
 github.com/ushineko/sanshoku v0.1.19/go.mod h1:fCmgH+mFCK66xoZEW7QST/5CLoXhezR6gNFGeT/1qWY=
+github.com/ushineko/sanshoku v0.1.20-0.20261117005959-808800e784d9 h1:snBq+PfLsIOWJ781nc9G6FNfAs/TjF8wjQMGsF18GQQ=
+github.com/ushineko/sanshoku v0.1.20-0.20261117005959-808800e784d9/go.mod h1:fCmgH+mFCK66xoZEW7QST/5CLoXhezR6gNFGeT/1qWY=
 github.com/yuin/goldmark v1.8.2 h1:kEGpgqJXdgbkhcOgBxkC0X0PmoPG1ZyoZ117rDVp4zE=
 github.com/yuin/goldmark v1.8.2/go.mod h1:ip/1k0VRfGynBgxOz0yCqHrbZXhcjxyuS66Brc7iBKg=
 go.yaml.in/yaml/v3 v3.0.4/go.mod h1:DhzuOOF2ATzADvBadXxruRBLzYTpT36CKvDb3+aBEFg=

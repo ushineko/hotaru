@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -36,6 +37,9 @@ type Canvas interface {
 	Status() canvas.Status
 	// Release hands the lighting back to the device's firmware.
 	Release(ctx context.Context) error
+	// Borrowed is a device that stays attached when released: the
+	// cooler's, which another owner holds (spec 073).
+	Borrowed() bool
 
 	// Effects is the firmware's own stored effects, or none (spec 071).
 	Effects() []string
@@ -99,7 +103,9 @@ returns the device's name.
 Never done on hotaru's own initiative (spec 060 R4.1): on the first canvas
 device it reboots the board, which re-enumerates on a new node. What the
 device was asked to show is forgotten first, so that the daemon attaches the
-device again afterwards and sends it nothing until a scene asks.
+device again afterwards and sends it nothing until a scene asks. The cooler's
+lights keep their frame and stay attached (spec 073), and their record under
+a former name is forgotten too.
 */
 func (s *Service) ReleaseCanvas(ctx context.Context, name string) (string, error) {
 	s.mu.RLock()
@@ -129,10 +135,101 @@ func (s *Service) ReleaseCanvas(ctx context.Context, name string) (string, error
 
 	device := matched[0]
 	s.forget(device.Name())
+	if former := devices.RuleFor(s.config(), device.Name()).Formerly; former != nil {
+		// Or the next full reconcile adopts it and undoes the release.
+		s.forget(former.Name)
+	}
+	if device.Borrowed() {
+		/*
+			It stays attached, so its animator would go on drawing over
+			the release. It is stopped first, and the frame the device
+			commits is the last one it was sent.
+		*/
+		device.Show(canvas.Show{})
+		settle(ctx, device)
+	}
 	if err := device.Release(ctx); err != nil {
 		return device.Name(), fmt.Errorf("hand %s back to its firmware: %w", device.Name(), err)
 	}
 	return device.Name(), nil
+}
+
+/*
+formerly is the OpenRGB listing a canvas's hardware had before OpenRGB stopped
+listing it, standing in for it as the canvas's twin (spec 073): the former
+name, the canvas's lights and their names, and its zones under their former
+names. Handed to the canvas, so it is never written; scenes against it are
+carried onto the canvas as spec 060 carries a listed twin's.
+*/
+func formerly(canvas devices.Device, former config.Former) devices.Device {
+	back := make(map[string]string, len(former.Zones))
+	for from, to := range former.Zones {
+		back[to] = from
+	}
+	twin := canvas
+	twin.Name, twin.Location, twin.HandedTo, twin.Canvas = former.Name, "", canvas.Name, nil
+	twin.Zones = make([]devices.Zone, len(canvas.Zones))
+	for i, zone := range canvas.Zones {
+		if from, ok := back[zone.Name]; ok {
+			zone.Name = from
+		}
+		twin.Zones[i] = zone
+	}
+	return twin
+}
+
+/*
+keyZones is a canvas's zones. Where every key is named a word and a number
+("ring 3", "fan 12"), as the cooler's are, each word is a zone in key order
+(Ring, Fan), so a scene can address the ring as OpenRGB's listing could
+(spec 073). Any other canvas is one grid of keys.
+*/
+func keyZones(keys []lighting.Key) []devices.Zone {
+	whole := []devices.Zone{{Name: "Keys", Shape: devices.ShapeGrid, First: 0, Count: len(keys)}}
+	var zones []devices.Zone
+	for i, key := range keys {
+		word, number, ok := strings.Cut(key.Name, " ")
+		if !ok || word == "" {
+			return whole
+		}
+		if _, err := strconv.Atoi(number); err != nil {
+			return whole
+		}
+		name := strings.ToUpper(word[:1]) + word[1:]
+		if len(zones) > 0 && zones[len(zones)-1].Name == name {
+			zones[len(zones)-1].Count++
+			continue
+		}
+		zones = append(zones, devices.Zone{Name: name, Shape: devices.ShapeLine, First: i, Count: 1})
+	}
+	if len(zones) == 0 {
+		return whole
+	}
+	return zones
+}
+
+// Stays is whether a released canvas stays attached: the cooler's lights,
+// which do not reboot when handed back (spec 073).
+func (s *Service) Stays(name string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, d := range s.drawnNow() {
+		if d.Name() == name {
+			return d.Borrowed()
+		}
+	}
+	return false
+}
+
+// settleWait bounds the wait for an animator to stop drawing.
+const settleWait = time.Second
+
+// settle waits, briefly, for a canvas's animator to stop drawing.
+func settle(ctx context.Context, device Canvas) {
+	until := time.Now().Add(settleWait)
+	for device.Status().Drawing && time.Now().Before(until) && ctx.Err() == nil {
+		time.Sleep(10 * time.Millisecond)
+	}
 }
 
 /*
@@ -437,7 +534,7 @@ func (d *drawn) device() devices.Device {
 		Name:       d.Name(),
 		Location:   d.Path(),
 		ActiveMode: active.effect.Name,
-		Zones:      []devices.Zone{{Name: "Keys", Shape: devices.ShapeGrid, First: 0, Count: len(keys)}},
+		Zones:      keyZones(keys),
 		LEDCount:   len(keys),
 		Colours:    colours,
 	}
@@ -560,13 +657,23 @@ func (l *lights) Devices(ctx context.Context) ([]devices.Device, error) {
 			handed[found[i].Name] = to
 		}
 	}
+	listed := make(map[string]bool, len(found))
+	for _, device := range found {
+		listed[strings.ToLower(device.Name)] = true
+	}
+	for _, d := range l.drawn {
+		device := d.device()
+		found = append(found, device)
+		former := devices.RuleFor(l.cfg, d.Name()).Formerly
+		if former == nil || listed[strings.ToLower(former.Name)] {
+			continue
+		}
+		found = append(found, formerly(device, *former))
+		handed[former.Name] = d.Name()
+	}
 	l.mu.Lock()
 	l.handed = handed
 	l.mu.Unlock()
-
-	for _, d := range l.drawn {
-		found = append(found, d.device())
-	}
 	return found, nil
 }
 

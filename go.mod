@@ -11,7 +11,7 @@ require (
 	github.com/srwiley/rasterx v0.0.0-20220730225603-2ab79fcdd4ef
 	github.com/stretchr/testify v1.12.1
 	github.com/ushineko/fynedesygn v0.1.96
-	github.com/ushineko/sanshoku v0.1.19
+	github.com/ushineko/sanshoku v0.1.20-0.20261117005959-808800e784d9
 	go.yaml.in/yaml/v3 v3.0.5
 	golang.org/x/image v0.46.0
 	golang.org/x/sys v0.49.0
