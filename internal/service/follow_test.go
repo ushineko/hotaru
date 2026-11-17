@@ -204,3 +204,17 @@ func oneColour(t *testing.T, effect string) {
 		assert.Equal(t, lighting.Colour{R: 255}, c, "slot %d is not the colour given", i)
 	}
 }
+
+// Colours given to a firmware effect that takes none are left out, not the
+// effect (E4: the Kraken held red for a Rainbow Flow given two colours).
+func TestColoursOnAColourlessEffectAreLeftOut(t *testing.T) {
+	cooler := leaderCooler()
+	svc := servicetest.New(t, nil, cooler)
+	red := colour.MustParse("red")
+	_, err := svc.Apply(t.Context(), service.Request{
+		Colour: &red, Effects: map[string]scenes.Effect{"kraken": {Mode: "Spectrum Wave", Colours: []string{"#ff0000", "#0000ff"}}},
+	})
+	require.NoError(t, err)
+	running, _ := cooler.Running()
+	assert.Equal(t, "Spectrum Wave", running)
+}

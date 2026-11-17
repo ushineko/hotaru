@@ -515,6 +515,14 @@ func (d *drawn) chooseStored(ctx context.Context, name string, style devices.Sty
 	for _, c := range style.Palette() {
 		colours = append(colours, lighting.Colour{R: c.R, G: c.G, B: c.B})
 	}
+	for _, info := range d.Catalogue() {
+		if strings.EqualFold(info.Name, name) && len(colours) > info.MaxColours {
+			// As many as the effect takes, none for a rainbow: more is
+			// refused by the driver, and the effect lost for colours it
+			// would not have shown (spec 077 E4, Rainbow Flow).
+			colours = colours[:info.MaxColours]
+		}
+	}
 	var want *lighting.Colour
 	if len(colours) > 0 {
 		want = &colours[0]
