@@ -182,9 +182,9 @@ func serveCanvas(ctx context.Context, svc *service.Service, device *canvas.Devic
 	svc.AttachCanvas(attachment)
 	report("drawing on %s at %s", device.Name(), device.Path())
 	if _, err := restore(ctx, []string{device.Name()}); err != nil {
-		// No server yet: the reconciler restores this device with the rest
-		// when one answers, because it is recorded and was missing.
-		report("%s waits for the OpenRGB server to put its scene back: %v", device.Name(), err)
+		// The reconciler tries again with the rest, because it is recorded
+		// and was missing.
+		report("%s could not have its scene put back yet: %v", device.Name(), err)
 	}
 
 	watch := time.NewTicker(watchEvery)

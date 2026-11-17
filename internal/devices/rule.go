@@ -25,12 +25,11 @@ type Rule struct {
 	// Toggles are the segments that are switches rather than decoration. See
 	// config.DeviceRule.
 	Toggles []string
-	// FrameInterval and Twin are for a device hotaru draws itself. See
+	// FrameInterval is the pace of an animated effect. See
 	// config.DeviceRule.
 	FrameInterval time.Duration
-	Twin          string
-	// Formerly is the device's OpenRGB name and zones, for one OpenRGB no
-	// longer lists (spec 073). See config.DeviceRule.
+	// Formerly is the device's earlier name and zones, so records and scenes
+	// made under them find it (spec 073). See config.DeviceRule.
 	Formerly *config.Former
 	// Lengths are the LED counts of zones the device cannot read (spec
 	// 075). See config.DeviceRule.
@@ -87,9 +86,6 @@ func MergeRules(rules []config.DeviceRule) Rule {
 		}
 		if r.FrameInterval > 0 {
 			out.FrameInterval = r.FrameInterval.Duration()
-		}
-		if strings.TrimSpace(r.Twin) != "" {
-			out.Twin = strings.TrimSpace(r.Twin)
 		}
 		for zone, n := range r.Lengths {
 			if out.Lengths == nil {

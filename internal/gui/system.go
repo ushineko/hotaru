@@ -209,7 +209,7 @@ func drawDevice(device api.Device, actions ...fyne.CanvasObject) fyne.CanvasObje
 	switch {
 	case device.HandedTo != "":
 		rows = append(rows, widgets.Note(
-			fmt.Sprintf("hotaru draws this as %s, so OpenRGB is not written to.", device.HandedTo), fd.StatusInfo))
+			fmt.Sprintf("hotaru draws this as %s.", device.HandedTo), fd.StatusInfo))
 	case device.Preview != nil:
 		rows = append(rows, widgets.Note(
 			fmt.Sprintf("Showing a draft held by %s.", holder(*device.Preview)), fd.StatusWarn))

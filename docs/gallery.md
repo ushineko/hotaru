@@ -16,11 +16,11 @@ default size.
 
 ### Service
 
-![The Service section: the connection to OpenRGB, the devices it reports, and
-the remedies for a service that is not answering.](img/window-service.png)
+![The Service section: the service's health, the devices it draws, and the
+remedies when it finds none.](img/window-service.png)
 
-Health, what the service is connected to, and what to do when it is not
-answering. Each remedy names the command to run rather than the symptom.
+Health, the devices the service draws, and what to do when it finds none.
+Each remedy names the file or command to check rather than the symptom.
 
 ### System
 

@@ -33,7 +33,7 @@ payload:
 
 actions:
   # The service of the machine. It runs as NT SERVICE\hotaru, which may
-  # reach the devices, OpenRGB on localhost and its own directory, and
+  # reach the devices and its own directory, and
   # nothing an administrator has (fynstall spec 010). It makes and guards
   # %ProgramData%\hotaru itself when it starts.
   - service:
@@ -55,7 +55,7 @@ integration:
       comment: RGB lighting and cooler control
       exec: bin/hotaru-gui{exe}
       categories: [Utility]
-      keywords: [rgb, lighting, openrgb, keyboard, cooler]
+      keywords: [rgb, lighting, keyboard, cooler]
   # The rules, scenes, record and pictures are the machine's work, and
   # outlive an uninstall and an upgrade. {config} is %ProgramData% for an
   # install for everyone.

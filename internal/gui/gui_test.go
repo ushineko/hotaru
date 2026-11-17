@@ -50,8 +50,7 @@ func TestTheWindowCannotReachADevice(t *testing.T) {
 	require.NoError(t, err)
 
 	forbidden := []string{
-		"internal/openrgb",  // the hardware
-		"internal/service",  // the thing that drives it
+		"internal/service",  // the thing that drives the hardware
 		"internal/devices",  // and the knowledge of how
 		"internal/cooler",   // including the one over hidraw
 		"ushineko/sanshoku", // and the library under it
@@ -92,7 +91,7 @@ func service(t *testing.T, routes map[string]any) *api.Client {
 func healthy() map[string]any {
 	return map[string]any{
 		"GET /" + api.Version + "/health": api.Health{
-			State: "healthy", Version: "test", Address: "127.0.0.1:6742",
+			State: "healthy", Version: "test",
 			Devices: 2, InScope: 1,
 		},
 		"GET /" + api.Version + "/devices": api.DevicesResponse{Devices: []api.Device{
@@ -3131,40 +3130,12 @@ func buttonSaying(in fyne.CanvasObject, text string) *widget.Button {
 	return found
 }
 
-/*
-TestTheWindowOffersTheBounceAndSaysWhatItIsFor is spec 058 AC8, the window's
-share of it.
-
-A button labelled only "rescan" would be a button nobody presses, because the
-situation it fixes does not look like a fault: the device is listed, the count
-is right, and the lights simply do not change. The note is the half that makes
-the button findable.
-*/
-func TestTheWindowOffersTheBounceAndSaysWhatItIsFor(t *testing.T) {
-	routes := healthy()
-	routes["GET /"+api.Version+"/health"] = api.Health{
-		State:  "stale",
-		Detail: "the OpenRGB server is still addressing Keychron K4 HE at a connection that has gone.",
-		Remedies: []string{
-			"Have the server look again with `hotaru light rescan`.",
-		},
-		Devices: 6, InScope: 6,
-	}
-
-	said := screen(t, service(t, routes), "Service")
-	require.Contains(t, said, "stale")
-	require.Contains(t, said, "Keychron K4 HE", "the device that moved was not named")
-	require.Contains(t, said, "Look for replugged devices", "the window offers no way to bounce the server")
-	require.Contains(t, said, "unplugged and",
-		"the window does not say what the button is for, which is the half that makes it findable")
-}
-
 func TestADeviceHotaruDrawsCanBeGivenItsOwnLightingBack(t *testing.T) {
 	/*
 		Spec 060 R4.2 and R5. A device hotaru draws keeps hotaru's last frame
 		when the service stops, so the window offers the one way back to the
-		device's own lighting, on that device's card and nowhere else. Its
-		OpenRGB twin says why it is not written to.
+		device's own lighting, on that device's card and nowhere else. The
+		name it was formerly listed under says where it went (spec 073).
 	*/
 	a := test.NewApp()
 	t.Cleanup(a.Quit)
@@ -3178,8 +3149,8 @@ func TestADeviceHotaruDrawsCanBeGivenItsOwnLightingBack(t *testing.T) {
 			Canvas: &api.Canvas{Drawing: true, Rate: 17.8, Interval: "56ms", Frames: 400},
 		},
 		{
-			Name: "Test Canvas Board (OpenRGB)", LEDs: 3, ActiveMode: "Direct", InScope: true,
-			Modes: []string{"Direct"}, HandedTo: "Test Canvas Board",
+			Name: "Test Canvas Board (formerly)", LEDs: 3, ActiveMode: "Static", InScope: true,
+			Modes: []string{"Static"}, HandedTo: "Test Canvas Board",
 		},
 	}}
 	routes["POST /"+api.Version+"/lighting/release"] = api.ReleaseResponse{
@@ -3208,7 +3179,7 @@ func TestADeviceHotaruDrawsCanBeGivenItsOwnLightingBack(t *testing.T) {
 
 	said := fynetest.Text(built)
 	require.Contains(t, said, "drawn by hotaru at 18 frames a second")
-	require.Contains(t, said, "hotaru draws this as Test Canvas Board, so OpenRGB is not written to")
+	require.Contains(t, said, "hotaru draws this as Test Canvas Board.")
 
 	give := fynetest.FindButton(built, "Give it its own lighting back")
 	require.NotNil(t, give, "the device hotaru draws offers no way back to its own lighting")

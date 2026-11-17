@@ -11,33 +11,11 @@ import (
 	"github.com/ushineko/hotaru/internal/canvas/canvastest"
 	"github.com/ushineko/hotaru/internal/colour"
 	hw "github.com/ushineko/hotaru/internal/cooler" // `cooler` is a fixture in this package
-	"github.com/ushineko/hotaru/internal/openrgb"
 	"github.com/ushineko/hotaru/internal/scenes"
 	"github.com/ushineko/hotaru/internal/service"
 	"github.com/ushineko/hotaru/internal/service/servicetest"
 	"github.com/ushineko/hotaru/internal/state"
 )
-
-// lit is a service over two fake devices with somewhere to keep scenes and
-// somewhere to remember what was asked for.
-func lit(t *testing.T, saved ...scenes.Scene) (*service.Service, *openrgb.Fake) {
-	t.Helper()
-
-	server := openrgb.NewFake(board(), keyboard())
-	svc := service.New(nil, server, "")
-
-	desired, err := state.Open(filepath.Join(t.TempDir(), "state.yml"))
-	require.NoError(t, err)
-	svc.SetRecorder(desired)
-
-	store, err := scenes.Open(filepath.Join(t.TempDir(), "scenes.yml"))
-	require.NoError(t, err)
-	for _, scene := range saved {
-		require.NoError(t, store.Save(scene))
-	}
-	svc.SetScenes(store)
-	return svc, server
-}
 
 // sceneDesk is the board and keyboard litCanvas draws on.
 type sceneDesk struct {
@@ -691,22 +669,6 @@ func TestAnEffectIsLitInTheColourTheSceneMostlyIs(t *testing.T) {
 		"the effect was not lit in the colour most of the scene is")
 }
 
-func TestAModeIsStillNotForcedOverAFrameItCannotShow(t *testing.T) {
-	// The rule an effect is an exception to, held: --mode is a preference
-	// about how to show the colours, so a mode that cannot show them is no
-	// use and resolution carries on past it.
-	svc, _ := lit(t, blue())
-
-	results, err := svc.Apply(t.Context(), service.Request{
-		Assignments: solid("Keychron/Keyboard[0]", "blue"),
-		Devices:     []string{"Keychron"},
-		Mode:        "Solid Reactive",
-	})
-	require.NoError(t, err)
-	require.Len(t, results, 1)
-	require.Equal(t, "Direct", results[0].Mode)
-}
-
 func TestAnEffectIsLitInTheColourTheSceneNames(t *testing.T) {
 	// The reduction is the fallback, never the answer: somebody who has
 	// decided their keyboard ripples red has said so, and the colour most of
@@ -735,20 +697,6 @@ func TestAnEffectWithNoColourStillTakesTheFrames(t *testing.T) {
 	require.Equal(t, "#0000ff", firmwareGiven(t, desk.kb, "Solid Reactive"))
 }
 
-func TestAnEffectsSpeedIsWritten(t *testing.T) {
-	speed := 40
-	scene := blue()
-	scene.Effects = map[string]scenes.Effect{"Keychron": {Mode: "Solid Reactive", Speed: &speed}}
-	svc, server := lit(t, scene)
-
-	_, err := svc.ApplyScene(t.Context(), "blue")
-	require.NoError(t, err)
-
-	written := lastMode(t, server, "Keychron K4 HE", "Solid Reactive").Speed
-	require.NotNil(t, written, "the speed was not sent")
-	require.Equal(t, 40, *written)
-}
-
 func TestAnEffectsColourIsUnreadableIsSaidRatherThanIgnored(t *testing.T) {
 	// An effect quietly falling back to the frame because of a typo looks
 	// exactly like one that was never given a colour.
@@ -770,68 +718,6 @@ func TestAnEffectsColourIsUnreadableIsSaidRatherThanIgnored(t *testing.T) {
 	}
 	require.NotEmpty(t, said)
 	require.Contains(t, said[0], "puce")
-}
-
-// lastMode is the most recent mode write to a device, for asserting what was
-// put into the mode rather than into the buffer.
-func lastMode(t *testing.T, server *openrgb.Fake, device, mode string) openrgb.ModeWrite {
-	t.Helper()
-	var found *openrgb.ModeWrite
-	for i := range server.Modes {
-		if server.Modes[i].Device == device && server.Modes[i].Mode == mode {
-			found = &server.Modes[i]
-		}
-	}
-	require.NotNil(t, found, "%s was never put into %s", device, mode)
-	return *found
-}
-
-func TestAModeThatShowsOneColourIsAssertedAgainAfterTheFrame(t *testing.T) {
-	/*
-		Coming from a per-LED mode, the first mode packet does not stick on
-		real hardware: a keyboard in Direct sent Solid Reactive, its colour and
-		then a hundred per-key colours displayed the keys, while every
-		read-back said the mode was active and held the colour it was given.
-		Going from one such mode to another was always right, which is what
-		says it is the transition rather than the buffer.
-	*/
-	scene := blue()
-	scene.Effects = map[string]scenes.Effect{"Keychron": {Mode: "Solid Reactive"}}
-	svc, server := lit(t, scene)
-
-	// From a per-LED mode, which is the transition that loses it.
-	require.NoError(t, server.SetMode(t.Context(), "Keychron K4 HE", "Direct", openrgb.Style{}))
-	before := len(server.Modes)
-
-	_, err := svc.ApplyScene(t.Context(), "blue")
-	require.NoError(t, err)
-
-	var asserted int
-	for _, write := range server.Modes[before:] {
-		if write.Device == "Keychron K4 HE" && write.Mode == "Solid Reactive" {
-			asserted++
-		}
-	}
-	require.Equal(t, 2, asserted,
-		"the mode was not asserted again after the frame, so the transition loses its colour")
-}
-
-func TestAPerLEDModeIsWrittenOnce(t *testing.T) {
-	// The extra packet is for the modes that cannot show a frame. A device in
-	// Direct is showing the frame, and sending its mode twice is two writes
-	// where one says everything.
-	svc, server := lit(t, blue())
-
-	_, err := svc.ApplyScene(t.Context(), "blue")
-	require.NoError(t, err)
-
-	var written int
-	for _, write := range server.Modes {
-		if write.Device == "Keychron K4 HE" && write.Mode == "Direct" {
-			written++
-		}
-	}
-	require.Equal(t, 1, written)
 }
 
 /*
@@ -885,24 +771,6 @@ what makes the colour stick. It only works with a gap before it, which is what
 spec 057 measured; the frame's position between them turned out not to matter
 at all.
 */
-func TestAModeWithAColourOfItsOwnIsWrittenAgainAfterTheFrame(t *testing.T) {
-	svc, server := lit(t, scenes.Scene{
-		Name:        "evening",
-		Assignments: []scenes.Assignment{{Target: "Keychron", Colour: "#8c6f6a"}},
-		Effects: map[string]scenes.Effect{
-			"Keychron": {Mode: "Solid Reactive", Colour: "#67798c"},
-		},
-	})
-
-	_, err := svc.ApplyScene(context.Background(), "evening")
-	require.NoError(t, err)
-
-	require.Equal(t,
-		[]string{"mode:Solid Reactive", "frame", "mode:Solid Reactive"},
-		server.Sequence,
-		"the mode goes again after the frame, once the device has entered it")
-}
-
 /*
 A per-LED mode keeps the order it has always had: the mode, then the frame.
 
@@ -910,13 +778,3 @@ A device arriving in the mode takes the packet first (spec 068). Nothing
 measured about the keyboard changes that, and this is here so the reordering
 cannot quietly spread to it.
 */
-func TestAPerLEDModeTakesTheModeBeforeTheFrame(t *testing.T) {
-	svc, server := lit(t, scenes.Scene{
-		Name:        "evening",
-		Assignments: []scenes.Assignment{{Target: "Keychron", Colour: "#8c6f6a"}},
-	})
-
-	_, err := svc.ApplyScene(context.Background(), "evening")
-	require.NoError(t, err)
-	require.Equal(t, []string{"mode:Direct", "frame"}, server.Sequence)
-}

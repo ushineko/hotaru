@@ -1,8 +1,8 @@
 /*
 Package daemon runs the service.
 
-The resident half: it owns the socket, the connection to OpenRGB, and -- later
--- desired state and the reconcilers. Separated from the CLI so that the client
+The resident half: it owns the socket, the devices hotaru draws, desired state
+and the reconcilers. Separated from the CLI so that the client
 commands can be proved unable to reach a device, and so that the service's
 dependencies are not carried by a process that only wanted to print a table.
 */
@@ -10,7 +10,6 @@ package daemon
 
 import (
 	"context"
-	"errors"
 	"path/filepath"
 	"runtime"
 	"time"
@@ -23,11 +22,9 @@ import (
 	"github.com/ushineko/hotaru/internal/dashboard"
 	"github.com/ushineko/hotaru/internal/desktop"
 	"github.com/ushineko/hotaru/internal/images"
-	"github.com/ushineko/hotaru/internal/openrgb"
 	"github.com/ushineko/hotaru/internal/queue"
 	"github.com/ushineko/hotaru/internal/scenes"
 	"github.com/ushineko/hotaru/internal/service"
-	"github.com/ushineko/hotaru/internal/services"
 	"github.com/ushineko/hotaru/internal/state"
 	"github.com/ushineko/hotaru/internal/version"
 )
@@ -39,8 +36,8 @@ func Command() *cobra.Command {
 		Short: "Run the service",
 		Long: `Run the service.
 
-Starts whatever else is or is not running. An OpenRGB server that is absent, a
-machine with no configuration, hardware that has not enumerated yet: each is
+Starts whatever else is or is not running. A machine with no configuration,
+hardware that has not enumerated yet, a cooler that cannot be opened: each is
 reported by ` + "`hotaru light health`" + ` and none of them stop the service
 serving, because a program that refuses to start has nothing to tell you with.`,
 		Args: cobra.NoArgs,
@@ -48,7 +45,6 @@ serving, because a program that refuses to start has nothing to tell you with.`,
 			return run(cmd)
 		},
 	}
-	cmd.Flags().String("openrgb", openrgb.DefaultAddress, "the OpenRGB server to drive")
 	return cmd
 }
 
@@ -80,8 +76,7 @@ func run(cmd *cobra.Command) error {
 		cmd.PrintErrf("hotaru: %s\n", problem.Error())
 	}
 
-	address, _ := cmd.Flags().GetString("openrgb")
-	svc := service.New(cfg, nil, address)
+	svc := service.New(cfg)
 	svc.SetRulesPath(rules)
 
 	// Desired state: what the lights were last asked to show. An absent file
@@ -157,14 +152,13 @@ func run(cmd *cobra.Command) error {
 	writes := queue.New(ctx)
 	defer writes.Close()
 	svc.SetQueue(writes)
-	svc.SetEnvironment(environment{})
 
 	report := func(format string, args ...any) { cmd.PrintErrf(format+"\n", args...) }
 
 	/*
 		The cooler, when it can be opened.
 
-		**A resource that appears**, like the OpenRGB server below, and for a
+		**A resource that appears**, like the devices below, and for a
 		sharper reason than "it might be plugged in later". A `uaccess` udev
 		rule grants its ACL to an active seat session, and `enable-linger`
 		starts this service with the machine -- sixteen seconds before the
@@ -214,49 +208,11 @@ func run(cmd *cobra.Command) error {
 	}
 	cmd.Printf("hotaru %s listening on %s\n", version.Version, socket)
 
-	// The OpenRGB server is a resource that appears, not a dependency that is
-	// satisfied: it may start after this does, or never. Connecting happens in
-	// the background and keeps trying, so the API is up either way.
-	//
-	// And it is a resource that can disappear again. A server that restarts --
-	// upgraded, crashed, or bounced to pick up a device that was replugged --
-	// leaves a socket that no amount of retrying reaches, so this is a loop
-	// rather than two statements: Run returns when the server goes, and the
-	// next turn redials and restores exactly as the first one did. See spec 058.
-	go supervise(ctx, svc, address, report, dialOpenRGB, DefaultEvery)
+	// Restoring waits for devices rather than being ordered after them: each
+	// is a resource that appears, and "started" is not "found".
+	go (&Reconciler{Service: svc, Report: report, Every: DefaultEvery}).Run(ctx)
 
 	return api.Serve(ctx, listener, svc)
-}
-
-/*
-environment answers "what could I do about it" from the machine's service
-manager: systemd, or the Windows service manager.
-
-Here rather than in the service because it asks outside the process, and
-because a machine without one should lose the suggestions and nothing else.
-*/
-type environment struct{}
-
-func (environment) Remedies(ctx context.Context) []string {
-	return services.Look(ctx).Remedies()
-}
-
-/*
-Bounce restarts the server's unit or service, where this account may.
-
-The translation between what the machine says and what the service can act on
-lives here, so that the service never learns what systemd is and the services
-package never learns what a service error looks like.
-*/
-func (environment) Bounce(ctx context.Context) error {
-	facts := services.Look(ctx)
-	if err := services.Bounce(ctx, facts); err != nil {
-		if errors.Is(err, services.ErrNotRestartable) {
-			return &service.NotOurs{Command: facts.RestartCommand()}
-		}
-		return err
-	}
-	return nil
 }
 
 /*
@@ -368,7 +324,7 @@ service stops.
 
 `open` and `backoff` are arguments so that a test can drive this without a
 cooler and without waiting seconds for it. The backoff attach hands it is the
-one the OpenRGB server waits on, for the same reason: short enough to catch a
+one every device is looked for with: short enough to catch a
 device that becomes readable moments later at boot, long enough not to be a
 busy loop on a machine that has none.
 */
@@ -399,82 +355,11 @@ func waitForCooler(ctx context.Context, open func(context.Context) (*cooler.Cool
 	}
 }
 
-// connectBackoff is how long to wait between attempts to reach OpenRGB, and
-// how long to keep waiting. Short enough to catch a server that starts moments
-// later at boot; long enough not to be a busy loop for a machine that has none.
+// connectBackoff is how long to wait between looks for a device, and how long
+// to keep waiting. Short enough to catch one that appears moments later at
+// boot; long enough not to be a busy loop for a machine that has none.
 var connectBackoff = []time.Duration{
 	time.Second, 2 * time.Second, 5 * time.Second, 15 * time.Second, 30 * time.Second,
-}
-
-/*
-dialer is how a server is reached, a seam so a test can hand back something
-that is not a socket. The production one is dialOpenRGB and there is no other.
-*/
-type dialer func(ctx context.Context, address string) (openrgb.Client, error)
-
-func dialOpenRGB(ctx context.Context, address string) (openrgb.Client, error) {
-	conn, err := openrgb.Dial(ctx, address)
-	if err != nil {
-		// Returned as a nil interface rather than a typed nil pointer, which
-		// is not the same thing to anything that compares against nil.
-		return nil, err
-	}
-	return conn, nil
-}
-
-/*
-supervise keeps the service attached to whatever server is running.
-
-Connect, restore, re-assert; and when that returns because the server went
-away, do it again. The second turn is the whole point: before it, an OpenRGB
-restart left the service holding a socket to a process that no longer existed,
-and the only way back was to restart the service too.
-*/
-func supervise(ctx context.Context, svc *service.Service, address string,
-	report func(string, ...any), dial dialer, every time.Duration,
-) {
-	for ctx.Err() == nil {
-		connect(ctx, svc, address, report, dial)
-		// Restoring waits for a server rather than being ordered after one:
-		// there is no unit to order against, and "started" is not "ready".
-		(&Reconciler{Service: svc, Report: report, Every: every}).Run(ctx)
-	}
-}
-
-func connect(ctx context.Context, svc *service.Service, address string, report func(string, ...any), dial dialer) {
-	var announced bool
-	// Said on every connection after the first, because a server that came
-	// back is news in a way that a server that is still there is not.
-	reconnecting := svc.Gone()
-	for attempt := 0; ; attempt++ {
-		conn, err := dial(ctx, address)
-		if err == nil {
-			svc.SetClient(conn)
-			if reconnecting {
-				report("the OpenRGB server at %s came back (protocol %d); putting the lights back",
-					address, conn.ProtocolVersion())
-			} else {
-				report("connected to the OpenRGB server at %s (protocol %d)", address, conn.ProtocolVersion())
-			}
-			return
-		}
-		if ctx.Err() != nil {
-			return
-		}
-		if !announced {
-			// Once, not every tick: a machine without OpenRGB should not have
-			// its journal filled with a fact that is not changing.
-			report("no OpenRGB server at %s yet; lighting waits for one", address)
-			announced = true
-		}
-
-		wait := connectBackoff[min(attempt, len(connectBackoff)-1)]
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(wait):
-		}
-	}
 }
 
 /*

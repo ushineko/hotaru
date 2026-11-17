@@ -1,7 +1,7 @@
 # An example rules file, not a default.
 #
-# hotaru ships none of this. With no configuration at all every device OpenRGB
-# reports is in scope and every decision comes from what the hardware says
+# hotaru ships none of this. With no configuration at all every device hotaru
+# finds is in scope and every decision comes from what the hardware says
 # about itself -- which is what makes the program work on a machine its author
 # has never seen. Rules narrow and correct; they never enable.
 #
@@ -65,10 +65,10 @@ devices:
       curve: {green: 2.15}
 
   - match: g502
-    # Wireless, and it restores its onboard colour when it wakes. OpenRGB sets
-    # a volatile effect and has no way to make one stick, so the colour is
-    # re-sent on an interval. Sixty seconds sits under the sleep timeout with
-    # margin; the real wake behaviour has never been characterised.
+    # Wireless. Under OpenRGB it restored its onboard colour when it woke, so
+    # the colour was re-sent on an interval. Drawn through sanshoku, a frame
+    # held through the mouse's idle timer on the bench (sanshoku spec 030),
+    # and a re-assert does not yet reach a device hotaru draws.
     reassert: 60s
 
 # Three of this machine's nine zones -- Kraken channel 1, board headers 1 and 4

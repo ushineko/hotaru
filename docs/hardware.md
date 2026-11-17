@@ -4,28 +4,23 @@ Two things, and they are different claims:
 
 1. **What has been tested.** Hardware somebody ran hotaru against and watched.
    That list is short, and it is below.
-2. **What should work.** Every lit device OpenRGB supports, because hotaru
-   contains no lighting drivers of its own. That list belongs to OpenRGB, and
-   this page links to it rather than copying it.
+2. **What should work.** Every device
+   [sanshoku](https://github.com/ushineko/sanshoku) drives. hotaru reaches
+   every device through sanshoku, so its
+   [support table](https://github.com/ushineko/sanshoku/blob/main/docs/devices.md)
+   is hotaru's, and this page links to it rather than copying it.
 
-hotaru does not maintain a lighting device list. If OpenRGB can set your
-keyboard's colour, so can hotaru. If OpenRGB cannot see the device, neither
-can hotaru, and no configuration changes that. This is also why installing
-hotaru from the AUR installs OpenRGB: the lighting support lives there. On
-Windows, install OpenRGB yourself.
+hotaru drives each device itself, through sanshoku, with no daemon between
+them: over `/dev/hidraw`, usbfs and I2C, with no subprocess and no cgo. A
+device sanshoku does not drive is not lit, and no configuration changes that.
+Support for another device is a sanshoku driver first. Until spec 076, hotaru
+drove most lit devices through an OpenRGB server.
 
-The cooler is the exception, and only on Linux so far. hotaru writes NZXT's
-protocol directly over `/dev/hidraw` and usbfs, with no Python, no subprocess and no cgo. That gives a
-short device list rather than a borrowed one. See
-[spec 012](../specs/012-the-cooler-without-liquidctl.md). The driver is the
-`nzxt` package of [sanshoku](https://github.com/ushineko/sanshoku), which was
-hotaru's own code until spec 059.
-
-A *canvas device* is the second exception. It has no lighting effects of its
-own, so hotaru draws them and streams the frames through sanshoku. The first
-canvas device is the SteelSeries Apex Pro TKL Wireless Gen 3. See
+Every lit device is a *canvas device*: hotaru draws its effects and sends it
+frames, and lists the effects its firmware has beside them. See
 [spec 060](../specs/060-effects-hotaru-draws.md) and "Canvas devices" below.
-The AULA F75 is a canvas device that also has effects of its own (spec 071).
+The cooler's driver is the `nzxt` package of sanshoku, which was hotaru's own
+code until spec 059.
 
 ## Tested
 
@@ -36,9 +31,9 @@ support list.
 
 | Device | Through | Notes |
 |---|---|---|
-| NZXT Kraken 2024 Elite (`1e71:3012`) | both | hotaru draws the ring and the fans itself, through sanshoku, on the same handle that reads the telemetry and draws the 640x640 panel (spec 073). OpenRGB's detector for the cooler is switched off; see below. The radiator fans' RGB daisy-chains into the cooler. hotaru never writes into the bucket the panel is displaying, because the panel blanks for the length of that transfer (spec 013) |
-| MSI GeForce RTX 4090 Suprim Liquid X | sanshoku | Drawn through sanshoku over the card's I2C adapter (spec 075; sanshoku spec 029). One light: a colour is the card's static mode, at most about four a second, and its own effects (Breathing and the rest) carry it moving. **Its LEDs wash out.** A pale colour looks close to white, and its middle greens look too bright. A `colour` rule corrects it (spec 066) |
-| ASUS ROG Maximus Z790 Hero | sanshoku | Drawn through sanshoku (spec 075; sanshoku spec 027): the onboard LED and four addressable headers, named as OpenRGB named them. **The board cannot read a header's length**, so a `lengths` rule gives it. On this desk the accent strip has 18, the side fans 16 and the rear fan 20; OpenRGB had 16 for each |
+| NZXT Kraken 2024 Elite (`1e71:3012`) | sanshoku | hotaru draws the ring and the fans itself, through sanshoku, on the same handle that reads the telemetry and draws the 640x640 panel (spec 073). The radiator fans' RGB daisy-chains into the cooler. hotaru never writes into the bucket the panel is displaying, because the panel blanks for the length of that transfer (spec 013) |
+| MSI GeForce RTX 4090 Suprim Liquid X | sanshoku | Drawn through sanshoku over the card's I2C adapter (spec 075; sanshoku spec 029), on Linux only. One light: a colour is the card's static mode, at most about four a second, and its own effects (Breathing and the rest) carry it moving. **Its LEDs wash out.** A pale colour looks close to white, and its middle greens look too bright. A `colour` rule corrects it (spec 066) |
+| ASUS ROG Maximus Z790 Hero | sanshoku | Drawn through sanshoku (spec 075; sanshoku spec 027): the onboard LED and four addressable headers. **The board cannot read a header's length**, so a `lengths` rule gives it. On this desk the accent strip has 18, the side fans 16 and the rear fan 20; OpenRGB had 16 for each |
 | Corsair MM700 | sanshoku | Drawn through sanshoku (spec 075; sanshoku spec 026). It keeps a frame. Its logo has no blue channel, so a request for purple appears as dim red (spec 009). Its LEDs wash out like the graphics card's |
 | Logitech G502 X PLUS | sanshoku | Wireless, drawn through sanshoku on its receiver's node (spec 075; sanshoku spec 030), whose name is the receiver's: a `formerly` rule maps "G502 X PLUS" onto it. A frame holds; asleep, the mouse answers nothing, and the next frame after it wakes takes it again |
 | Keychron K4 HE | sanshoku | Drawn through sanshoku over VIA (spec 075; sanshoku spec 028). **The firmware takes each key's hue and saturation and ignores its value.** The board's one brightness follows the brightest key. A key cannot be dark beside a lit one: a black key shows white |
@@ -47,10 +42,14 @@ support list.
 
 ### Test systems
 
+Both ran before spec 076, with lighting through OpenRGB. Of the devices they
+found, sanshoku drives the AULA F75; the RAM modules, the Razer mouse and dock,
+and the B450 board's strip are not lit since.
+
 | Machine | Status |
 |---|---|
 | CachyOS, unrelated hardware, OpenRGB already running in service mode, keyboard shared from another machine over [deskflow](https://github.com/deskflow/deskflow) | **Done**, at 0.1.0 and again at 0.1.1. hotaru found nine devices and drove them with nothing written by hand. Three faults appeared, and this desk could not have shown any of them. See below |
-| Windows 11, MSI B450 Tomahawk Max, OpenRGB 1.1 as a service at boot | **Done** for lighting, after 0.1.29 (specs 067, 071 and 072). The installed service found six devices and set all of them: the board's strip, two Corsair Vengeance RGB modules, a Razer Basilisk Ultimate and its dock, and the AULA F75. The board's strip has the fault in "A hardware monitor stops an MSI board's lighting on Windows" below |
+| Windows 11, MSI B450 Tomahawk Max, OpenRGB 1.1 as a service at boot | **Done** for lighting, after 0.1.29 (specs 067, 071 and 072). The installed service found six devices and set all of them: the board's strip, two Corsair Vengeance RGB modules, a Razer Basilisk Ultimate and its dock, and the AULA F75. The board's strip kept its colour while LibreHardwareMonitor ran, an OpenRGB fault ([#197](https://github.com/ushineko/hotaru/issues/197)) |
 
 What that installation found, in the order it was found:
 
@@ -147,100 +146,30 @@ the rule, run `hotaru reload`, and apply the scene again.
 
 ## Everything else
 
-Lighting comes from one upstream project. Its device list is the authoritative
-answer for hardware that is not tested above:
+hotaru's lighting and the cooler come from sanshoku, a Go module built into
+the binary. Its device list is the answer for hardware that is not tested
+above:
 
-| Package | Version developed against | What it provides | Its device list |
-|---|---|---|---|
-| `openrgb` | 1.0 | Every lit device: GPUs, motherboards, RAM, keyboards, mice, mousepads, cases, coolers, strips | [openrgb.org/devices](https://openrgb.org/devices_1.0rc3.html) |
-| `nvidia-utils` | — | Optional. The GPU temperature on the dashboard, where the kernel exposes none | — |
+| Package | What it provides | Its device list |
+|---|---|---|
+| sanshoku | Every lit device, the cooler's telemetry and panel, and the hwmon tables | [docs/devices.md](https://github.com/ushineko/sanshoku/blob/main/docs/devices.md) |
+| `nvidia-utils` | Optional. The GPU temperature on the dashboard, where the kernel exposes none | — |
 
-`liquidctl` and `openlinkhub` were dependencies and are not any more, which
-takes Python off machines that may have no liquid cooler at all. You can still
-install either one alongside hotaru. Nothing in hotaru calls them.
-
-hotaru does not pin minimum versions artificially. It speaks OpenRGB's SDK
-protocol, negotiates the version at connect, and reports it in `hotaru light
-health`. A server too old for your device is a reason to upgrade the server. A
-device missing from `openrgb --list-devices` is an upstream matter.
-
-### OpenRGB 1.0 sends writes to the wrong device
-
-Use any OpenRGB release except 1.0. The 1.0 release has a fault that hotaru
-cannot work around ([#191](https://github.com/ushineko/hotaru/issues/191)).
-OpenRGB 1.1 fixes it.
-
-- **What you see.** A device does not change and hotaru reports it as
-  unconfirmed, or a different device changes. It starts once any device has
-  left the server's list, or after a rescan.
-- **Why.** hotaru speaks protocol 3 and names a device by its position in the
-  list. The 1.0 server reads that position as the device's id, and the two
-  differ once a device has left.
-- **Which releases.** Only 1.0. The release candidates before it do not have
-  the fault. OpenRGB 1.1 (2026-10-16) has the fix, commit
-  [`2a9fca19`](https://gitlab.com/CalcProgrammer1/OpenRGB/-/commit/2a9fca19bc15053ad1ab4e3b594d8f468ec90549).
-  OpenRGB's merge request
-  [!3697](https://gitlab.com/CalcProgrammer1/OpenRGB/-/merge_requests/3697)
-  describes the fault.
-- **Where it was found.** On Windows, with the 1.0.0 package from winget. The
-  fault is in the server on every system.
-- **hotaru cannot tell 1.0 from 1.1.** Both report protocol 6, and a client
-  at protocol 3 does not receive the server's name. `hotaru light health`
-  cannot warn about it.
-
-Restarting a 1.0 server puts positions and ids back in step. That lasts until
-the next device leaves the list. On Linux, hotaru restarts the server itself
-when a device is plugged in again (spec 058), which hides the fault there.
-
-### A hardware monitor stops an MSI board's lighting on Windows
-
-Start OpenRGB after LibreHardwareMonitor, or restart OpenRGB once
-LibreHardwareMonitor runs. Otherwise the board's strip keeps its colour and
-ignores every write
-([#197](https://github.com/ushineko/hotaru/issues/197)).
-
-- **What you see.** Every other device changes. The board's strip does not.
-  OpenRGB records the new colour, so hotaru reports the board as written.
-- **Why.** On boards such as the B450 Tomahawk Max, OpenRGB drives the strip
-  through the Super I/O chip (`SIO: 0x4E`). It sets the chip up once, when it
-  finds the board, and then writes only colours. LibreHardwareMonitor reads
-  its sensors through the same chip, and its start undoes that setup.
-- **What it is not.** Running LibreHardwareMonitor does no harm after its
-  start. Quitting it does not bring the strip back. Only a new setup by
-  OpenRGB does: a restart of its service, or a rescan from its window.
-- **Where it was found.** Windows 11, OpenRGB 1.1.0 as a service at boot, and
-  LibreHardwareMonitor at logon. That order breaks the strip on every boot.
-- **hotaru cannot see it.** The server accepts the colour and reports it back,
-  so `hotaru light health` shows the board as healthy.
+`liquidctl`, `openlinkhub` and `openrgb` were dependencies and are not any
+more. You can still install any of them alongside hotaru. Nothing in hotaru
+calls them, but a second program writing the same device fights hotaru for
+its lights.
 
 ### What each contributes
 
-**Lighting: OpenRGB.** Colours on any device it enumerates, per device, per
-zone, or per LED. Per-LED control usually needs the device's Direct mode.
-Devices that render Static as a single colour cannot show a multi-colour
-frame, and hotaru reports that rather than approximating it. hotaru talks to
-the running OpenRGB *server*, so lighting needs `openrgb` installed **and** its
-server running.
+**Lighting: hotaru itself, through sanshoku.** Colours on every device
+sanshoku drives, per device, per zone, or per light. Every device takes a
+colour per light in hotaru's Static mode.
 
-**Mode colours: as many as the mode reports.** OpenRGB gives each mode a
-`colors_min` and a `colors_max`, and hotaru fills that many slots from a
-scene's effect (spec 061). One colour fills every slot. Most modes take one.
-Some take more:
-
-| Device type | Mode | Colours |
-|---|---|---|
-| NVIDIA GPU (MSI) | Breathing, Fade In | 1 to 2 |
-| NVIDIA GPU (MSI) | Color Cycle, Wave | 1 to 3 |
-| NVIDIA GPU (EVGA) | Breathing | 1 to 2 |
-| NVIDIA GPU (EVGA) | Color Cycle, Color Stack | 2 to 7 |
-| NZXT Kraken | Fading, Breathing, Pulsing, Cover Marquee, Candle | 1 to 8 |
-| NZXT Kraken | Alternating | 1 to 2 |
-| Corsair Dominator DDR5 | Color Shift, Color Pulse, Color Wave, Visor, Rain | 2 |
-| Razer mouse dock | Breathing | 1 to 2 |
-
-These counts were read from OpenRGB on the two test machines on 2026-10-01.
-A mode is written no more colours than it reports, and fewer than it needs
-repeat the last one.
+**Mode colours: one for a device's own effect.** A device's own effect, such
+as the keyboard's Solid Reactive Multinexus, shows one stored colour. hotaru's
+renderers take more: Breathing up to four, Spectrum and Rainbow Wave up to
+eight.
 
 **Cooler telemetry: hotaru itself, through sanshoku.** The kernel has no
 driver for recent NZXT coolers. `nzxt-kraken3` matches 2007, 2014, 3008, 300C
@@ -265,9 +194,8 @@ present. NVIDIA's own driver registers no hwmon, so that card's number comes
 from `nvidia-smi`. This is why `nvidia-utils` is an `optdepends` rather than a
 dependency: a machine without it shows a placeholder rather than an error.
 
-**Canvas devices: hotaru itself, through sanshoku.** The Apex Pro TKL Wireless
-Gen 3 offers OpenRGB two modes, Direct and Onboard, and no command on the
-board changes its effect. SteelSeries GG draws every effect on the PC and
+**Canvas devices: hotaru itself, through sanshoku.** On the Apex Pro TKL
+Wireless Gen 3, no command on the board changes its effect. SteelSeries GG draws every effect on the PC and
 streams it as frames, and the board holds the last frame it was sent.
 sanshoku's `steelseries` driver sends those frames, and each one is
 acknowledged. hotaru lists the board as a device whose modes are its own
@@ -286,22 +214,6 @@ through them. Without colours each draws as it did before.
   <device>` hands the lighting back to the firmware. On the Apex that reboots
   the board, which then shows its onboard effect. hotaru attaches it again
   and sends it nothing until a scene asks.
-- **OpenRGB's exit reboots the board.** hotaru notices within two seconds,
-  attaches the board again and puts the scene back.
-- **OpenRGB still lists the board.** hotaru calls that listing the board's
-  *twin*, writes nothing to it, and shows it as handed over in `hotaru light
-  list`. The twin is found by the hidraw path in OpenRGB's location. OpenRGB
-  records that path when it starts and keeps it after the board moves to
-  another node. On 2026-10-01 it listed the board at `/dev/hidraw5` after the
-  board had moved to `/dev/hidraw4`. A rule names the twin where the path does
-  not match:
-
-```yaml
-devices:
-  - match: Apex Pro TKL Wireless Gen 3     # the kernel's name: the canvas device
-    twin: Apex Pro TKL Gen 3 Wireless      # OpenRGB's name for the same board
-```
-
 **The Kraken's ring and fans: hotaru draws them through sanshoku.** Measured
 on a Kraken 2024 Elite on firmware 1.2.12 (spec
 [073](../specs/073-the-kraken-drawn-through-sanshoku.md), sanshoku spec 024).
@@ -309,10 +221,6 @@ on a Kraken 2024 Elite on firmware 1.2.12 (spec
 - **One owner of the cooler.** sanshoku's driver reads the cooler's status,
   draws on its screen and lights its ring and fans, on one handle. Two
   programs writing that node cost specs 068 and 070, and #206.
-- **Switch off OpenRGB's detector for the cooler.** In OpenRGB's
-  `OpenRGB.json`, under `Detectors`, set `"NZXT Kraken 2024 ELITE Series
-  RGB"` to `false`, then restart its server. With it on, OpenRGB and hotaru
-  write the same LED buffer on the cooler.
 - **The lights are two zones, Ring and Fan.** Each key is named as sanshoku
   names it (`ring 1` to `ring 24`, `fan 1` and on), and hotaru makes a zone
   of each word.
@@ -330,7 +238,7 @@ on a Kraken 2024 Elite on firmware 1.2.12 (spec
   The cooler does not report which effect runs, so hotaru knows only what it
   set. A preview does not set one, as for the F75.
 - **Scenes written for OpenRGB's listing still apply.** A rule's `formerly`
-  names the cooler as OpenRGB listed it, and maps its zones. Targets,
+  names the cooler as OpenRGB listed it before spec 076, and maps its zones. Targets,
   segments and the recorded colours under the old name land on the same
   lights. No file is rewritten.
 
@@ -342,18 +250,18 @@ devices:
       zones: {"Hue 2 Channel 1": Ring, "Hue 2 Channel 2": Fan}
 ```
 
-**Every device without OpenRGB.** Since spec 075 hotaru draws the mainboard,
-the mousepad, the keyboard, the mouse and the graphics card through sanshoku
-too, so it runs with OpenRGB stopped. OpenRGB is optional: it adds hardware
-sanshoku does not drive.
+**The other lit devices: through sanshoku.** Since spec 075 hotaru draws the
+mainboard, the mousepad, the keyboard, the mouse and the graphics card
+through sanshoku too. Since spec 076 there is no other way.
 
 - **Names are OpenRGB's.** Each driver names the device, its zones and its
-  lights as OpenRGB did, so scenes, segments and recorded colours find them.
+  lights as OpenRGB did, so scenes, segments and recorded colours made through
+  OpenRGB find them.
   A record in OpenRGB's Direct restores in Static. A record laid out for
   OpenRGB's header sizes is fitted to the lengths now: each header's colours
   are stretched over its strip.
 - **A header's length is a rule.** The mainboard cannot read how many LEDs a
-  strip has. OpenRGB kept the length in its profile; now a rule does:
+  strip has, so a rule gives it:
 
 ```yaml
 devices:
@@ -375,14 +283,18 @@ devices:
 - **The keyboard's own effects** are its firmware's 22, named as OpenRGB names
   them (sanshoku spec 031), so a keyboard recorded in Solid Reactive
   Multinexus comes back in it.
-- **Stop OpenRGB, or switch off its detectors** for the devices hotaru draws.
-  Two writers on one device fight over its lights. While OpenRGB runs, hotaru
-  lists its listing of a device it draws as handed over, by node or by name.
+- **Two rule keys mean nothing now.** `twin` named a device's OpenRGB
+  listing, and is read and ignored, so a rules file with it still loads. A
+  `solid_modes` entry such as `direct` names an OpenRGB mode, and matches no
+  mode now; the next entry, or Static, is used.
+- **Keep other programs off the devices hotaru draws.** OpenRGB, or a
+  vendor's own software, writing the same device fights hotaru for its
+  lights.
 
 **The AULA F75: its own effects, and frames when asked.** Measured on Windows,
 through the keyboard's 2.4 GHz receiver (spec
-[071](../specs/071-the-aula-f75.md), sanshoku specs 019 and 023). OpenRGB
-does not list the keyboard. hotaru lists it with two kinds of mode.
+[071](../specs/071-the-aula-f75.md), sanshoku specs 019 and 023). hotaru lists
+it with two kinds of mode.
 
 - **Its own effects come first.** Ripples shining, Reaction, Fixed on and the
   rest are the firmware's own. `hotaru light list` marks each with `*`. The
@@ -408,18 +320,13 @@ does not list the keyboard. hotaru lists it with two kinds of mode.
 - **AULA's own software writes the same storage.** hotaru cannot stop it, and
   the last write wins.
 
-- **An OpenRGB profile can still write to the board.** A profile applied at
-  login that includes the keyboard sets OpenRGB's Direct mode, and two
-  programs then send it frames in turn. Leave the keyboard out of any such
-  profile. hotaru does not edit OpenRGB profiles.
-
 **Permissions.** Both cooler nodes need a udev rule that tags the device
 `uaccess`: the `/dev/hidraw*` node, and the `/dev/bus/usb/BBB/DDD` node behind
 which the panel's bulk endpoint lives. Without that rule `systemd-logind` puts
 no ACL on them, and hotaru finds a cooler it cannot open. The package ships the
-rule. See [docs/packaging.md](packaging.md). A canvas device needs the same
-tag on its hidraw node, and the package's rule covers every SteelSeries
-device.
+rule. See [docs/packaging.md](packaging.md). Every lit device needs the same
+tag on its node: the package's rule covers the hidraw nodes of SteelSeries,
+ASUS, Corsair, Keychron and Logitech devices, and the NVIDIA I2C adapters.
 
 `uaccess` grants that ACL to an **active seat session**, not to the user
 manager that `enable-linger` starts at boot. hotaru therefore starts before
@@ -433,26 +340,26 @@ arrives when the login does.
   and reports nothing. It did so from liquidctl and from OpenLinkHub alike,
   which is where this was learned. A control would report success and change
   nothing, so hotaru offers none.
-- **Device lighting persistence.** OpenRGB sets volatile state. hotaru handles
-  devices that restore onboard colour on wake by rewriting the colour on a
-  timer, rather than by writing device profiles.
+- **Device lighting persistence.** hotaru does not save a device's lighting
+  to its profiles; it puts recorded lighting back when the device appears.
 - **Coolers other than the NZXT models above.** hotaru speaks NZXT's protocol.
   Another vendor's cooler needs a driver rather than a configuration entry, and
   hotaru does not have one.
-- **Anything that needs a vendor's own daemon.**
+- **Anything that needs a vendor's own daemon**, or a lighting daemon such as
+  OpenRGB.
+- **Hardware sanshoku does not drive.**
 
 ## Checking your own machine
 
 ```bash
-openrgb --list-devices        # what OpenRGB sees
 hotaru light list             # what hotaru sees, with modes and scope
 hotaru light health           # why, if it sees nothing
-hotaru light probe            # what each device can actually do
+hotaru light map              # work out which light is which, by looking
 hotaru cooling                # the cooler, or the fact that there is not one
-hotaru light release apex     # a canvas device's own lighting back
+hotaru light release apex     # a device's own lighting back
 ```
 
-If `hotaru light list` shows nothing while `openrgb --list-devices` shows
-devices, the server is not running, or it enumerated late. `health` reports
-which. OpenRGB detects devices once, at server start, so a device connected
-afterwards stays invisible until the server restarts.
+If `hotaru light list` shows nothing, `health` says what to check: that the
+device is one sanshoku drives, and that hotaru's udev rules are installed.
+hotaru looks for devices again every thirty seconds, so a device plugged in
+later appears on its own.

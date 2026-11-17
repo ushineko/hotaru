@@ -11,148 +11,75 @@ import (
 /*
 State is how well hotaru can see the machine's lighting.
 
-Four states rather than a boolean, because they have four different remedies
-and telling them apart is the difference between a program a stranger can fix
-and one they uninstall. A server that is not running, a server running with
-nothing attached, and a server showing hardware that scope excludes all look
-identical from "no lights changed".
+Three states rather than a boolean, because they have different remedies: a
+machine where hotaru finds nothing to draw, one where the rules exclude all of
+it, and one it can drive.
 */
 type State string
 
 const (
-	// StateUnreachable is nothing listening. The remedy is to start the server.
-	StateUnreachable State = "unreachable"
-	// StateNoDevices is a server that answered and knows of no hardware at
-	// all. Usually permissions, or a server that started before the devices
-	// did -- OpenRGB enumerates once, at startup.
+	/*
+		StateNoDevices is nothing found to draw: no device sanshoku drives
+		is plugged in, or one is and hotaru may not open it.
+	*/
 	StateNoDevices State = "no-devices"
 	// StateNoneInScope is hardware present with the rules file excluding all
-	// of it: a configuration problem, and the only one of the five that is.
+	// of it: a configuration problem.
 	StateNoneInScope State = "none-in-scope"
-	/*
-		StateStale is a server answering, listing the device, and holding a
-		dead connection to it -- unplugged and plugged back in since the server
-		started. The listing is identical to a working one, which is why it
-		needs a state of its own rather than showing up as healthy.
-
-		The one state the service does not decide. Telling it apart means
-		reading the server's descriptors, which has to happen in the same mount
-		namespace as the server, and this service is sandboxed away from it --
-		so the clients reach this verdict and the name lives here so they agree
-		on how to spell it. See internal/stale and spec 058.
-	*/
-	StateStale State = "stale"
 	// StateHealthy is hotaru seeing devices it is allowed to drive.
 	StateHealthy State = "healthy"
 )
 
 // Health is what hotaru can see, and what to do if that is not enough.
 type Health struct {
-	State    State
-	Address  string
-	Protocol uint32
-	Devices  int
-	InScope  int
-	Detail   string
+	State   State
+	Devices int
+	InScope int
+	Detail  string
 
 	// Remedies are things a person could do about it, each a sentence with a
-	// command in it. Offered, never performed: starting a daemon or enabling a
-	// user manager at boot is the user's decision, and a program that made it
-	// for them would be the other kind of annoying.
+	// command or a file in it. Offered, never performed.
 	Remedies []string
 
-	// Canvases are the devices hotaru draws itself, and what each is doing:
-	// a frame rate while an effect moves, holding while it does not.
+	// Canvases are the devices hotaru draws, and what each is doing: a frame
+	// rate while an effect moves, holding while it does not.
 	Canvases []CanvasState
-}
-
-/*
-Environment is what this machine could do about a problem.
-
-An interface because the answer comes from systemd on Linux and from nothing at
-all elsewhere, and because a test should be able to describe a machine rather
-than run on one.
-*/
-type Environment interface {
-	Remedies(ctx context.Context) []string
-
-	/*
-		Bounce restarts the OpenRGB server.
-
-		The one thing hotaru does to a machine rather than about it, and it
-		happens only when somebody asks. A server this user may not restart
-		returns *NotOurs carrying the command they would type instead, which
-		is an answer rather than a failure.
-	*/
-	Bounce(ctx context.Context) error
-}
-
-// SetEnvironment gives health somewhere to get its remedies.
-func (s *Service) SetEnvironment(e Environment) {
-	s.mu.Lock()
-	s.env = e
-	s.mu.Unlock()
-}
-
-func (s *Service) remedies(ctx context.Context) []string {
-	env := s.environment()
-	if env == nil {
-		return nil
-	}
-	return env.Remedies(ctx)
 }
 
 // OK reports whether hotaru can drive anything.
 func (h Health) OK() bool { return h.State == StateHealthy }
 
-/*
-Health looks, and says what to do about what it finds.
+// noDevicesRemedies is what a person can check when nothing is found.
+var noDevicesRemedies = []string{
+	"Check that the device is one hotaru supports: docs/hardware.md lists them.",
+	"Check that hotaru's udev rules are installed (packaging/60-hotaru.rules); " +
+		"without them a device is found and cannot be opened.",
+}
 
-Every unhealthy state carries a remedy in the user's terms. "Connection refused
-to 127.0.0.1:6742" is a true sentence that helps nobody; "no OpenRGB server is
-running" is the same fact, actionable.
+/*
+Health looks, and says what to do about what it finds. Every unhealthy state
+carries a remedy in the user's terms.
 */
 func (s *Service) Health(ctx context.Context) Health {
-	cfg, client, addr := s.current()
-	health := Health{Address: addr, Canvases: s.Canvases()}
+	cfg, client := s.current()
+	health := Health{Canvases: s.Canvases()}
 
-	if !s.serving() && len(health.Canvases) > 0 {
-		/*
-			OpenRGB is optional (spec 075): hotaru draws these itself, and a
-			server adds only hardware sanshoku does not drive.
-		*/
-		health.State = StateHealthy
-		health.Devices, health.InScope = len(health.Canvases), len(health.Canvases)
-		health.Detail = fmt.Sprintf("%d devices drawn by hotaru; no OpenRGB server at %s, "+
-			"which only hardware hotaru does not draw needs", len(health.Canvases), addr)
-		return health
-	}
-	if !s.serving() {
-		health.State = StateUnreachable
-		health.Detail = fmt.Sprintf("no OpenRGB server at %s. Start it, and lighting works from then on.", addr)
-		health.Remedies = s.remedies(ctx)
-		return health
-	}
-	health.Protocol = client.ProtocolVersion()
-
-	found, err := client.Devices(ctx)
-	if err != nil {
-		health.State = StateUnreachable
-		health.Detail = fmt.Sprintf("the OpenRGB server at %s stopped answering: %v", addr, err)
-		health.Remedies = s.remedies(ctx)
-		return health
-	}
-	health.Devices = len(found)
-
-	if len(found) == 0 {
-		health.Remedies = s.remedies(ctx)
-		health.State = StateNoDevices
-		health.Detail = "the OpenRGB server is running and knows of no devices. " +
-			"It detects hardware once, when it starts, so a device connected since then is invisible until it restarts."
-		return health
-	}
-
+	found, _ := client.Devices(ctx)
+	drawn := found[:0:0]
 	for _, device := range found {
+		if device.HandedTo == "" {
+			drawn = append(drawn, device)
+		}
+	}
+	health.Devices = len(drawn)
+	if len(drawn) == 0 {
+		health.State = StateNoDevices
+		health.Detail = "hotaru has found no device to draw on."
+		health.Remedies = noDevicesRemedies
+		return health
+	}
+
+	for _, device := range drawn {
 		if cfg.InScope(device.Name) {
 			health.InScope++
 		}
@@ -160,13 +87,13 @@ func (s *Service) Health(ctx context.Context) Health {
 	if health.InScope == 0 {
 		health.State = StateNoneInScope
 		health.Detail = fmt.Sprintf("%d devices are present and scope excludes all of them. "+
-			"Check the scope list in the rules file, or remove it to drive everything.", len(found))
+			"Check the scope list in the rules file, or remove it to drive everything.", len(drawn))
 		return health
 	}
 
 	health.State = StateHealthy
-	health.Detail = fmt.Sprintf("%d of %d devices are in scope", health.InScope, len(found))
-	if short := s.misfits(found); len(short) > 0 {
+	health.Detail = fmt.Sprintf("%d of %d devices are in scope", health.InScope, len(drawn))
+	if short := s.misfits(drawn); len(short) > 0 {
 		/*
 			Still healthy: hotaru can drive every one of these. But a device
 			whose LED count differs from its recorded colours shows part of
@@ -175,8 +102,7 @@ func (s *Service) Health(ctx context.Context) Health {
 		*/
 		health.Detail += ". " + strings.Join(short, ". ")
 		health.Remedies = append(health.Remedies,
-			"Run `hotaru reconcile` to give a zone that lost its size the size it was recorded with.",
-			"A zone OpenRGB cannot resize from here is sized in OpenRGB's own window.")
+			"A header's length is a `lengths` rule; check it against the strip, then apply a scene again.")
 	}
 	return health
 }
@@ -188,7 +114,7 @@ func (s *Service) misfits(found []devices.Device) []string {
 	var out []string
 	for _, device := range found {
 		kept, ok := desired.Devices[device.Name]
-		if !ok || device.HandedTo != "" || len(kept.Colours) == 0 || len(refit(&device, kept)) == device.LEDCount {
+		if !ok || len(kept.Colours) == 0 || len(refit(&device, kept)) == device.LEDCount {
 			continue
 		}
 		out = append(out, fmt.Sprintf("%s has an LED count of %d and its recorded colours are for %d",

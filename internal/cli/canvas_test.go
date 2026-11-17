@@ -1,53 +1,11 @@
 package cli_test
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"github.com/ushineko/hotaru/internal/api"
-	"github.com/ushineko/hotaru/internal/canvas"
 	"github.com/ushineko/hotaru/internal/canvas/canvastest"
-	"github.com/ushineko/hotaru/internal/devices"
-	"github.com/ushineko/hotaru/internal/openrgb"
-	"github.com/ushineko/hotaru/internal/service"
-	"github.com/ushineko/hotaru/internal/testsock"
 )
-
-// drawnSocket is a service with one canvas device attached and its twin on
-// the OpenRGB server, over a socket.
-func drawnSocket(t *testing.T) (string, *canvastest.Device) {
-	t.Helper()
-	fake := canvastest.New(3)
-	fake.Name, fake.Path = "Test Canvas Board", "/dev/hidraw-test9"
-	device, _ := canvas.New(fake)
-	anim := canvas.NewAnimator(device, canvastest.NewClock(), nil)
-	ctx, cancel := context.WithCancel(t.Context())
-	t.Cleanup(cancel)
-	go func() { _ = anim.Run(ctx) }()
-
-	svc := service.New(nil, openrgb.NewFake(devices.Device{
-		Name: "Test Canvas Board (OpenRGB)", Location: "HID: /dev/hidraw-test9", LEDCount: 3,
-		Modes: []devices.Mode{{Name: "Direct", PerLED: true}},
-	}), "")
-	svc.AttachCanvas(canvas.Attached{Device: device, Animator: anim})
-
-	socket := testsock.Path(t)
-	listener, err := api.Listen(ctx, socket)
-	require.NoError(t, err)
-	go func() { _ = api.Serve(ctx, listener, svc) }()
-	return socket, fake
-}
-
-func TestTheListingSaysWhyACanvasesTwinIsLeftAlone(t *testing.T) {
-	socket, _ := drawnSocket(t)
-
-	out, err := run(t, socket, "light", "list")
-	require.NoError(t, err)
-	require.Contains(t, out, "Test Canvas Board (OpenRGB)")
-	require.Contains(t, out, "handed")
-	require.Contains(t, out, "Test Canvas Board (OpenRGB) is drawn by hotaru as Test Canvas Board")
-}
 
 // canvasBoard is a canvas of three lights at a node, as the daemon finds one.
 func canvasBoard() *canvastest.Device {

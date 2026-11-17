@@ -382,10 +382,7 @@ still applies what it can, and a preview over no devices is simply a preview
 that suspends nothing.
 */
 func (s *Service) covers(ctx context.Context, scene scenes.Scene) ([]string, error) {
-	_, client, addr := s.current()
-	if client == nil {
-		return nil, unreachable(addr)
-	}
+	_, client := s.current()
 	found, err := client.Devices(ctx)
 	if err != nil {
 		return nil, err

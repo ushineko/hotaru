@@ -12,7 +12,6 @@ import (
 	"github.com/ushineko/hotaru/internal/cooler/coolertest"
 	"github.com/ushineko/hotaru/internal/daemon"
 	"github.com/ushineko/hotaru/internal/service"
-	"github.com/ushineko/hotaru/internal/service/servicetest"
 	"github.com/ushineko/sanshoku/lighting"
 )
 
@@ -53,7 +52,7 @@ func TestTheCoolersLightsAreDrawnOnItsOwnHandle(t *testing.T) {
 		opens++
 		return cooler.New(lit), nil
 	}
-	svc := service.New(nil, nil, servicetest.NoServer)
+	svc := service.New(nil)
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan struct{})
 	go func() {

@@ -25,21 +25,19 @@ them, so a client needs no knowledge of devices at all.
 
 Somebody recorded the transcripts below rather than writing them by hand. The
 reads come from a live service on the development machine, and the write comes
-from the test suite against the in-memory server. Each one fixed a behaviour
+from the test suite against in-memory devices. Each one fixed a behaviour
 before any consumer depended on it, which is why they are recorded here.
 
 ## GET /v1/health
 
-Why nothing is happening, in a sentence written for a person. Four states with
-four remedies: `unreachable`, `no-devices`, `none-in-scope`, `healthy`.
+Why nothing is happening, in a sentence written for a person. Three states,
+each with its own remedy: `no-devices`, `none-in-scope`, `healthy`.
 
 ```console
 $ curl -s --unix-socket $XDG_RUNTIME_DIR/hotaru/hotaru.sock http://hotaru/v1/health
 {
   "state": "healthy",
   "detail": "6 of 6 devices are in scope",
-  "address": "127.0.0.1:6742",
-  "protocol": 3,
   "devices": 6,
   "in_scope": 6,
   "version": "0.0.0"
@@ -48,17 +46,20 @@ $ curl -s --unix-socket $XDG_RUNTIME_DIR/hotaru/hotaru.sock http://hotaru/v1/hea
 
 A recorded device whose LED count differs from its recorded colours stays
 `healthy`, because hotaru can still drive it. `detail` names it with both
-numbers, and `remedies` offers `hotaru reconcile` (spec 069).
+numbers, and `remedies` says to check the header's `lengths` rule (spec 075).
 
 `health` answers when nothing else can, which is why it is a route of its own.
-With no OpenRGB server, `/v1/devices` returns a 503, and this route still
-tells you what to do about it.
+With no device found, it says what to check: that the device is one hotaru
+supports, and that its udev rules are installed.
 
 ```json
 {
-  "state": "unreachable",
-  "detail": "no OpenRGB server at 127.0.0.1:6742. Start it, and lighting works from then on.",
-  "address": "127.0.0.1:6742",
+  "state": "no-devices",
+  "detail": "hotaru has found no device to draw on.",
+  "remedies": [
+    "Check that the device is one hotaru supports: docs/hardware.md lists them.",
+    "Check that hotaru's udev rules are installed (packaging/60-hotaru.rules); without them a device is found and cannot be opened."
+  ],
   "devices": 0,
   "in_scope": 0,
   "version": "0.0.0"
@@ -67,8 +68,7 @@ tells you what to do about it.
 
 ## GET /v1/devices
 
-Every device the server knows, with what it shows and whether hotaru drives
-it. `in_scope` is here so that one listing answers "why did nothing happen to
+Every device hotaru draws, with what it shows and whether hotaru drives it. `in_scope` is here so that one listing answers "why did nothing happen to
 this one?" without a second call.
 
 ```console
@@ -107,8 +107,8 @@ the larger of the two on a driver that counts down.
 **`coloured` is how many colours of its own each mode takes** (spec 061).
 `least` is how many the mode needs and `most` is how many it accepts. A mode
 that takes a colour per light is not listed, because its colour is the frame.
-The numbers come from OpenRGB's `colors_min` and `colors_max` for a firmware
-mode. A mode that keeps a colour and reports no count takes one. An editor
+A firmware effect takes one colour, or none where it draws its own. A
+renderer's counts are its own. An editor
 draws one colour picker per slot from this. `one_colour` still says which
 modes show one colour of their own in place of the frame.
 
@@ -116,18 +116,16 @@ modes show one colour of their own in place of the frame.
 device with a `colour` rule, the service writes a corrected colour and lists
 the one it was asked for (spec 066).
 
-A zone is a contiguous run in device LED order. hotaru counts `first` rather
-than reading it, because the protocol gives sizes and leaves the offsets
-implicit. A segment named in the rules file appears in `segments`. A device
+A zone is a contiguous run in device LED order, as the device's driver names
+it. A segment named in the rules file appears in `segments`. A device
 whose colour hotaru rewrites on a timer carries the interval in `reassert`.
 
-**A canvas device** is a device hotaru draws itself, because it has no
-effects of its own (spec 060). It carries `canvas`, which says what the
-drawing is doing, and `led_names`, its own names for its keys. Its `modes`
-are hotaru's renderers. With `drawing` false the device is holding the one
-frame it was sent. The OpenRGB listing of the same hardware carries
-`handed_to`, and hotaru writes nothing to it. This shape comes from the test
-suite; no live transcript is recorded yet.
+**Every device is a canvas device**: hotaru draws it itself (specs 060 and
+075). It carries `canvas`, which says what the drawing is doing, and
+`led_names`, its own names for its keys. Its `modes` are hotaru's renderers.
+With `drawing` false the device is holding the one frame it was sent. A name a
+rule says the device was formerly called (spec 073) is listed too, with
+`handed_to` naming the device that draws it, and hotaru writes nothing to it.
 
 A canvas device with effects of its own (spec 071) lists them first in
 `modes`, and names them again in `stored`. Choosing one writes the device's
@@ -205,17 +203,13 @@ $ curl -s --unix-socket $XDG_RUNTIME_DIR/hotaru/hotaru.sock \
     {
       "device": "ASUS ROG MAXIMUS Z790 HERO",
       "applied": true,
-      "mode": "Direct",
+      "mode": "Static",
       "attempts": [
         {
           "mode": "Static",
           "accepted": true,
-          "active": "Rainbow Wave"
-        },
-        {
-          "mode": "Direct",
-          "accepted": true,
-          "active": "Direct"
+          "active": "Static",
+          "showing": true
         }
       ]
     }
@@ -224,11 +218,9 @@ $ curl -s --unix-socket $XDG_RUNTIME_DIR/hotaru/hotaru.sock \
 }
 ```
 
-That response is the design in miniature. The device **accepted the first
-attempt and did not honour it**. The server took the write, and reading the
-device back found it still in Rainbow Wave. Nothing reported an error, and
-only the read-back noticed. hotaru moved to the next candidate, confirmed it,
-and recorded both attempts, so that a user learns what their hardware does.
+Each attempt is a mode tried and what reading the device back found. A mode
+the device does not take moves hotaru to the next candidate, and every
+attempt is recorded, so that a user learns what their hardware does.
 
 `changed` counts the devices that changed, so a client exits non-zero without
 counting the results itself. **A request that changed nothing does not report
@@ -241,8 +233,8 @@ Each result is one of three things, and they are kept apart deliberately:
 |---|---|
 | `applied` with `mode` | written, and confirmed by reading the device back |
 | `skipped` | the device cannot express this, and why. Not a failure, not worth retrying |
-| `handed_to` | with `skipped`: the canvas device that draws this hardware. The same device listed twice, so a count leaves it out |
-| `error` | the server or the hardware went wrong |
+| `handed_to` | with `skipped`: the device that draws this hardware, for a name it was formerly called. The same device listed twice, so a count leaves it out |
+| `error` | the hardware went wrong |
 
 ## GET /v1/status
 
@@ -254,9 +246,6 @@ remember".
 $ curl -s --unix-socket $XDG_RUNTIME_DIR/hotaru/hotaru.sock http://hotaru/v1/status
 {
   "version": "0.0.0",
-  "connected": true,
-  "address": "127.0.0.1:6742",
-  "protocol": 3,
   "rules_file": "/home/you/.config/hotaru/hotaru.yml"
 }
 ```
@@ -796,27 +785,13 @@ $ curl -s --unix-socket … -X POST http://hotaru/v1/reconcile
 ```
 
 `complete: false`, with `missing` naming devices, is an **unfinished restore**
-rather than a failure. OpenRGB enumerates once at server start, and a cold
-boot has found two devices of six. hotaru retries, and completes when the rest
-appear.
+rather than a failure: a cold boot has found two devices of six. hotaru
+retries, and completes when the rest appear.
 
-**A zone that came back smaller than recorded gets its size back** before the
-colours go (spec 069). This covers a zone whose size a person sets, such as an
-addressable header, where the recorded size is within the zone's range. Each
-one is listed in that device's `resized`:
-
-```json
-{
-  "device": "ASUS ROG MAXIMUS Z790 HERO",
-  "applied": true,
-  "mode": "Direct",
-  "resized": ["Addressable RGB Header 1 from 0 to 16 LEDs"]
-}
-```
-
-A device that still has a different LED count from its recorded colours is
-written anyway, and `problems` says so with both numbers. A zone is never made
-smaller.
+**A record is fitted to the zones as they are now** (spec 075). A header's
+length is a rule's, and a record made with other sizes has each zone's colours
+stretched over its length. A device whose record still does not fit is written
+anyway, and `problems` says so with both numbers.
 
 ## POST /v1/reload
 
@@ -829,43 +804,6 @@ $ curl -s --unix-socket … -X POST http://hotaru/v1/reload
   "rules_file": "/home/you/.config/hotaru/hotaru.yml"
 }
 ```
-
-## POST /v1/lighting/probe
-
-Finds out what each device can do. It sets modes, reads back which ones the
-device honoured, and puts everything back. It is a POST because it writes.
-
-```console
-$ curl -s --unix-socket … -X POST -d '{"devices":["mm700"]}' http://hotaru/v1/lighting/probe
-{
-  "findings": [
-    {
-      "device": "Corsair MM700",
-      "modes": [
-        { "name": "Direct", "per_led": true, "tried": true, "took": true }
-      ],
-      "zones": [
-        { "name": "Left",  "first": 0, "count": 1 },
-        { "name": "Right", "first": 1, "count": 1 },
-        { "name": "Logo",  "first": 2, "count": 1 }
-      ],
-      "no_off_mode": true,
-      "suggested": "# this device has no Off mode, so `off` writes black to it.\n# if that blanks something that should stay lit, add:\n# never_blank: true"
-    }
-  ]
-}
-```
-
-That transcript shows two things. First, the suggestion is a **comment**.
-Black is off for a mousepad and a dead backlight for a keyboard, and nothing
-in the protocol says which device this is. The probe reports what it found and
-leaves the decision to somebody who can see the machine.
-
-Second, it shows what probing cannot do. Against an ASUS board it reports that
-Static "took", because the mode change does take. A read-back cannot see the
-addressable headers go dark. A user with only the probe would never receive
-the direct-first rule. The mapping wizard fills that gap by asking a person to
-look.
 
 ## POST /v1/lighting/release
 
@@ -892,8 +830,10 @@ $ curl -s --unix-socket … -X POST -d '{"device":"apex"}' http://hotaru/v1/ligh
 |---|---|
 | 200 | the request was understood, whatever the devices did with it |
 | 400 | the request does not decode, or names a colour or target that does not parse. Nothing is written |
-| 404 | a release names no device that hotaru draws |
-| 503 | no OpenRGB server. The request was fine; the machine is not ready |
+| 404 | a release names a device that hotaru does not draw |
+| 500 | the hardware went wrong |
 
-A 503 is deliberately not a 500. The client asked for something reasonable,
-and the answer describes the machine rather than the request.
+A device that is not there is a 404, not a 500. The client asked for
+something that does not exist on this machine, and nothing is broken. A write
+that names a device or zone that is not there is a 200, and the result's
+problems say what was not found.

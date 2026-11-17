@@ -27,23 +27,19 @@ import (
 	"github.com/ushineko/hotaru/internal/cooler"
 	"github.com/ushineko/hotaru/internal/dashboard"
 	"github.com/ushineko/hotaru/internal/devices"
-	"github.com/ushineko/hotaru/internal/openrgb"
 	"github.com/ushineko/hotaru/internal/queue"
 	"github.com/ushineko/hotaru/internal/readings"
 	"github.com/ushineko/hotaru/internal/scenes"
 	"github.com/ushineko/hotaru/internal/state"
 )
 
-// Service performs hotaru's operations against one OpenRGB server.
+// Service performs hotaru's operations on the devices it draws.
 type Service struct {
 	mu       sync.RWMutex
 	cfg      *config.Config
-	client   openrgb.Client
-	addr     string
 	rules    string
 	recorder Recorder
 	queue    *queue.Set
-	env      Environment
 	cooler   Cooler
 	// processor samples utilisation, which is a rate: one sampler for the
 	// whole service so the first answer is not always a dash.
@@ -231,49 +227,32 @@ func (s *Service) SetQueue(q *queue.Set) {
 	s.mu.Unlock()
 }
 
-// New is a service over a client. A nil client is a server that is not there,
-// which is an ordinary state rather than an error: every operation reports it
-// and none of them panic.
-func New(cfg *config.Config, client openrgb.Client, address string) *Service {
+// New is a service with no devices yet; each is attached as it is found
+// (AttachCanvas).
+func New(cfg *config.Config) *Service {
 	if cfg == nil {
 		cfg = &config.Config{}
 	}
-	if address == "" {
-		address = openrgb.DefaultAddress
-	}
 	return &Service{
-		cfg: cfg, client: client, addr: address,
+		cfg:       cfg,
 		processor: readings.NewCPU(), memory: readings.NewMemory(),
 		history: readings.NewHistory(),
 	}
 }
 
-// SetClient swaps the connection, for a server that came back. The one being
-// replaced is hung up on: a reconnection that left the old socket open would
-// leak one per restart, and the server counts its clients.
-func (s *Service) SetClient(client openrgb.Client) {
-	s.mu.Lock()
-	old := s.client
-	s.client = client
-	s.mu.Unlock()
-
-	if old != nil && old != client {
-		_ = old.Close()
-	}
-}
-
 /*
-Gone is whether the server has stopped answering, rather than any one call
-having failed.
-
-Nil is not gone. A service that has never had a server is waiting for one,
-which is the unreachable state and has its own remedy; this is the narrower
-thing the daemon acts on, a connection that worked and then did not.
+machine is what the service writes to and reads back: the devices it draws
+(see lights).
 */
-func (s *Service) Gone() bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.client != nil && s.client.Gone()
+type machine interface {
+	// Devices is every device, as it is now.
+	Devices(ctx context.Context) ([]devices.Device, error)
+	// Device is one device, by name.
+	Device(ctx context.Context, name string) (devices.Device, error)
+	// SetMode chooses how a device is lit.
+	SetMode(ctx context.Context, device, mode string, style devices.Style) error
+	// SetFrame gives a device its colours.
+	SetFrame(ctx context.Context, device string, frame devices.Frame) error
 }
 
 // SetRulesPath is where the rules file lives, so the service can re-read it
@@ -327,37 +306,18 @@ func (s *Service) SetConfig(cfg *config.Config) {
 }
 
 /*
-current is the configuration, the client and the server's address.
-
-With a canvas device attached the client is the OpenRGB server with the
-canvas devices beside it (see lights), so every operation reaches them
-through the calls it already makes. With none it is the server alone, and
-nothing behaves differently from before spec 060.
-
-With a colour profile in the rules, the client corrects what it writes and
-reports what was meant (see corrected, and spec 066).
-
-With no server and a canvas device attached, the canvases stand beside a
-server with no devices (see absent, and spec 074). With neither, the client
-is nil and every caller says the server is unreachable.
+current is the configuration and the devices hotaru draws. With a colour
+profile in the rules, the devices correct what is written to them and report
+what was meant (see corrected, and spec 066).
 */
-func (s *Service) current() (*config.Config, openrgb.Client, string) {
+func (s *Service) current() (*config.Config, machine) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	client := s.client
-	if client == nil {
-		if len(s.canvases) == 0 {
-			return s.cfg, nil, s.addr
-		}
-		client = absent{addr: s.addr}
-	}
-	if len(s.canvases) > 0 {
-		client = &lights{Client: client, cfg: s.cfg, drawn: s.drawnNow()}
-	}
+	var client machine = &lights{cfg: s.cfg, drawn: s.drawnNow()}
 	if profiled(s.cfg) {
-		client = &corrected{Client: client, cfg: s.cfg, kept: &s.corrections}
+		client = &corrected{machine: client, cfg: s.cfg, kept: &s.corrections}
 	}
-	return s.cfg, client, s.addr
+	return s.cfg, client
 }
 
 /*
@@ -385,10 +345,7 @@ type View struct {
 
 // List is every device the server has, with scope and rules resolved.
 func (s *Service) List(ctx context.Context) ([]View, error) {
-	cfg, client, addr := s.current()
-	if client == nil {
-		return nil, unreachable(addr)
-	}
+	cfg, client := s.current()
 
 	found, err := client.Devices(ctx)
 	if err != nil {
@@ -487,8 +444,8 @@ type Result struct {
 	Applied bool
 	// Skipped is a device that could not express the request, and why.
 	Skipped string
-	// HandedTo is the canvas device that draws this OpenRGB device's
-	// hardware (spec 060 R1.3). The device is skipped, and it is the same
+	// HandedTo is the canvas device a name it was formerly called now
+	// belongs to (spec 073). The device is skipped, and it is the same
 	// hardware as a device that was written, so it is not one more device
 	// left unlit.
 	HandedTo string
@@ -509,20 +466,14 @@ type Result struct {
 	// the top fan" with the fan misspelled is a device that went blue all over
 	// and said it worked.
 	Problems []string
-
-	// Resized are zones a restore gave back the size they were recorded
-	// with, each as a sentence: "Addressable RGB Header 1 from 0 to 16
-	// LEDs". See spec 069.
-	Resized []string
 }
 
 // Attempt is one mode hotaru tried, and what the device did with it.
 type Attempt struct {
 	Mode     string
-	Accepted bool   // the server took the write
+	Accepted bool   // the device took the write
 	Active   string // what the device said it was in afterwards
 	Showing  bool   // and whether it was showing the colours it was sent
-	Settled  bool   // and whether that took a second write after the mode change
 	Why      string // why this attempt was abandoned, if it was
 }
 
@@ -547,10 +498,7 @@ the rules file earns its keep, and `probe` -- which sets a mode, looks, and
 asks -- is how the rule gets written without the user reasoning it out.
 */
 func (s *Service) Apply(ctx context.Context, req Request) ([]Result, error) {
-	cfg, client, addr := s.current()
-	if client == nil {
-		return nil, unreachable(addr)
-	}
+	cfg, client := s.current()
 
 	found, err := client.Devices(ctx)
 	if err != nil {
@@ -602,7 +550,7 @@ func (s *Service) Apply(ctx context.Context, req Request) ([]Result, error) {
 	return results, nil
 }
 
-func (s *Service) applyOne(ctx context.Context, client openrgb.Client, cfg *config.Config,
+func (s *Service) applyOne(ctx context.Context, client machine, cfg *config.Config,
 	device *devices.Device, assignments []devices.Assignment, req Request,
 ) Result {
 	off := req.Off
@@ -742,12 +690,12 @@ func modeColoursFor(device *devices.Device, mode string, frame devices.Frame, of
 }
 
 /*
-styleOf is a mode's own settings with its colours in the shape openrgb.Style
+styleOf is a mode's own settings with its colours in the shape devices.Style
 keeps them: the first as Colour, and every one as Colours where there are
 several.
 */
-func styleOf(brightness *int, colours []colour.Colour, speed *int) openrgb.Style {
-	style := openrgb.Style{Brightness: brightness, Speed: speed}
+func styleOf(brightness *int, colours []colour.Colour, speed *int) devices.Style {
+	style := devices.Style{Brightness: brightness, Speed: speed}
 	if len(colours) > 0 {
 		first := colours[0]
 		style.Colour = &first
@@ -836,7 +784,7 @@ writeFrame is the write-and-confirm half, shared by applying and reconciling.
 Reconciling must not be a second implementation of this: the fall-through, the
 read-back and the reasons a device is skipped are the same facts whoever asked.
 */
-func (s *Service) writeFrame(ctx context.Context, client openrgb.Client,
+func (s *Service) writeFrame(ctx context.Context, client machine,
 	device *devices.Device, frame devices.Frame, off bool, want preference,
 	brightness *int,
 ) Result {
@@ -883,125 +831,25 @@ func (s *Service) writeFrame(ctx context.Context, client openrgb.Client,
 		attempt := Attempt{Mode: mode}
 		style := styleOf(rule.Brightness, modeColoursFor(device, mode, frame, off, want.colours), want.speed)
 
-		/*
-			A mode that shows one colour of its own takes the frame first,
-			then the mode twice; everything else takes the mode, then the
-			frame.
-
-			**Measured on the hardware, with hotaru out of the loop.** Driving
-			the keyboard from OpenRGB's own CLI: arriving at a reactive mode
-			from Direct with its colour shows red, and the identical command
-			sent again -- now already in the mode -- shows the colour. That is
-			spec 052's asymmetry, reproduced without any of hotaru's code in
-			the way, and it is why the packet goes twice.
-
-			Spec 052 already sent it twice and it did not help, because hotaru
-			wrote the frame *between* the two: a frame landing in between puts
-			the device back in the arriving state, so the second packet was
-			never the already-in-the-mode case the fix depended on. Moving the
-			frame ahead of both is the only difference between the sequence
-			that failed and the one that worked, and it was confirmed on the
-			keyboard coming off a per-LED mode.
-
-			The frame still goes, in the colour the mode is showing (see
-			below), so the buffer and the mode agree whichever the firmware
-			reads.
-
-			For every other mode the order is unchanged and deliberate: the
-			mode packet goes first, and the frame behind it waits for the
-			mode to settle (openrgb.SettleDelay). A device already in the
-			per-LED mode asked for takes the frame alone; see below, and
-			spec 056 for the reordering.
-		*/
-		/*
-			commits is a mode that carries a colour of its own, and arriving
-			is the device not being in it yet. Together they are the one case
-			that needs the second mode packet below.
-		*/
-		/*
-			A device hotaru draws has no firmware finishing a mode change, so
-			it never needs the second packet: its mode is chosen and drawn in
-			one step (see drawn, in canvas.go).
-		*/
-		one, known := device.Mode(mode)
-		commits := known && one.ModeColour && device.Canvas == nil
-		arriving := !strings.EqualFold(device.ActiveMode, mode)
-
-		/*
-			No mode packet to a device already in the per-LED mode asked
-			for, when the packet would change nothing about it.
-
-			In OpenRGB 1.0 the packet is not inert. The server rewrites every
-			zone from the controller's own thread after answering, and the
-			frame behind it is written from the network thread, so the two
-			interleave on the device. On an NZXT cooler that lost frames and
-			left the ring's channel showing one wrong LED and ignoring every
-			frame until the next mode change (#24). The frame alone landed
-			180 times in 180. Spec 068 replaces spec 010's rule, measured
-			when a frame was one request for the whole device.
-		*/
-		if !arriving && unchanged(one, known, device, style) {
-			attempt.Accepted = true
-		} else {
-			if err := client.SetMode(ctx, device.Name, mode, style); err != nil {
-				attempt.Why = err.Error()
-				result.Attempts = append(result.Attempts, attempt)
-				var keeps *KeepsStored
-				if errors.As(err, &keeps) {
-					// Not a mode the device refused: one hotaru will not
-					// write now. The next candidate would draw over the
-					// effect the device shows (spec 071 R5).
-					result.Skipped = err.Error()
-					return result
-				}
-				continue
+		// The mode, then the frame: a canvas chooses its renderer and draws
+		// in one step (see drawn, in canvas.go).
+		if err := client.SetMode(ctx, device.Name, mode, style); err != nil {
+			attempt.Why = err.Error()
+			result.Attempts = append(result.Attempts, attempt)
+			var keeps *KeepsStored
+			if errors.As(err, &keeps) {
+				// Not a mode the device refused: one hotaru will not write
+				// now. The next candidate would draw over the effect the
+				// device shows (spec 071 R5).
+				result.Skipped = err.Error()
+				return result
 			}
-			attempt.Accepted = true
+			continue
 		}
+		attempt.Accepted = true
 
 		if !isOffMode(mode) {
 			if err := client.SetFrame(ctx, device.Name, frame); err != nil {
-				attempt.Why = err.Error()
-				result.Attempts = append(result.Attempts, attempt)
-				continue
-			}
-		}
-
-		/*
-			And the mode again, once the device has finished entering it, for
-			a mode that carries a colour of its own.
-
-			**The packet carries the mode and its colour together, and the
-			device takes them as two operations.** It honours the colour when
-			it is already in the mode and loses it when it is arriving, so the
-			second packet is the already-in-the-mode case and is what makes
-			the colour stick.
-
-			**The gap is the part that took four attempts to find.** Sent back
-			to back the second packet is no better than the first: measured on
-			the keyboard, driving it from OpenRGB with none of hotaru's code in
-			the way, the same packets showed the previous colour with no gap
-			and the right one with 120ms between them. A gap after the frame
-			instead changes nothing, so it is the device finishing the mode
-			change that is being waited for and not the buffer.
-
-			Nothing else in the sequence matters, and three things that looked
-			like they did were each ruled out by sending the packets by hand:
-			the frame's position, the frame's contents, and the speed field.
-			See spec 057, and specs 052, 055 and 056 for the readings it
-			replaces.
-
-			The cost is scoped by the same measurement. A device already in
-			the mode took the colour on the first packet; a mode with no
-			colour of its own has nothing to commit. So the ordinary write
-			path still does not wait, which is spec 010 AC7.
-		*/
-		if commits && arriving && !isOffMode(mode) {
-			if !pause(ctx, settleDelay) {
-				result.Err = ctx.Err()
-				return result
-			}
-			if err := client.SetMode(ctx, device.Name, mode, style); err != nil {
 				attempt.Why = err.Error()
 				result.Attempts = append(result.Attempts, attempt)
 				continue
@@ -1018,24 +866,6 @@ func (s *Service) writeFrame(ctx context.Context, client openrgb.Client,
 		}
 		attempt.Active = after.ActiveMode
 		attempt.Showing = showing(after, frame, want.colours)
-
-		if !attempt.Showing && strings.EqualFold(after.ActiveMode, mode) {
-			/*
-				The mode took and the colours did not. Before concluding the
-				device ignores them, write them once more.
-
-				A mode change is not instant on every bus. Over SMBus to a
-				stick of DDR5 it is slow enough that a frame written
-				immediately afterwards lands while the controller is still
-				changing mode, and is discarded -- which is why OpenRGB's own
-				CLI, which sends the two as separate commands with a round
-				trip between them, lights hardware that hotaru could not.
-			*/
-			if again := s.settle(ctx, client, device.Name, frame); again != nil {
-				attempt.Showing = showing(*again, frame, want.colours)
-				attempt.Settled = attempt.Showing
-			}
-		}
 		result.Attempts = append(result.Attempts, attempt)
 
 		if !strings.EqualFold(after.ActiveMode, mode) {
@@ -1163,28 +993,6 @@ func without(list []string, drop string) []string {
 	return out
 }
 
-/*
-unchanged is a per-LED mode that a mode packet would only re-send: no colour
-of its own, and no brightness or speed for the packet to carry. Not a device
-hotaru draws, whose mode is chosen and drawn in one step.
-*/
-func unchanged(mode devices.Mode, known bool, device *devices.Device, style openrgb.Style) bool {
-	return known && device.Canvas == nil &&
-		mode.PerLED && !mode.ModeColour &&
-		(style.Brightness == nil || !mode.Brightness) &&
-		(style.Speed == nil || mode.Speed == nil)
-}
-
-/*
-settleDelay is how long a slow controller is given to finish changing mode
-before its colours are written again.
-
-Long enough for an SMBus device, short enough that a person setting a colour
-does not notice. Only ever paid by a device that did not show the first frame.
-It is the connection's own settle period, so the two cannot drift apart.
-*/
-const settleDelay = openrgb.SettleDelay
-
 // pause waits, and says whether it got to the end rather than being
 // cancelled. A write that is being given up on should not still sleep.
 func pause(ctx context.Context, d time.Duration) bool {
@@ -1194,26 +1002,6 @@ func pause(ctx context.Context, d time.Duration) bool {
 	case <-time.After(d):
 		return true
 	}
-}
-
-// settle writes the frame once more, after a pause, and reads the device back.
-func (s *Service) settle(ctx context.Context, client openrgb.Client,
-	device string, frame devices.Frame,
-) *devices.Device {
-	select {
-	case <-ctx.Done():
-		return nil
-	case <-time.After(settleDelay):
-	}
-
-	if err := client.SetFrame(ctx, device, frame); err != nil {
-		return nil
-	}
-	after, err := client.Device(ctx, device)
-	if err != nil {
-		return nil
-	}
-	return &after
 }
 
 /*

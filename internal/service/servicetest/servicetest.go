@@ -19,9 +19,6 @@ import (
 	"github.com/ushineko/sanshoku"
 )
 
-// NoServer is the address of an OpenRGB server that is not running.
-const NoServer = "127.0.0.1:6742"
-
 // Drawn is a device attached to a service.
 type Drawn struct {
 	Device *canvas.Device
@@ -49,10 +46,10 @@ func Attach(t testing.TB, svc *service.Service, dev sanshoku.Device) *Drawn {
 	return d
 }
 
-// New is a service with cfg and no OpenRGB server, drawing on devs.
+// New is a service with cfg, drawing on devs.
 func New(t testing.TB, cfg *config.Config, devs ...sanshoku.Device) *service.Service {
 	t.Helper()
-	svc := service.New(cfg, nil, NoServer)
+	svc := service.New(cfg)
 	for _, dev := range devs {
 		Attach(t, svc, dev)
 	}

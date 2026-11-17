@@ -11,7 +11,6 @@ unpacking one. The shape and the dependency argument are in
 | `60-hotaru.rules` | `/usr/lib/udev/rules.d/60-hotaru.rules` |
 | `io.github.ushineko.hotaru.desktop` | `/usr/share/applications/io.github.ushineko.hotaru.desktop` |
 | `hotaru.svg` | `/usr/share/icons/hicolor/scalable/apps/hotaru.svg` |
-| `openrgb-enumeration.conf.example` | `/usr/share/doc/hotaru/openrgb-enumeration.conf.example` |
 
 The udev rule is the one that is easy to leave out and impossible to notice:
 without it hotaru finds the cooler and cannot open it, so lighting works while

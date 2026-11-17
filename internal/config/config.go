@@ -101,14 +101,9 @@ type DeviceRule struct {
 	FrameInterval Duration `json:"frame_interval,omitempty"`
 
 	/*
-		Twin names the OpenRGB device that is the same hardware as a device
-		hotaru draws itself, matched as a case-insensitive substring of
-		OpenRGB's name for it.
-
-		Needed where OpenRGB's location does not carry the device's hidraw
-		path: OpenRGB records the path when it starts and keeps it after the
-		device re-enumerates on another node. A rule that names the twin is
-		the whole answer for that device, and the location is not consulted.
+		Twin named the OpenRGB device that was the same hardware as a device
+		hotaru draws. Read and ignored since OpenRGB was removed (spec 076), so
+		a rules file that has it still loads.
 	*/
 	Twin string `json:"twin,omitempty"`
 

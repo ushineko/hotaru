@@ -82,10 +82,8 @@ include a reading taken on the hardware.
 Paste, at minimum:
 
 - the device and its USB `VID:PID` (`lsusb`), and the transport the change uses
-  (OpenRGB, `/dev/hidraw`, usbfs);
-- the OpenRGB version if the path goes through it, and whether
-  `openrgb-server` was running (a bare `openrgb --client` with no server exits
-  0 and prints nothing — that is not a reading);
+  (`/dev/hidraw`, usbfs, I2C);
+- the sanshoku version, and the device's firmware version where it reports one;
 - the `hotaru` command you ran and its real output;
 - for lighting: what you observed on the device, per zone or per fan, not just
   that the command returned;
@@ -108,8 +106,9 @@ contributor's future PRs declined on sight.
 ## Scope
 
 RGB lighting and AIO cooler control for Linux, as a CLI, a user service and a
-desktop GUI. Lighting goes through OpenRGB; the NZXT Kraken Elite LCD and
-telemetry are driven directly over `/dev/hidraw` and usbfs.
+desktop GUI. Every device is driven directly through
+[sanshoku](https://github.com/ushineko/sanshoku), over `/dev/hidraw`, usbfs and
+I2C. Support for a new device is a sanshoku driver first.
 
 In scope: new device support, lighting modes and scenes, cooler curves, LCD
 rendering, the service, and the GUI. Out of scope: vendor firmware flashing,
@@ -134,8 +133,8 @@ make gui          # desktop GUI (needs CGO, OpenGL and X11/Wayland headers)
 ```
 
 Go 1.26 or newer. `make test` runs without hardware and without root. Running
-the binary against real devices needs the usual `/dev/hidraw` access and, for
-lighting, a running `openrgb-server`.
+the binary against real devices needs `/dev/hidraw` access, which
+`packaging/60-hotaru.rules` grants to the logged-in user.
 
 ## What gets checked on your PR
 

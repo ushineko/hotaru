@@ -1,21 +1,19 @@
 /*
 Package cli is every command that talks to a running hotaru.
 
-It reaches no device package: no OpenRGB, no service, no devices. That is
+It reaches no device package: no service, no devices. That is
 asserted by a test rather than left to discipline, because "the service is the
 only writer" is worth more as a fact about the import graph than as a sentence
 in a document -- there is no code path here that could reach a device even by
 mistake.
 
 What it does do besides ask the service is read the machine, where the service
-is sandboxed out of reading it: the desktop's own shortcut file, and whether
-the OpenRGB server still has a connection to the hardware it thinks it has.
-Neither writes a light.
+is sandboxed out of reading it: the desktop's own shortcut file. That writes no
+light.
 */
 package cli
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -26,7 +24,6 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/ushineko/hotaru/internal/api"
 	"github.com/ushineko/hotaru/internal/config"
-	"github.com/ushineko/hotaru/internal/stale"
 )
 
 // Commands are the client-side commands, for a root command to add.
@@ -44,8 +41,7 @@ func lightCommand() *cobra.Command {
 		Use:   "light",
 		Short: "Lighting",
 	}
-	cmd.AddCommand(listCommand(), setCommand(), offCommand(), healthCommand(), probeCommand(), mapCommand(),
-		rescanCommand(), releaseCommand())
+	cmd.AddCommand(listCommand(), setCommand(), offCommand(), healthCommand(), mapCommand(), releaseCommand())
 	return cmd
 }
 
@@ -82,7 +78,7 @@ func listCommand() *cobra.Command {
 				case device.HandedTo != "":
 					// Listed, so a person can see why it is not written to.
 					scope = "handed"
-					handed = append(handed, fmt.Sprintf("%s is drawn by hotaru as %s; OpenRGB is not written to.",
+					handed = append(handed, fmt.Sprintf("%s is drawn by hotaru as %s.",
 						device.Name, device.HandedTo))
 				case device.Preview != nil:
 					// A device whose re-assertion is suspended looks exactly
@@ -334,36 +330,6 @@ func apply(cmd *cobra.Command, req api.ApplyRequest) error {
 	return nil
 }
 
-/*
-withStale adds the one verdict the service cannot reach.
-
-Asked here rather than there because reading the server's descriptors has to
-happen in the server's own mount namespace, and the service is sandboxed away
-from it while this command is an ordinary process of the user's. The rest of
-health is the service's answer, untouched. See internal/stale and spec 058.
-
-Anything that goes wrong is silence. This is an extra sentence on a report that
-was already complete, and a health command that failed because a diagnosis of a
-diagnosis did not work would be worse than one that says what it knows.
-*/
-func withStale(ctx context.Context, client *api.Client, health api.Health) api.Health {
-	if health.State != stale.Healthy {
-		return health
-	}
-	found, err := client.Devices(ctx)
-	if err != nil {
-		return health
-	}
-	names := make([]string, 0, len(found))
-	for _, device := range found {
-		names = append(names, device.Name)
-	}
-
-	verdict := (&stale.Checker{}).Check(ctx, names)
-	health.State, health.Detail, health.Remedies = verdict.Apply(health.State, health.Detail, health.Remedies)
-	return health
-}
-
 func healthCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "health",
@@ -378,7 +344,6 @@ func healthCommand() *cobra.Command {
 			if err != nil {
 				return quiet(err)
 			}
-			health = withStale(cmd.Context(), client, health)
 
 			if asJSON(cmd) {
 				if err := emit(cmd, health); err != nil {
@@ -388,10 +353,6 @@ func healthCommand() *cobra.Command {
 				cmd.Printf("%s: %s\n", health.State, health.Detail)
 				for _, remedy := range health.Remedies {
 					cmd.Printf("  %s\n", remedy)
-				}
-				if health.Protocol > 0 {
-					cmd.Printf("  %s, protocol %d, %d devices, %d in scope\n",
-						health.Address, health.Protocol, health.Devices, health.InScope)
 				}
 				for _, c := range health.Canvases {
 					cmd.Printf("  drawing on %s: %s\n", c.Device, drawing(c.Effect, c))

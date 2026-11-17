@@ -2,16 +2,11 @@
 Description=hotaru lighting service
 Documentation=https://github.com/ushineko/hotaru
 
-# Deliberately no After=, Wants= or Requires= on any OpenRGB unit.
+# No After= or Wants= on anything. hotaru opens the devices it draws itself,
+# and looks for each again until it appears, so a device that enumerates late
+# at boot is restored when it does.
 #
-# There is no single unit to name: the Arch package ships a system unit, some
-# machines run a user one, and other people start the server by hand. Worse,
-# ordering would not help. OpenRGB detects devices once, when it starts, and a
-# cold boot has been observed reaching "started" with two devices of six
-# enumerated -- so "after" is not "ready". hotaru connects with retry and
-# judges readiness by the device list instead.
-#
-# Nothing about graphical-session.target either. The point of remembering what
+# Nothing about graphical-session.target. The point of remembering what
 # the lights were showing is to put it back as soon as the machine is up, and a
 # restore that waits for someone to log in has missed the moment it existed for.
 # Boot-time start needs `loginctl enable-linger $USER`, which hotaru reports
@@ -23,8 +18,9 @@ ExecStart=/usr/bin/hotaru serve
 Restart=on-failure
 RestartSec=5s
 
-# The service needs no privileges beyond the user's own: it speaks to OpenRGB
-# over a loopback socket and writes files under the user's XDG directories.
+# The service needs no privileges beyond the user's own: it opens the devices
+# the udev rules grant the seat (packaging/60-hotaru.rules) and writes files
+# under the user's XDG directories.
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict

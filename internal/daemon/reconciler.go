@@ -12,16 +12,15 @@ import (
 /*
 Reconciler keeps the hardware showing what it should.
 
-Two jobs that look alike and are not. **Restoring** happens once, after the
-OpenRGB server becomes reachable, and puts back what was last asked for.
+Two jobs that look alike and are not. **Restoring** happens once, as the
+service starts, and puts back what was last asked for.
 **Re-asserting** happens forever, on an interval, for the devices that do not
 hold what they are told.
 
-Restoring is deliberately not a start-up step that runs and finishes. OpenRGB
-detects devices once, when it starts, and a cold boot has been observed finding
-two devices out of six -- so a restore that reached fewer devices than were
-recorded retries rather than declaring victory, and completes silently when the
-rest turn up.
+Restoring is deliberately not a start-up step that runs and finishes. Devices
+appear over the first seconds of a boot, some only once someone logs in -- so
+a restore that reached fewer devices than were recorded retries rather than
+declaring victory, and completes silently when the rest turn up.
 */
 type Reconciler struct {
 	Service *service.Service
@@ -35,8 +34,8 @@ type Reconciler struct {
 	Every time.Duration
 
 	// Report is where progress goes. One line per change of state, never one
-	// per tick: a machine with no OpenRGB should not have its journal filled
-	// with a fact that is not changing.
+	// per tick: a machine waiting on a device should not have its journal
+	// filled with a fact that is not changing.
 	Report func(format string, args ...any)
 }
 
@@ -47,19 +46,11 @@ var (
 )
 
 /*
-Run restores, then keeps re-asserting, until the context is cancelled or the
-server goes away.
+Run restores, then keeps re-asserting, until the context is cancelled.
 
 With nothing recorded there is nothing to restore and nothing to re-assert, and
 this loop costs a timer. That is the inert rule at run time: a fresh install
 starts every mechanism and writes to no device.
-
-Returning on a departed server is what makes reconnecting possible. Neither
-loop can make progress against a socket whose peer has gone, and retrying one
-forever is how a replugged device used to need the service restarted by hand.
-The caller dials again and calls this again; restoring then happens for the
-same reason it happens at boot, because a server that has just enumerated has
-every device in its power-on state. See spec 058.
 */
 func (r *Reconciler) Run(ctx context.Context) {
 	r.restore(ctx)
@@ -81,22 +72,13 @@ func (r *Reconciler) restore(ctx context.Context) {
 			rainbow behind a "restored" line looked like (spec 069).
 		*/
 		for _, result := range got.Results {
-			for _, resized := range result.Resized {
-				r.tell(told, "%s: resized %s", result.Device, resized)
-			}
 			for _, problem := range result.Problems {
 				r.tell(told, "%s", problem)
 			}
 		}
 		switch {
 		case err != nil:
-			// A server that has gone is not a server that is late. Retrying
-			// cannot reach it, so this hands back to the caller to redial.
-			if r.Service.Gone() {
-				return
-			}
-			// No server yet. The connector reports that; saying it twice from
-			// two goroutines helps nobody.
+			r.tell(told, "could not restore: %v", err)
 		case got.Complete():
 			if got.Applied > 0 {
 				r.report("restored %d devices to what they were showing", got.Applied)
@@ -143,13 +125,6 @@ func (r *Reconciler) reassert(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case now := <-ticker.C:
-			// Checked here rather than after a failed write, so a machine with
-			// nothing recorded -- which never writes, and so never sees an
-			// error -- still notices that the server it is attached to is not
-			// the one running now.
-			if r.Service.Gone() {
-				return
-			}
 			/*
 				Lapsed previews first.
 

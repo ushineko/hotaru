@@ -13,9 +13,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/ushineko/hotaru/internal/api"
-	"github.com/ushineko/hotaru/internal/openrgb"
 	"github.com/ushineko/hotaru/internal/service"
-	"github.com/ushineko/hotaru/internal/service/servicetest"
 )
 
 /*
@@ -107,17 +105,10 @@ func TestEveryRouteIsServed(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// The probe asks an OpenRGB server, so it is served on one.
-func TestTheProbeRouteIsServed(t *testing.T) {
-	client := running(t, nil, openrgb.NewFake(board()))
-	_, err := client.Probe(t.Context(), api.ProbeRequest{})
-	require.NoError(t, err)
-}
-
 // An unknown path is a 404 rather than something worse, so a client that is
 // newer than the service gets a clear answer.
 func TestAnUnknownRouteIsPlainlyNotFound(t *testing.T) {
-	server := httptest.NewServer(api.Handler(service.New(nil, nil, servicetest.NoServer)))
+	server := httptest.NewServer(api.Handler(service.New(nil)))
 	defer server.Close()
 
 	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, server.URL+"/v1/nonsense", nil)
@@ -144,7 +135,7 @@ colour is not, and no amount of parsing tells them apart. That one stays a
 review question.
 */
 func TestTheCorePackagesNeitherPrintNorExit(t *testing.T) {
-	core := []string{"colour", "config", "devices", "openrgb", "queue", "service", "state"}
+	core := []string{"colour", "config", "devices", "queue", "service", "state"}
 	fset := token.NewFileSet()
 
 	for _, pkg := range core {

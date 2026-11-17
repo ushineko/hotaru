@@ -8,19 +8,10 @@ import (
 	"github.com/ushineko/hotaru/internal/colour"
 	"github.com/ushineko/hotaru/internal/config"
 	"github.com/ushineko/hotaru/internal/devices"
-	"github.com/ushineko/hotaru/internal/openrgb"
 	"github.com/ushineko/hotaru/internal/scenes"
 	"github.com/ushineko/hotaru/internal/service"
 	"github.com/ushineko/hotaru/internal/service/servicetest"
 )
-
-/*
-Spec 066: a device whose lights wash out is written a corrected colour, and
-everything above the write still sees the colour that was meant.
-
-The profile is the one that matched the RTX 4090 to the fans in the scene
-ice1: #80aad1 is written #003eff.
-*/
 
 func washesOut() *config.Config {
 	full, green := 1.0, 2.15
@@ -98,21 +89,4 @@ func TestADeviceWithoutAProfileIsWrittenAsAsked(t *testing.T) {
 	_, err := svc.Apply(t.Context(), service.Request{Assignments: solid("ASUS", "#80aad1")})
 	require.NoError(t, err)
 	require.Eventually(t, func() bool { return shows(t, board.Device, colour.MustParse("#80aad1")) }, eventually, every)
-}
-
-func TestALightChangedElsewhereIsReportedAsItIs(t *testing.T) {
-	server := openrgb.NewFake(graphics())
-	svc := service.New(washesOut(), server, "")
-	_, err := svc.Apply(t.Context(), service.Request{Assignments: solid("Graphics", "#80aad1")})
-	require.NoError(t, err)
-
-	// Something other than hotaru turns the middle light green.
-	corrected := colour.MustParse("#003eff")
-	require.NoError(t, server.SetFrame(t.Context(), graphicsName, devices.Frame{
-		Device: graphicsName, Colours: []colour.Colour{corrected, colour.MustParse("green"), corrected},
-	}))
-
-	got := listed(t, svc, graphicsName).Colours
-	require.Equal(t, []string{"#80aad1", "#00ff00", "#80aad1"},
-		[]string{got[0].String(), got[1].String(), got[2].String()})
 }

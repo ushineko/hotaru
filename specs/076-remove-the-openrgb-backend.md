@@ -70,15 +70,15 @@ The maintainer decided on 2026-11-17 (#212):
 
 ## Acceptance Criteria
 
-- [ ] PR 1: `make test`, `make lint` and the GUI tests pass; no production
+- [x] PR 1: `make test`, `make lint` and the GUI tests pass; no production
       file changed; Verification lists every test file's verdicts.
-- [ ] PR 2: no package imports `internal/openrgb`; `make test`, `make lint`
+- [x] PR 2: no package imports `internal/openrgb`; `make test`, `make lint`
       and the GUI tests pass.
-- [ ] PR 2: the parity and guard tests pass with `rescan` and `probe` gone.
+- [x] PR 2: the parity and guard tests pass with `rescan` and `probe` gone.
 - [ ] Live, with someone watching, after PR 2: the desk restores on a
       restart, a scene lights every device, and `hotaru light health`
       reports the canvases.
-- [ ] Docs per R3; packaging per R2.6.
+- [x] Docs per R3; packaging per R2.6.
 
 ## Risks & Assumptions
 
@@ -148,3 +148,36 @@ None is changed here (R1.4).
    mode is dimmable.
 5. **The write queue's supersede** had its coverage only through a slow
    OpenRGB fake.
+
+### PR 2: the deletion (2026-11-17)
+
+`make test`, `make lint` (0 issues), the GUI tests and govulncheck pass. No
+file imports `internal/openrgb`; `go mod tidy` drops
+`github.com/csutorasa/go-openrgb-sdk`. The parity and guard tests pass with
+`rescan` and `probe` gone (R2.3). 111 files, 8,587 lines removed.
+
+- **Deleted:** `internal/openrgb`, `internal/stale`, `internal/services`; the
+  service's `absent`, `probe` and `rescan`; regrow, twin matching, the settle
+  and second mode packet; `Health`'s server states, address and protocol;
+  `Status`'s connection; `Result.Resized`, `Attempt.Settled`; the daemon's
+  dial, redial and environment; `light probe`, `light rescan`, their routes
+  and the window's rescan card; the CLI and window's stale check.
+- **The service's devices are its canvases** (R2.2): `machine` is four
+  methods (`Devices`, `Device`, `SetMode`, `SetFrame`), served by `lights`;
+  `Style` moves to `devices`; `service.New(cfg)`. A write to a device that is
+  not drawn is `NoDevice`, a 404 on release; a name a rule says a canvas was
+  formerly called is listed handed to it, and refused with that reason (R2.4).
+- **Health** is no-devices, none-in-scope or healthy, with remedies that name
+  hotaru's udev rules.
+- **Rules:** `twin` loads and is ignored (R2.5); its test stays.
+- **Tests:** every test PR 1 left on `openrgb.Fake` is deleted with its code;
+  four were rewritten for the new contract (health ×3, nothing found).
+- **Docs and packaging:** architecture (both diagrams re-rendered), hardware,
+  api, packaging, credits, gallery, README, CONTRIBUTING and the example
+  rules; no `openrgb` optdepend or enumeration example; the unit and
+  installer comments and keywords.
+
+### Live
+
+Not yet run: it needs the dev build from this branch on the desk and someone
+watching.

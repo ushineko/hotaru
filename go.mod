@@ -4,7 +4,6 @@ go 1.26.0
 
 require (
 	fyne.io/fyne/v2 v2.8.1
-	github.com/csutorasa/go-openrgb-sdk v1.0.1
 	github.com/godbus/dbus/v5 v5.2.2
 	github.com/spf13/cobra v1.10.2
 	github.com/srwiley/oksvg v0.0.0-20221011165216-be6e8873101c

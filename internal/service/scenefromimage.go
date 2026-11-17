@@ -226,10 +226,7 @@ something physical -- a ring goes round, a strip goes along.
 Zones of one light are the exception; see paintDevice.
 */
 func (s *Service) paint(ctx context.Context, picture image.Image, distance float64) ([]scenes.Assignment, error) {
-	_, client, addr := s.current()
-	if client == nil {
-		return nil, unreachable(addr)
-	}
+	_, client := s.current()
 	found, err := client.Devices(ctx)
 	if err != nil {
 		return nil, err
@@ -415,10 +412,7 @@ func (s *Service) representative(ctx context.Context, scene scenes.Scene, pictur
 	if len(scene.Effects) == 0 {
 		return scene
 	}
-	_, client, _ := s.current()
-	if client == nil {
-		return scene
-	}
+	_, client := s.current()
 	found, err := client.Devices(ctx)
 	if err != nil {
 		return scene

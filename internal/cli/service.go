@@ -1,9 +1,7 @@
 package cli
 
 import (
-	"fmt"
 	"strings"
-	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 	"github.com/ushineko/hotaru/internal/api"
@@ -28,11 +26,6 @@ func statusCommand() *cobra.Command {
 			}
 
 			cmd.Printf("hotaru %s\n", status.Version)
-			if status.Connected {
-				cmd.Printf("  OpenRGB   %s, protocol %d\n", status.Address, status.Protocol)
-			} else {
-				cmd.Printf("  OpenRGB   not connected (%s)\n", status.Address)
-			}
 			if status.RulesFile != "" {
 				cmd.Printf("  rules     %s\n", status.RulesFile)
 			}
@@ -85,9 +78,6 @@ func reconcileCommand() *cobra.Command {
 					out.Applied, strings.Join(out.Missing, ", "))
 			}
 			for _, result := range out.Results {
-				for _, resized := range result.Resized {
-					cmd.Printf("  %s: resized %s\n", result.Device, resized)
-				}
 				for _, problem := range result.Problems {
 					cmd.PrintErrf("  %s\n", problem)
 				}
@@ -128,78 +118,6 @@ func reloadCommand() *cobra.Command {
 			return nil
 		},
 	}
-	withJSON(cmd)
-	return cmd
-}
-
-func probeCommand() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "probe",
-		Short: "Find out what each device can actually do",
-		Long: `Find out what each device can actually do.
-
-Sets modes to see which ones a device honours, and puts everything back
-afterwards. What it cannot tell you is whether the lights physically changed:
-a board that accepts Static and lights only its onboard LED reports Static
-either way. For that, look at the machine.`,
-		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			client, err := client(cmd)
-			if err != nil {
-				return err
-			}
-			names, _ := cmd.Flags().GetStringSlice("devices")
-			findings, err := client.Probe(cmd.Context(), api.ProbeRequest{Devices: names})
-			if err != nil {
-				return quiet(err)
-			}
-			if asJSON(cmd) {
-				return emit(cmd, findings)
-			}
-
-			for i, found := range findings {
-				if i > 0 {
-					cmd.Println()
-				}
-				cmd.Printf("%s\n", found.Device)
-				if found.Error != "" {
-					cmd.PrintErrf("  %s\n", found.Error)
-				}
-
-				w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-				for _, mode := range found.Modes {
-					note := "took"
-					if !mode.Took {
-						note = "accepted, and did not take"
-					}
-					per := ""
-					if mode.PerLED {
-						per = "per-LED"
-					}
-					_, _ = fmt.Fprintf(w, "  %s\t%s\t%s\n", mode.Name, note, per)
-				}
-				for _, zone := range found.Zones {
-					_, _ = fmt.Fprintf(w, "  zone %s\t%d LEDs\t(%d-%d)\n",
-						zone.Name, zone.Count, zone.First, zone.First+zone.Count-1)
-				}
-				if err := w.Flush(); err != nil {
-					return fmt.Errorf("write the findings: %w", err)
-				}
-
-				if found.Suggested != "" {
-					cmd.Println("  suggested rule:")
-					for _, line := range strings.Split(found.Suggested, "\n") {
-						cmd.Printf("    %s\n", line)
-					}
-				}
-			}
-			if len(findings) == 0 {
-				cmd.Println("No devices to probe. `hotaru light health` says why.")
-			}
-			return nil
-		},
-	}
-	cmd.Flags().StringSlice("devices", nil, "only these devices, by name")
 	withJSON(cmd)
 	return cmd
 }
@@ -263,64 +181,6 @@ func coolingCommand() *cobra.Command {
 			cmd.Printf("  pump      %d rpm (%d%%)\n", cooling.PumpRPM, cooling.PumpDuty)
 			cmd.Printf("  fan       %d rpm (%d%%)\n", cooling.FanRPM, cooling.FanDuty)
 			cmd.Printf("  display   %s\n", display(cooling))
-			return nil
-		},
-	}
-	withJSON(cmd)
-	return cmd
-}
-
-/*
-rescanCommand bounces the OpenRGB server so it looks at the hardware again.
-
-Here rather than at the top level because it is what a person reaches for after
-`light health` says a device has moved, and because what it fixes is lighting.
-It is the only command that restarts something, and it does it because it was
-asked to by name.
-*/
-func rescanCommand() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "rescan",
-		Short: "Restart the OpenRGB server so it sees replugged devices, then put the lights back",
-		Long: `Restart the OpenRGB server so it detects the hardware again.
-
-OpenRGB detects devices once, when it starts. A device unplugged and plugged
-back in since then is still in its list, and still has the connection it had
-before -- which now goes nowhere, so the device is shown as present and cannot
-be lit. Nothing but a restart recovers it.
-
-This takes a few seconds: the server does not stop immediately, and the lights
-go back on once it has found everything.`,
-		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			client, err := client(cmd)
-			if err != nil {
-				return err
-			}
-
-			// Said before rather than after, because the wait is long enough
-			// that silence reads as a command that has hung.
-			if !asJSON(cmd) {
-				cmd.Println("restarting the OpenRGB server; this takes a few seconds...")
-			}
-
-			out, err := client.Rescan(cmd.Context())
-			if err != nil {
-				return quiet(err)
-			}
-			if asJSON(cmd) {
-				return emit(cmd, out)
-			}
-
-			switch {
-			case out.Complete && out.Applied == 0:
-				cmd.Printf("the server found %d devices; nothing was waiting to be put back\n", out.Devices)
-			case out.Complete:
-				cmd.Printf("the server found %d devices; restored %d\n", out.Devices, out.Applied)
-			default:
-				cmd.Printf("the server found %d devices; restored %d, still waiting for %s\n",
-					out.Devices, out.Applied, strings.Join(out.Missing, ", "))
-			}
 			return nil
 		},
 	}

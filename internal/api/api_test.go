@@ -9,32 +9,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/ushineko/hotaru/internal/api"
 	"github.com/ushineko/hotaru/internal/config"
-	"github.com/ushineko/hotaru/internal/devices"
-	"github.com/ushineko/hotaru/internal/openrgb"
-	"github.com/ushineko/hotaru/internal/service"
 	"github.com/ushineko/hotaru/internal/testsock"
 )
-
-func board() devices.Device {
-	return devices.Device{
-		Name:     "ASUS ROG MAXIMUS Z790 HERO",
-		LEDCount: 4,
-		Modes: []devices.Mode{
-			{Name: "Static", PerLED: true},
-			{Name: "Direct", PerLED: true},
-			{Name: "Rainbow Wave"},
-		},
-		Zones:      []devices.Zone{{Name: "Addressable 1", First: 0, Count: 4}},
-		ActiveMode: "Rainbow Wave",
-	}
-}
-
-// running is the service over a real socket, as a shell meets it, on an
-// OpenRGB server.
-func running(t *testing.T, cfg *config.Config, server openrgb.Client) *api.Client {
-	t.Helper()
-	return serve(t, service.New(cfg, server, "127.0.0.1:6742"))
-}
 
 func TestAShellReachesTheServiceOverTheSocket(t *testing.T) {
 	client := drawing(t, nil, auraBoard(), k4())
@@ -87,24 +63,6 @@ func TestApplyingAColourTakesWhatAPersonWouldType(t *testing.T) {
 	shows(t, board.Device, 1, "#ff5500")
 }
 
-func TestTheFallThroughIsVisibleInTheResponse(t *testing.T) {
-	// What the service discovered has to reach the person: two attempts, the
-	// first accepted and not honoured.
-	server := openrgb.NewFake(board())
-	server.Lies["ASUS ROG MAXIMUS Z790 HERO"] = "Static"
-	client := running(t, nil, server)
-
-	out, err := client.Apply(t.Context(), api.ApplyRequest{
-		Assignments: []api.Assignment{{Target: "ASUS", Colour: "blue"}},
-	})
-	require.NoError(t, err)
-	require.Equal(t, "Direct", out.Results[0].Mode)
-	require.Len(t, out.Results[0].Attempts, 2)
-	require.True(t, out.Results[0].Attempts[0].Accepted)
-	require.Equal(t, "Rainbow Wave", out.Results[0].Attempts[0].Active,
-		"the server took the write and the device stayed where it was")
-}
-
 func TestARequestThatChangedNothingSaysSo(t *testing.T) {
 	cfg := &config.Config{Scope: []string{"nothing-here"}}
 	client := drawing(t, cfg, auraBoard())
@@ -135,22 +93,6 @@ func TestNonsenseIsRejectedBeforeAnythingIsWritten(t *testing.T) {
 	require.ErrorContains(t, err, "nothing to apply")
 
 	require.Zero(t, board.Frames(), "a rejected request wrote nothing")
-}
-
-func TestAnUnreachableOpenRGBIsTheMachineNotTheRequest(t *testing.T) {
-	// A nil client is "no server", which is an ordinary state on a machine
-	// where OpenRGB has not been started yet.
-	client := running(t, nil, nil)
-
-	_, err := client.Devices(t.Context())
-	require.ErrorContains(t, err, "no OpenRGB server")
-	require.ErrorContains(t, err, "start it")
-
-	// Health still answers: a shell can ask what is wrong even when nothing
-	// else works, which is the point of it being a separate route.
-	health, err := client.Health(t.Context())
-	require.NoError(t, err)
-	require.Equal(t, "unreachable", health.State)
 }
 
 func TestWithNoServiceRunningAShellSaysThatInOneLine(t *testing.T) {
