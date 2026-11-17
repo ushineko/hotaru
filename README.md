@@ -275,6 +275,18 @@ MIT. See [LICENSE](LICENSE).
 
 ### Unreleased
 
+- Effects follow across devices (spec
+  [077](specs/077-effects-follow-across-devices.md),
+  [#218](https://github.com/ushineko/hotaru/issues/218)). Every device hotaru
+  draws runs the Kraken's fourteen effects, matched by eye beside the cooler;
+  a rule's `follow` makes a device take its leader's effect, colours and
+  speed, in step, and a device with one light takes its closest own effect.
+  Firmware effects take all their colours and their speed, and one held in
+  memory is put back after a restart. `hotaru light match` sets a device's
+  `pace` by eye; `hotaru light map` finds a header's length and asks a
+  keyboard nothing about chaining; `shapes` says what a header holds. A
+  `reassert` rule reaches a device hotaru draws. `light map` now writes back
+  every rule key, where it dropped several.
 - OpenRGB is gone (spec [076](specs/076-remove-the-openrgb-backend.md),
   [#215](https://github.com/ushineko/hotaru/issues/215)). hotaru supports what
   sanshoku drives, and draws every device itself. `light rescan`, `light
