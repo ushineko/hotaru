@@ -170,3 +170,22 @@ func TestAFollowerIsLitWhenOnlyTheLeaderIs(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "Tai Chi", viewOf(t, svc, "ASUS ROG MAXIMUS Z790 HERO").Device.ActiveMode)
 }
+
+// A one-colour effect stays one colour on a best fit that takes two (E4).
+func TestABestFitOfOneColourFillsEverySlot(t *testing.T) {
+	gpu := msiCard()
+	svc := servicetest.New(t, &config.Config{Devices: []config.DeviceRule{{Match: "msi", Follow: "kraken"}}},
+		gpu, leaderCooler())
+	red := colour.MustParse("red")
+	_, err := svc.Apply(t.Context(), service.Request{
+		Colour: &red, Effects: map[string]scenes.Effect{"kraken": {Mode: "Pulse", Colours: []string{"#ff0000"}}},
+	})
+	require.NoError(t, err)
+	running, _ := gpu.Running()
+	assert.Equal(t, "Breathing", running)
+	colours, _ := gpu.Settings()
+	require.Greater(t, len(colours), 1)
+	for i, c := range colours {
+		assert.Equal(t, lighting.Colour{R: 255}, c, "slot %d is not the colour given", i)
+	}
+}

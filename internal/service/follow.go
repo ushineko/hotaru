@@ -130,8 +130,17 @@ func translate(given scenes.Effect, leader, follower *devices.Device) (scenes.Ef
 		}
 	}
 	colours := given.Palette()
-	if _, most := mode.Slots(); len(colours) > most {
+	_, most := mode.Slots()
+	if len(colours) > most {
 		colours = colours[:most]
+	}
+	if fitted := out.Mode != given.Mode; fitted && len(colours) == 1 && most > 1 {
+		/*
+			A one-colour effect on a best fit that takes more: the colour in
+			every slot, so it stays one colour. Left short, the card fills the
+			rest with its own (Breathing went red and green; E4).
+		*/
+		colours = slices.Repeat(colours, most)
 	}
 	out.SetPalette(colours)
 	return out, true
