@@ -318,3 +318,14 @@ maintainer comparing:
   glide between lights: "smoother, close enough".
 
 Not yet run: E2 to E5, and the live criteria.
+
+### E2 and E3: drift and the mouse's sleep (2026-11-17, the maintainer watching)
+
+`follow: kraken` on the Maximus and GeForce rules; a scene giving only the
+Kraken Tai Chi in red and blue, applied at 13:41:47. All three devices lit:
+the Kraken on its own Tai Chi, the Aura on hotaru's copy, the RTX 4090 on its
+best fit, Fade In, fading between red and blue.
+
+- **E2:** the Aura and the Kraken in step at 1 minute and at 5 minutes.
+- **E3:** the G502 left untouched past its sleep, then moved: it showed the
+  scene's colours.
