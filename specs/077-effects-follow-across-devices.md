@@ -131,6 +131,16 @@ What sanshoku has and lacks (sanshoku #89):
   never under the device's floor, and stops when a still scene replaces it.
   The CPU, USB and radio cost of every device following the Kraken is measured
   and stated, against the same desk with a still scene.
+- R3.9 **A pace trim per device, set by matching** (the maintainer, 2026-11-17,
+  during E1's tuning: a pace matched by eye depends on the device's LEDs and
+  diffusers and on who looks, and a description of one is hard to give). A
+  rule's `pace` is a multiplier on a device's copy of each named effect
+  (`pace: {Breathing: 2.2}`); E1's measured paces are the defaults. It applies
+  wherever the copy runs: following, or set on the device. `hotaru light
+  match <device> <effect>` previews the effect on the device and its leader
+  together; `f` and `s` make it faster or slower, `r` restarts both in step,
+  and Enter writes the trim to the rules. The window has the same: a speed
+  slider beside a live preview, and Save. One API route serves both.
 - R3.8 **Each device's limits, stated and kept.** Where a device cannot show
   part of an effect, it shows the nearest and the listing says so:
   - the K4 HE takes each key's hue, and one brightness for the board, so an
@@ -207,6 +217,8 @@ What sanshoku has and lacks (sanshoku #89):
   - shapes come from the driver or the rule;
   - `light map` asks chaining only on a line or ring, and dimming once;
   - `light map` finds a header's length from a person's answers and writes it;
+  - a `pace` trim lengthens or shortens a copy's period, following or not;
+    `light match` writes the trim it was left at;
   - a re-assert resends a still canvas frame;
   - latest-wins holds on a slow canvas.
 - [ ] Live, with someone watching:
@@ -223,7 +235,9 @@ What sanshoku has and lacks (sanshoku #89):
     restart;
   - `light map` asks the K4 HE nothing about chaining;
   - `light map` finds the Z790's three header lengths (18, 16, 20) and the
-    empty fourth.
+    empty fourth;
+  - `light match` and the window's slider match the rear fan's Breathing to
+    the Kraken's, and the trim survives a restart.
 - [ ] The cost of R3.7 measured and recorded.
 - [ ] Docs per R7.
 
