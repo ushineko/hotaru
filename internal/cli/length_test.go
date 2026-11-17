@@ -52,3 +52,32 @@ func TestTheMapFindsAnEmptyHeader(t *testing.T) {
 	require.NotContains(t, person.questions(), "Is any red showing")
 	require.Contains(t, strings.Join(person.said, "\n"), "Nothing on it")
 }
+
+// "No" at the end goes back to a device, with this run's answers as the
+// defaults, instead of throwing every answer away (spec 077, the live run).
+func TestTheMapGoesBackToADevice(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", home)
+	board := canvastest.NewBoard("ASUS ROG MAXIMUS Z790 HERO",
+		canvastest.Zone("Aura Mainboard", 1), canvastest.Header("Addressable RGB Header 3", 0, 500))
+	client := api.NewClient(drawing(t, nil, board))
+
+	reds := []string{"n", "n", "y", "n", "n", "y", "y"}
+	answers := append([]string{"y", "mainboard", "y"}, reds...)
+	answers = append(answers, "rear fan", "1", "n", "n", "1")
+	answers = append(answers, "y", "", "y")
+	answers = append(answers, reds...)
+	answers = append(answers, "top fans", "1", "y", "n", "y")
+	person := &scripted{answers: answers}
+	require.NoError(t, cli.Map(t.Context(), client, person))
+
+	cfg, _, err := config.Load(filepath.Join(home, "hotaru", "hotaru.yml"))
+	require.NoError(t, err, person.questions())
+	rule := cfg.RulesFor("ASUS ROG MAXIMUS Z790 HERO")
+	require.NotEmpty(t, rule, person.questions())
+	_, renamed := rule[0].Segments["top-fans"]
+	_, old := rule[0].Segments["rear-fan"]
+	require.True(t, renamed, "the second answer was not written")
+	require.False(t, old, "the first answer was kept beside it")
+	require.Contains(t, rule[0].Segments, "mainboard", "the default from this run was not offered")
+}

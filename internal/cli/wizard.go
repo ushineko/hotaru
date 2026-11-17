@@ -178,98 +178,145 @@ func Map(ctx context.Context, client *api.Client, asker Asker, only ...string) e
 	asker.Say("Lighting things one at a time and asking what you can see.")
 	asker.Say("Answer in your own words -- these become the names you use. Press return to skip anything.\n")
 
-	var found []namedSegment
-	learned := map[string]notes{}
-	// dimming is whether this run dims anything, once asked (spec 077 R4.2).
-	var dimming *bool
+	m := &mapping{client: client, asker: asker, list: list, existing: existing, learned: map[string]notes{}}
+	var order []string
 	for _, device := range list {
 		if !device.InScope || device.LEDs == 0 || !wanted(only, device.Name) {
 			continue
 		}
-
-		// Before asking what is on a device, find out whether hotaru can light
-		// it at all. On this author's board the default mode is accepted,
-		// reported, and lights only the onboard LED -- so a user would answer
-		// "nothing" to every zone and map half their case as empty.
-		working, err := lightsUp(ctx, client, asker, device)
-		if err != nil {
+		if err := m.device(ctx, device); err != nil {
 			return err
 		}
-		if working.none {
-			// Say which modes were tried: on a device that will not light, the
-			// useful next step is knowing what was already ruled out.
-			if len(working.tried) > 0 {
-				asker.Say("  Nothing lit, whichever way it was asked. Leaving %s out.", device.Name)
-			} else {
-				asker.Say("  %s would not light at all, so there is nothing to see. Leaving it out.", device.Name)
-			}
-			continue
-		}
-		note := notes{}
-		if working.corrected {
-			note.solidModes = working.order
-			asker.Say("  Noted: %s only lights one particular way, and that is written down.", device.Name)
-		}
+		order = append(order, device.Name)
+	}
 
-		segments, lengths, err := mapDevice(ctx, client, asker, device, working.mode, existing, names(list))
-		if err != nil {
+	for {
+		var found []namedSegment
+		for _, name := range order {
+			found = append(found, m.found[name]...)
+		}
+		if len(found) == 0 {
+			asker.Say("\nNothing was named, so there is nothing to write.")
+			return nil
+		}
+		again, err := finish(ctx, client, asker, found, list, m.learned, existing, path, order)
+		if err != nil || again == "" {
 			return err
 		}
-		note.lengths = lengths
-		if len(segments) == 0 {
-			continue // nothing named on it, so nothing to treat specially
-		}
-		found = append(found, segments...)
-
 		/*
-			A device already set to stay dark until touched is asked about.
-
-			Otherwise the choice can never be revisited: it is only offered
-			when a device fails to go dark, and a device configured this way
-			no longer fails. Spec 008's reconfiguration pattern has to reach
-			this answer too.
+			A device gone through again, with this run's answers as the
+			defaults: "no" at the end used to throw every answer away.
 		*/
-		if was := configuredDark(existing, device, names(list)); was != "" {
-			keep, err := asker.Confirm(fmt.Sprintf(
-				"  The %s is set to stay dark until you touch it. Keep that?", knownName(device)))
-			if err != nil {
-				return err
-			}
-			switch {
-			case keep:
-				note.solidModes = withFallbacks(device, was, note.solidModes)
-			default:
-				alt, chosen, err := chooseDark(ctx, client, asker, device, working.mode, true)
-				switch {
-				case err != nil:
+		m.existing = merge(existing, found, m.learned, names(list))
+		for _, device := range list {
+			if device.Name == again {
+				if err := m.device(ctx, device); err != nil {
 					return err
-				case alt != "":
-					note.solidModes = withFallbacks(device, alt, note.solidModes)
-				case chosen:
-					note.plainAgain = true // lit all the time, as it was before
-				default:
-					note.solidModes = withFallbacks(device, was, note.solidModes)
 				}
 			}
 		}
+	}
+}
 
-		// Brightness is offered only where the mode that will be used takes
-		// one, and asked about once a run before any device is (spec 077
-		// R4.2): every device hotaru draws can be dimmed.
-		level, dimmable, err := dimmed(ctx, client, asker, device, working.mode, &dimming)
+// mapping is one run of the wizard: what each device was found to have, and
+// what was learned about it.
+type mapping struct {
+	client   *api.Client
+	asker    Asker
+	list     []api.Device
+	existing *config.Config
+	found    map[string][]namedSegment
+	learned  map[string]notes
+	// dimming is whether this run dims anything, once asked (spec 077 R4.2).
+	dimming *bool
+}
+
+// device asks about one device, replacing anything asked about it before.
+func (m *mapping) device(ctx context.Context, device api.Device) error {
+	client, asker, list, existing := m.client, m.asker, m.list, m.existing
+	if m.found == nil {
+		m.found = map[string][]namedSegment{}
+	}
+	delete(m.found, device.Name)
+	delete(m.learned, device.Name)
+
+	// Before asking what is on a device, find out whether hotaru can light
+	// it at all. On this author's board the default mode is accepted,
+	// reported, and lights only the onboard LED -- so a user would answer
+	// "nothing" to every zone and map half their case as empty.
+	working, err := lightsUp(ctx, client, asker, device)
+	if err != nil {
+		return err
+	}
+	if working.none {
+		// Say which modes were tried: on a device that will not light, the
+		// useful next step is knowing what was already ruled out.
+		if len(working.tried) > 0 {
+			asker.Say("  Nothing lit, whichever way it was asked. Leaving %s out.", device.Name)
+		} else {
+			asker.Say("  %s would not light at all, so there is nothing to see. Leaving it out.", device.Name)
+		}
+		return nil
+	}
+	note := notes{}
+	if working.corrected {
+		note.solidModes = working.order
+		asker.Say("  Noted: %s only lights one particular way, and that is written down.", device.Name)
+	}
+
+	segments, lengths, err := mapDevice(ctx, client, asker, device, working.mode, existing, names(list))
+	if err != nil {
+		return err
+	}
+	note.lengths = lengths
+	if len(segments) == 0 {
+		return nil // nothing named on it, so nothing to treat specially
+	}
+	m.found[device.Name] = segments
+
+	/*
+		A device already set to stay dark until touched is asked about.
+
+		Otherwise the choice can never be revisited: it is only offered
+		when a device fails to go dark, and a device configured this way
+		no longer fails. Spec 008's reconfiguration pattern has to reach
+		this answer too.
+	*/
+	if was := configuredDark(existing, device, names(list)); was != "" {
+		keep, err := asker.Confirm(fmt.Sprintf(
+			"  The %s is set to stay dark until you touch it. Keep that?", knownName(device)))
 		if err != nil {
 			return err
 		}
-		note.brightness = level
-		note.undimmable = !dimmable
-		learned[device.Name] = note
+		switch {
+		case keep:
+			note.solidModes = withFallbacks(device, was, note.solidModes)
+		default:
+			alt, chosen, err := chooseDark(ctx, client, asker, device, working.mode, true)
+			switch {
+			case err != nil:
+				return err
+			case alt != "":
+				note.solidModes = withFallbacks(device, alt, note.solidModes)
+			case chosen:
+				note.plainAgain = true // lit all the time, as it was before
+			default:
+				note.solidModes = withFallbacks(device, was, note.solidModes)
+			}
+		}
 	}
 
-	if len(found) == 0 {
-		asker.Say("\nNothing was named, so there is nothing to write.")
-		return nil
+	// Brightness is offered only where the mode that will be used takes
+	// one, and asked about once a run before any device is (spec 077
+	// R4.2): every device hotaru draws can be dimmed.
+	level, dimmable, err := dimmed(ctx, client, asker, device, working.mode, &m.dimming)
+	if err != nil {
+		return err
 	}
-	return finish(ctx, client, asker, found, list, learned, existing, path)
+	note.brightness = level
+	note.undimmable = !dimmable
+	m.learned[device.Name] = note
+	return nil
 }
 
 /*
@@ -784,9 +831,14 @@ func names(list []api.Device) []string {
 	return out
 }
 
+/*
+finish lights everything named at once and asks whether it is right. Yes
+writes it; no asks which device to go through again, and returns its name,
+or nothing to stop without writing.
+*/
 func finish(ctx context.Context, client *api.Client, asker Asker, found []namedSegment,
-	present []api.Device, learned map[string]notes, existing *config.Config, path string,
-) error {
+	present []api.Device, learned map[string]notes, existing *config.Config, path string, order []string,
+) (string, error) {
 	presentNames := names(present)
 	asker.Say("\nEverything you named, lit at once:")
 	byDevice := map[string][]namedSegment{}
@@ -803,30 +855,53 @@ func finish(ctx context.Context, client *api.Client, asker Asker, found []namedS
 			asker.Say("  %s → %s", palette[i%len(palette)], segment.Name)
 		}
 		if err := light(ctx, client, asker, device, "", assignments); err != nil {
-			return err
+			return "", err
 		}
 	}
 
 	right, err := asker.Confirm("\nIs that right?")
 	if err != nil {
-		return err
+		return "", err
 	}
 	if !right {
-		asker.Say("Nothing written. Run it again when you are ready.")
-		return nil
+		return goBack(asker, order)
 	}
 
 	if err := blanking(ctx, client, asker, present, learned); err != nil {
-		return err
+		return "", err
 	}
 
 	merged := merge(existing, found, learned, presentNames)
 	rules := yamlFor(merged)
 	asker.Say("\n%s", rules)
 	if err := offerToWrite(ctx, client, asker, rules, path); err != nil {
-		return err
+		return "", err
 	}
-	return useIt(ctx, client, asker)
+	return "", useIt(ctx, client, asker)
+}
+
+// goBack asks which device to go through again, by number, or none.
+func goBack(asker Asker, order []string) (string, error) {
+	asker.Say("Which one should be gone through again?")
+	for i, name := range order {
+		asker.Say("  %d. %s", i+1, name)
+	}
+	for {
+		answer, err := asker.Ask("Its number (return to stop without writing):")
+		if err != nil {
+			return "", err
+		}
+		answer = strings.TrimSpace(answer)
+		if answer == "" {
+			asker.Say("Nothing written. Run it again when you are ready.")
+			return "", nil
+		}
+		var n int
+		if _, err := fmt.Sscan(answer, &n); err == nil && n >= 1 && n <= len(order) {
+			return order[n-1], nil
+		}
+		asker.Say("  A number from 1 to %d.", len(order))
+	}
 }
 
 func targetOf(segment namedSegment) string {
