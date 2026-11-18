@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"image"
 	"image/gif"
+	"image/png"
 
 	"github.com/ushineko/hotaru/internal/dashboard"
 	"github.com/ushineko/hotaru/internal/state"
@@ -196,16 +198,33 @@ func (s *Service) behind(_ context.Context, one dashboard.Dashboard) image.Image
 	return decoded
 }
 
+// Preview is a dashboard frame encoded as the panel would show it.
+type Preview struct {
+	Image []byte
+	// Format is "png" for a panel that takes frames, in full colour, and
+	// "gif" for one that takes GIFs (spec 080).
+	Format string
+}
+
 /*
 RenderDashboard draws one frame of a dashboard, for somebody to look at before
 it goes on the panel.
 
 The readings are the machine's own, because a preview of a dashboard full of
 invented numbers does not answer the question somebody is asking, which is
-whether their own numbers fit.
+whether their own numbers fit. The encoding is the panel's: a PNG of the full
+colour frame where the panel takes frames, the GIF it would be sent where it
+does not, so the preview is not a better or worse picture than the panel's.
 */
-func (s *Service) RenderDashboard(ctx context.Context, one dashboard.Dashboard) ([]byte, error) {
+func (s *Service) RenderDashboard(ctx context.Context, one dashboard.Dashboard) (Preview, error) {
 	frame := dashboard.Render(one, s.Readings(ctx), 0, s.behind(ctx, one),
 		s.Trails(ctx, one))
-	return frame.GIF, nil
+	if !s.Frames() {
+		return Preview{Image: frame.GIF(), Format: "gif"}, nil
+	}
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, frame.Image); err != nil {
+		return Preview{}, fmt.Errorf("encode the preview: %w", err)
+	}
+	return Preview{Image: buf.Bytes(), Format: "png"}, nil
 }

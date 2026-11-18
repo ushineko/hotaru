@@ -5,6 +5,7 @@ import (
 	"image"
 	"image/color"
 	"image/gif"
+	"image/png"
 	"math"
 	"os"
 	"path/filepath"
@@ -51,7 +52,7 @@ func TestTheTickAdvancesWithoutDefeatingTheGate(t *testing.T) {
 	second := shown(reading(), 2)
 
 	require.Equal(t, first.Content, second.Content)
-	require.NotEqual(t, first.GIF, second.GIF, "the tick did not advance")
+	require.NotEqual(t, first.GIF(), second.GIF(), "the tick did not advance")
 }
 
 func TestAChangedReadingIsANewPicture(t *testing.T) {
@@ -68,7 +69,7 @@ func TestAMissingMetricDrawsAPlaceholder(t *testing.T) {
 	absent.Set(readings.Coolant, 37.5)
 
 	frame := shown(absent, 0)
-	require.NotEmpty(t, frame.GIF)
+	require.NotEmpty(t, frame.GIF())
 	require.NotEqual(t, shown(reading(), 0).Content, frame.Content)
 }
 
@@ -76,7 +77,7 @@ func TestNothingKnownStillRenders(t *testing.T) {
 	// The worst case: the cooler answered nothing at all. It still draws,
 	// because a blank screen says less than a screen full of dashes.
 	frame := shown(Reading{}, 0)
-	require.NotEmpty(t, frame.GIF)
+	require.NotEmpty(t, frame.GIF())
 }
 
 func TestColourBandsFollowTheAlertThresholds(t *testing.T) {
@@ -117,9 +118,9 @@ func TestAFrameIsSmallEnoughToSettle(t *testing.T) {
 		the size is asserted here where that change would be made.
 	*/
 	frame := shown(reading(), 0)
-	require.Less(t, len(frame.GIF), 32*1024,
+	require.Less(t, len(frame.GIF()), 32*1024,
 		"the dashboard grew; check the floor in push.go before raising this")
-	t.Logf("frame is %d bytes", len(frame.GIF))
+	t.Logf("frame is %d bytes", len(frame.GIF()))
 }
 
 func BenchmarkRender(b *testing.B) {
@@ -136,7 +137,7 @@ func BenchmarkRender(b *testing.B) {
 // actually on the screen rather than what the drawing code intended.
 func decode(t *testing.T, frame Frame) *image.Paletted {
 	t.Helper()
-	g, err := gif.DecodeAll(bytes.NewReader(frame.GIF))
+	g, err := gif.DecodeAll(bytes.NewReader(frame.GIF()))
 	require.NoError(t, err)
 	require.Len(t, g.Image, 1)
 	return g.Image[0]
@@ -209,8 +210,10 @@ screen alone, and keeping the line alive for the shipped dashboards would have
 kept the promise by keeping the redundancy in the four screens most people are
 looking at.
 
-So the golden was regenerated, once, by this renderer, and the test means what
-it meant before: the default screen is what somebody decided it should be, and
+So the golden was regenerated, once, by this renderer, and again by spec 080,
+which paints in full colour and quantises the GIF afterwards: 522 pixels moved
+by a step at the edges of text, and a PNG golden now holds the full-colour
+frame that a panel taking frames shows. The test means what it meant before: the default screen is what somebody decided it should be, and
 it does not move again without somebody deciding that too. A failure here is
 either a change worth a line in the changelog or a change nobody intended, and
 both are worth stopping for.
@@ -222,20 +225,41 @@ which is a test failing for the tidiness of a byte array rather than for
 anything anybody can see.
 */
 func TestTheShippedDashboardDoesNotMoveByAccident(t *testing.T) {
-	want := decodeFile(t, filepath.Join("testdata", "shipped-coolant.gif"))
-	got := decode(t, shown(reading(), 0))
+	t.Run("as a GIF", func(t *testing.T) {
+		same(t, decodeFile(t, filepath.Join("testdata", "shipped-coolant.gif")), decode(t, shown(reading(), 0)),
+			"testdata/shipped-coolant.gif")
+	})
+	t.Run("in full colour", func(t *testing.T) {
+		body, err := os.ReadFile(filepath.Join("testdata", "shipped-coolant.png"))
+		require.NoError(t, err)
+		want, err := png.Decode(bytes.NewReader(body))
+		require.NoError(t, err)
+		same(t, want, shown(reading(), 0).Image, "testdata/shipped-coolant.png")
+	})
+}
 
+// same fails at the first pixel whose colour differs, naming the golden.
+func same(t *testing.T, want, got image.Image, golden string) {
+	t.Helper()
 	require.Equal(t, want.Bounds(), got.Bounds())
 	for y := range want.Bounds().Dy() {
 		for x := range want.Bounds().Dx() {
-			if want.At(x, y) != got.At(x, y) {
+			if !sameColour(want.At(x, y), got.At(x, y)) {
 				require.Failf(t, "the default screen moved",
 					"pixel %d,%d was %v and is %v; if that was meant, regenerate "+
-						"testdata/shipped-coolant.gif and say so in the changelog",
-					x, y, want.At(x, y), got.At(x, y))
+						"%s and say so in the changelog",
+					x, y, want.At(x, y), got.At(x, y), golden)
 			}
 		}
 	}
+}
+
+// sameColour compares two colours by value, whatever their models: a PNG
+// decodes as NRGBA and the frame is RGBA.
+func sameColour(a, b color.Color) bool {
+	r1, g1, b1, a1 := a.RGBA()
+	r2, g2, b2, a2 := b.RGBA()
+	return r1 == r2 && g1 == g2 && b1 == b2 && a1 == a2
 }
 
 func decodeFile(t *testing.T, path string) image.Image {
@@ -266,7 +290,7 @@ func TestTwoRendersAtOnceDoNotCorruptTheFont(t *testing.T) {
 			defer wg.Done()
 			for range 4 {
 				frame := Render(Shipped()[i%len(Shipped())], reading(), i, nil, Trails{})
-				require.NotEmpty(t, frame.GIF)
+				require.NotEmpty(t, frame.GIF())
 			}
 		}()
 	}

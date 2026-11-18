@@ -775,9 +775,8 @@ func (d *DashboardsSection) redraw(sh *shell.Shell) {
 				picture as far as that cache is concerned.
 			*/
 			d.drawn++
-			d.frame = fyne.NewStaticResource(fmt.Sprintf("preview-%d.gif", d.drawn), body)
-			d.cost = fmt.Sprintf("%s · the panel needs %.0fs between frames this size",
-				size(int64(frame.Bytes)), frame.Floor)
+			d.frame = fyne.NewStaticResource(fmt.Sprintf("preview-%d.%s", d.drawn, frame.Format), body)
+			d.cost = costOf(frame)
 
 			// In place. Invalidating here would rebuild the form under
 			// whoever is filling it in.
@@ -847,4 +846,14 @@ func (d *DashboardsSection) show(sh *shell.Shell) {
 		})
 		return nil
 	})
+}
+
+// costOf says what a frame costs the panel: a GIF's floor, or nothing for a
+// panel that takes full-colour frames (spec 080).
+func costOf(frame api.PreviewedDashboard) string {
+	if frame.Format == "png" {
+		return "full colour · the panel shows each frame as it arrives"
+	}
+	return fmt.Sprintf("%s · the panel needs %.0fs between frames this size",
+		size(int64(frame.Bytes)), frame.Floor)
 }

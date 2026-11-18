@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"image"
 	"image/gif"
 	"sync"
 	"time"
@@ -45,6 +46,8 @@ func (s sentinel) Unwrap() error { return s.under }
 var (
 	ErrNoCooler error = sentinel{"no supported liquid cooler", sanshoku.ErrAbsent}
 	ErrNoScreen error = sentinel{"no screen on this cooler", screen.ErrNoPanel}
+	// ErrNoFrames is a panel that takes GIFs and not streamed frames.
+	ErrNoFrames = errors.New("this cooler's screen does not take frames")
 )
 
 // Open finds a supported cooler and opens it. Every candidate is tried, since
@@ -84,6 +87,7 @@ type Cooler struct {
 	dev    sanshoku.Device
 	source cooling.Source // nil for a device that reports no status
 	panel  screen.Panel   // nil for a device without one
+	framer screen.Framer  // nil for a panel that takes no frames (spec 080)
 	once   sync.Once
 	gone   chan struct{}
 	mu     sync.Mutex
@@ -95,6 +99,7 @@ func New(dev sanshoku.Device) *Cooler {
 	c := &Cooler{dev: dev, gone: make(chan struct{})}
 	c.source, _ = dev.(cooling.Source)
 	c.panel, _ = dev.(screen.Panel)
+	c.framer, _ = dev.(screen.Framer)
 	return c
 }
 
@@ -125,7 +130,32 @@ func (c *Cooler) Device() Device {
 	return d
 }
 
-// Show puts a GIF on the screen; the firmware keeps no still picture (spec 012).
+/*
+Frames says whether the panel takes streamed frames (spec 080). A frame shows
+at once in full colour, and stays only until FrameHold has passed with nothing
+newer; a GIF stays for as long as nothing replaces it.
+*/
+func (c *Cooler) Frames() bool { return c.framer != nil }
+
+// Frame draws one picture as a streamed frame.
+func (c *Cooler) Frame(ctx context.Context, img image.Image) error {
+	if c.framer == nil {
+		return ErrNoFrames
+	}
+	return c.draw(func(screen.Panel) error { return c.framer.Frame(ctx, img) }) //nolint:wrapcheck // the driver names the device
+}
+
+// FrameHold is the longest the panel keeps a frame with nothing newer sent;
+// zero for a panel that takes no frames.
+func (c *Cooler) FrameHold() time.Duration {
+	if c.framer == nil {
+		return 0
+	}
+	return c.framer.FrameHold()
+}
+
+// Show puts a GIF on the screen, which the cooler keeps and plays by itself
+// (spec 012). A still picture is a frame, and is not kept.
 func (c *Cooler) Show(ctx context.Context, data []byte) error {
 	return c.draw(func(p screen.Panel) error {
 		g, err := gif.DecodeAll(bytes.NewReader(data))

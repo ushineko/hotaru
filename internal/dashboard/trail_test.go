@@ -138,8 +138,8 @@ func TestATrailThatIsTurnedOffDrawsNothing(t *testing.T) {
 	d.Trail.Off = true
 
 	require.Equal(t,
-		Render(d, reading(), 0, nil, Trails{}).GIF,
-		Render(d, reading(), 0, nil, Trails{Below: level(50), Above: level(30)}).GIF,
+		Render(d, reading(), 0, nil, Trails{}).GIF(),
+		Render(d, reading(), 0, nil, Trails{Below: level(50), Above: level(30)}).GIF(),
 		"a trail that was turned off drew something")
 }
 
@@ -269,11 +269,11 @@ func TestATrailTooShortToBeALineDrawsNothing(t *testing.T) {
 	// One point is not a trace, and a frame that drew a dot for it would be
 	// a panel saying something it does not know.
 	d := stacked(readings.CPULoad)
-	was := Render(d, reading(), 0, nil, Trails{}).GIF
+	was := Render(d, reading(), 0, nil, Trails{}).GIF()
 
-	require.Equal(t, was, Render(d, reading(), 0, nil, Trails{Below: Series{50}}).GIF)
-	require.Equal(t, was, Render(d, reading(), 0, nil, Trails{}).GIF)
-	require.NotEqual(t, was, Render(d, reading(), 0, nil, Trails{Below: Series{50, 80}}).GIF,
+	require.Equal(t, was, Render(d, reading(), 0, nil, Trails{Below: Series{50}}).GIF())
+	require.Equal(t, was, Render(d, reading(), 0, nil, Trails{}).GIF())
+	require.NotEqual(t, was, Render(d, reading(), 0, nil, Trails{Below: Series{50, 80}}).GIF(),
 		"two points are a line and drew nothing")
 }
 

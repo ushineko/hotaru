@@ -68,6 +68,7 @@ type Pusher struct {
 	tick int
 	last [32]byte
 	sent bool
+	size int // of the last GIF sent, for its floor
 
 	// stopped is a panel that cannot be drawn on. Set once, and the loop
 	// stops trying.
@@ -139,12 +140,12 @@ func (p *Pusher) cycle(ctx context.Context) time.Duration {
 		trails = p.Trails(ctx, look)
 	}
 	frame := Render(look, p.Read(ctx), p.tick, behind, trails)
-	floor := p.Panel.Floor(len(frame.GIF))
-
 	if p.sent && frame.Content == p.last {
-		return floor
+		return p.Panel.Floor(p.size)
 	}
-	if err := p.Panel.Show(ctx, frame.GIF); err != nil {
+	data := frame.GIF()
+	floor := p.Panel.Floor(len(data))
+	if err := p.Panel.Show(ctx, data); err != nil {
 		if p.Report != nil && ctx.Err() == nil {
 			p.Report("hotaru: dashboard: %v", err)
 		}
@@ -166,7 +167,7 @@ func (p *Pusher) cycle(ctx context.Context) time.Duration {
 	// The tick advances only on an accepted push, so it marks real updates
 	// rather than ticking forever -- and so it cannot defeat the gate above.
 	p.tick++
-	p.last, p.sent = frame.Content, true
+	p.last, p.sent, p.size = frame.Content, true, len(data)
 	return floor
 }
 

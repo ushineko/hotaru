@@ -10,7 +10,8 @@ import (
 	"fmt"
 	"image"
 	"image/draw"
-	"image/gif"
+	_ "image/gif" // previews: a GIF, or
+	_ "image/png" // a PNG for a panel that takes frames (spec 080)
 	"sync"
 
 	"fyne.io/fyne/v2"
@@ -511,7 +512,7 @@ func shotKey(one api.Dashboard) string {
 
 // shrinkFrame decodes a rendered frame and scales it to the list's size.
 func shrinkFrame(body []byte) (image.Image, error) {
-	first, err := gif.Decode(bytes.NewReader(body))
+	first, _, err := image.Decode(bytes.NewReader(body)) // a GIF, or a PNG for a panel that takes frames
 	if err != nil {
 		return nil, fmt.Errorf("that frame does not decode: %w", err)
 	}

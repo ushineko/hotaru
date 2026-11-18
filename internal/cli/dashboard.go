@@ -309,6 +309,10 @@ func dashboardPreviewCommand() *cobra.Command {
 			if err := os.WriteFile(to, body, 0o600); err != nil {
 				return fmt.Errorf("write %s: %w", to, err)
 			}
+			if frame.Format == "png" {
+				cmd.Printf("%s: %s, a PNG; the panel takes it as a full-colour frame.\n", to, size(int64(frame.Bytes)))
+				return nil
+			}
 			cmd.Printf("%s: %s, %.0fs between pushes.\n", to, size(int64(frame.Bytes)), frame.Floor)
 			return nil
 		},
