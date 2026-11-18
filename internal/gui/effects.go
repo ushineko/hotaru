@@ -209,14 +209,16 @@ func effectColoursField(window fyne.Window, device api.Device, effect api.Effect
 			buttons.Add(widget.NewButton("Clear", func() { keep(withoutSlot(palette, i)) }))
 		}
 
-		label := widgets.Dim("")
 		if i == 0 {
-			label = widgets.Dim(slotsSaid(slots))
+			// On a line of its own: "takes up to 8 colours" is wider than
+			// the column, and the swatch was drawn over it (the live run).
+			rows = append(rows, container.NewBorder(nil, nil, column(effectSettingWidth, widgets.Dim("")), nil,
+				widgets.Dim(slotsSaid(slots))))
 		}
 		// The buttons hold a width, so "Choose" lines up down the slots
 		// whether or not a slot has a second button beside it.
 		rows = append(rows, container.NewBorder(nil, nil,
-			column(effectSettingWidth, label), column(effectButtonsWidth, buttons),
+			column(effectSettingWidth, widgets.Dim("")), column(effectButtonsWidth, buttons),
 			container.NewHBox(swatch, widgets.Dim(said))))
 	}
 

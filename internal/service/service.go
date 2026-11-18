@@ -375,6 +375,11 @@ narrows to particular hardware by name substring, for a caller who means one
 device rather than everything in scope.
 */
 type Request struct {
+	// fromLeader is, for each follower given its leader's effect with no
+	// colours, the leader whose colours it takes once the leader is lit
+	// (spec 077 R3.2). Set by withFollowers.
+	fromLeader map[string]string
+
 	// Colour, when set, applies to every device the request covers, before
 	// any assignments. "Everything blue, except the top fan" is this plus one
 	// assignment, which is how a caller says it and how it is stored.
@@ -525,6 +530,11 @@ func (s *Service) Apply(ctx context.Context, req Request) ([]Result, error) {
 	// (spec 077 R3.2, R3.5).
 	req, _ = withFollowers(cfg, found, req)
 	found = leadersFirst(cfg, found)
+	leads := map[string]bool{}
+	for _, leader := range req.fromLeader {
+		leads[leader] = true
+	}
+	leaderColours := map[string][]colour.Colour{}
 
 	var results []Result
 	for i := range found {
@@ -536,6 +546,13 @@ func (s *Service) Apply(ctx context.Context, req Request) ([]Result, error) {
 			continue
 		}
 
+		if leader, ok := req.fromLeader[device.Name]; ok {
+			// A follower given its leader's effect with no colours takes the
+			// colours the leader was lit in (spec 077 R3.2).
+			if colours, ok := leaderColours[leader]; ok {
+				req.Effects = withColours(req.Effects, &device, colours)
+			}
+		}
 		assignments := forDevice(req.Assignments, device.Name)
 		if twin, ok := twins[device.Name]; ok {
 			// The scene's colours for the OpenRGB listing of this hardware,
@@ -571,6 +588,9 @@ func (s *Service) Apply(ctx context.Context, req Request) ([]Result, error) {
 			continue
 		}
 		results = append(results, s.applyOne(ctx, client, cfg, &device, assignments, req))
+		if leads[device.Name] {
+			leaderColours[device.Name] = s.coloursLitIn(cfg, &device, assignments, req)
+		}
 	}
 	return results, nil
 }
@@ -708,8 +728,8 @@ func modeColoursFor(device *devices.Device, mode string, frame devices.Frame, of
 			blue fans are Tai Chi in red and blue, not in the one most of the
 			device is (spec 077, the maintainer's model).
 		*/
-		if distinct := frame.Distinct(); len(distinct) > 1 {
-			return distinct[:min(len(distinct), m.ColoursMax)]
+		if picked := sceneColours(frame, m.ColoursMax); len(picked) > 1 {
+			return picked
 		}
 	}
 	if uniform, ok := frame.Uniform(); ok {

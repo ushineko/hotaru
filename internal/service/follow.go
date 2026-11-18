@@ -1,6 +1,7 @@
 package service
 
 import (
+	"maps"
 	"math"
 	"slices"
 	"strings"
@@ -53,11 +54,7 @@ func withFollowers(cfg *config.Config, found []devices.Device, req Request) (Req
 			if !given.Named() && req.Mode != "" && named(req.Devices, leader.Name) {
 				given = scenes.Effect{Mode: req.Mode}
 			}
-			if given.Named() && len(given.Palette()) == 0 {
-				// The leader's colours in the request, which its own effect
-				// takes too: the follower shows what the leader does.
-				given.SetPalette(coloursOn(req, leader))
-			}
+
 			if !given.Named() {
 				continue
 			}
@@ -66,6 +63,17 @@ func withFollowers(cfg *config.Config, found []devices.Device, req Request) (Req
 				continue
 			}
 			effects[follower.Name] = taken
+			if len(given.Palette()) == 0 && !mode0(follower, taken.Mode) {
+				/*
+					No colours given: the follower takes the ones the leader
+					is lit in, known once the leader has been, whatever the
+					request named it by (spec 077 R3.2).
+				*/
+				if req.fromLeader == nil {
+					req.fromLeader = map[string]string{}
+				}
+				req.fromLeader[follower.Name] = leader.Name
+			}
 			if len(req.Devices) > 0 && !named(req.Devices, follower.Name) {
 				req.Devices = append(slices.Clone(req.Devices), follower.Name)
 			}
@@ -82,28 +90,51 @@ func withFollowers(cfg *config.Config, found []devices.Device, req Request) (Req
 	return req, followed
 }
 
+// mode0 is whether a device's mode takes no colours of its own.
+func mode0(device *devices.Device, mode string) bool {
+	m, ok := device.Mode(mode)
+	if !ok {
+		return true
+	}
+	_, most := m.Slots()
+	return most == 0
+}
+
 /*
-coloursOn is the colours a request gives a device, each once, in the order
-given, leaving out black: its assignments to the device or its parts, else
-the request's colour.
+withColours is effects with a follower's effect given colours, as many as its
+mode takes, and one colour in every slot of a firmware effect that takes more,
+as translate does.
 */
-func coloursOn(req Request, device *devices.Device) []string {
-	var out []string
-	add := func(c colour.Colour) {
-		if c != colour.Black && !slices.Contains(out, c.String()) {
-			out = append(out, c.String())
-		}
+func withColours(effects map[string]scenes.Effect, follower *devices.Device, colours []colour.Colour) map[string]scenes.Effect {
+	effect := effectFor(effects, follower.Name)
+	mode, ok := follower.Mode(effect.Mode)
+	if !ok || len(effect.Palette()) > 0 {
+		return effects
 	}
-	lowered := strings.ToLower(device.Name)
-	for _, a := range req.Assignments {
-		if a.Target.Device != "" && strings.Contains(lowered, strings.ToLower(a.Target.Device)) {
-			add(a.Colour)
-		}
+	named := make([]string, 0, len(colours))
+	for _, c := range colours {
+		named = append(named, c.String())
 	}
-	if len(out) == 0 && req.Colour != nil {
-		add(*req.Colour)
-	}
+	effect.SetPalette(fitPalette(named, mode))
+	out := maps.Clone(effects)
+	out[follower.Name] = effect
 	return out
+}
+
+/*
+fitPalette is colours as a mode takes them: as many as it takes, and one
+colour in every slot of a firmware effect that takes more, so it stays one
+colour (the card filled the rest with its own; E4).
+*/
+func fitPalette(colours []string, mode devices.Mode) []string {
+	_, most := mode.Slots()
+	if len(colours) > most {
+		colours = colours[:most]
+	}
+	if mode.Stored && len(colours) == 1 && most > 1 {
+		colours = slices.Repeat(colours, most)
+	}
+	return colours
 }
 
 // leaderOf is the device a follow rule names, by any part of its name, other
@@ -164,20 +195,7 @@ func translate(given scenes.Effect, leader, follower *devices.Device) (scenes.Ef
 			out.Speed = &s
 		}
 	}
-	colours := given.Palette()
-	_, most := mode.Slots()
-	if len(colours) > most {
-		colours = colours[:most]
-	}
-	if mode.Stored && len(colours) == 1 && most > 1 {
-		/*
-			A one-colour effect on a firmware effect that takes more: the
-			colour in every slot, so it stays one colour. Left short, the card
-			fills the rest with its own (Breathing went red and green; E4).
-		*/
-		colours = slices.Repeat(colours, most)
-	}
-	out.SetPalette(colours)
+	out.SetPalette(fitPalette(given.Palette(), mode))
 	return out, true
 }
 
@@ -257,4 +275,75 @@ func leadersFirst(cfg *config.Config, found []devices.Device) []devices.Device {
 		return 0
 	})
 	return out
+}
+
+// mergeDistance is how near two colours are to count as one shade when an
+// effect takes a scene's colours: a picture's teals and greens a few steps
+// apart are one colour to an eye, and eight of them are not eight colours.
+const mergeDistance = 48
+
+/*
+sceneColours is up to most of a frame's colours for an effect that takes
+several and was given none: the one most of the frame is, then each time the
+one furthest from those chosen, until the rest are near one already chosen;
+in the order the lights first show them. A frame from a picture is many
+shades, and its first few lights' shades were not a fair sample (the live
+run).
+*/
+func sceneColours(frame devices.Frame, most int) []colour.Colour {
+	distinct := frame.Distinct()
+	if len(distinct) <= 1 || most <= 1 {
+		return distinct[:min(len(distinct), max(most, 0))]
+	}
+	first := distinct[0]
+	if dominant, ok := frame.Dominant(); ok && slices.Contains(distinct, dominant) {
+		first = dominant
+	}
+	chosen := []colour.Colour{first}
+	for len(chosen) < most {
+		best, furthest := -1, 0.0
+		for i, c := range distinct {
+			near := math.Inf(1)
+			for _, k := range chosen {
+				near = math.Min(near, apart(c, k))
+			}
+			if near > furthest {
+				best, furthest = i, near
+			}
+		}
+		if best < 0 || furthest < mergeDistance {
+			break
+		}
+		chosen = append(chosen, distinct[best])
+	}
+	slices.SortStableFunc(chosen, func(a, b colour.Colour) int {
+		return slices.Index(distinct, a) - slices.Index(distinct, b)
+	})
+	return chosen
+}
+
+// apart is how far two colours are, in RGB.
+func apart(a, b colour.Colour) float64 {
+	dr, dg, db := float64(a.R)-float64(b.R), float64(a.G)-float64(b.G), float64(a.B)-float64(b.B)
+	return math.Sqrt(dr*dr + dg*dg + db*db)
+}
+
+/*
+coloursLitIn is the colours a leader's effect is lit in, for its followers:
+the effect's own where it has them, else the scene's on the leader, as the
+leader's own effect takes them.
+*/
+func (s *Service) coloursLitIn(cfg *config.Config, leader *devices.Device, assignments []devices.Assignment, req Request) []colour.Colour {
+	effect := effectFor(req.Effects, leader.Name)
+	if palette := effect.Palette(); len(palette) > 0 {
+		var out []colour.Colour
+		for _, named := range palette {
+			if c, err := colour.Parse(named); err == nil {
+				out = append(out, c)
+			}
+		}
+		return out
+	}
+	frame, _ := devices.Compose(leader, devices.RuleFor(cfg, leader.Name), s.base(leader), assignments)
+	return sceneColours(frame, 8)
 }
