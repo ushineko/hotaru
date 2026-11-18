@@ -34,9 +34,9 @@ func drawn(t *testing.T, d Dashboard, r Reading) image.Image {
 	t.Helper()
 
 	frame := Render(d, r, 0, nil, Trails{})
-	require.NotEmpty(t, frame.GIF, "the frame did not encode")
+	require.NotEmpty(t, frame.GIF(), "the frame did not encode")
 
-	first, err := gif.Decode(bytes.NewReader(frame.GIF))
+	first, err := gif.Decode(bytes.NewReader(frame.GIF()))
 	require.NoError(t, err)
 	return first
 }
@@ -178,7 +178,7 @@ func TestAPictureWithManyColoursStillEncodes(t *testing.T) {
 	d.Lettering.Values.Colour = "#00ff88"
 
 	frame := Render(d, reading(), 0, noise, Trails{})
-	require.NotEmpty(t, frame.GIF, "the frame did not encode")
+	require.NotEmpty(t, frame.GIF(), "the frame did not encode")
 	require.LessOrEqual(t, len(palette(ThemeOf(""), fromPicture(noise), d.Lettering.chosen()...)),
 		MaxColours, "the palette is over what a GIF holds")
 }

@@ -9,6 +9,30 @@ import (
 	"github.com/ushineko/hotaru/internal/cooler"
 )
 
+/*
+Framer is a panel that also takes streamed frames, in full colour (spec 080).
+
+A frame shows at once and has no floor, but the firmware keeps it only until
+FrameHold has passed with nothing newer, then takes the panel back for its
+own readout. So a dashboard on frames sends the picture again before then,
+which a GIF in a bucket never needed. Frames says whether this panel takes
+them at all; a cooler adapter has the methods whatever its panel is.
+*/
+type Framer interface {
+	Frames() bool
+	Frame(ctx context.Context, img image.Image) error
+	FrameHold() time.Duration
+}
+
+/*
+framePace is how often a dashboard on frames is rendered and compared.
+
+The maintainer's choice for spec 080: a reading that moves shows within about
+a second. A render is about 3 ms, and a frame is sent only when what it says
+has changed, or when the firmware's hold is nearly up.
+*/
+const framePace = time.Second
+
 // Panel is the screen, as much of it as pushing needs.
 type Panel interface {
 	Show(ctx context.Context, gif []byte) error
@@ -30,6 +54,10 @@ Two rules decide when it writes. It never writes more often than the frame's
 own floor, and it never writes a frame that says what the last one said: an
 idle machine holds coolant, pump and fan steady for hours, and a push costs the
 device a settling period for a picture nobody could tell apart.
+
+On a panel that takes frames (spec 080) there is no floor: it looks every
+second, and the second rule holds except that the firmware drops a frame after
+its hold, so the same picture goes again before then.
 */
 type Pusher struct {
 	// Panel is where frames go.
@@ -59,6 +87,8 @@ type Pusher struct {
 	Trails func(ctx context.Context, d Dashboard) Trails
 	// Report says what went wrong, and is optional.
 	Report func(format string, args ...any)
+	// Now is the clock, for the resend on frames. Nil is time.Now.
+	Now func() time.Time
 
 	// held is set while somebody else has the screen -- `hotaru screen show`,
 	// or the readout. The dashboard is what the panel shows by default, not
@@ -68,6 +98,14 @@ type Pusher struct {
 	tick int
 	last [32]byte
 	sent bool
+	size int // of the last GIF sent, for its floor
+
+	// after is the loop's wait, time.After unless a test drives the loop.
+	after func(time.Duration) <-chan time.Time
+
+	// shown is the last frame sent on frames, and at when, for the resend.
+	shown image.Image
+	at    time.Time
 
 	// stopped is a panel that cannot be drawn on. Set once, and the loop
 	// stops trying.
@@ -109,6 +147,10 @@ func (p *Pusher) set(held bool) {
 
 // Run draws until the context is cancelled.
 func (p *Pusher) Run(ctx context.Context) {
+	after := time.After
+	if p.after != nil {
+		after = p.after
+	}
 	held := false
 	for {
 		wait := 2 * time.Second
@@ -122,7 +164,7 @@ func (p *Pusher) Run(ctx context.Context) {
 			if !held {
 				p.sent = false // redraw at once: the panel shows somebody else's picture
 			}
-		case <-time.After(wait):
+		case <-after(wait):
 		}
 	}
 }
@@ -139,12 +181,15 @@ func (p *Pusher) cycle(ctx context.Context) time.Duration {
 		trails = p.Trails(ctx, look)
 	}
 	frame := Render(look, p.Read(ctx), p.tick, behind, trails)
-	floor := p.Panel.Floor(len(frame.GIF))
-
-	if p.sent && frame.Content == p.last {
-		return floor
+	if f, ok := p.Panel.(Framer); ok && f.Frames() {
+		return p.frame(ctx, f, frame)
 	}
-	if err := p.Panel.Show(ctx, frame.GIF); err != nil {
+	if p.sent && frame.Content == p.last {
+		return p.Panel.Floor(p.size)
+	}
+	data := frame.GIF()
+	floor := p.Panel.Floor(len(data))
+	if err := p.Panel.Show(ctx, data); err != nil {
 		if p.Report != nil && ctx.Err() == nil {
 			p.Report("hotaru: dashboard: %v", err)
 		}
@@ -166,8 +211,48 @@ func (p *Pusher) cycle(ctx context.Context) time.Duration {
 	// The tick advances only on an accepted push, so it marks real updates
 	// rather than ticking forever -- and so it cannot defeat the gate above.
 	p.tick++
-	p.last, p.sent = frame.Content, true
+	p.last, p.sent, p.size = frame.Content, true, len(data)
 	return floor
+}
+
+/*
+frame is one cycle on a panel that takes frames: send the frame if it says
+something new, send the last one again if the firmware's hold is nearly up,
+and otherwise send nothing.
+
+A resend is the picture already on the panel, tick and all. The frame just
+rendered carries the next tick, and sending it would mark an update that
+did not happen.
+*/
+func (p *Pusher) frame(ctx context.Context, f Framer, frame Frame) time.Duration {
+	now := time.Now
+	if p.Now != nil {
+		now = p.Now
+	}
+	changed := !p.sent || frame.Content != p.last
+	if !changed && now().Sub(p.at) < f.FrameHold() {
+		return framePace
+	}
+	img := image.Image(frame.Image)
+	if !changed {
+		img = p.shown
+	}
+	if err := f.Frame(ctx, img); err != nil {
+		if p.Report != nil && ctx.Err() == nil {
+			p.Report("hotaru: dashboard: %v", err)
+		}
+		// As on a GIF: a panel that cannot be drawn on is not retried.
+		if errors.Is(err, cooler.ErrNoScreen) {
+			p.stopped = true
+		}
+		return framePace
+	}
+	if changed {
+		p.tick++
+		p.last, p.sent = frame.Content, true
+	}
+	p.shown, p.at = img, now()
+	return framePace
 }
 
 /*

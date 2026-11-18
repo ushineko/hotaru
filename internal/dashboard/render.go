@@ -25,16 +25,64 @@ asks.
 */
 type Reading = readings.Reading
 
-// Frame is a rendered dashboard, ready to send.
+/*
+Frame is a rendered dashboard, ready to send.
+
+Image is the frame in full colour, which a panel that takes streamed frames
+shows as it is (spec 080). GIF is the same frame for a panel that takes only
+GIFs, which loop in a bucket where a still picture would be reverted; it is
+quantised when asked for, because a panel that takes frames never asks.
+*/
 type Frame struct {
-	// GIF is the encoded image. A GIF, not a still picture: the firmware
-	// reverts a static image within seconds and loops a GIF indefinitely.
-	GIF []byte
+	Image *image.RGBA
 	// Content identifies what the frame says, ignoring the tick indicator.
 	// Two readings that look the same have the same Content.
 	Content [32]byte
 	// Taken is when it was rendered.
 	Taken time.Time
+
+	pal color.Palette
+}
+
+// GIF is the frame encoded as a one-frame GIF, through the palette its
+// background chose.
+func (f Frame) GIF() []byte {
+	img := quantise(f.Image, f.pal)
+	var buf bytes.Buffer
+	_ = gif.EncodeAll(&buf, &gif.GIF{
+		Image: []*image.Paletted{img}, Delay: []int{100}, LoopCount: 0,
+		Config: image.Config{ColorModel: img.Palette, Width: Size, Height: Size},
+	})
+	return buf.Bytes()
+}
+
+/*
+quantise maps every pixel to the nearest colour in the palette, without
+dithering (palette's comment says what dithering costs a GIF).
+
+A dashboard has far fewer distinct colours than pixels, so each colour is
+looked up once and remembered: the starfield took 128 ms through
+color.Palette.Index per pixel.
+*/
+func quantise(src *image.RGBA, pal color.Palette) *image.Paletted {
+	b := src.Bounds()
+	dst := image.NewPaletted(b, pal)
+	seen := make(map[uint32]uint8, 4096)
+	for y := range b.Dy() {
+		row := src.Pix[y*src.Stride : y*src.Stride+b.Dx()*4]
+		out := dst.Pix[y*dst.Stride:]
+		for x := range b.Dx() {
+			r, g, bl := row[x*4], row[x*4+1], row[x*4+2]
+			key := uint32(r)<<16 | uint32(g)<<8 | uint32(bl)
+			i, ok := seen[key]
+			if !ok {
+				i = uint8(pal.Index(color.RGBA{r, g, bl, 255})) //nolint:gosec // a palette holds at most MaxColours
+				seen[key] = i
+			}
+			out[x] = i
+		}
+	}
+	return dst
 }
 
 /*
@@ -78,13 +126,7 @@ func Render(d Dashboard, r Reading, tick int, behind image.Image, trails Trails)
 	img := paint.img
 	content := sha256.Sum256(img.Pix)
 	drawTick(img, tick, theme)
-
-	var buf bytes.Buffer
-	_ = gif.EncodeAll(&buf, &gif.GIF{
-		Image: []*image.Paletted{img}, Delay: []int{100}, LoopCount: 0,
-		Config: image.Config{ColorModel: img.Palette, Width: Size, Height: Size},
-	})
-	return Frame{GIF: buf.Bytes(), Content: content, Taken: time.Now()}
+	return Frame{Image: img, Content: content, Taken: time.Now(), pal: paint.pal}
 }
 
 /*
@@ -396,7 +438,7 @@ func fraction(source readings.Source, value float64) float64 {
 }
 
 // drawTick marks that the screen was written, which nothing else on it does.
-func drawTick(img *image.Paletted, tick int, theme Theme) {
+func drawTick(img *image.RGBA, tick int, theme Theme) {
 	for i := range 12 {
 		c := theme.Muted
 		if i == ((tick%12)+12)%12 {

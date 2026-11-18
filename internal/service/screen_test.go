@@ -19,6 +19,8 @@ type panel struct {
 	// attempt to draw on it says, for the tests about a machine where it
 	// cannot be.
 	wrong, refuse error
+	// frames is a panel that takes streamed frames (spec 080).
+	frames bool
 }
 
 func (p *panel) Status(context.Context) (hw.Status, error)  { return hw.Status{}, nil }
@@ -28,6 +30,7 @@ func (p *panel) Readout(context.Context) error              { p.readouts++; retu
 func (p *panel) Appearance(context.Context, int, int) error { return nil }
 func (p *panel) Panel() (string, error)                     { return "640x640 LCD", p.wrong }
 func (p *panel) Floor(int) time.Duration                    { return 2 * time.Second }
+func (p *panel) Frames() bool                               { return p.frames }
 
 // dashboard records whether it has been asked to stand down.
 type screenAuthor struct {

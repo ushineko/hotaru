@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"image"
 
 	"github.com/ushineko/hotaru/internal/images"
 )
@@ -28,6 +29,9 @@ type ImageLibrary interface {
 	// path rather than the name, so a rename has to know both halves of it.
 	Rename(from, to string) (images.Image, error)
 	Path(name string) string
+	// Still is a picture as one image, in full colour where the library kept
+	// a copy (spec 080), for a dashboard's background.
+	Still(name string) (image.Image, error)
 }
 
 // SetImages gives the service somewhere to keep pictures.

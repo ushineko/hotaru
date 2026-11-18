@@ -142,6 +142,8 @@ type Cooler interface {
 	// Floor is how long the panel needs between frames of this many bytes,
 	// which is a property of the device rather than of the dashboard.
 	Floor(size int) time.Duration
+	// Frames says the panel takes streamed frames, in full colour (spec 080).
+	Frames() bool
 }
 
 /*
@@ -194,6 +196,15 @@ func (s *Service) Panel() (string, error) {
 		return "", cooler.ErrNoCooler
 	}
 	return c.Panel()
+}
+
+// Frames says the cooler's panel takes streamed frames (spec 080). A machine
+// with no cooler has none.
+func (s *Service) Frames() bool {
+	s.mu.RLock()
+	c := s.cooler
+	s.mu.RUnlock()
+	return c != nil && c.Frames()
 }
 
 /*

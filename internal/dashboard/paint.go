@@ -12,8 +12,9 @@ import (
 )
 
 /*
-paint is the canvas a dashboard is drawn on: the panel-sized paletted image,
-the theme, and whether text needs an outline.
+paint is the canvas a dashboard is drawn on: the panel-sized image in full
+colour (spec 080), the palette its GIF would use, the theme, and whether text
+needs an outline.
 
 It exists so that every drawing call in this package goes through one place
 that knows about the outline. A renderer where some strings are outlined and
@@ -21,7 +22,11 @@ others are not is a renderer where the one somebody forgot is the one over the
 bright part of the photograph.
 */
 type paint struct {
-	img   *image.Paletted
+	img *image.RGBA
+	// pal is the palette the frame's GIF is quantised through, for a panel
+	// that takes GIFs and not frames. Chosen with the background, as it was
+	// when the canvas itself was paletted.
+	pal   color.Palette
 	theme Theme
 	// picture says the background is a photograph, which is what decides
 	// whether text is outlined when the dashboard has not said.
@@ -44,31 +49,32 @@ func newPaint(d Dashboard, theme Theme, behind image.Image) *paint {
 
 	switch kind {
 	case Picture:
+		img := dimmed(behind, d.Background.Darkness(), theme)
 		return &paint{
-			img:   dimmed(behind, d.Background.Darkness(), theme),
+			img: img, pal: palette(theme, fromPicture(img)),
 			theme: theme, picture: true, letters: d.Lettering,
 		}
 	case Plain:
-		img := image.NewPaletted(image.Rect(0, 0, Size, Size),
-			palette(theme, nil, d.Lettering.chosen()...))
+		img := image.NewRGBA(image.Rect(0, 0, Size, Size))
 		draw.Draw(img, img.Bounds(), image.NewUniform(theme.BG), image.Point{}, draw.Src)
-		return &paint{img: img, theme: theme, letters: d.Lettering}
+		return &paint{img: img, pal: palette(theme, nil, d.Lettering.chosen()...), theme: theme, letters: d.Lettering}
 	default:
 		sky := background(theme)
-		img := image.NewPaletted(sky.Bounds(), sky.Palette)
+		img := image.NewRGBA(sky.Bounds())
 		copy(img.Pix, sky.Pix)
-		return &paint{img: img, theme: theme, letters: d.Lettering}
+		return &paint{img: img, pal: palette(theme, nil), theme: theme, letters: d.Lettering}
 	}
 }
 
 /*
-dimmed draws a picture darkened, on a palette that has room for both.
+dimmed draws a picture darkened, in full colour.
 
-The picture gets what is left after the interface's own colours: a photograph
-through 240 entries is indistinguishable from one through 256, and text drawn
-in the nearest available colour to white is not white.
+Its GIF gets a palette with room for both the picture and the interface: the
+picture gets what is left after the interface's own colours, because a
+photograph through 240 entries is indistinguishable from one through 256, and
+text drawn in the nearest available colour to white is not white.
 */
-func dimmed(behind image.Image, keep float64, theme Theme, chosen ...color.RGBA) *image.Paletted {
+func dimmed(behind image.Image, keep float64, theme Theme) *image.RGBA {
 	bounds := image.Rect(0, 0, Size, Size)
 	rgba := image.NewRGBA(bounds)
 	draw.Draw(rgba, bounds, image.NewUniform(theme.BG), image.Point{}, draw.Src)
@@ -86,9 +92,7 @@ func dimmed(behind image.Image, keep float64, theme Theme, chosen ...color.RGBA)
 		}
 	}
 
-	img := image.NewPaletted(bounds, palette(theme, fromPicture(rgba), chosen...))
-	draw.Draw(img, bounds, rgba, image.Point{}, draw.Src)
-	return img
+	return rgba
 }
 
 /*

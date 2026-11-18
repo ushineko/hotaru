@@ -1,6 +1,9 @@
 package service_test
 
 import (
+	"bytes"
+	"image"
+	"image/png"
 	"path/filepath"
 	"testing"
 
@@ -72,8 +75,26 @@ func TestARenderedDashboardIsAFrameThePanelWouldTake(t *testing.T) {
 		Headline: dashboard.Slot{Source: readings.Coolant},
 	})
 	require.NoError(t, err)
-	require.NotEmpty(t, frame)
-	require.Equal(t, []byte("GIF"), frame[:3])
+	require.Equal(t, "gif", frame.Format)
+	require.Equal(t, []byte("GIF"), frame.Image[:3])
+}
+
+// On a panel that takes frames the preview is the full-colour frame, as a
+// PNG, because that is what the panel shows (spec 080).
+func TestAPreviewForAPanelThatTakesFramesIsAPNG(t *testing.T) {
+	svc, _, _ := litDesk(t)
+	withScreens(t, svc)
+	svc.SetCooler(&panel{frames: true})
+
+	frame, err := svc.RenderDashboard(t.Context(), dashboard.Dashboard{
+		Name: "mine", Arrangement: dashboard.Big,
+		Headline: dashboard.Slot{Source: readings.Coolant},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "png", frame.Format)
+	decoded, err := png.Decode(bytes.NewReader(frame.Image))
+	require.NoError(t, err)
+	require.Equal(t, image.Rect(0, 0, dashboard.Size, dashboard.Size), decoded.Bounds())
 }
 
 func TestChoosingADashboardTakesTheScreenBack(t *testing.T) {

@@ -113,7 +113,7 @@ func TestAFailedPushIsNotCountedAsShown(t *testing.T) {
 func TestTheSameFrameTwiceIsByteIdentical(t *testing.T) {
 	// The gate compares what a frame says; this is what makes that safe. If
 	// rendering were not deterministic the comparison would be a coin toss.
-	require.Equal(t, shown(reading(), 3).GIF, shown(reading(), 3).GIF)
+	require.Equal(t, shown(reading(), 3).GIF(), shown(reading(), 3).GIF())
 }
 
 func TestSomebodyElseCanHaveTheScreen(t *testing.T) {

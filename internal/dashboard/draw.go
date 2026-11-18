@@ -149,10 +149,10 @@ var nebulae = []struct {
 
 // skies are the starfields drawn so far, one per theme. Cached for the reason
 // the comment below gives, and keyed because a theme changes the sky.
-var skies = map[string]*image.Paletted{}
+var skies = map[string]*image.RGBA{}
 
 /*
-background is the starfield, drawn and quantised once.
+background is the starfield, drawn once, in full colour (spec 080).
 
 Once for two reasons. A field regenerated per frame would shimmer between
 updates, which on a screen that only redraws when something changes reads as a
@@ -160,9 +160,10 @@ fault rather than decoration -- so the Python caches it, with a fixed seed so
 the sky is the same after every restart. And re-quantising four hundred
 thousand pixels per frame cost 128 ms against 7.8 ms for copying a quantised
 one, which is the difference between a renderer that could run forever and one
-that could not.
+that could not. The frame is full colour now, and only a GIF is quantised,
+in quantise, which keeps that cost down with a colour cache.
 */
-func background(theme Theme) *image.Paletted {
+func background(theme Theme) *image.RGBA {
 	drawing.Lock()
 	sky, drawn := skies[theme.Name]
 	drawing.Unlock()
@@ -215,8 +216,7 @@ func background(theme Theme) *image.Paletted {
 		}
 	}
 
-	sky = image.NewPaletted(rgba.Bounds(), palette(theme, nil))
-	draw.Draw(sky, sky.Bounds(), rgba, image.Point{}, draw.Src)
+	sky = rgba
 
 	drawing.Lock()
 	defer drawing.Unlock()

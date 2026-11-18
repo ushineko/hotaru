@@ -22,7 +22,8 @@ is the API's reading of an answer; the adapter and the device are tested in
 internal/cooler.
 */
 type fakeCooler struct {
-	err error
+	err    error
+	frames bool
 }
 
 func (f fakeCooler) Status(context.Context) (cooler.Status, error) {
@@ -37,6 +38,7 @@ func (fakeCooler) Readout(context.Context) error              { return nil }
 func (fakeCooler) Appearance(context.Context, int, int) error { return nil }
 func (fakeCooler) Panel() (string, error)                     { return "640x640 LCD", nil }
 func (fakeCooler) Floor(int) time.Duration                    { return 2 * time.Second }
+func (f fakeCooler) Frames() bool                             { return f.frames }
 
 func ask(t *testing.T, svc *service.Service, path string) api.Cooling {
 	t.Helper()

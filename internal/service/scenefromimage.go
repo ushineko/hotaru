@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"image"
 	"image/color"
-	"image/gif"
+	_ "image/gif" // a preview is a GIF, or a PNG (registered in dashboards.go)
 	"strings"
 
 	"github.com/ushineko/hotaru/internal/devices"
@@ -153,7 +153,7 @@ func (s *Service) dashboardFrame(ctx context.Context, board string) (image.Image
 	if err != nil {
 		return nil, err
 	}
-	decoded, err := gif.Decode(bytes.NewReader(frame))
+	decoded, _, err := image.Decode(bytes.NewReader(frame.Image))
 	if err != nil {
 		return nil, fmt.Errorf("read the dashboard's own frame: %w", err)
 	}

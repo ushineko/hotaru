@@ -500,13 +500,18 @@ func Handler(svc *service.Service) http.Handler {
 			fail(w, err)
 			return
 		}
-		// The floor is the panel's. A machine with no cooler has none to
-		// report, and says zero.
-		floor, _ := svc.Floor(len(frame))
+		// The floor is the panel's, for a GIF. A machine with no cooler has
+		// none to report, and a panel that takes frames has none (spec 080);
+		// both say zero.
+		var floor time.Duration
+		if frame.Format == "gif" {
+			floor, _ = svc.Floor(len(frame.Image))
+		}
 		write(w, http.StatusOK, PreviewedDashboard{
-			Image: base64.StdEncoding.EncodeToString(frame),
-			Bytes: len(frame),
-			Floor: floor.Seconds(),
+			Image:  base64.StdEncoding.EncodeToString(frame.Image),
+			Format: frame.Format,
+			Bytes:  len(frame.Image),
+			Floor:  floor.Seconds(),
 		})
 	})
 

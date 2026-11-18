@@ -632,7 +632,10 @@ type DashboardBackground struct {
 // look at before it goes on the panel.
 type PreviewedDashboard struct {
 	Image string `json:"image"`
-	Bytes int    `json:"bytes"`
+	// Format is the image's encoding: "png" where the panel takes frames in
+	// full colour, "gif" where it takes GIFs (spec 080).
+	Format string `json:"format"`
+	Bytes  int    `json:"bytes"`
 	// Floor is how long the panel needs between pushes of a frame this size,
 	// in seconds. A photograph behind the numbers costs refresh rate, and
 	// this is where somebody finds that out.
