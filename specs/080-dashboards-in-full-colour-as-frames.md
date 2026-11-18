@@ -161,8 +161,7 @@ a check every second.
   start was answered `0x10` at `36 02`; the next frame went through. It did
   not recur on later starts (three restarts). It is reported and retried
   like any failed frame.
-- **Depends on sanshoku #102.** Built on its commit as a pseudo-version until
-  a sanshoku release carries it.
+- **Depends on sanshoku 0.3.0**, which carries #102 (`screen.Streamer`).
 - **Disk.** A full-colour copy is a PNG of 0.3 to 1 MB per still picture,
   beside a GIF of 50 to 200 KB.
 - **Rollback.** Revert the branch: the pusher goes back to GIFs, and the API
