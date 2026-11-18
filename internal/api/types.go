@@ -248,6 +248,19 @@ type RuleRequest struct {
 	Device string             `json:"device"`
 	Follow *string            `json:"follow,omitempty"`
 	Pace   map[string]float64 `json:"pace,omitempty"`
+	// Lengths gives zones a length, in use at once; 0 removes one. Shapes
+	// says a zone holds "ring" (fans) or "line" (a strip); "" removes it.
+	// Segments names parts of the device; null removes a name (spec 078).
+	Lengths  map[string]int          `json:"lengths,omitempty"`
+	Shapes   map[string]string       `json:"shapes,omitempty"`
+	Segments map[string]*RuleSegment `json:"segments,omitempty"`
+}
+
+// RuleSegment is a named part: a zone, or lights First to Last of it.
+type RuleSegment struct {
+	Zone  string `json:"zone"`
+	First *int   `json:"first,omitempty"`
+	Last  *int   `json:"last,omitempty"`
 }
 
 // RuleResponse says which rule was changed, and in which file.

@@ -1,19 +1,15 @@
 package cli_test
 
 import (
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"github.com/ushineko/hotaru/internal/api"
 	"github.com/ushineko/hotaru/internal/canvas/canvastest"
-	"github.com/ushineko/hotaru/internal/cli"
 	"github.com/ushineko/hotaru/internal/colour"
 	"github.com/ushineko/hotaru/internal/config"
 	"github.com/ushineko/hotaru/internal/service/servicetest"
 	"github.com/ushineko/sanshoku"
-	"github.com/ushineko/sanshoku/lighting"
 )
 
 /*
@@ -54,24 +50,6 @@ const (
 	every      = 5 * time.Millisecond
 )
 
-// kraken is the development machine's cooler as OpenRGB had it, near enough:
-// two channels of 24, one carrying three daisy-chained fans and one carrying
-// nothing.
-func kraken() *canvastest.Board {
-	return canvastest.NewBoard("NZXT Kraken 2024 ELITE Series RGB",
-		canvastest.Zone("Hue 2 Channel 1", 24), canvastest.Zone("Hue 2 Channel 2", 24))
-}
-
-// zoned is a canvas called name with the zones given.
-func zoned(name string, zones ...lighting.Zone) *canvastest.Board {
-	return canvastest.NewBoard(name, zones...)
-}
-
-// keychron is a keyboard of n keys whose firmware runs the effects given.
-func keychron(n int, effects ...string) *canvastest.Firmware {
-	return canvastest.NewFirmware(canvastest.NewBoard("Keychron K4 HE", canvastest.Zone("Keyboard", n)), effects...)
-}
-
 // The listing says choosing a device's own effect writes its storage only
 // where that storage wears: the F75's flash, not an effect held in memory
 // (spec 077).
@@ -84,27 +62,4 @@ func TestTheListingMentionsStorageOnlyWhereItWears(t *testing.T) {
 	out, err = run(t, drawing(t, nil, canvastest.NewKeyboard(4)), "light", "list")
 	require.NoError(t, err)
 	require.Contains(t, out, "writes that storage")
-}
-
-// A keyboard is a grid, and is never asked how many things are chained on it
-// (spec 077 R4.1).
-func TestAKeyboardIsNotAskedAboutChaining(t *testing.T) {
-	client := api.NewClient(drawing(t, nil,
-		canvastest.NewBoard("Keychron K4 HE", canvastest.Grid("Keyboard", 100))))
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	person := &scripted{answers: []string{"y", "keyboard"}}
-	require.NoError(t, cli.Map(t.Context(), client, person))
-	require.NotContains(t, person.questions(), "chained", "a keyboard was asked about chaining")
-}
-
-// Fans the device counts itself are divided as it counts them, with nothing
-// asked (spec 077 R4.1).
-func TestFansTheDeviceCountsAreNotAskedAbout(t *testing.T) {
-	client := api.NewClient(drawing(t, nil,
-		canvastest.NewBoard("NZXT Kraken Elite V2", canvastest.Ring("Fan", 8, 8, 8))))
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	person := &scripted{answers: []string{"y", "fans"}}
-	require.NoError(t, cli.Map(t.Context(), client, person))
-	require.NotContains(t, person.questions(), "chained")
-	require.Contains(t, strings.Join(person.said, "\n"), "is 3 things, as the device counts them")
 }

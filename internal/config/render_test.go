@@ -1,4 +1,4 @@
-package cli
+package config_test
 
 import (
 	"reflect"
@@ -9,14 +9,14 @@ import (
 	"github.com/ushineko/hotaru/internal/config"
 )
 
-func TestTogglesSurviveTheWizardRewritingTheFile(t *testing.T) {
+func TestTogglesSurviveTheFileBeingRewritten(t *testing.T) {
 	/*
-		The wizard renders the whole configuration back, so anything this
-		renderer does not know about is something a person loses by running
-		the wizard a second time -- and they would not notice until their
+		hotaru renders the whole configuration back when it writes the rules,
+		so anything this renderer does not know about is something a person
+		loses on the next write -- and they would not notice until their
 		toggles stopped having a control in the window.
 	*/
-	written := yamlFor(&config.Config{Devices: []config.DeviceRule{{
+	written := config.Render(&config.Config{Devices: []config.DeviceRule{{
 		Match: "keychron",
 		Segments: map[string]config.Segment{
 			"caps": {Zone: "Keyboard", LEDs: &config.LEDs{First: 55, Last: 55}},
@@ -61,7 +61,7 @@ func TestEveryRuleKeySurvivesBeingWrittenBack(t *testing.T) {
 		require.False(t, value.Field(i).IsZero(), "%s has no value in this test", value.Type().Field(i).Name)
 	}
 
-	written := yamlFor(&config.Config{Devices: []config.DeviceRule{rule}})
+	written := config.Render(&config.Config{Devices: []config.DeviceRule{rule}})
 	back, problems, err := config.Parse("hotaru.yml", []byte(written))
 	require.NoError(t, err)
 	require.Empty(t, problems, "%s", written)
