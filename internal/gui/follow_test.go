@@ -2,18 +2,23 @@ package gui_test
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/test"
+	"fyne.io/fyne/v2/widget"
 	"github.com/stretchr/testify/require"
 	"github.com/ushineko/fynedesygn/fynetest"
 	"github.com/ushineko/fynedesygn/shell"
 
 	"github.com/ushineko/hotaru/internal/api"
 	"github.com/ushineko/hotaru/internal/gui"
+	"github.com/ushineko/hotaru/internal/testsock"
 )
 
 /*
@@ -103,4 +108,77 @@ func drain(asked chan string) {
 			return
 		}
 	}
+}
+
+/*
+An effect chosen in the scene editor is shown on the hardware as it is
+chosen, as a colour is in the picker, and Cancel puts the draft back: an
+effect that only appeared once the scene was saved and applied again seemed
+to do nothing (the live run).
+*/
+func TestAnEffectIsShownAsItIsChosen(t *testing.T) {
+	seen := &watched{}
+	socket := testsock.Path(t)
+	listener, err := api.Listen(t.Context(), socket)
+	require.NoError(t, err)
+	mux := http.NewServeMux()
+	for path, body := range healthy() {
+		mux.HandleFunc(path, func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(body)
+		})
+	}
+	mux.HandleFunc("POST /"+api.Version+"/preview", func(w http.ResponseWriter, r *http.Request) {
+		seen.note("preview", r)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(api.SceneResponse{Preview: &api.Preview{Token: "a-token", Holder: "hotaru-gui"}})
+	})
+	server := &http.Server{Handler: mux, ReadHeaderTimeout: api.ReadHeaderTimeout}
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(func() { _ = server.Close() })
+
+	a := test.NewApp()
+	t.Cleanup(a.Quit)
+	app := gui.New(api.NewClient(socket))
+	opts := app.Options("s")
+	opts.SettingsPath = filepath.Join(t.TempDir(), "gui.yml")
+	sh := shell.Headless(a, opts)
+	app.Refresh(context.Background())
+	section := &gui.ScenesSection{}
+	draft := gui.NewDraft()
+	gui.OpenEditor(section, app, draft)
+	window := test.NewWindow(section.Build(sh))
+	t.Cleanup(window.Close)
+	window.Resize(fyne.NewSize(1200, 900))
+	sh.Window = window
+
+	gui.ChooseEffects(section, sh, app.Machine())
+	shown := window.Canvas().Overlays().Top()
+	require.NotNil(t, shown)
+	var modes *widget.Select
+	fynetest.WalkRendered(shown, func(o fyne.CanvasObject) bool {
+		if choose, ok := o.(*widget.Select); ok && slices.Contains(choose.Options, "Rainbow Wave") {
+			modes = choose
+			return true
+		}
+		return false
+	})
+	require.NotNil(t, modes)
+
+	modes.SetSelected("Rainbow Wave")
+	require.Eventually(t, func() bool {
+		seen.mu.Lock()
+		defer seen.mu.Unlock()
+		for _, c := range seen.calls {
+			if c.draft.Scene.Effects["NZXT Kraken"].Mode == "Rainbow Wave" {
+				return true
+			}
+		}
+		return false
+	}, 5*time.Second, 10*time.Millisecond, "the effect was not shown as it was chosen")
+
+	cancel := fynetest.FindButton(shown, "Cancel")
+	require.NotNil(t, cancel)
+	test.Tap(cancel)
+	require.Empty(t, draft.Scene("evening").Effects, "Cancel kept the effect")
 }
