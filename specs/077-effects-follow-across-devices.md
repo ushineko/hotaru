@@ -377,10 +377,12 @@ for the test.
 
 The G502's battery over 2 hours 10 minutes of moving effects, read every five
 minutes with `sanshoku-bench read`: 79% at 14:48, 78% at 15:23, 77% at 16:23,
-and 77% at 16:58. About 1% an hour, read in whole percents; Logitech rates the
-mouse at about 37 hours with its lighting on, near 2.7% an hour. A still colour
-for the same time was not measured: the drain a moving effect adds is too
-small to matter at this reading.
+and 77% at 16:58. About 1% an hour, read in whole percents. The mouse sleeps
+quickly when idle and its lights go off then, as the maintainer noted, so this
+is the cost in ordinary use, not of an effect running without a break.
+Logitech rates the mouse at about 37 hours with its lighting on, near 2.7% an
+hour. A still colour over the same time was not measured; in ordinary use the
+sleep bounds what any effect costs.
 
 ### The live criteria (2026-11-17, the maintainer watching)
 
