@@ -191,7 +191,8 @@ in a zone where the device counts them, and `max` is the most lights a zone
 whose length is set may have. A device whose own effects are kept in storage
 that wears says `writes_storage` (spec 077). `follows` is the device a
 device's rule follows, and `pace` its pace per effect, by the effect's name in
-lower case.
+lower case. `named` lists the device's named parts, with the zone and the
+lights each covers.
 
 ## POST /v1/lighting/apply
 
@@ -200,8 +201,8 @@ turns devices off rather than colouring them black, which is a different thing
 on hardware with a backlight. `devices` narrows the request to named hardware.
 
 `preview` writes without remembering. What it lights is not what the machine
-restores at boot. That is how the mapping wizard flashes colours at somebody
-without their answers becoming their configuration. `hotaru light set
+restores at boot. That is how `hotaru light length` and `light name` light a
+part while somebody looks, without it becoming their configuration. `hotaru light set
 --preview` does the same thing from the command line.
 
 ```console
@@ -499,8 +500,8 @@ as a new lease is.
 It is the same route because it is the same sentence -- this scene is what the
 preview shows -- and a scene becoming lights by a second route is how a
 scene's effects get left behind. `POST /v1/lighting/apply` carries colours and
-not effects, and is for `hotaru light set` and the wizard rather than for
-scenes.
+not effects, and is for `hotaru light set` and the setup commands rather than
+for scenes.
 
 `hold` behaves as it does on the named route. With it, the request stays open
 and the lease is that connection. Without it, the lease carries an expiry to
@@ -844,6 +845,13 @@ $ curl -s --unix-socket $XDG_RUNTIME_DIR/hotaru/hotaru.sock \
   given a leader takes the leader's current effect at once, in step.
 - `pace` sets the pace for each effect named, from above 0 to 10. A pace of 0
   removes it.
+- `lengths` gives a zone whose length the device cannot count a length, in
+  use at once; 0 removes it. `fans` divides a zone into that many equal
+  fans, each a ring and named, keeping a name already on the same lights.
+  `shapes` says a zone holds `ring` or `line`; `""` removes it.
+- `segments` names parts: `{"rear-fan": {"zone": "Addressable RGB Header
+  3"}}`, or with `first` and `last` for lights of a zone. `null` removes a
+  name. Names are lowercase words and dashes.
 - The rule changed is the last one that matches the device, or a new one.
   The file before is kept as `hotaru.yml.bak`. Comments in the file are not
   kept.
@@ -854,9 +862,9 @@ out of range, is a 400, and nothing is written.
 ## POST /v1/lighting/length
 
 Gives a zone whose length its device cannot count a length, until the service
-stops: an addressable header's strip or fans. `hotaru light map` uses it to
-find a header's length, and `hotaru light length` reaches it by hand. The
-rules' `lengths` are what a restart uses.
+stops: an addressable header's strip or fans. `hotaru light length` uses it
+while a person moves a header's end. The rules' `lengths` are what a restart
+uses, and `POST /v1/rules/device` writes them.
 
 ```console
 $ curl -s --unix-socket $XDG_RUNTIME_DIR/hotaru/hotaru.sock \

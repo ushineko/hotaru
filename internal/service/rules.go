@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/ushineko/hotaru/internal/config"
@@ -33,6 +34,11 @@ type RuleChange struct {
 	// Segments names parts of the device; nil removes the name (spec 078
 	// R3).
 	Segments map[string]*config.Segment
+	// Fans divides each named zone into that many equal rings, each named:
+	// a name already on the same lights is kept, else the zone's and the
+	// fan's number; other names in the zone that divide it otherwise go,
+	// a toggle stays (spec 078 R2.1).
+	Fans map[string]int
 }
 
 // segmentName is a name the rules take: lowercase words and dashes.
@@ -102,6 +108,9 @@ func (s *Service) SetRule(ctx context.Context, device string, change RuleChange)
 	}
 	if len(rule.Pace) == 0 {
 		rule.Pace = nil
+	}
+	if err := divide(rule, target, change.Fans); err != nil {
+		return "", err
 	}
 	if err := changeZones(rule, target, change); err != nil {
 		return "", err
@@ -202,6 +211,74 @@ func changeZones(rule *config.DeviceRule, device *devices.Device, change RuleCha
 		rule.Segments[name] = named
 	}
 	return nil
+}
+
+/*
+divide gives each zone in fans its rings and their names. A zone whose parts
+the device counts, or whose length does not divide, is refused, with the
+lengths that would.
+*/
+func divide(rule *config.DeviceRule, device *devices.Device, fans map[string]int) error {
+	for name, n := range fans {
+		zone, ok := device.Zone(name)
+		if !ok {
+			return &BadRule{Why: fmt.Sprintf("%s has no zone called %q", device.Name, name)}
+		}
+		if len(zone.Parts) > 0 {
+			return &BadRule{Why: fmt.Sprintf("%s counts what is on %s itself: %s", device.Name, zone.Name, partsSaid(zone.Parts))}
+		}
+		if n < 1 || zone.Count%n != 0 {
+			step := max(n, 1)
+			low := zone.Count / step * step
+			return &BadRule{Why: fmt.Sprintf("%d lights do not divide into %d fans; %d or %d do", zone.Count, n, low, low+step)}
+		}
+		size := zone.Count / n
+		names := make([]string, n)
+		for i := range n {
+			for named, seg := range rule.Segments {
+				if strings.EqualFold(seg.Zone, zone.Name) && seg.LEDs != nil && seg.LEDs.First == i*size && seg.LEDs.Last == (i+1)*size-1 {
+					names[i] = named
+				}
+			}
+			if names[i] == "" {
+				names[i] = fmt.Sprintf("%s-fan-%d", zoneSlug(zone.Name), i+1)
+			}
+		}
+		for named, seg := range rule.Segments {
+			if strings.EqualFold(seg.Zone, zone.Name) && !slices.Contains(names, named) && !slices.Contains(rule.Toggles, named) {
+				delete(rule.Segments, named)
+			}
+		}
+		if rule.Segments == nil {
+			rule.Segments = map[string]config.Segment{}
+		}
+		for i, named := range names {
+			rule.Segments[named] = config.Segment{Zone: zone.Name, LEDs: &config.LEDs{First: i * size, Last: (i+1)*size - 1}}
+		}
+		if rule.Shapes == nil {
+			rule.Shapes = map[string]string{}
+		}
+		rule.Shapes[zone.Name] = string(devices.ShapeRing)
+	}
+	return nil
+}
+
+// zoneSlug is a zone's name as the start of a part's: "Addressable RGB
+// Header 2" is "header-2".
+func zoneSlug(zone string) string {
+	lowered := strings.TrimPrefix(strings.ToLower(zone), "addressable rgb ")
+	var out strings.Builder
+	dash := false
+	for _, r := range lowered {
+		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' {
+			out.WriteRune(r)
+			dash = false
+		} else if !dash && out.Len() > 0 {
+			out.WriteByte('-')
+			dash = true
+		}
+	}
+	return strings.TrimSuffix(out.String(), "-")
 }
 
 // partsSaid is a zone's parts in a few words: "three of 8".

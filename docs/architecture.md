@@ -236,7 +236,8 @@ them.
   devices through sanshoku's `lighting.Canvas` and lists each one as a
   device. Its modes are hotaru's *renderers* (Static, Breathing, Spectrum,
   Rainbow Wave, Off), which `internal/render` draws as pure functions of time.
-  Scenes, targets and the wizard reach every device through one write path.
+  Scenes, targets and the setup commands reach every device through one write
+  path.
 - **Stored modes beside drawn ones.** A canvas device whose firmware also
   runs effects of its own (sanshoku's `lighting.Onboard`, the AULA F75 first)
   lists those effects first, as modes marked `Stored`. Choosing one stops the

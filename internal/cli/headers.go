@@ -133,77 +133,42 @@ func FindLength(ctx context.Context, client *api.Client, asker Asker, arg string
 }
 
 /*
-fanNames is a name for each of n parts of a zone: the one a segment already
-has for those very lights, else the zone's name and the fan's number.
-*/
-func fanNames(cfg *config.Config, device api.Device, zone api.Zone, size, n int) []string {
-	out := make([]string, n)
-	for i := range n {
-		first, last := i*size, (i+1)*size-1
-		for _, rule := range cfg.RulesFor(device.Name) {
-			for name, seg := range rule.Segments {
-				if strings.EqualFold(seg.Zone, zone.Name) && seg.LEDs != nil && seg.LEDs.First == first && seg.LEDs.Last == last {
-					out[i] = name
-				}
-			}
-		}
-		if out[i] == "" {
-			out[i] = fmt.Sprintf("%s-fan-%d", slug(strings.TrimPrefix(strings.ToLower(zone.Name), "addressable rgb ")), i+1)
-		}
-	}
-	return out
-}
-
-/*
-SetFans says a header holds n fans (spec 078 R2.1): the zone divided into n
-equal parts, each named, the zone a ring, each part lit a colour to check.
-Segments in the zone that are not one of the parts are removed: they divided
-it another way.
+SetFans says a header holds n fans (spec 078 R2.1): the service divides the
+zone into n equal named rings, keeping a name already on the same lights, and
+each is lit a colour to check.
 */
 func SetFans(ctx context.Context, client *api.Client, asker Asker, arg string, n int) error {
 	device, zone, err := zoneArg(ctx, client, arg)
 	if err != nil {
 		return err
 	}
-	if len(zone.Parts) > 0 {
-		return fmt.Errorf("%s counts what is on %s itself: %d parts", device.Name, zone.Name, len(zone.Parts))
-	}
-	if n < 1 || zone.Count%n != 0 {
-		low := zone.Count / max(n, 1) * max(n, 1)
-		return fmt.Errorf("%d lights do not divide into %d fans; %d or %d do (light length sets it)",
-			zone.Count, n, low, low+max(n, 1))
-	}
-	cfg, _ := existingRules(asker)
-	size := zone.Count / n
-	names := fanNames(cfg, device, zone, size, n)
-
-	segments := map[string]*api.RuleSegment{}
-	for _, rule := range cfg.RulesFor(device.Name) {
-		for name, seg := range rule.Segments {
-			if strings.EqualFold(seg.Zone, zone.Name) && !slices.Contains(names, name) && !slices.Contains(rule.Toggles, name) {
-				segments[name] = nil
-			}
-		}
-	}
-	var lit []api.Assignment
-	for i, name := range names {
-		first, last := i*size, (i+1)*size-1
-		segments[name] = &api.RuleSegment{Zone: zone.Name, First: &first, Last: &last}
-		lit = append(lit, api.Assignment{Target: lightsOf(device.Name, zone.Name, first, last), Colour: palette[i%len(palette)]})
-	}
-	ring := string(api.ShapeRing)
-	if _, err := client.Rule(ctx, api.RuleRequest{
-		Device: device.Name, Shapes: map[string]string{zone.Name: ring}, Segments: segments,
-	}); err != nil {
+	if _, err := client.Rule(ctx, api.RuleRequest{Device: device.Name, Fans: map[string]int{zone.Name: n}}); err != nil {
 		return quiet(err)
 	}
+	found, err := client.Devices(ctx)
+	if err != nil {
+		return quiet(err)
+	}
+	device, _ = named(found, device.Name)
+	var fans []api.NamedPart
+	for _, part := range device.Named {
+		if strings.EqualFold(part.Zone, zone.Name) && part.First != nil {
+			fans = append(fans, part)
+		}
+	}
+	slices.SortFunc(fans, func(a, b api.NamedPart) int { return *a.First - *b.First })
+
 	defer func() { _, _ = client.Reconcile(context.WithoutCancel(ctx)) }()
+	var lit []api.Assignment
+	for i, fan := range fans {
+		lit = append(lit, api.Assignment{Target: lightsOf(device.Name, zone.Name, *fan.First, *fan.Last), Colour: palette[i%len(palette)]})
+	}
 	if err := show(ctx, client, device.Name, lit); err != nil {
 		return err
 	}
-	asker.Say("%s holds %d fans of %d lights, written to the rules:", zone.Name, n, size)
-	for i, name := range names {
-		asker.Say("  %s: %s", palette[i%len(palette)], name)
+	asker.Say("%s holds %d fans, written to the rules:", zone.Name, n)
+	for i, fan := range fans {
+		asker.Say("  %s: %s", palette[i%len(palette)], fan.Name)
 	}
 	_, err = asker.Ask("Each fan is one colour? Return when you have looked; `hotaru light name` renames them.")
 	return err

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -181,4 +182,19 @@ func TestAnEffectIsShownAsItIsChosen(t *testing.T) {
 	require.NotNil(t, cancel)
 	test.Tap(cancel)
 	require.Empty(t, draft.Scene("evening").Effects, "Cancel kept the effect")
+}
+
+// A device with headers has Headers… on its card, and every in-scope device
+// has Names… (spec 078 R5).
+func TestCardsOfferHeadersAndNames(t *testing.T) {
+	routes := healthy()
+	devices := routes["GET /"+api.Version+"/devices"].(api.DevicesResponse)
+	devices.Devices = append(devices.Devices, api.Device{
+		Name: "ASUS ROG MAXIMUS Z790 HERO", LEDs: 21, ActiveMode: "Static", InScope: true, Modes: []string{"Static"},
+		Zones: []api.Zone{{Name: "Aura Mainboard", Count: 1}, {Name: "Addressable RGB Header 3", First: 1, Count: 20, Max: 120}},
+	})
+	routes["GET /"+api.Version+"/devices"] = devices
+	said := screen(t, service(t, routes), "System")
+	require.Equal(t, 1, strings.Count(said, "Headers…"), "only the board has headers")
+	require.Equal(t, 2, strings.Count(said, "Names…"), "every in-scope device has names")
 }

@@ -79,6 +79,9 @@ type Device struct {
 	Reassert string `json:"reassert,omitempty"`
 	// Segments are the names this machine's owner gave parts of the device.
 	Segments []string `json:"segments,omitempty"`
+	// Named are the device's named parts, with what each covers, so a
+	// client can show and change them (spec 078).
+	Named []NamedPart `json:"named,omitempty"`
 	// Follows is the device this one's rule follows, as the rule says it;
 	// Pace its pace per effect, by the effect's name lowercased (spec 077).
 	Follows string             `json:"follows,omitempty"`
@@ -251,9 +254,18 @@ type RuleRequest struct {
 	// Lengths gives zones a length, in use at once; 0 removes one. Shapes
 	// says a zone holds "ring" (fans) or "line" (a strip); "" removes it.
 	// Segments names parts of the device; null removes a name (spec 078).
-	Lengths  map[string]int          `json:"lengths,omitempty"`
+	Lengths map[string]int `json:"lengths,omitempty"`
+	// Fans divides each named zone into that many equal fans, each a ring
+	// and named, a name on the same lights kept (spec 078 R2.1).
+	Fans     map[string]int          `json:"fans,omitempty"`
 	Shapes   map[string]string       `json:"shapes,omitempty"`
 	Segments map[string]*RuleSegment `json:"segments,omitempty"`
+}
+
+// NamedPart is a named part of a device, as the listing gives it.
+type NamedPart struct {
+	Name string `json:"name"`
+	RuleSegment
 }
 
 // RuleSegment is a named part: a zone, or lights First to Last of it.

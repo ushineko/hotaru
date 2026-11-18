@@ -16,6 +16,7 @@ package gui
 import (
 	"context"
 	"maps"
+	"slices"
 	"sync"
 	"time"
 
@@ -109,7 +110,8 @@ func sameDevice(a, b api.Device) bool {
 		return false
 	}
 	// What it follows and its paces, set from its card (spec 077).
-	if a.Follows != b.Follows || !maps.Equal(a.Pace, b.Pace) {
+	if a.Follows != b.Follows || !maps.Equal(a.Pace, b.Pace) || !slices.EqualFunc(a.Named, b.Named, sameNamed) ||
+		!slices.EqualFunc(a.Zones, b.Zones, func(x, y api.Zone) bool { return x.Name == y.Name && x.Count == y.Count }) {
 		return false
 	}
 	// Drawing or holding is the change a person sees. The rate moves on
@@ -192,4 +194,15 @@ func (m *Machine) Reachable() bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.err == nil
+}
+
+// sameNamed is whether two named parts are the same name on the same lights.
+func sameNamed(a, b api.NamedPart) bool {
+	at := func(n *int) int {
+		if n == nil {
+			return -1
+		}
+		return *n
+	}
+	return a.Name == b.Name && a.Zone == b.Zone && at(a.First) == at(b.First) && at(a.Last) == at(b.Last)
 }

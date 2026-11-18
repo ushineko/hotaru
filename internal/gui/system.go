@@ -140,6 +140,11 @@ func (s *SystemSection) Build(sh *shell.Shell) fyne.CanvasObject {
 		var actions []fyne.CanvasObject
 		if device.HandedTo == "" && device.InScope && device.LEDs > 0 {
 			actions = append(actions, s.follows(sh, device, got.Devices))
+			setup := []fyne.CanvasObject{s.names(sh, device)}
+			if headers := s.headers(sh, device); headers != nil {
+				setup = append([]fyne.CanvasObject{headers}, setup...)
+			}
+			actions = append(actions, container.NewHBox(setup...))
 		}
 		if device.Canvas != nil {
 			actions = append(actions, s.release(sh, device))

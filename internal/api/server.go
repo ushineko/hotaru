@@ -9,6 +9,8 @@ import (
 	"io"
 	"maps"
 	"net/http"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/ushineko/hotaru/internal/colour"
@@ -843,7 +845,7 @@ func Handler(svc *service.Service) http.Handler {
 			write(w, http.StatusBadRequest, Error{Error: "that request does not decode", Detail: err.Error()})
 			return
 		}
-		change := service.RuleChange{Follow: req.Follow, Pace: req.Pace, Lengths: req.Lengths, Shapes: req.Shapes}
+		change := service.RuleChange{Follow: req.Follow, Pace: req.Pace, Lengths: req.Lengths, Shapes: req.Shapes, Fans: req.Fans}
 		for name, seg := range req.Segments {
 			if change.Segments == nil {
 				change.Segments = map[string]*config.Segment{}
@@ -984,10 +986,17 @@ func describe(view service.View) Device {
 	if view.Rule.Reassert > 0 {
 		device.Reassert = view.Rule.Reassert.String()
 	}
-	for name := range view.Rule.Segments {
+	for name, seg := range view.Rule.Segments {
 		device.Segments = append(device.Segments, name)
+		part := NamedPart{Name: name, RuleSegment: RuleSegment{Zone: seg.Zone}}
+		if seg.LEDs != nil {
+			first, last := seg.LEDs.First, seg.LEDs.Last
+			part.First, part.Last = &first, &last
+		}
+		device.Named = append(device.Named, part)
 	}
 	sortStrings(device.Segments)
+	slices.SortFunc(device.Named, func(a, b NamedPart) int { return strings.Compare(a.Name, b.Name) })
 	device.Toggles = append(device.Toggles, view.Rule.Toggles...)
 	device.LEDNames = view.Device.LEDNames
 	device.HandedTo = view.Device.HandedTo
