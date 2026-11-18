@@ -336,3 +336,17 @@ func TestAFrameThatLandsClearsTheRefusal(t *testing.T) {
 	require.Eventually(t, func() bool { return r.anim.Status().Failing == "" }, soon, poll,
 		"a frame that landed did not clear it")
 }
+
+// The same moving effect asked to restart starts again from its beginning:
+// how effects are started in step with a leader (spec 077 R3.5).
+func TestTheSameMovingEffectRestartsWhenAsked(t *testing.T) {
+	r := start(t, canvastest.New(3))
+	r.anim.Show(show(render.Breathing, blue(3), 0))
+	require.Eventually(t, func() bool { return len(r.clock.Tickers()) == 1 }, soon, poll)
+
+	again := show(render.Breathing, blue(3), 0)
+	again.Restart = true
+	r.anim.Show(again)
+	require.Eventually(t, func() bool { return len(r.clock.Tickers()) == 2 }, soon, poll,
+		"a restart did not start the effect again")
+}

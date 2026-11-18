@@ -7,6 +7,7 @@ import (
 
 	"github.com/ushineko/hotaru/internal/colour"
 	"github.com/ushineko/hotaru/internal/devices"
+	"github.com/ushineko/hotaru/internal/render"
 )
 
 /*
@@ -48,4 +49,21 @@ func TestSubtleColoursAreStretchedApart(t *testing.T) {
 	assert.Greater(t, got[0].B, got[1].B, "the teal is no longer the bluer")
 	assert.Greater(t, got[1].R, got[0].R, "the olive is no longer the redder")
 	assert.Equal(t, uint8(0x8c), got[0].G, "a channel they share moved")
+}
+
+// Every one of the Kraken's fourteen effects has a best fit on the RTX 4090,
+// and each is one of the card's own effects (spec 077 R3.6, E4).
+func TestTheCardsTableMapsEachOfTheFourteen(t *testing.T) {
+	card := []string{"Breathing", "Color Cycle", "Rainbow Wave", "Magic", "Fade In", "Flowing",
+		"Patrolling", "Double Flashing"}
+	kraken := []string{render.Fading, render.SpectrumWave, render.CoveringMarquee, render.Alternating,
+		render.Pulse, render.Breathing, render.Candle, render.StarryNight, render.RainbowFlow,
+		render.SuperRainbow, render.RainbowPulse, render.TaiChi, render.WaterCooler, render.Loading}
+	assert.Len(t, kraken, 14)
+	for _, effect := range kraken {
+		fits := bestFits[effect]
+		if assert.NotEmpty(t, fits, "%s has no best fit", effect) {
+			assert.Contains(t, card, fits[0], "%s's best fit is not the card's", effect)
+		}
+	}
 }

@@ -178,3 +178,36 @@ func TestAWaveOnAFewLightsKeepsTheRingsPace(t *testing.T) {
 	ring := draw(t, render.Wave, at, lights(24), render.Params{})
 	assert.Equal(t, rgb(ring[0]), rgb(few[0]), "the first light is not where the ring's is")
 }
+
+/*
+Each of the Kraken's effects draws on a ring of things and on a line, every
+light, and moves: at its fastest it shows another frame a second later
+(spec 077 R3.3). Candle and Starry Night flicker rather than travel, and are
+held to moving too.
+*/
+func TestEveryKrakenEffectDrawsOnARingAndALineAndMoves(t *testing.T) {
+	line := []render.Thing{{Lights: []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9}, Zone: 0}}
+	for _, name := range []string{
+		render.Fading, render.SpectrumWave, render.CoveringMarquee, render.Alternating, render.Pulse,
+		render.Breathing, render.Candle, render.StarryNight, render.RainbowFlow, render.SuperRainbow,
+		render.RainbowPulse, render.TaiChi, render.WaterCooler, render.Loading,
+	} {
+		for layout, things := range map[string][]render.Thing{"ring": cooler(), "line": line} {
+			n := 48
+			if layout == "line" {
+				n = 10
+			}
+			p := render.Params{Things: things, Palette: []colour.Colour{red, blue}, Speed: speed(render.FastestSpeed)}
+			now := draw(t, name, 300*time.Millisecond, lights(n), p)
+			later := draw(t, name, 1300*time.Millisecond, lights(n), p)
+			require.Len(t, now, n, "%s on a %s did not draw every light", name, layout)
+			moved := false
+			for i := range now {
+				if rgb(now[i]) != rgb(later[i]) {
+					moved = true
+				}
+			}
+			assert.True(t, moved, "%s on a %s did not move in a second at its fastest", name, layout)
+		}
+	}
+}
