@@ -382,7 +382,8 @@ quickly when idle and its lights go off then, as the maintainer noted, so this
 is the cost in ordinary use, not of an effect running without a break.
 Logitech rates the mouse at about 37 hours with its lighting on, near 2.7% an
 hour. A still colour over the same time was not measured; in ordinary use the
-sleep bounds what any effect costs.
+sleep bounds what any effect costs. The maintainer's own use agrees: several days between charges
+with the lighting on.
 
 ### The live criteria (2026-11-17, the maintainer watching)
 
