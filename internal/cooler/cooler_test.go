@@ -65,6 +65,25 @@ func TestShowDecodesTheGIFAndDraws(t *testing.T) {
 	require.Equal(t, 2*time.Second, c.Floor(8*1024), "the floor is the panel's")
 }
 
+// A panel that takes frames is drawn on through the adapter, with its hold;
+// one that does not says so (spec 080).
+func TestFramesPassThroughWhereThePanelTakesThem(t *testing.T) {
+	dev := coolertest.NewFramePanel()
+	c := cooler.New(dev)
+	require.True(t, c.Frames())
+	require.NoError(t, c.Frame(t.Context(), image.NewRGBA(image.Rect(0, 0, 640, 640))))
+	require.Equal(t, 1, dev.Frames())
+	require.Equal(t, 25*time.Second, c.FrameHold())
+
+	dev.Refuse = fmt.Errorf("%w: claim interface 0: device busy", screen.ErrNoPanel)
+	require.ErrorIs(t, c.Frame(t.Context(), image.NewRGBA(image.Rect(0, 0, 640, 640))), cooler.ErrNoScreen)
+
+	gifOnly := cooler.New(coolertest.NewPanel())
+	require.False(t, gifOnly.Frames())
+	require.ErrorIs(t, gifOnly.Frame(t.Context(), image.NewRGBA(image.Rect(0, 0, 1, 1))), cooler.ErrNoFrames)
+	require.Zero(t, gifOnly.FrameHold())
+}
+
 func TestNoPanelIsNoScreen(t *testing.T) {
 	/*
 		A cooler without a panel is a machine without one: the scene still

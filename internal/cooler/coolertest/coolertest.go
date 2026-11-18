@@ -10,6 +10,7 @@ package coolertest
 
 import (
 	"context"
+	"image"
 	"image/gif"
 	"sync"
 	"time"
@@ -156,4 +157,40 @@ func (p *Panel) Images() int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return len(p.images)
+}
+
+/*
+FramePanel is a Panel that also takes streamed frames, as the Kraken Elite's
+does through sanshoku (spec 080). FrameHold is the driver's 25 s, under the
+30 s after which the firmware takes the panel back.
+*/
+type FramePanel struct {
+	*Panel
+
+	mu     sync.Mutex
+	frames []image.Image
+}
+
+// NewFramePanel is a cooler whose panel takes frames.
+func NewFramePanel() *FramePanel { return &FramePanel{Panel: NewPanel()} }
+
+// Frame records what was drawn, and returns Refuse.
+func (p *FramePanel) Frame(_ context.Context, img image.Image) error {
+	if p.Refuse != nil {
+		return p.Refuse
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.frames = append(p.frames, img)
+	return nil
+}
+
+// FrameHold is the nzxt driver's.
+func (p *FramePanel) FrameHold() time.Duration { return 25 * time.Second }
+
+// Frames is how many frames were drawn.
+func (p *FramePanel) Frames() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return len(p.frames)
 }
