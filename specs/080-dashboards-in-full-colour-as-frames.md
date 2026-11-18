@@ -2,11 +2,17 @@
 
 **Issue**: [#226](https://github.com/ushineko/hotaru/issues/226)
 
-## Status: INCOMPLETE
+## Status: COMPLETE
 
 ## Executive Summary
 
-(Written last.)
+The dashboard is painted in full colour and, on the Kraken Elite, sent as
+streamed frames: checked every second, sent on a change, sent again every
+25 s before the firmware's 30 s return. The image library keeps a full-colour
+copy of still pictures for dashboard backgrounds. The live run also found two
+sanshoku faults (blue-first byte order, a method name that hid the ring's
+canvas), fixed in ushineko/sanshoku#102. Reviewers: `Pusher.frame` in
+`internal/dashboard/push.go`, then `Render`/`quantise` in `render.go`.
 
 ## Context
 
@@ -90,43 +96,43 @@ a check every second.
 
 ## Acceptance Criteria
 
-- [ ] `make test`, `make lint` and the GUI tests
+- [x] `make test`, `make lint` and the GUI tests
       (`go test -tags migrated_fynedo ./internal/gui/...`) pass.
-- [ ] Tests:
-  - [ ] a dashboard rendered twice with the same reading has the same
+- [x] Tests:
+  - [x] a dashboard rendered twice with the same reading has the same
         `Content`; a changed reading changes it; the tick does not;
-  - [ ] a gradient (the starfield) renders with more than 256 distinct
+  - [x] a gradient (the starfield) renders with more than 256 distinct
         colours in the RGBA frame, and the GIF of the same frame has at most
         256 and decodes at 640x640;
-  - [ ] a quantising benchmark, run and recorded in Verification (R2.2);
-  - [ ] the pusher on a framing fake: sends on a change, does not send an
+  - [x] a quantising benchmark, run and recorded in Verification (R2.2);
+  - [x] the pusher on a framing fake: sends on a change, does not send an
         unchanged frame within `FrameHold`, resends it after `FrameHold`
         (injected clock), sends nothing while held, sends at once on
         release, and keeps the tick on a resend;
-  - [ ] the pusher on a GIF-only fake behaves as before (existing tests);
-  - [ ] the preview route returns `format: "png"` and a decodable PNG with a
+  - [x] the pusher on a GIF-only fake behaves as before (existing tests);
+  - [x] the preview route returns `format: "png"` and a decodable PNG with a
         framing cooler, and `"gif"` without one.
-- [ ] Live, the maintainer watching:
-  - [ ] the dashboard on the panel in full colour (starfield and a picture
+- [x] Live, the maintainer watching:
+  - [x] the dashboard on the panel in full colour (starfield and a picture
         background), compared with 2.0.0's GIF;
-  - [ ] a reading that changes shows within about a second;
-  - [ ] idle for at least 2 minutes: no return to the readout, no blink at
+  - [x] a reading that changes shows within about a second;
+  - [x] idle for at least 2 minutes: no return to the readout, no blink at
         the resends;
-  - [ ] `hotaru screen show` a GIF, then back to the dashboard: the picture
+  - [x] `hotaru screen show` a GIF, then back to the dashboard: the picture
         stays (no resend over it), and the dashboard returns at once;
-  - [ ] the readout chosen, then the dashboard: the same;
-  - [ ] hotaru stopped: the readout returns, and the ring is unchanged;
-  - [ ] with the ring on an animated effect, the dashboard running for
+  - [x] the readout chosen, then the dashboard: the same;
+  - [x] hotaru stopped: the readout returns, and the ring is unchanged;
+  - [x] with the ring on an animated effect, the dashboard running for
         2 minutes: the ring does not change at the frames, the resends or
         the stop (moved here from sanshoku spec 037);
-  - [ ] the window's preview of a dashboard matches the panel.
-- [ ] Tests for R7: a still is kept and read in full colour; an animation has
+  - [x] the window's preview of a dashboard matches the panel.
+- [x] Tests for R7: a still is kept and read in full colour; an animation has
       no copy, and replacing a still with one removes the old copy; the copy
       follows a rename and a remove; a picture without a copy reads its GIF.
-- [ ] Live: a picture added again from its original shows in full colour
+- [x] Live: a picture added again from its original shows in full colour
       behind a dashboard.
-- [ ] Cost recorded per R5.1.
-- [ ] Docs per R6.
+- [x] Cost recorded per R5.1.
+- [x] Docs per R6.
 
 ## Risks & Assumptions
 
@@ -151,6 +157,10 @@ a check every second.
   switches to the readout (sanshoku spec 024). hotaru only reaches the
   readout by asking (`liquid` commits the ring first) or by stopping; the
   live ring criterion checks both.
+- **A refused first frame.** On the first dev build the first frame after a
+  start was answered `0x10` at `36 02`; the next frame went through. It did
+  not recur on later starts (three restarts). It is reported and retried
+  like any failed frame.
 - **Depends on sanshoku #102.** Built on its commit as a pseudo-version until
   a sanshoku release carries it.
 - **Disk.** A full-colour copy is a PNG of 0.3 to 1 MB per still picture,
@@ -169,4 +179,55 @@ a check every second.
 
 ## Verification
 
-(Results pasted here.)
+Desk, 2026-11-18: Kraken Elite V2 on firmware 1.2.12, the dev build run
+under the user service through a drop-in, the maintainer watching.
+
+**Tests.** `make test`, `make lint` (0 issues), `make lint-windows`
+(0 issues), `go test -tags migrated_fynedo ./internal/gui/...`, and
+`go test -race ./internal/dashboard` three times all pass. `govulncheck`
+finds nothing.
+
+**Benchmarks** (`go test ./internal/dashboard -run - -bench 'Quantise|Render'`):
+
+```
+BenchmarkQuantiseTheShippedDashboard-30   2729346 ns/op   500510 B/op   3698 allocs/op
+BenchmarkRenderTheShippedDashboard-30     3262353 ns/op  1648189 B/op    982 allocs/op
+```
+
+Quantising is 2.7 ms against R2.2's 30 ms. The shipped dashboard's GIF moved
+at 522 of 409600 pixels, at the edges of text; its full-colour frame has 3679
+colours.
+
+**Live run.**
+
+1. First dev build: `ice1` (light text on dark blue) showed yellow text on
+   brown, and the cooler's ring was not attached. A diagnostic on the desk:
+   `*nzxt.framePanel is not lighting.Canvas: missing method Frame`. Both were
+   sanshoku's, fixed in 71e0f45 (blue first; `screen.Streamer`).
+2. Fixed build: colours right, the ring attached ("drawing on NZXT Kraken
+   Elite V2").
+3. R7: a photograph added in the dev window as `tree-full` stored
+   `tree-full.png` (485 KB) beside its GIF. On the panel it looked better than
+   the GIF version; the window's preview matched the panel.
+4. Numbers updated within about a second; no blink, no readout.
+5. `hotaru image show cat1`, 40 s; `hotaru screen readout`, 40 s;
+   `hotaru screen dashboard`. Each held; the dashboard returned at once. The
+   frame counter: 2 frames in those 82 s, one before and one after.
+6. The ring on a moving effect through steps 4 and 5, then a stop for 10 s
+   and a start: the readout while stopped, the ring unchanged, everything back
+   after the start.
+7. A dashboard showing only the pump duty on the starfield, 09:12:35 to
+   09:15:05: no blink, no readout. The counter, 09:13:00 to 09:14:16: 0
+   changed frames, 3 resends. The starfield looked smoother than on 2.0.0.
+
+**Cost (R5.1).** The service's `CPUUsageNSec` over 10 minutes, all lighting
+included, a picture dashboard on the panel each time:
+
+| build | CPU in 600 s | share of one core | frames |
+|---|---|---|---|
+| 2.0.0, GIFs (`ice1`) | 28.9 s | 4.8% | not counted |
+| dev, frames (`tree-full`) | 33.9 s | 5.7% | 527 changed, 0 resends |
+
+A picture dashboard with CPU and GPU readings changes nearly every second, so
+frames ran at about 0.9 a second, about 1 MB/s over USB. Frames were counted by
+a line in the dev build that logged once a minute and was not committed.
