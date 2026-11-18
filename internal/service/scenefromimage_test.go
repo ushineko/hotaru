@@ -10,11 +10,11 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"github.com/ushineko/hotaru/internal/devices"
+	"github.com/ushineko/hotaru/internal/canvas/canvastest"
 	"github.com/ushineko/hotaru/internal/images"
-	"github.com/ushineko/hotaru/internal/openrgb"
 	"github.com/ushineko/hotaru/internal/scenes"
 	"github.com/ushineko/hotaru/internal/service"
+	"github.com/ushineko/hotaru/internal/service/servicetest"
 )
 
 // withPictures is a service that can also keep pictures.
@@ -45,7 +45,7 @@ func encoded(t *testing.T) []byte {
 }
 
 func TestASceneFromAPictureCoversEveryDeviceInScope(t *testing.T) {
-	svc, _ := lit(t)
+	svc, _, _ := litDesk(t)
 	withPictures(t, svc)
 	_, err := svc.AddImage("halves", encoded(t))
 	require.NoError(t, err)
@@ -67,7 +67,7 @@ func TestASceneFromAPictureSweepsAcrossIt(t *testing.T) {
 		a blue right gives one purple for the whole machine, which is the
 		result this exists to avoid.
 	*/
-	svc, _ := lit(t)
+	svc, _, _ := litDesk(t)
 	withPictures(t, svc)
 	_, err := svc.AddImage("halves", encoded(t))
 	require.NoError(t, err)
@@ -95,18 +95,9 @@ func TestOneLightZonesAreSpreadAcrossThePicture(t *testing.T) {
 		strip, its first zone takes the left of the picture and its last the
 		right.
 	*/
-	mat := devices.Device{
-		Name:     "Corsair MM700",
-		LEDCount: 3,
-		Modes:    []devices.Mode{{Name: "Direct", PerLED: true}},
-		Zones: []devices.Zone{
-			{Name: "Left", First: 0, Count: 1},
-			{Name: "Right", First: 1, Count: 1},
-			{Name: "Logo", First: 2, Count: 1},
-		},
-		ActiveMode: "Direct",
-	}
-	svc := service.New(nil, openrgb.NewFake(mat), "")
+	mat := canvastest.NewBoard("Corsair MM700",
+		canvastest.Zone("Left", 1), canvastest.Zone("Right", 1), canvastest.Zone("Logo", 1))
+	svc := servicetest.New(t, nil, mat)
 	withPictures(t, svc)
 	saved, err := scenes.Open(filepath.Join(t.TempDir(), "scenes.yml"))
 	require.NoError(t, err)
@@ -129,7 +120,7 @@ func TestOneLightZonesAreSpreadAcrossThePicture(t *testing.T) {
 func TestAdjacentLightsThatAgreeAreOneRule(t *testing.T) {
 	// A hundred keys across a four-colour picture is four assignments, not a
 	// hundred: a scene somebody opens afterwards is a scene they can read.
-	svc, _ := lit(t)
+	svc, _, _ := litDesk(t)
 	withPictures(t, svc)
 	_, err := svc.AddImage("halves", encoded(t))
 	require.NoError(t, err)
@@ -148,7 +139,7 @@ func TestAdjacentLightsThatAgreeAreOneRule(t *testing.T) {
 func TestASceneFromAPictureShowsThatPicture(t *testing.T) {
 	// A machine lit by one image with another on its screen is two themes at
 	// once.
-	svc, _ := lit(t)
+	svc, _, _ := litDesk(t)
 	withPictures(t, svc)
 	stored, err := svc.AddImage("halves", encoded(t))
 	require.NoError(t, err)
@@ -167,7 +158,7 @@ func TestASceneFromAPictureShowsThatPicture(t *testing.T) {
 }
 
 func TestAPictureThatIsNotThereSaysSo(t *testing.T) {
-	svc, _ := lit(t)
+	svc, _, _ := litDesk(t)
 	withPictures(t, svc)
 
 	_, err := svc.SceneFromImage(t.Context(), "absent", "themed", 1, nil)
@@ -210,7 +201,7 @@ func TestASceneFromADashboardNamesThatDashboard(t *testing.T) {
 		dashboard afterwards changes the screen without changing the lights,
 		and `recolour` brings them back in line.
 	*/
-	svc, _ := lit(t)
+	svc, _, _ := litDesk(t)
 	svc.SetCooler(&panel{})
 	withScreens(t, svc)
 
@@ -221,7 +212,7 @@ func TestASceneFromADashboardNamesThatDashboard(t *testing.T) {
 }
 
 func TestSeparationChangesTheColoursAndNothingElse(t *testing.T) {
-	svc, _ := lit(t)
+	svc, _, _ := litDesk(t)
 	withPictures(t, svc)
 	_, err := svc.AddImage("halves", encoded(t))
 	require.NoError(t, err)
@@ -243,7 +234,7 @@ func TestRecolouringTakesTheSceneAsItsSource(t *testing.T) {
 		fact: what somebody is judging is not on screen anywhere except the
 		case itself.
 	*/
-	svc, _ := lit(t)
+	svc, _, _ := litDesk(t)
 	withPictures(t, svc)
 	_, err := svc.AddImage("halves", encoded(t))
 	require.NoError(t, err)
@@ -260,7 +251,7 @@ func TestRecolouringTakesTheSceneAsItsSource(t *testing.T) {
 
 func TestASceneWithNothingToTakeColoursFromSaysSo(t *testing.T) {
 	// Rather than inventing a source.
-	svc, _ := lit(t, scenes.Scene{Name: "plain", Colour: "blue"})
+	svc, _, _ := litDesk(t, scenes.Scene{Name: "plain", Colour: "blue"})
 	withPictures(t, svc)
 
 	_, err := svc.RecolourScene(t.Context(), "plain", 2)
@@ -271,7 +262,7 @@ func TestASceneWithNothingToTakeColoursFromSaysSo(t *testing.T) {
 // starts from.
 func painting(t *testing.T) *service.Service {
 	t.Helper()
-	svc, _ := lit(t)
+	svc, _, _ := litDesk(t)
 	withPictures(t, svc)
 	_, err := svc.AddImage("halves", encoded(t))
 	require.NoError(t, err)
@@ -337,12 +328,13 @@ func TestASceneFromAPictureGivesAOneColourEffectOneColour(t *testing.T) {
 }
 
 func TestASceneFromAPictureLeavesAPerLEDEffectAlone(t *testing.T) {
-	// A device in Direct is painted light by light and has nothing to reduce:
-	// giving it one colour would throw the picture away.
+	// A device in a per-light mode (Static, on a canvas) is painted light by
+	// light and has nothing to reduce: giving it one colour would throw the
+	// picture away.
 	svc := painting(t)
 
 	scene, err := svc.SceneFromImage(t.Context(), "halves", "themed", 1,
-		map[string]scenes.Effect{"Keychron": {Mode: "Direct"}})
+		map[string]scenes.Effect{"Keychron": {Mode: "Static"}})
 	require.NoError(t, err)
 
 	require.Empty(t, scene.Effects["Keychron"].Colour)

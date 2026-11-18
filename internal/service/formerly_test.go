@@ -12,8 +12,8 @@ import (
 	"github.com/ushineko/hotaru/internal/colour"
 	"github.com/ushineko/hotaru/internal/config"
 	"github.com/ushineko/hotaru/internal/devices"
-	"github.com/ushineko/hotaru/internal/openrgb"
 	"github.com/ushineko/hotaru/internal/service"
+	"github.com/ushineko/hotaru/internal/service/servicetest"
 	"github.com/ushineko/hotaru/internal/state"
 )
 
@@ -69,7 +69,7 @@ func red(t *testing.T, d *drawing, id byte) bool {
 }
 
 func TestTheCoolersZonesComeFromItsKeyNames(t *testing.T) {
-	svc := service.New(nil, openrgb.NewFake(board()), "")
+	svc := service.New(nil, nil, servicetest.NoServer)
 	attachCooler(t, svc)
 	got := viewOf(t, svc, coolerName).Device
 	require.Equal(t, []devices.Zone{
@@ -79,7 +79,7 @@ func TestTheCoolersZonesComeFromItsKeyNames(t *testing.T) {
 }
 
 func TestTheFormerNameIsListedAsTheCanvassTwin(t *testing.T) {
-	svc := service.New(formerRule(), openrgb.NewFake(board()), "")
+	svc := service.New(formerRule(), nil, servicetest.NoServer)
 	attachCooler(t, svc)
 	former := viewOf(t, svc, formerName).Device
 	require.Equal(t, coolerName, former.HandedTo)
@@ -105,7 +105,7 @@ func TestAScenesFormerTargetsLightTheCanvas(t *testing.T) {
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
-			svc := service.New(formerRule(), openrgb.NewFake(board()), "")
+			svc := service.New(formerRule(), nil, servicetest.NoServer)
 			svc.SetRecorder(recorder(t))
 			d := attachCooler(t, svc)
 
@@ -126,7 +126,7 @@ func TestAScenesFormerTargetsLightTheCanvas(t *testing.T) {
 // The cooler's colours recorded under its former name restore the canvas,
 // when there is one for each light; the former record is left as it is.
 func TestTheFormerRecordRestoresTheCanvas(t *testing.T) {
-	svc := service.New(formerRule(), openrgb.NewFake(board()), "")
+	svc := service.New(formerRule(), nil, servicetest.NoServer)
 	store := recorder(t)
 	svc.SetRecorder(store)
 	reds := make([]colour.Colour, 6)
@@ -146,7 +146,7 @@ func TestTheFormerRecordRestoresTheCanvas(t *testing.T) {
 }
 
 func TestAFormerRecordOfAnotherSizeIsNotAdopted(t *testing.T) {
-	svc := service.New(formerRule(), openrgb.NewFake(board()), "")
+	svc := service.New(formerRule(), nil, servicetest.NoServer)
 	store := recorder(t)
 	svc.SetRecorder(store)
 	require.NoError(t, store.Record(formerName, state.Device{Mode: "Direct", Colours: []colour.Colour{colour.MustParse("red")}}))
@@ -163,7 +163,7 @@ Releasing the cooler's lights keeps them attached, and an animated scene stops
 before the release, so the frame the cooler keeps is the last one (R2.1).
 */
 func TestReleasingTheCoolerKeepsItAttached(t *testing.T) {
-	svc := service.New(formerRule(), openrgb.NewFake(board()), "")
+	svc := service.New(formerRule(), nil, servicetest.NoServer)
 	store := recorder(t)
 	svc.SetRecorder(store)
 	require.NoError(t, store.Record(formerName, state.Device{Mode: "Direct", Colours: make([]colour.Colour, 6)}))

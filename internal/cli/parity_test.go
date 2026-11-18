@@ -12,8 +12,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/ushineko/hotaru/internal/api"
-	"github.com/ushineko/hotaru/internal/openrgb"
-	"github.com/ushineko/hotaru/internal/service"
+	"github.com/ushineko/hotaru/internal/service/servicetest"
 	"github.com/ushineko/hotaru/internal/state"
 	"github.com/ushineko/hotaru/internal/testsock"
 )
@@ -166,7 +165,7 @@ func recording(t *testing.T, seen *recorder) string {
 
 	desired, err := state.Open(filepath.Join(dir, "state.yml"))
 	require.NoError(t, err)
-	svc := service.New(nil, openrgb.NewFake(board()), "127.0.0.1:6742")
+	svc := servicetest.New(t, nil, auraBoard())
 	svc.SetRecorder(desired)
 
 	inner := api.Handler(svc)

@@ -19,9 +19,9 @@ import (
 const boardName = "fake board"
 
 // attachBoard attaches a zoned board whose header has 4 lights.
-func attachBoard(t *testing.T, svc *service.Service) *canvastest.Zoned {
+func attachBoard(t *testing.T, svc *service.Service) *canvastest.Board {
 	t.Helper()
-	board := canvastest.NewZoned(1, 500)
+	board := canvastest.NewBoard(boardName, canvastest.Zone("Board", 1), canvastest.Header("Header 1", 0, 500))
 	device, ok := canvas.New(board)
 	require.True(t, ok)
 	require.NoError(t, device.Resize("Header 1", 4))
@@ -68,7 +68,7 @@ func TestAnOpenRGBRecordRestoresTheCanvas(t *testing.T) {
 	require.Len(t, restore.Results, 1)
 	assert.Equal(t, "Static", restore.Results[0].Mode)
 	assert.Empty(t, restore.Results[0].Resized, "a canvas was regrown to OpenRGB's size")
-	assert.Equal(t, 4, board.Header)
+	assert.Equal(t, 4, board.Zones()[1].Count)
 	require.Eventually(t, func() bool {
 		p, ok := board.Showing(5)
 		return ok && p.R == 255

@@ -13,6 +13,7 @@ import (
 	"github.com/ushineko/hotaru/internal/devices"
 	"github.com/ushineko/hotaru/internal/openrgb"
 	"github.com/ushineko/hotaru/internal/service"
+	"github.com/ushineko/hotaru/internal/service/servicetest"
 )
 
 // A board that advertises Static and Direct. On the real Aura, Static is
@@ -68,8 +69,8 @@ func solid(target, name string) []devices.Assignment {
 func TestAMachineWithNoConfigurationGetsItsLightsSet(t *testing.T) {
 	// The stranger's machine: no rules file, hardware nobody wrote a line
 	// about, and it works.
-	server := openrgb.NewFake(board(), keyboard(), strip())
-	svc := service.New(nil, server, "")
+	strip := genericStrip()
+	svc := servicetest.New(t, nil, auraBoard(), k4(), strip)
 
 	results, err := svc.Apply(t.Context(), service.Request{Assignments: append(
 		solid("ASUS", "red"), append(solid("Keychron", "red"), solid("Generic", "red")...)...)})
@@ -78,9 +79,7 @@ func TestAMachineWithNoConfigurationGetsItsLightsSet(t *testing.T) {
 	for _, r := range results {
 		require.True(t, r.Applied, "%s: %s", r.Device, r.Skipped)
 	}
-
-	showing, _ := server.Showing("Generic Strip")
-	require.Equal(t, colour.MustParse("red"), showing.Colours[0])
+	require.Eventually(t, func() bool { return shows(t, strip.Device, colour.MustParse("red")) }, eventually, every)
 }
 
 func TestADeviceThatAcceptsAModeWithoutHonouringItFallsThrough(t *testing.T) {
@@ -120,16 +119,16 @@ func TestARuleSparesTheFallThroughRatherThanBeingRequiredForIt(t *testing.T) {
 }
 
 func TestADeviceThatCannotBeBlankedIsSkippedWithItsReason(t *testing.T) {
-	server := openrgb.NewFake(keyboard())
+	kb := k4()
 	cfg := &config.Config{Devices: []config.DeviceRule{{Match: "keychron", NeverBlank: true}}}
-	svc := service.New(cfg, server, "")
+	svc := servicetest.New(t, cfg, kb)
 
 	results, err := svc.Apply(t.Context(), service.Request{Off: true})
 	require.NoError(t, err)
 	require.Len(t, results, 1)
 	require.False(t, results[0].Applied)
 	require.Contains(t, results[0].Skipped, "backlight")
-	require.Empty(t, server.Modes, "and nothing was written to it")
+	require.Zero(t, kb.Frames(), "and nothing was written to it")
 }
 
 func TestOffUsesTheDevicesOwnOffModeWhereThereIsOne(t *testing.T) {
@@ -153,24 +152,20 @@ func TestOffUsesTheDevicesOwnOffModeWhereThereIsOne(t *testing.T) {
 }
 
 func TestADeviceOutOfScopeIsLeftAloneEntirely(t *testing.T) {
-	server := openrgb.NewFake(board(), keyboard())
+	kb := k4()
 	cfg := &config.Config{Scope: []string{"maximus"}}
-	svc := service.New(cfg, server, "")
+	svc := servicetest.New(t, cfg, auraBoard(), kb)
 
 	results, err := svc.Apply(t.Context(), service.Request{Assignments: append(
 		solid("ASUS", "red"), solid("Keychron", "red")...)})
 	require.NoError(t, err)
 	require.Len(t, results, 1)
 	require.Equal(t, "ASUS ROG MAXIMUS Z790 HERO", results[0].Device)
-
-	for _, write := range server.Modes {
-		require.NotEqual(t, "Keychron K4 HE", write.Device)
-	}
+	require.Zero(t, kb.Frames())
 }
 
 func TestNamingADeviceNarrowsToItWithoutChangingScope(t *testing.T) {
-	server := openrgb.NewFake(board(), keyboard())
-	svc := service.New(nil, server, "")
+	svc := servicetest.New(t, nil, auraBoard(), k4())
 
 	results, err := svc.Apply(t.Context(), service.Request{
 		Assignments: append(solid("ASUS", "red"), solid("Keychron", "red")...),
@@ -200,20 +195,23 @@ func TestADeviceThatCannotShowTheFrameIsReportedNotApproximated(t *testing.T) {
 }
 
 func TestListSaysWhichDevicesHotaruWouldDriveAndWhy(t *testing.T) {
-	server := openrgb.NewFake(board(), keyboard())
 	cfg := &config.Config{
 		Scope:   []string{"maximus"},
-		Devices: []config.DeviceRule{{Match: "maximus", SolidModes: []string{"direct"}}},
+		Devices: []config.DeviceRule{{Match: "maximus", SolidModes: []string{"static"}}},
 	}
-	svc := service.New(cfg, server, "")
+	svc := servicetest.New(t, cfg, auraBoard(), k4())
 
 	list, err := svc.List(t.Context())
 	require.NoError(t, err)
 	require.Len(t, list, 2, "everything present is listed")
-
-	require.True(t, list[0].InScope)
-	require.Equal(t, []string{"direct"}, list[0].Rule.SolidModes)
-	require.False(t, list[1].InScope, "and the reason it will not change is visible")
+	byName := map[string]service.View{}
+	for _, v := range list {
+		byName[v.Device.Name] = v
+	}
+	board := byName["ASUS ROG MAXIMUS Z790 HERO"]
+	require.True(t, board.InScope)
+	require.Equal(t, []string{"static"}, board.Rule.SolidModes)
+	require.False(t, byName["Keychron K4 HE"].InScope, "and the reason it will not change is visible")
 }
 
 func TestAStoppedServerIsAnOrdinaryStateWithSomethingToDoAboutIt(t *testing.T) {
@@ -249,34 +247,28 @@ func TestABrightnessRuleIsAssertedOnEveryWrite(t *testing.T) {
 	// Brightness is device state nobody owned: whatever was last written
 	// stuck, so a value set once by hand became permanent and invisible.
 	// Asserting it makes hotaru's picture of the device complete rather than
-	// partial.
-	server := openrgb.NewFake(keyboard())
-	level := 100
+	// partial. On a canvas it is a multiply on every frame.
+	kb, board := k4(), auraBoard()
+	level := 50
 	cfg := &config.Config{Devices: []config.DeviceRule{{Match: "keychron", Brightness: &level}}}
-	svc := service.New(cfg, server, "")
+	svc := servicetest.New(t, cfg, kb, board)
 
-	_, err := svc.Apply(t.Context(), service.Request{Assignments: solid("Keychron", "red")})
-	require.NoError(t, err)
-
-	require.NotEmpty(t, server.Modes)
-	require.NotNil(t, server.Modes[0].Brightness, "the rule's brightness never reached the device")
-	require.Equal(t, 100, *server.Modes[0].Brightness)
-
-	// A device with no such rule is not sent one, because a write nobody asked
-	// for is still a write.
-	plain := openrgb.NewFake(board())
-	svc = service.New(nil, plain, "")
-	_, err = svc.Apply(t.Context(), service.Request{Assignments: solid("ASUS", "red")})
-	require.NoError(t, err)
-	require.Nil(t, plain.Modes[0].Brightness)
+	half := colour.Colour{R: 128}
+	for range 2 {
+		_, err := svc.Apply(t.Context(), service.Request{Assignments: append(solid("Keychron", "red"), solid("ASUS", "red")...)})
+		require.NoError(t, err)
+		require.Eventually(t, func() bool { return shows(t, kb.Device, half) }, eventually, every,
+			"the rule's brightness never reached the device")
+	}
+	// A device with no such rule is not dimmed.
+	require.Eventually(t, func() bool { return shows(t, board.Device, colour.MustParse("red")) }, eventually, every)
 }
 
 func TestAnAssignmentThatNamedNothingIsReportedEvenWhenTheWriteWorked(t *testing.T) {
 	// "Everything blue, except the top fan" with the fan misspelled is a
 	// device that went blue all over and reported success. Found on a machine
 	// whose zone name contained a slash, where the typo was mine.
-	server := openrgb.NewFake(board())
-	svc := service.New(nil, server, "")
+	svc := servicetest.New(t, nil, auraBoard())
 
 	typo, err := devices.ParseTarget("ASUS/Addressable 1 but spelled wrong")
 	require.NoError(t, err)
@@ -539,8 +531,7 @@ func TestTheOrdinaryWritePathDoesNotWait(t *testing.T) {
 		over the program it replaces; keeping it is a requirement, not a
 		nicety. Spec 010 AC7.
 	*/
-	server := openrgb.NewFake(board(), strip(), keyboard())
-	svc := service.New(nil, server, "")
+	svc := servicetest.New(t, nil, auraBoard(), genericStrip(), k4())
 
 	start := time.Now()
 	red := colour.MustParse("red")

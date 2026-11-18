@@ -5,12 +5,15 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"github.com/ushineko/hotaru/internal/openrgb"
 	"github.com/ushineko/hotaru/internal/scenes"
+	"github.com/ushineko/hotaru/internal/service"
 )
 
 /*
 A scene becomes lights one way, and an effect cannot be lost on the way.
+
+On a canvas (spec 076) the effect is one hotaru draws, Breathing, because a
+preview does not write a device's own effects (spec 071 R5.2).
 
 The bug behind this: an editor changing a draft wrote it through the plain
 colour route, which has no effects in it at all, so every keystroke put the
@@ -25,20 +28,19 @@ func reactive(name string) scenes.Scene {
 		Name:        name,
 		Assignments: []scenes.Assignment{{Target: "Keychron", Colour: "blue"}},
 		Effects: map[string]scenes.Effect{
-			"Keychron": {Mode: "Solid Reactive", Colour: "#00ff00"},
+			"Keychron": {Mode: "Breathing", Colour: "#00ff00"},
 		},
 	}
 }
 
-// modesFor is every mode written to a device, in order.
-func modesFor(server *openrgb.Fake, device string) []openrgb.ModeWrite {
-	var out []openrgb.ModeWrite
-	for _, written := range server.Modes {
-		if written.Device == device {
-			out = append(out, written)
-		}
-	}
-	return out
+// effectOn is the mode a device is drawn in and that mode's colour, as the
+// service lists them.
+func effectOn(t *testing.T, svc *service.Service, device string) (string, string) {
+	t.Helper()
+	view := viewOf(t, svc, device).Device
+	mode, ok := view.Mode(view.ActiveMode)
+	require.True(t, ok, "%s lists no mode %q", device, view.ActiveMode)
+	return view.ActiveMode, mode.Colour.String()
 }
 
 func TestChangingADraftKeepsItsEffect(t *testing.T) {
@@ -48,27 +50,20 @@ func TestChangingADraftKeepsItsEffect(t *testing.T) {
 		effect in the effect's own colour -- rather than sitting in Direct
 		because the second write went a different way.
 	*/
-	svc, server := lit(t)
+	svc, _, _ := litDesk(t)
 
 	up, err := svc.Preview(context.Background(), reactive(""), "editor", false)
 	require.NoError(t, err)
 	require.NotNil(t, up.Lease)
-
-	server.Modes = nil // what the change writes, and nothing before it
 
 	changed := reactive("")
 	changed.Assignments = []scenes.Assignment{{Target: "Keychron", Colour: "red"}}
 	_, err = svc.Redraft(context.Background(), up.Lease.Token, changed)
 	require.NoError(t, err)
 
-	written := modesFor(server, "Keychron K4 HE")
-	require.NotEmpty(t, written, "the change wrote no mode at all")
-	for _, one := range written {
-		require.Equal(t, "Solid Reactive", one.Mode,
-			"changing a draft put the keyboard somewhere else")
-		require.NotNil(t, one.Colour, "the effect's colour went with it")
-		require.Equal(t, "#00ff00", one.Colour.String())
-	}
+	mode, tint := effectOn(t, svc, "Keychron K4 HE")
+	require.Equal(t, "Breathing", mode, "changing a draft put the keyboard somewhere else")
+	require.Equal(t, "#00ff00", tint, "the effect's colour went with it")
 }
 
 func TestADraftAndASavedSceneWriteTheSameThing(t *testing.T) {
@@ -79,24 +74,17 @@ func TestADraftAndASavedSceneWriteTheSameThing(t *testing.T) {
 		property -- the two paths agreeing -- rather than a repeat of the
 		modes one of them happens to write today.
 	*/
-	applied, appliedServer := lit(t, reactive("evening"))
+	applied, _, _ := litDesk(t, reactive("evening"))
 	_, err := applied.ApplyScene(context.Background(), "evening")
 	require.NoError(t, err)
 
-	/*
-		Both from the same starting point: the device is in a per-LED mode
-		and arriving at the effect. A redraft onto a device already showing
-		the effect writes one packet rather than two (spec 057), so comparing
-		a first apply against a second draft would be comparing two different
-		questions.
-	*/
-	drafted, draftServer := lit(t)
+	drafted, _, _ := litDesk(t)
 	_, err = drafted.Preview(context.Background(), reactive(""), "editor", false)
 	require.NoError(t, err)
 
-	want := modesFor(appliedServer, "Keychron K4 HE")
-	got := modesFor(draftServer, "Keychron K4 HE")
-	require.Equal(t, want, got,
+	wantMode, wantColour := effectOn(t, applied, "Keychron K4 HE")
+	gotMode, gotColour := effectOn(t, drafted, "Keychron K4 HE")
+	require.Equal(t, []string{wantMode, wantColour}, []string{gotMode, gotColour},
 		"an edited draft and a saved scene reach the keyboard differently")
 }
 
@@ -104,7 +92,7 @@ func TestADraftThatGrowsADeviceTakesItIntoTheLease(t *testing.T) {
 	// An editor that adds a device to a scene means that device, and a lease
 	// that did not follow would leave the reconciler free to correct
 	// something the window is showing somebody.
-	svc, _ := lit(t)
+	svc, _, _ := litDesk(t)
 
 	one := scenes.Scene{Assignments: []scenes.Assignment{{Target: "Keychron", Colour: "blue"}}}
 	up, err := svc.Preview(context.Background(), one, "editor", false)
@@ -123,7 +111,7 @@ func TestADraftThatGrowsADeviceTakesItIntoTheLease(t *testing.T) {
 func TestRedraftingWithoutALeaseIsRefused(t *testing.T) {
 	// A token nobody holds is an editor whose preview lapsed, and writing
 	// the draft anyway would put colours on hardware nothing is holding.
-	svc, _ := lit(t)
+	svc, _, _ := litDesk(t)
 	_, err := svc.Redraft(context.Background(), "nosuchtoken", reactive(""))
 	require.Error(t, err)
 }
@@ -131,7 +119,7 @@ func TestRedraftingWithoutALeaseIsRefused(t *testing.T) {
 func TestADraftCannotTakeADeviceSomebodyElseIsShowing(t *testing.T) {
 	// One device, one preview -- whether the second claim arrives as a new
 	// lease or as a draft that grew into one.
-	svc, _ := lit(t)
+	svc, _, _ := litDesk(t)
 
 	mine, err := svc.Preview(context.Background(),
 		scenes.Scene{Assignments: []scenes.Assignment{{Target: "Keychron", Colour: "blue"}}},

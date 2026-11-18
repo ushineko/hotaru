@@ -13,11 +13,13 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/ushineko/hotaru/internal/api"
+	"github.com/ushineko/hotaru/internal/canvas/canvastest"
 	"github.com/ushineko/hotaru/internal/cli"
 	"github.com/ushineko/hotaru/internal/colour"
 	"github.com/ushineko/hotaru/internal/config"
 	"github.com/ushineko/hotaru/internal/devices"
 	"github.com/ushineko/hotaru/internal/openrgb"
+	"github.com/ushineko/sanshoku"
 )
 
 /*
@@ -107,8 +109,7 @@ func cooler() devices.Device {
 }
 
 func TestTheWizardMapsAMachineFromWhatAPersonCanSee(t *testing.T) {
-	server := openrgb.NewFake(cooler())
-	socket := serving(t, nil, server)
+	socket := drawing(t, nil, kraken())
 	client := api.NewClient(socket)
 
 	home := t.TempDir()
@@ -123,6 +124,7 @@ func TestTheWizardMapsAMachineFromWhatAPersonCanSee(t *testing.T) {
 		"rad rear",  // what is red
 		"rad mid",   // green
 		"rad front", // blue
+		"n",         // keep it dimmer? -- no
 		"y",         // is the whole map right
 		"n", "y",    // write it
 	}}
@@ -154,11 +156,10 @@ func TestTheWizardMapsAMachineFromWhatAPersonCanSee(t *testing.T) {
 func TestTheWizardAsksHowManyBeforeItSplitsAnything(t *testing.T) {
 	// The vendors' question, and the right one: a daisy-chain is usually
 	// identical fans, so one answer and the LED count give the division.
-	server := openrgb.NewFake(cooler())
-	client := api.NewClient(serving(t, nil, server))
+	client := api.NewClient(drawing(t, nil, kraken()))
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
-	person := &scripted{answers: []string{"y", "nothing", "strip", "1", "y", "n"}}
+	person := &scripted{answers: []string{"y", "nothing", "strip", "1", "n", "y", "n"}}
 	require.NoError(t, cli.Map(t.Context(), client, person))
 
 	asked := person.questions()
@@ -171,8 +172,7 @@ func TestAZoneReportedDarkIsLeftUnnamed(t *testing.T) {
 	// Three of the development machine's nine zones have nothing attached,
 	// and every one accepts writes and reports success. Naming one would make
 	// a scene that silently does less than it says.
-	server := openrgb.NewFake(cooler())
-	client := api.NewClient(serving(t, nil, server))
+	client := api.NewClient(drawing(t, nil, kraken()))
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
 	person := &scripted{answers: []string{"y", "nothing", "nothing"}}
@@ -192,13 +192,12 @@ func TestAnUnhealthyMachineIsNotAskedAboutAtAll(t *testing.T) {
 }
 
 func TestNothingIsWrittenWithoutASayingSo(t *testing.T) {
-	server := openrgb.NewFake(cooler())
-	client := api.NewClient(serving(t, nil, server))
+	client := api.NewClient(drawing(t, nil, kraken()))
 	home := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", home)
 
 	// The map is right, and the user declines to write it.
-	person := &scripted{answers: []string{"y", "nothing", "strip", "1", "y", "n"}}
+	person := &scripted{answers: []string{"y", "nothing", "strip", "1", "n", "y", "n"}}
 	require.NoError(t, cli.Map(t.Context(), client, person))
 
 	_, err := os.Stat(filepath.Join(home, "hotaru", "hotaru.yml"))
@@ -213,7 +212,7 @@ func TestAReRunOffersTheAnswersFromLastTime(t *testing.T) {
 		--reconfigure works, because it is how a person changes one thing
 		without restating the other nine.
 	*/
-	client := api.NewClient(serving(t, nil, openrgb.NewFake(cooler())))
+	client := api.NewClient(drawing(t, nil, kraken()))
 	home := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", home)
 
@@ -233,6 +232,7 @@ devices:
 		"nothing", // channel 1
 		"",        // channel 2: press return to keep what it was called
 		"1",
+		"n",      // not dimmer
 		"y",      // the map is right
 		"n", "y", // write it
 	}}
@@ -260,7 +260,7 @@ devices:
 }
 
 func TestDecliningLeavesTheExistingFileExactlyAsItWas(t *testing.T) {
-	client := api.NewClient(serving(t, nil, openrgb.NewFake(cooler())))
+	client := api.NewClient(drawing(t, nil, kraken()))
 	home := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", home)
 
@@ -269,7 +269,7 @@ func TestDecliningLeavesTheExistingFileExactlyAsItWas(t *testing.T) {
 	original := "# mine, with a comment\ndevices: []\n"
 	require.NoError(t, os.WriteFile(path, []byte(original), 0o600))
 
-	person := &scripted{answers: []string{"y", "nothing", "strip", "1", "y", "n"}}
+	person := &scripted{answers: []string{"y", "nothing", "strip", "1", "n", "y", "n"}}
 	require.NoError(t, cli.Map(t.Context(), client, person))
 
 	after, err := os.ReadFile(path)
@@ -284,7 +284,7 @@ func TestAnAnswerToADifferentQuestionIsNotTakenAsAName(t *testing.T) {
 	// "y" is not the name of a fan. It is what somebody types when they think
 	// they are being asked something else, and writing it into their rules
 	// file would turn a slip into a puzzle they meet weeks later.
-	client := api.NewClient(serving(t, nil, openrgb.NewFake(cooler())))
+	client := api.NewClient(drawing(t, nil, kraken()))
 	home := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", home)
 
@@ -294,7 +294,7 @@ func TestAnAnswerToADifferentQuestionIsNotTakenAsAName(t *testing.T) {
 		"nothing",  // asked again
 		"red",      // what is green? -- the colour, not the thing
 		"radiator", // asked again
-		"1", "y", "n", "y",
+		"1", "n", "y", "n", "y",
 	}}
 	require.NoError(t, cli.Map(t.Context(), client, person))
 
@@ -313,16 +313,10 @@ func TestOneDeviceAtATime(t *testing.T) {
 	// Six devices is a long conversation to hold in your head, and a person
 	// who has just learned something about their cooler should be able to
 	// write it down without answering for the mousepad first.
-	server := openrgb.NewFake(cooler(), devices.Device{
-		Name:     "Corsair MM700",
-		LEDCount: 3,
-		Modes:    []devices.Mode{{Name: "Direct", PerLED: true}},
-		Zones:    []devices.Zone{{Name: "Left", First: 0, Count: 3}},
-	})
-	client := api.NewClient(serving(t, nil, server))
+	client := api.NewClient(drawing(t, nil, kraken(), zoned("Corsair MM700", canvastest.Zone("Left", 3))))
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
-	person := &scripted{answers: []string{"y", "nothing", "radiator", "1", "y", "n"}}
+	person := &scripted{answers: []string{"y", "nothing", "radiator", "1", "n", "y", "n"}}
 	require.NoError(t, cli.Map(t.Context(), client, person, "kraken"))
 
 	require.NotContains(t, strings.Join(person.said, "\n"), "MM700",
@@ -337,14 +331,8 @@ func TestACountThatMeantLEDsIsQueriedRatherThanDividedOn(t *testing.T) {
 		not a thing anybody has, so it is worth asking again before dividing
 		the stick into ten pieces.
 	*/
-	stick := devices.Device{
-		Name:       "Corsair Dominator Platinum RGB DDR5 (0x18)",
-		LEDCount:   12,
-		Modes:      []devices.Mode{{Name: "Direct", PerLED: true}},
-		Zones:      []devices.Zone{{Name: "RAM", First: 0, Count: 12}},
-		ActiveMode: "Direct",
-	}
-	client := api.NewClient(serving(t, nil, openrgb.NewFake(stick)))
+	stick := zoned("Corsair Dominator Platinum RGB DDR5 (0x18)", canvastest.Zone("RAM", 12))
+	client := api.NewClient(drawing(t, nil, stick))
 	home := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", home)
 
@@ -353,6 +341,7 @@ func TestACountThatMeantLEDsIsQueriedRatherThanDividedOn(t *testing.T) {
 		"first stick", // what is red
 		"10",          // how many things -- meaning LEDs
 		"1",           // asked again, with the arithmetic shown
+		"n",           // not dimmer
 		"y", "n", "y", // right, and write it
 	}}
 	require.NoError(t, cli.Map(t.Context(), client, person))
@@ -379,23 +368,17 @@ func TestWhatTheWizardWritesLoads(t *testing.T) {
 		complaining about something its user never typed. What the wizard
 		writes goes back through the loader here.
 	*/
-	sticks := []devices.Device{}
+	sticks := []sanshoku.Device{}
 	for _, address := range []string{"0x18", "0x19"} {
-		sticks = append(sticks, devices.Device{
-			Name:       "Corsair Dominator Platinum RGB DDR5 (" + address + ")",
-			LEDCount:   12,
-			Modes:      []devices.Mode{{Name: "Direct", PerLED: true}},
-			Zones:      []devices.Zone{{Name: "Corsair DRAM", First: 0, Count: 12}},
-			ActiveMode: "Direct",
-		})
+		sticks = append(sticks, zoned("Corsair Dominator Platinum RGB DDR5 ("+address+")", canvastest.Zone("Corsair DRAM", 12)))
 	}
-	client := api.NewClient(serving(t, nil, openrgb.NewFake(sticks...)))
+	client := api.NewClient(drawing(t, nil, sticks...))
 	home := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", home)
 
 	person := &scripted{answers: []string{
-		"y", "stick0", "1", // the first stick
-		"y", "stick1", "1", // the second
+		"y", "stick0", "1", "n", // the first stick, not dimmer
+		"y", "stick1", "1", "n", // the second
 		"y", "n", "y",
 	}}
 	require.NoError(t, cli.Map(t.Context(), client, person))
@@ -416,8 +399,8 @@ func TestStoppingPutsTheLightsBackAndSaysNothingElse(t *testing.T) {
 		last lit -- because the cleanup used the context that had just been
 		cancelled.
 	*/
-	server := openrgb.NewFake(cooler())
-	socket := serving(t, nil, server)
+	cooler := kraken()
+	socket := drawing(t, nil, cooler)
 	client := api.NewClient(socket)
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
@@ -432,8 +415,8 @@ func TestStoppingPutsTheLightsBackAndSaysNothingElse(t *testing.T) {
 	require.ErrorIs(t, err, context.Canceled, "a cancelled wizard reported something else")
 
 	require.Eventually(t, func() bool {
-		showing, ok := server.Showing("NZXT Kraken 2024 ELITE Series RGB")
-		return ok && showing.Colours[0] == colour.MustParse("teal")
+		c, ok := shows(t, cooler.Device, 0)
+		return ok && c == colour.MustParse("teal")
 	}, 3*time.Second, 20*time.Millisecond,
 		"the lights were left on whatever the wizard had lit")
 
@@ -459,8 +442,8 @@ func TestWhatTheWizardLightsIsNotWhatTheMachineWants(t *testing.T) {
 		and a reboot would have restored the last thing the wizard happened to
 		be lighting when somebody walked away.
 	*/
-	server := openrgb.NewFake(cooler())
-	socket := serving(t, nil, server)
+	cooler := kraken()
+	socket := drawing(t, nil, cooler)
 	client := api.NewClient(socket)
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
@@ -471,14 +454,14 @@ func TestWhatTheWizardLightsIsNotWhatTheMachineWants(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, before.Remembered)
 
-	person := &scripted{answers: []string{"y", "nothing", "radiator", "1", "n"}}
+	person := &scripted{answers: []string{"y", "nothing", "radiator", "1", "n", "n"}}
 	require.NoError(t, cli.Map(t.Context(), client, person))
 
 	// The machine still wants what it wanted: teal, not the wizard's red.
-	showing, ok := server.Showing("NZXT Kraken 2024 ELITE Series RGB")
-	require.True(t, ok)
-	require.Equal(t, colour.MustParse("teal"), showing.Colours[0],
-		"the lights were left showing a question")
+	require.Eventually(t, func() bool {
+		c, ok := shows(t, cooler.Device, 0)
+		return ok && c == colour.MustParse("teal")
+	}, eventually, every, "the lights were left showing a question")
 }
 
 func TestAZoneNobodyCanSeeIsLeftOutRatherThanBisected(t *testing.T) {
@@ -491,14 +474,7 @@ func TestAZoneNobodyCanSeeIsLeftOutRatherThanBisected(t *testing.T) {
 		Nothing lit means nothing on it. That is one question, and it comes
 		before the hunt.
 	*/
-	board := devices.Device{
-		Name:       "Z790 AORUS MASTER X",
-		LEDCount:   30,
-		Modes:      []devices.Mode{{Name: "Direct", PerLED: true}},
-		Zones:      []devices.Zone{{Name: "ARGB_V2_1", First: 0, Count: 30}},
-		ActiveMode: "Direct",
-	}
-	client := api.NewClient(serving(t, nil, openrgb.NewFake(board)))
+	client := api.NewClient(drawing(t, nil, zoned("Z790 AORUS MASTER X", canvastest.Zone("ARGB_V2_1", 30))))
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
 	person := &scripted{answers: []string{
@@ -520,10 +496,10 @@ func TestAZoneNobodyCanSeeIsLeftOutRatherThanBisected(t *testing.T) {
 func TestTheQuestionAsksForANameRatherThanAColour(t *testing.T) {
 	// "What is red?" asks somebody to identify a colour. They are naming a
 	// thing, and the difference is the whole readability of the conversation.
-	client := api.NewClient(serving(t, nil, openrgb.NewFake(cooler())))
+	client := api.NewClient(drawing(t, nil, kraken()))
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
-	person := &scripted{answers: []string{"y", "nothing", "radiator", "1", "n"}}
+	person := &scripted{answers: []string{"y", "nothing", "radiator", "1", "n", "n"}}
 	require.NoError(t, cli.Map(t.Context(), client, person))
 
 	asked := person.questions()
@@ -541,18 +517,11 @@ func TestAOneLightZoneIsNotAskedAboutDividing(t *testing.T) {
 		somebody answered 2 -- true about their desk, and not a question with
 		an actionable answer, since there is nothing to divide.
 	*/
-	board := devices.Device{
-		Name:       "Z790 AORUS MASTER X",
-		LEDCount:   1,
-		Modes:      []devices.Mode{{Name: "Direct", PerLED: true}},
-		Zones:      []devices.Zone{{Name: "LED_C", First: 0, Count: 1}},
-		ActiveMode: "Direct",
-	}
-	client := api.NewClient(serving(t, nil, openrgb.NewFake(board)))
+	client := api.NewClient(drawing(t, nil, zoned("Z790 AORUS MASTER X", canvastest.Zone("LED_C", 1))))
 	home := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", home)
 
-	person := &scripted{answers: []string{"y", "desk strips", "y", "n", "y"}}
+	person := &scripted{answers: []string{"y", "desk strips", "n", "y", "n", "y"}}
 	require.NoError(t, cli.Map(t.Context(), client, person))
 
 	require.NotContains(t, person.questions(), "chained",
@@ -573,19 +542,10 @@ func TestNothingElseIsLitWhileAQuestionIsBeingAsked(t *testing.T) {
 
 		One thing lit, everything else dark, and the question is what came on.
 	*/
-	board := devices.Device{
-		Name:     "Z790 AORUS MASTER X",
-		LEDCount: 61,
-		Modes:    []devices.Mode{{Name: "Direct", PerLED: true}},
-		Zones: []devices.Zone{
-			{Name: "ARGB_V2_1", First: 0, Count: 30},
-			{Name: "ARGB_V2_2", First: 30, Count: 30},
-			{Name: "LED_C", First: 60, Count: 1},
-		},
-		ActiveMode: "Direct",
-	}
-	server := openrgb.NewFake(board, cooler())
-	client := api.NewClient(serving(t, nil, server))
+	aorus := zoned("Z790 AORUS MASTER X",
+		canvastest.Zone("ARGB_V2_1", 30), canvastest.Zone("ARGB_V2_2", 30), canvastest.Zone("LED_C", 1))
+	cooler := kraken()
+	client := api.NewClient(drawing(t, nil, aorus, cooler))
 	home := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", home)
 
@@ -594,14 +554,14 @@ func TestNothingElseIsLitWhileAQuestionIsBeingAsked(t *testing.T) {
 		"",  // first header: nothing attached
 		"",  // second header: nothing attached
 		"desk strips",
-		"y", "n", "y",
+		"n", "y", "n", "y",
 	}}
 	require.NoError(t, cli.Map(t.Context(), client, person, "AORUS"))
 
 	// The other device in the case was turned off before any question.
-	showing, ok := server.Showing("NZXT Kraken 2024 ELITE Series RGB")
+	c, ok := shows(t, cooler.Device, 0)
 	require.True(t, ok)
-	require.Equal(t, colour.Black, showing.Colours[0],
+	require.Equal(t, colour.Black, c,
 		"another device stayed lit while somebody was asked what they could see")
 
 	// And each question was about one part, in turn.
@@ -622,23 +582,14 @@ func TestTheWizardSpeaksNoJargon(t *testing.T) {
 		and the name of a lighting mode are this program's vocabulary, and
 		using them asks somebody to learn it before they can answer.
 	*/
-	board := devices.Device{
-		Name:     "Z790 AORUS MASTER X",
-		LEDCount: 31,
-		Modes:    []devices.Mode{{Name: "Static", PerLED: true}, {Name: "Direct", PerLED: true}},
-		Zones: []devices.Zone{
-			{Name: "ARGB_V2_1", First: 0, Count: 30},
-			{Name: "LED_C", First: 30, Count: 1},
-		},
-		ActiveMode: "Rainbow Wave",
-	}
-	client := api.NewClient(serving(t, nil, openrgb.NewFake(board)))
+	client := api.NewClient(drawing(t, nil, zoned("Z790 AORUS MASTER X",
+		canvastest.Zone("ARGB_V2_1", 30), canvastest.Zone("LED_C", 1))))
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
 	person := &scripted{answers: []string{
-		"n", "y", // not lit the first way, lit the second
+		"y",               // lit
 		"", "desk strips", // nothing on the first part; the strips on the second
-		"y", "y",
+		"n", "y", "y",
 	}}
 	require.NoError(t, cli.Map(t.Context(), client, person))
 
@@ -736,6 +687,34 @@ func TestWhatItWritesIsInUseBeforeItPutsTheLightsBack(t *testing.T) {
 		"the correction the wizard had just established was not in use")
 }
 
+func TestWhatItWritesIsInUseBeforeItPutsTheLightsBackOnACanvas(t *testing.T) {
+	// The same, drawn: a name the wizard has just written can be lit without
+	// anyone reloading anything.
+	home := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", home) // before the service starts, as on a real machine
+
+	strips := zoned("Z790 AORUS MASTER X", canvastest.Zone("LED_C", 1))
+	client := api.NewClient(drawing(t, nil, strips))
+
+	person := &scripted{answers: []string{"y", "desk strips", "n", "y", "n", "y"}}
+	require.NoError(t, cli.Map(t.Context(), client, person))
+
+	require.Contains(t, strings.Join(person.said, "\n"), "in use now",
+		"somebody was told to run a command the program could run itself")
+
+	out, err := client.Apply(t.Context(), api.ApplyRequest{
+		Assignments: []api.Assignment{{Target: "aorus/desk-strips", Colour: "purple"}},
+	})
+	require.NoError(t, err)
+	require.Len(t, out.Results, 1)
+	require.True(t, out.Results[0].Applied)
+	require.Empty(t, out.Results[0].Problems, "the name the wizard had just written was not in use")
+	require.Eventually(t, func() bool {
+		c, ok := shows(t, strips.Device, 0)
+		return ok && c == colour.MustParse("purple")
+	}, eventually, every)
+}
+
 func TestOnlyALineOfLightsIsAskedAboutChaining(t *testing.T) {
 	/*
 		"How many separate things are chained on keyboard?" -- asked of a
@@ -803,13 +782,14 @@ func TestADeviceThatWillNotGoDarkIsRecorded(t *testing.T) {
 		a file with no trace of it. hotaru has always had never_blank; nothing
 		ever asked the one question that sets it. Spec 014.
 	*/
-	client := api.NewClient(serving(t, nil, openrgb.NewFake(keyboardThatWillNotBlank())))
+	client := api.NewClient(drawing(t, nil, keychron(1, "Solid Splash")))
 	home := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", home)
 
 	person := &scripted{answers: []string{
 		"y",        // lit red?
 		"keyboard", // what is lit
+		"n",        // not dimmer
 		"y",        // is that right?
 		"y",        // anything still glowing?
 		"y",        // the keyboard is
@@ -826,11 +806,11 @@ func TestADeviceThatWillNotGoDarkIsRecorded(t *testing.T) {
 func TestADeviceThatGoesDarkIsNotWrittenAbout(t *testing.T) {
 	// The other half: a file that claims a device was corrected when it was
 	// not is worse than one that says nothing.
-	client := api.NewClient(serving(t, nil, openrgb.NewFake(keyboardThatWillNotBlank())))
+	client := api.NewClient(drawing(t, nil, keychron(1, "Solid Splash")))
 	home := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", home)
 
-	person := &scripted{answers: []string{"y", "keyboard", "y", "n", "y"}}
+	person := &scripted{answers: []string{"y", "keyboard", "n", "y", "n", "y"}}
 	require.NoError(t, cli.Map(t.Context(), client, person))
 
 	rules, err := os.ReadFile(filepath.Join(home, "hotaru", "hotaru.yml"))
@@ -841,12 +821,12 @@ func TestADeviceThatGoesDarkIsNotWrittenAbout(t *testing.T) {
 func TestTheAlternativeToBlankingIsOffered(t *testing.T) {
 	// "Off" on a keyboard is a mode, not a colour: a reactive effect leaves
 	// unpressed keys dark, which is what somebody means by off.
-	client := api.NewClient(serving(t, nil, openrgb.NewFake(keyboardThatWillNotBlank())))
+	client := api.NewClient(drawing(t, nil, keychron(1, "Solid Splash")))
 	home := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", home)
 
 	person := &scripted{answers: []string{
-		"y", "keyboard",
+		"y", "keyboard", "n",
 		"y",      // is that right?
 		"y", "y", // something still glowing; it is the keyboard
 		"1", "y", // the first on the menu, and keep it
@@ -865,20 +845,13 @@ func TestAMachineThatBlanksIsAskedOnlyOnce(t *testing.T) {
 		that hardware the whole subject is one question for the machine rather
 		than one per device.
 	*/
-	one := func(name string) devices.Device {
-		return devices.Device{
-			Name: name, LEDCount: 1,
-			Modes:      []devices.Mode{{Name: "Direct", PerLED: true}},
-			Zones:      []devices.Zone{{Name: "LED", Shape: devices.ShapeSingle, First: 0, Count: 1}},
-			ActiveMode: "Direct",
-		}
-	}
-	client := api.NewClient(serving(t, nil, openrgb.NewFake(one("Alpha Board"), one("Beta Board"))))
+	one := func(name string) sanshoku.Device { return zoned(name, canvastest.Zone("LED", 1)) }
+	client := api.NewClient(drawing(t, nil, one("Alpha Board"), one("Beta Board")))
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
 	person := &scripted{answers: []string{
-		"y", "front light", // Alpha
-		"y", "rear light", // Beta
+		"y", "front light", "n", // Alpha, not dimmer
+		"y", "rear light", "n", // Beta
 		"y", // is that right?
 		"n", // nothing still lit
 		"n", // do not write
@@ -909,10 +882,10 @@ func TestTheOffQuestionDoesNotAssertItsOwnAnswer(t *testing.T) {
 		like on this board. That is precisely the fault the question exists to
 		find, invited by the question.
 	*/
-	client := api.NewClient(serving(t, nil, openrgb.NewFake(keyboardThatWillNotBlank())))
+	client := api.NewClient(drawing(t, nil, keychron(1, "Solid Splash")))
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
-	person := &scripted{answers: []string{"y", "keyboard", "y", "n", "n"}}
+	person := &scripted{answers: []string{"y", "keyboard", "n", "y", "n", "n"}}
 	require.NoError(t, cli.Map(t.Context(), client, person))
 
 	require.NotContains(t, person.questions(), "Everything is off now",
@@ -949,18 +922,12 @@ func TestAChoiceOfDarkModesIsOffered(t *testing.T) {
 		-- "Solid Reactive Simple", because it happened to come first in the
 		device's list -- and wrote it down as though it had been chosen.
 	*/
-	device := keyboardThatWillNotBlank()
-	device.Modes = []devices.Mode{
-		{Name: "Direct", PerLED: true},
-		{Name: "Solid Reactive Simple"},
-		{Name: "Solid Splash"},
-	}
-	client := api.NewClient(serving(t, nil, openrgb.NewFake(device)))
+	client := api.NewClient(drawing(t, nil, keychron(1, "Solid Reactive Simple", "Solid Splash")))
 	home := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", home)
 
 	person := &scripted{answers: []string{
-		"y", "keyboard",
+		"y", "keyboard", "n",
 		"y",      // is that right?
 		"y", "y", // something still glowing; it is the keyboard
 		"2", "y", // the second on the menu, and keep it
@@ -972,7 +939,7 @@ func TestAChoiceOfDarkModesIsOffered(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, string(rules), "Solid Reactive Simple",
 		"the second offer was accepted and the first was written instead")
-	require.Contains(t, string(rules), "direct",
+	require.Contains(t, string(rules), "solid_modes: [Solid Reactive Simple, static]",
 		"a single mode leaves nowhere to go if it stops working")
 }
 
@@ -1011,12 +978,6 @@ func TestAPreviousDarkModeChoiceCanBeRevisited(t *testing.T) {
 
 		Spec 008's reconfiguration pattern has to reach this answer too.
 	*/
-	device := keyboardThatWillNotBlank()
-	device.Modes = []devices.Mode{
-		{Name: "Direct", PerLED: true},
-		{Name: "Solid Reactive Simple"},
-		{Name: "Solid Splash"},
-	}
 	home := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", home)
 	require.NoError(t, os.MkdirAll(filepath.Join(home, "hotaru"), 0o755))
@@ -1024,11 +985,12 @@ func TestAPreviousDarkModeChoiceCanBeRevisited(t *testing.T) {
 		"devices:\n  - match: \"keychron\"\n    solid_modes: [Solid Reactive Simple]\n"+
 			"    never_blank: true\n    segments:\n      keyboard: {zone: \"Keyboard\"}\n"), 0o600))
 
-	client := api.NewClient(serving(t, nil, openrgb.NewFake(device)))
+	client := api.NewClient(drawing(t, nil, keychron(1, "Solid Reactive Simple", "Solid Splash")))
 	person := &scripted{answers: []string{
 		"y", "keyboard",
 		"n",      // no, do not keep the mode it is set to
 		"1", "y", // the first on the menu is Splash, which is preferred
+		"n", // not dimmer
 		"y", // is that right?
 		"n", // nothing still glowing
 		"y", // write it
@@ -1045,11 +1007,6 @@ func TestAPreviousDarkModeChoiceCanBeRevisited(t *testing.T) {
 
 func TestKeepingAPreviousDarkModeLeavesItAlone(t *testing.T) {
 	// The other half: answering yes must not quietly rewrite the choice.
-	device := keyboardThatWillNotBlank()
-	device.Modes = []devices.Mode{
-		{Name: "Direct", PerLED: true},
-		{Name: "Solid Splash"},
-	}
 	home := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", home)
 	require.NoError(t, os.MkdirAll(filepath.Join(home, "hotaru"), 0o755))
@@ -1057,8 +1014,8 @@ func TestKeepingAPreviousDarkModeLeavesItAlone(t *testing.T) {
 		"devices:\n  - match: \"keychron\"\n    solid_modes: [Solid Splash]\n"+
 			"    segments:\n      keyboard: {zone: \"Keyboard\"}\n"), 0o600))
 
-	client := api.NewClient(serving(t, nil, openrgb.NewFake(device)))
-	person := &scripted{answers: []string{"y", "keyboard", "y", "y", "n", "y"}}
+	client := api.NewClient(drawing(t, nil, keychron(1, "Solid Splash")))
+	person := &scripted{answers: []string{"y", "keyboard", "y", "n", "y", "n", "y"}}
 	require.NoError(t, cli.Map(t.Context(), client, person))
 
 	rules, err := os.ReadFile(filepath.Join(home, "hotaru", "hotaru.yml"))
@@ -1076,23 +1033,12 @@ func TestAKeyboardWithUnfamiliarModeNamesStillGetsAChoice(t *testing.T) {
 		hotaru cannot know which effect leaves a board mostly dark. It offers
 		everything, likeliest first, and somebody watching decides.
 	*/
-	device := devices.Device{
-		Name:     "SteelSeries Apex Pro",
-		LEDCount: 2,
-		Modes: []devices.Mode{
-			{Name: "Direct", PerLED: true},
-			{Name: "ColorShift"},
-			{Name: "Ripple"},
-			{Name: "Breathing"},
-		},
-		Zones:      []devices.Zone{{Name: "Keyboard", Shape: devices.ShapeGrid, First: 0, Count: 2}},
-		ActiveMode: "Direct",
-	}
-	client := api.NewClient(serving(t, nil, openrgb.NewFake(device)))
+	apex := canvastest.NewFirmware(zoned("SteelSeries Apex Pro", canvastest.Zone("Keyboard", 1)), "ColorShift", "Ripple")
+	client := api.NewClient(drawing(t, nil, apex))
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
 	person := &scripted{answers: []string{
-		"y", "keyboard",
+		"y", "keyboard", "n",
 		"y",      // is that right?
 		"y", "y", // something still glowing; it is the keyboard
 		"", // look at the list, then leave it alone
@@ -1110,20 +1056,10 @@ func TestAKeyboardWithUnfamiliarModeNamesStillGetsAChoice(t *testing.T) {
 func TestTheModeOfferIsNeverEmptyWhereTheDeviceHasModes(t *testing.T) {
 	// The failure this replaces: an empty candidate list told somebody their
 	// device could do nothing about it, which was never true.
-	device := devices.Device{
-		Name:     "Nameless Board",
-		LEDCount: 1,
-		Modes: []devices.Mode{
-			{Name: "Direct", PerLED: true},
-			{Name: "Mode 2"},
-		},
-		Zones:      []devices.Zone{{Name: "Keys", Shape: devices.ShapeSingle, First: 0, Count: 1}},
-		ActiveMode: "Direct",
-	}
-	client := api.NewClient(serving(t, nil, openrgb.NewFake(device)))
+	client := api.NewClient(drawing(t, nil, canvastest.NewFirmware(zoned("Nameless Board", canvastest.Zone("Keys", 1)), "Mode 2")))
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
-	person := &scripted{answers: []string{"y", "light", "y", "y", "y", "", "n"}}
+	person := &scripted{answers: []string{"y", "light", "n", "y", "y", "y", "", "n"}}
 	require.NoError(t, cli.Map(t.Context(), client, person))
 	require.Contains(t, strings.Join(person.said, "\n"), "Mode 2")
 }
@@ -1135,7 +1071,7 @@ func TestABareDevicesFlagOffersTheList(t *testing.T) {
 		thing a person gets wrong -- and getting it wrong maps nothing while
 		looking like it worked.
 	*/
-	client := api.NewClient(serving(t, nil, openrgb.NewFake(board(), cooler())))
+	client := api.NewClient(drawing(t, nil, auraBoard(), kraken()))
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
 	person := &scripted{answers: []string{
@@ -1143,6 +1079,7 @@ func TestABareDevicesFlagOffersTheList(t *testing.T) {
 		"y",               // lit red?
 		"nothing", "ring", // its two parts
 		"1", // one thing on the ring
+		"n", // not dimmer
 		"y", // is that right?
 		"n", // nothing still glowing
 		"n", // do not write
@@ -1158,13 +1095,13 @@ func TestABareDevicesFlagOffersTheList(t *testing.T) {
 
 func TestPickingAllFromTheListMapsEverything(t *testing.T) {
 	// Pressing return is the same as not passing the flag at all.
-	client := api.NewClient(serving(t, nil, openrgb.NewFake(board())))
+	client := api.NewClient(drawing(t, nil, auraBoard()))
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
 	person := &scripted{answers: []string{
 		"", // return: all of them
-		"y", "nothing", "fans", "1",
-		"y", "n", "n",
+		"y", "fans", "1",
+		"n", "y", "n", "n",
 	}}
 	require.NoError(t, cli.Map(t.Context(), client, person, "?"))
 	require.Contains(t, person.questions(), "lit red now",
@@ -1178,12 +1115,13 @@ func TestTheRunEndsByUsingWhatItLearned(t *testing.T) {
 		run ended with a written file, a dark keyboard, and an instruction to
 		go and type another command.
 	*/
-	server := openrgb.NewFake(board())
-	client := api.NewClient(serving(t, nil, server))
+	board := auraBoard()
+	client := api.NewClient(drawing(t, nil, board))
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
 	person := &scripted{answers: []string{
 		"y", "front fans", "1",
+		"n",      // not dimmer
 		"y",      // is that right?
 		"n",      // nothing still glowing
 		"y",      // write it
@@ -1191,20 +1129,20 @@ func TestTheRunEndsByUsingWhatItLearned(t *testing.T) {
 	}}
 	require.NoError(t, cli.Map(t.Context(), client, person))
 
-	showing, ok := server.Showing("ASUS ROG MAXIMUS Z790 HERO")
-	require.True(t, ok)
-	require.Equal(t, colour.MustParse("purple"), showing.Colours[0],
-		"the machine was left dark after being told what its lights are called")
+	require.Eventually(t, func() bool {
+		c, ok := shows(t, board.Device, 0)
+		return ok && c == colour.MustParse("purple")
+	}, eventually, every, "the machine was left dark after being told what its lights are called")
 }
 
 func TestAColourIsRememberedRatherThanPreviewed(t *testing.T) {
 	// It has to survive a reboot, which a preview does not: the point is that
 	// hotaru puts it back, not that it looks right for the next five minutes.
-	client := api.NewClient(serving(t, nil, openrgb.NewFake(board())))
+	client := api.NewClient(drawing(t, nil, auraBoard()))
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
 	person := &scripted{answers: []string{
-		"y", "front fans", "1", "y", "n", "y", "purple",
+		"y", "front fans", "1", "n", "y", "n", "y", "purple",
 	}}
 	require.NoError(t, cli.Map(t.Context(), client, person))
 	require.Contains(t, strings.Join(person.said, "\n"), "put it back at boot")
@@ -1212,11 +1150,11 @@ func TestAColourIsRememberedRatherThanPreviewed(t *testing.T) {
 
 func TestAnUnknownColourIsAskedAgainRatherThanFailing(t *testing.T) {
 	// A typo at the last question must not end a successful run on an error.
-	client := api.NewClient(serving(t, nil, openrgb.NewFake(board())))
+	client := api.NewClient(drawing(t, nil, auraBoard()))
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
 	person := &scripted{answers: []string{
-		"y", "front fans", "1", "y", "n", "y",
+		"y", "front fans", "1", "n", "y", "n", "y",
 		"purpel", // a typo
 		"purple",
 	}}
@@ -1227,11 +1165,11 @@ func TestAnUnknownColourIsAskedAgainRatherThanFailing(t *testing.T) {
 func TestReturnAtTheColourQuestionLeavesTheMachineAlone(t *testing.T) {
 	// Somebody re-running the wizard to change one name does not want their
 	// lighting reset as a side effect.
-	client := api.NewClient(serving(t, nil, openrgb.NewFake(board())))
+	client := api.NewClient(drawing(t, nil, auraBoard()))
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
 	person := &scripted{answers: []string{
-		"y", "front fans", "1", "y", "n", "y", "",
+		"y", "front fans", "1", "n", "y", "n", "y", "",
 	}}
 	require.NoError(t, cli.Map(t.Context(), client, person))
 	require.NotContains(t, strings.Join(person.said, "\n"), "put it back at boot")

@@ -13,9 +13,9 @@ import (
 	kraken "github.com/ushineko/hotaru/internal/cooler"
 	"github.com/ushineko/hotaru/internal/cooler/coolertest"
 	"github.com/ushineko/hotaru/internal/dashboard"
-	"github.com/ushineko/hotaru/internal/openrgb"
 	"github.com/ushineko/hotaru/internal/scenes"
 	"github.com/ushineko/hotaru/internal/service"
+	"github.com/ushineko/hotaru/internal/service/servicetest"
 	"github.com/ushineko/hotaru/internal/state"
 )
 
@@ -39,7 +39,7 @@ func boot(t *testing.T, statePath string, saved *scenes.Store) restarted {
 	t.Helper()
 	desired, err := state.Open(statePath)
 	require.NoError(t, err)
-	svc := service.New(nil, openrgb.NewFake(board()), "")
+	svc := servicetest.New(t, nil, auraBoard())
 	svc.SetRecorder(desired)
 	if saved != nil {
 		svc.SetScenes(saved)

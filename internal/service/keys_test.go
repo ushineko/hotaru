@@ -27,7 +27,7 @@ func TestBindingPutsTheChangeOnTheDesktop(t *testing.T) {
 		it was installed -- and nothing rewrote it. The file was right and the
 		key kept firing the old scene until the service restarted.
 	*/
-	svc, _ := lit(t, blue(), scenes.Scene{Name: "evening"})
+	svc, _ := litCanvas(t, blue(), scenes.Scene{Name: "evening"})
 	desktop := &desk{}
 	svc.SetShortcuts(desktop, nil)
 
@@ -42,7 +42,7 @@ func TestABindingThatCannotReachTheDesktopIsStillABinding(t *testing.T) {
 		is the state it was already in and the one the installer resolves when
 		KWin next appears.
 	*/
-	svc, _ := lit(t, blue())
+	svc, _ := litCanvas(t, blue())
 	svc.SetShortcuts(&desk{err: errors.New("no kwin")}, nil)
 
 	require.NoError(t, svc.Bind("Ctrl+Alt+Num+1", "blue"))
@@ -59,6 +59,6 @@ func TestABindingThatCannotReachTheDesktopIsStillABinding(t *testing.T) {
 }
 
 func TestAMachineWithNoDesktopBindsAnyway(t *testing.T) {
-	svc, _ := lit(t, blue())
+	svc, _ := litCanvas(t, blue())
 	require.NoError(t, svc.Bind("Ctrl+Alt+Num+1", "blue"))
 }

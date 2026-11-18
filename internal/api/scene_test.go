@@ -8,9 +8,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/ushineko/hotaru/internal/api"
-	"github.com/ushineko/hotaru/internal/openrgb"
+	"github.com/ushineko/hotaru/internal/canvas/canvastest"
 	"github.com/ushineko/hotaru/internal/scenes"
-	"github.com/ushineko/hotaru/internal/service"
+	"github.com/ushineko/hotaru/internal/service/servicetest"
 	"github.com/ushineko/hotaru/internal/state"
 	"github.com/ushineko/hotaru/internal/testsock"
 )
@@ -22,7 +22,7 @@ A real socket and the real client, because what is being tested here is a lease
 bound to a connection: a handler holding a request open and a kernel reporting
 the far end going away. An httptest recorder has no far end.
 */
-func withScenes(t *testing.T, saved ...scenes.Scene) (*api.Client, *openrgb.Fake) {
+func withScenes(t *testing.T, saved ...scenes.Scene) (*api.Client, *canvastest.Firmware) {
 	t.Helper()
 
 	dir := t.TempDir()
@@ -30,8 +30,8 @@ func withScenes(t *testing.T, saved ...scenes.Scene) (*api.Client, *openrgb.Fake
 	listener, err := api.Listen(t.Context(), socket)
 	require.NoError(t, err)
 
-	server := openrgb.NewFake(board(), keyboard())
-	svc := service.New(nil, server, "127.0.0.1:6742")
+	keys := k4()
+	svc := servicetest.New(t, nil, auraBoard(), keys)
 
 	desired, err := state.Open(filepath.Join(dir, "state.yml"))
 	require.NoError(t, err)
@@ -55,7 +55,7 @@ func withScenes(t *testing.T, saved ...scenes.Scene) (*api.Client, *openrgb.Fake
 			t.Fatal("the service did not stop")
 		}
 	})
-	return api.NewClient(socket), server
+	return api.NewClient(socket), keys
 }
 
 func blue() scenes.Scene {
@@ -83,12 +83,8 @@ func byName(t *testing.T, saved []api.Scene, name string) api.Scene {
 	return api.Scene{}
 }
 
-func colours(t *testing.T, server *openrgb.Fake) string {
-	t.Helper()
-	frame, ok := server.Showing("Keychron K4 HE")
-	require.True(t, ok)
-	return frame.Colours[0].String()
-}
+// colours is what the keyboard's first key shows, "" before anything.
+func colours(keys *canvastest.Firmware) string { return hexAt(keys.Device, 1) }
 
 func TestAScenesRoundTripThroughTheSocket(t *testing.T) {
 	client, _ := withScenes(t)
@@ -125,22 +121,22 @@ func TestAPreviewHeldOnAConnectionEndsWhenTheConnectionDoes(t *testing.T) {
 		dying in the real case -- is what puts somebody's lights back, with no
 		clock and no heartbeat involved.
 	*/
-	client, server := withScenes(t, blue(), red())
+	client, keys := withScenes(t, blue(), red())
 	_, err := client.ApplyScene(t.Context(), "blue", api.SceneRequest{})
 	require.NoError(t, err)
-	require.Equal(t, "#0000ff", colours(t, server))
+	shows(t, keys.Device, 1, "#0000ff")
 
 	done, release, err := client.HoldScene(t.Context(), "red", api.SceneRequest{Holder: "a test"})
 	require.NoError(t, err)
 	require.NotNil(t, done.Preview)
 	require.Nil(t, done.Preview.Expires, "a held preview was given a clock as well")
-	require.Equal(t, "#ff0000", colours(t, server))
+	shows(t, keys.Device, 1, "#ff0000")
 
 	// Not a release call: the socket simply goes away, which is what happens
 	// when the process on the other end is killed.
 	release()
 
-	require.Eventually(t, func() bool { return colours(t, server) == "#0000ff" },
+	require.Eventually(t, func() bool { return colours(keys) == "#0000ff" },
 		3*time.Second, 10*time.Millisecond,
 		"the draft stayed on the hardware after its holder let go")
 }
@@ -172,21 +168,21 @@ func TestADeviceShowingADraftSaysSoInTheListing(t *testing.T) {
 func TestARenewedPreviewIsReleasedByToken(t *testing.T) {
 	// The path for a client that cannot sit on a connection: a token it
 	// renews, and lets go of explicitly.
-	client, server := withScenes(t, blue(), red())
+	client, keys := withScenes(t, blue(), red())
 	_, err := client.ApplyScene(t.Context(), "blue", api.SceneRequest{})
 	require.NoError(t, err)
 
 	done, err := client.PreviewScene(t.Context(), "red", api.SceneRequest{Holder: "a script"})
 	require.NoError(t, err)
 	require.NotNil(t, done.Preview.Expires, "an unheld preview was given no expiry to renew")
-	require.Equal(t, "#ff0000", colours(t, server))
+	shows(t, keys.Device, 1, "#ff0000")
 
 	require.NoError(t, client.RenewPreview(t.Context(), done.Preview.Token))
 
 	restore, err := client.ReleasePreview(t.Context(), done.Preview.Token)
 	require.NoError(t, err)
 	require.Equal(t, 1, restore.Applied)
-	require.Equal(t, "#0000ff", colours(t, server))
+	shows(t, keys.Device, 1, "#0000ff")
 }
 
 func TestCapturingSavesWhatIsShowing(t *testing.T) {
@@ -210,7 +206,7 @@ func TestADraftThatWasNeverSavedCanBePreviewed(t *testing.T) {
 		file, and making it one in order to look at it would be a saved scene
 		nobody asked for -- which is what "saved" would then stop meaning.
 	*/
-	client, server := withScenes(t, blue())
+	client, keys := withScenes(t, blue())
 	_, err := client.ApplyScene(t.Context(), "blue", api.SceneRequest{})
 	require.NoError(t, err)
 
@@ -221,7 +217,7 @@ func TestADraftThatWasNeverSavedCanBePreviewed(t *testing.T) {
 	done, release, err := client.HoldDraft(t.Context(), draft, "an editor")
 	require.NoError(t, err)
 	require.NotNil(t, done.Preview)
-	require.Equal(t, "#00ff00", colours(t, server))
+	shows(t, keys.Device, 1, "#00ff00")
 
 	// It is a preview, so nothing was recorded and nothing was saved.
 	saved, err := client.Scenes(t.Context())
@@ -231,7 +227,7 @@ func TestADraftThatWasNeverSavedCanBePreviewed(t *testing.T) {
 	}
 
 	release()
-	require.Eventually(t, func() bool { return colours(t, server) == "#0000ff" },
+	require.Eventually(t, func() bool { return colours(keys) == "#0000ff" },
 		3*time.Second, 10*time.Millisecond,
 		"the draft stayed on the hardware after its editor let go")
 }
@@ -239,7 +235,7 @@ func TestADraftThatWasNeverSavedCanBePreviewed(t *testing.T) {
 func TestADraftPreviewCanBeHeldByTokenToo(t *testing.T) {
 	// The other half of the lease, for a client that cannot sit on a
 	// connection: a shell script staging a colour, or a GUI mid-development.
-	client, server := withScenes(t, blue())
+	client, keys := withScenes(t, blue())
 	_, err := client.ApplyScene(t.Context(), "blue", api.SceneRequest{})
 	require.NoError(t, err)
 
@@ -247,10 +243,10 @@ func TestADraftPreviewCanBeHeldByTokenToo(t *testing.T) {
 	done, err := client.PreviewDraft(t.Context(), draft, "a script")
 	require.NoError(t, err)
 	require.NotNil(t, done.Preview.Expires)
-	require.Equal(t, "#ff0000", colours(t, server))
+	shows(t, keys.Device, 1, "#ff0000")
 
 	restore, err := client.ReleasePreview(t.Context(), done.Preview.Token)
 	require.NoError(t, err)
 	require.Equal(t, 1, restore.Applied)
-	require.Equal(t, "#0000ff", colours(t, server))
+	shows(t, keys.Device, 1, "#0000ff")
 }

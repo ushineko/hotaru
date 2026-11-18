@@ -6,10 +6,12 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"github.com/ushineko/hotaru/internal/canvas/canvastest"
 	"github.com/ushineko/hotaru/internal/colour"
 	"github.com/ushineko/hotaru/internal/devices"
 	"github.com/ushineko/hotaru/internal/openrgb"
 	"github.com/ushineko/hotaru/internal/service"
+	"github.com/ushineko/hotaru/internal/service/servicetest"
 	"github.com/ushineko/hotaru/internal/state"
 )
 
@@ -42,10 +44,19 @@ func emptied(t *testing.T, server *openrgb.Fake) {
 	server.Resizes = nil
 }
 
+// heroBoard is headers() as a canvas: the board's light and two headers of
+// 16, each 0 to 500.
+func heroBoard() *canvastest.Board {
+	b := canvastest.NewBoard(hero, canvastest.Zone("Aura Mainboard", 1),
+		canvastest.Header("Addressable RGB Header 1", 0, 500), canvastest.Header("Addressable RGB Header 2", 0, 500))
+	_ = b.Resize("Addressable RGB Header 1", 16)
+	_ = b.Resize("Addressable RGB Header 2", 16)
+	return b
+}
+
 func TestASceneRecordsTheSizeOfEveryZone(t *testing.T) {
 	// AC3.
-	server := openrgb.NewFake(headers())
-	svc := service.New(nil, server, "")
+	svc := servicetest.New(t, nil, heroBoard())
 	svc.SetRecorder(recorder(t))
 
 	_, err := svc.Apply(t.Context(), service.Request{Assignments: solid(hero, "teal")})
@@ -151,22 +162,22 @@ func TestHealthNamesADeviceItsColoursNoLongerFit(t *testing.T) {
 }
 
 func TestASceneDoesNotResizeAZone(t *testing.T) {
-	// AC8: a zone made smaller in OpenRGB on purpose stays that size, and a
-	// target past its end is a problem rather than a resize.
-	server := openrgb.NewFake(headers())
-	svc := service.New(nil, server, "")
+	// AC8: a header given 8 lights stays that size, and a target past its
+	// end is a problem rather than a resize.
+	board := heroBoard()
+	svc := service.New(nil, nil, servicetest.NoServer)
 	svc.SetRecorder(recorder(t))
+	drawn := servicetest.Attach(t, svc, board)
 	_, err := svc.Apply(t.Context(), service.Request{Assignments: solid(hero, "teal")})
 	require.NoError(t, err)
 
-	require.NoError(t, server.ResizeZone(t.Context(), hero, "Addressable RGB Header 1", 8))
-	server.Resizes = nil
+	require.NoError(t, drawn.Device.Resize("Addressable RGB Header 1", 8))
 
 	results, err := svc.Apply(t.Context(), service.Request{Assignments: append(
 		solid(hero, "teal"), solid(hero+"/Addressable RGB Header 1[15]", "red")...)})
 	require.NoError(t, err)
-	require.Empty(t, server.Resizes)
 	require.True(t, results[0].Applied)
 	require.NotEmpty(t, results[0].Problems)
+	require.Equal(t, 8, board.Zones()[1].Count)
 	require.Equal(t, 8, svc.Desired().Devices[hero].Zones["Addressable RGB Header 1"])
 }

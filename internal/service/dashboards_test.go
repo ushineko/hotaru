@@ -6,10 +6,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/ushineko/hotaru/internal/dashboard"
-	"github.com/ushineko/hotaru/internal/openrgb"
 	"github.com/ushineko/hotaru/internal/readings"
 	"github.com/ushineko/hotaru/internal/scenes"
 	"github.com/ushineko/hotaru/internal/service"
+	"github.com/ushineko/hotaru/internal/service/servicetest"
 )
 
 // withScreens gives a service somewhere to keep dashboards.
@@ -30,7 +30,7 @@ func TestASceneCanNameADashboard(t *testing.T) {
 		panel is set to, because a scene written before there was more than
 		one must still mean what it meant.
 	*/
-	svc, _ := lit(t, scenes.Scene{
+	svc, _, _ := litDesk(t, scenes.Scene{
 		Name: "evening", Screen: "dashboard:quiet",
 		Assignments: []scenes.Assignment{{Target: "ASUS", Colour: "blue"}},
 	})
@@ -48,7 +48,7 @@ func TestASceneCanNameADashboard(t *testing.T) {
 func TestASceneNamingADashboardThatIsGoneCostsTheScreenNotTheColours(t *testing.T) {
 	// The rule spec 015 set for a missing image, which holds here: the
 	// colours are still what somebody asked for.
-	svc, server := lit(t, scenes.Scene{
+	svc, board, _ := litDesk(t, scenes.Scene{
 		Name: "evening", Screen: "dashboard:absent",
 		Assignments: []scenes.Assignment{{Target: "ASUS", Colour: "blue"}},
 	})
@@ -60,11 +60,11 @@ func TestASceneNamingADashboardThatIsGoneCostsTheScreenNotTheColours(t *testing.
 	require.NoError(t, err)
 	require.Empty(t, done.Screen)
 	require.Contains(t, done.Problems[0], "absent")
-	require.NotEmpty(t, showing(t, server, "ASUS ROG MAXIMUS Z790 HERO"))
+	require.Eventually(t, func() bool { return lightsOn(board.Device) }, eventually, every)
 }
 
 func TestARenderedDashboardIsAFrameThePanelWouldTake(t *testing.T) {
-	svc, _ := lit(t)
+	svc, _, _ := litDesk(t)
 	withScreens(t, svc)
 
 	frame, err := svc.RenderDashboard(t.Context(), dashboard.Dashboard{
@@ -83,7 +83,7 @@ func TestChoosingADashboardTakesTheScreenBack(t *testing.T) {
 		the dashboard gives it up. Choosing one changed the store, the panel
 		kept showing the picture, and nothing said why.
 	*/
-	svc, _ := lit(t)
+	svc, _, _ := litDesk(t)
 	board := &screenAuthor{}
 	svc.SetCooler(&panel{})
 	svc.SetDashboard(board)
@@ -100,7 +100,7 @@ func TestChoosingADashboardTakesTheScreenBack(t *testing.T) {
 func TestSavingADashboardDoesNotStealTheScreen(t *testing.T) {
 	// The other half: editing a dashboard while a picture is up is not a
 	// request for the picture to go away.
-	svc, _ := lit(t)
+	svc, _, _ := litDesk(t)
 	board := &screenAuthor{}
 	svc.SetCooler(&panel{})
 	svc.SetDashboard(board)
@@ -155,7 +155,7 @@ func TestThePreviewIsDrawnWithTheTrailThePanelHas(t *testing.T) {
 		what fills the history: two buckets apart is a trail of one point,
 		and the window is what the panel is handed.
 	*/
-	svc := service.New(nil, openrgb.NewFake(), "")
+	svc := servicetest.New(t, nil)
 
 	one := dashboard.Dashboard{Headline: dashboard.Slot{Source: readings.CPULoad}}
 	require.Empty(t, svc.Trails(t.Context(), one).Below,

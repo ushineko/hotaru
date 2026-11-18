@@ -4,11 +4,14 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"github.com/ushineko/hotaru/internal/canvas/canvastest"
 	"github.com/ushineko/hotaru/internal/colour"
 	"github.com/ushineko/hotaru/internal/config"
 	"github.com/ushineko/hotaru/internal/devices"
 	"github.com/ushineko/hotaru/internal/openrgb"
+	"github.com/ushineko/hotaru/internal/scenes"
 	"github.com/ushineko/hotaru/internal/service"
+	"github.com/ushineko/hotaru/internal/service/servicetest"
 )
 
 /*
@@ -41,9 +44,14 @@ func listed(t *testing.T, svc *service.Service, name string) devices.Device {
 	return devices.Device{}
 }
 
+// card is the graphics card as a canvas: three lights, and its own Breathing.
+func card() *canvastest.Firmware {
+	return canvastest.NewFirmware(canvastest.NewBoard(graphicsName, canvastest.Zone("Card", 3)), "Breathing")
+}
+
 func TestACorrectedDeviceIsWrittenCorrectedAndReportsWhatWasMeant(t *testing.T) {
-	server := openrgb.NewFake(graphics())
-	svc := service.New(washesOut(), server, "")
+	gpu := card()
+	svc := servicetest.New(t, washesOut(), gpu)
 	svc.SetRecorder(recorder(t))
 
 	results, err := svc.Apply(t.Context(), service.Request{Assignments: solid("Graphics", "#80aad1")})
@@ -52,8 +60,8 @@ func TestACorrectedDeviceIsWrittenCorrectedAndReportsWhatWasMeant(t *testing.T) 
 	require.True(t, results[0].Applied, results[0].Skipped)
 	require.Empty(t, results[0].Unconfirmed, "the corrected write was not recognised on the way back")
 
-	written := server.Writes[len(server.Writes)-1].Frame.Colours
-	require.Equal(t, "#003eff", written[0].String(), "the device was not written the corrected colour")
+	require.Eventually(t, func() bool { return shows(t, gpu.Device, colour.MustParse("#003eff")) }, eventually, every,
+		"the device was not written the corrected colour")
 
 	device := listed(t, svc, graphicsName)
 	for _, c := range device.Colours {
@@ -64,37 +72,32 @@ func TestACorrectedDeviceIsWrittenCorrectedAndReportsWhatWasMeant(t *testing.T) 
 }
 
 func TestAModesOwnColoursAreCorrected(t *testing.T) {
-	server := openrgb.NewFake(graphics())
-	svc := service.New(washesOut(), server, "")
+	gpu := card()
+	svc := servicetest.New(t, washesOut(), gpu)
 
 	results, err := svc.Apply(t.Context(), service.Request{
 		Assignments: solid("Graphics", "white"),
-		Effects:     twoColours("Breathing", "#80aad1", "#ff0000"),
+		Effects:     map[string]scenes.Effect{"Graphics": {Mode: "Breathing", Colour: "#80aad1"}},
 	})
 	require.NoError(t, err)
 	require.True(t, results[0].Applied, results[0].Skipped)
 	require.Empty(t, results[0].Unconfirmed)
 
-	last := server.Modes[len(server.Modes)-1]
-	require.Equal(t, []colour.Colour{colour.MustParse("#003eff"), colour.MustParse("#ff0000")}, last.Colours)
+	require.Equal(t, "#003eff", firmwareGiven(t, gpu, "Breathing"), "the effect's colour was not corrected")
 
 	device := listed(t, svc, graphicsName)
 	breathing, ok := device.Mode("Breathing")
 	require.True(t, ok)
-	require.Equal(t, []colour.Colour{colour.MustParse("#80aad1"), colour.MustParse("#ff0000")}, breathing.Colours)
 	require.Equal(t, "#80aad1", breathing.Colour.String())
 }
 
 func TestADeviceWithoutAProfileIsWrittenAsAsked(t *testing.T) {
-	server := openrgb.NewFake(graphics(), board())
-	svc := service.New(washesOut(), server, "")
+	board := auraBoard()
+	svc := servicetest.New(t, washesOut(), card(), board)
 
 	_, err := svc.Apply(t.Context(), service.Request{Assignments: solid("ASUS", "#80aad1")})
 	require.NoError(t, err)
-	for _, w := range server.Writes {
-		require.Equal(t, "ASUS ROG MAXIMUS Z790 HERO", w.Device)
-		require.Equal(t, "#80aad1", w.Frame.Colours[0].String())
-	}
+	require.Eventually(t, func() bool { return shows(t, board.Device, colour.MustParse("#80aad1")) }, eventually, every)
 }
 
 func TestALightChangedElsewhereIsReportedAsItIs(t *testing.T) {

@@ -1,12 +1,10 @@
 package api_test
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 	"github.com/ushineko/hotaru/internal/api"
@@ -31,51 +29,15 @@ func board() devices.Device {
 	}
 }
 
-func keyboard() devices.Device {
-	return devices.Device{
-		Name:     "Keychron K4 HE",
-		LEDCount: 2,
-		Modes: []devices.Mode{
-			{Name: "Direct", PerLED: true},
-			// One colour for the whole board, at a speed: the shape of every
-			// reactive mode a keyboard has.
-			{Name: "Solid Reactive", ModeColour: true,
-				Speed: &devices.Speed{Slowest: 0, Fastest: 255, Now: 127}},
-		},
-		Zones:      []devices.Zone{{Name: "Keyboard", First: 0, Count: 2}},
-		ActiveMode: "Direct",
-	}
-}
-
-// running is the service over a real socket, as a shell meets it.
+// running is the service over a real socket, as a shell meets it, on an
+// OpenRGB server.
 func running(t *testing.T, cfg *config.Config, server openrgb.Client) *api.Client {
 	t.Helper()
-
-	// A short path: a Unix socket's address has a low length limit, and
-	// t.TempDir() under a long test name can exceed it.
-	socket := testsock.Path(t)
-	listener, err := api.Listen(t.Context(), socket)
-	require.NoError(t, err)
-
-	svc := service.New(cfg, server, "127.0.0.1:6742")
-	ctx, cancel := context.WithCancel(t.Context())
-	done := make(chan error, 1)
-	go func() { done <- api.Serve(ctx, listener, svc) }()
-
-	t.Cleanup(func() {
-		cancel()
-		select {
-		case err := <-done:
-			require.NoError(t, err)
-		case <-time.After(3 * time.Second):
-			t.Fatal("the service did not stop")
-		}
-	})
-	return api.NewClient(socket)
+	return serve(t, service.New(cfg, server, "127.0.0.1:6742"))
 }
 
 func TestAShellReachesTheServiceOverTheSocket(t *testing.T) {
-	client := running(t, nil, openrgb.NewFake(board(), keyboard()))
+	client := drawing(t, nil, auraBoard(), k4())
 
 	health, err := client.Health(t.Context())
 	require.NoError(t, err)
@@ -87,24 +49,33 @@ func TestAShellReachesTheServiceOverTheSocket(t *testing.T) {
 
 func TestTheDeviceListingAnswersWhyNothingHappened(t *testing.T) {
 	cfg := &config.Config{Scope: []string{"maximus"}}
-	client := running(t, cfg, openrgb.NewFake(board(), keyboard()))
+	board := auraBoard()
+	client := drawing(t, cfg, board, k4())
+	_, err := client.Apply(t.Context(), api.ApplyRequest{Colour: "red"})
+	require.NoError(t, err)
+	shows(t, board.Device, 1, "#ff0000")
 
 	list, err := client.Devices(t.Context())
 	require.NoError(t, err)
 	require.Len(t, list, 2)
+	byName := map[string]api.Device{}
+	for _, d := range list {
+		byName[d.Name] = d
+	}
+	asus := byName["ASUS ROG MAXIMUS Z790 HERO"]
 
-	require.True(t, list[0].InScope)
-	require.Equal(t, []string{"Static", "Direct", "Rainbow Wave"}, list[0].Modes)
-	require.Equal(t, "Rainbow Wave", list[0].ActiveMode)
-	require.Equal(t, 4, list[0].LEDs)
-	require.Len(t, list[0].Colours, 4, "what it is showing now")
+	require.True(t, asus.InScope)
+	require.Equal(t, []string{"Static", "Breathing", "Spectrum", "Rainbow Wave", "Off"}, asus.Modes)
+	require.Equal(t, "Static", asus.ActiveMode)
+	require.Equal(t, 4, asus.LEDs)
+	require.Len(t, asus.Colours, 4, "what it is showing now")
 
-	require.False(t, list[1].InScope, "so a user can see why it will not change")
+	require.False(t, byName["Keychron K4 HE"].InScope, "so a user can see why it will not change")
 }
 
 func TestApplyingAColourTakesWhatAPersonWouldType(t *testing.T) {
-	server := openrgb.NewFake(board())
-	client := running(t, nil, server)
+	board := auraBoard()
+	client := drawing(t, nil, board)
 
 	out, err := client.Apply(t.Context(), api.ApplyRequest{
 		Assignments: []api.Assignment{{Target: "ASUS", Colour: "orange"}},
@@ -113,9 +84,7 @@ func TestApplyingAColourTakesWhatAPersonWouldType(t *testing.T) {
 	require.Equal(t, 1, out.Changed)
 	require.True(t, out.Results[0].Applied)
 	require.Equal(t, "Static", out.Results[0].Mode)
-
-	showing, _ := server.Showing("ASUS ROG MAXIMUS Z790 HERO")
-	require.Equal(t, "#ff5500", showing.Colours[0].String())
+	shows(t, board.Device, 1, "#ff5500")
 }
 
 func TestTheFallThroughIsVisibleInTheResponse(t *testing.T) {
@@ -138,7 +107,7 @@ func TestTheFallThroughIsVisibleInTheResponse(t *testing.T) {
 
 func TestARequestThatChangedNothingSaysSo(t *testing.T) {
 	cfg := &config.Config{Scope: []string{"nothing-here"}}
-	client := running(t, cfg, openrgb.NewFake(board()))
+	client := drawing(t, cfg, auraBoard())
 
 	out, err := client.Apply(t.Context(), api.ApplyRequest{
 		Assignments: []api.Assignment{{Target: "ASUS", Colour: "blue"}},
@@ -149,8 +118,8 @@ func TestARequestThatChangedNothingSaysSo(t *testing.T) {
 }
 
 func TestNonsenseIsRejectedBeforeAnythingIsWritten(t *testing.T) {
-	server := openrgb.NewFake(board())
-	client := running(t, nil, server)
+	board := auraBoard()
+	client := drawing(t, nil, board)
 
 	_, err := client.Apply(t.Context(), api.ApplyRequest{
 		Assignments: []api.Assignment{{Target: "ASUS", Colour: "burgundy"}},
@@ -165,7 +134,7 @@ func TestNonsenseIsRejectedBeforeAnythingIsWritten(t *testing.T) {
 	_, err = client.Apply(t.Context(), api.ApplyRequest{})
 	require.ErrorContains(t, err, "nothing to apply")
 
-	require.Empty(t, server.Writes, "a rejected request wrote nothing")
+	require.Zero(t, board.Frames(), "a rejected request wrote nothing")
 }
 
 func TestAnUnreachableOpenRGBIsTheMachineNotTheRequest(t *testing.T) {
@@ -217,23 +186,20 @@ func TestAStaleSocketIsClearedButALiveOneIsNot(t *testing.T) {
 func TestOneColourReachesEverythingInScope(t *testing.T) {
 	// The common case, said the way a person says it: no listing first, no
 	// enumeration of devices the client had to fetch.
-	server := openrgb.NewFake(board(), keyboard())
-	client := running(t, nil, server)
+	board, keys := auraBoard(), k4()
+	client := drawing(t, nil, board, keys)
 
 	out, err := client.Apply(t.Context(), api.ApplyRequest{Colour: "teal"})
 	require.NoError(t, err)
 	require.Equal(t, 2, out.Changed)
 
-	for _, name := range []string{"ASUS ROG MAXIMUS Z790 HERO", "Keychron K4 HE"} {
-		showing, ok := server.Showing(name)
-		require.True(t, ok)
-		require.Equal(t, "#00ff80", showing.Colours[0].String(), name)
-	}
+	shows(t, board.Device, 1, "#00ff80")
+	shows(t, keys.Device, 1, "#00ff80")
 }
 
 func TestAColourAndAnAssignmentIsEverythingExceptOneThing(t *testing.T) {
-	server := openrgb.NewFake(board())
-	client := running(t, nil, server)
+	board := auraBoard()
+	client := drawing(t, nil, board)
 
 	out, err := client.Apply(t.Context(), api.ApplyRequest{
 		Colour:      "blue",
@@ -242,9 +208,8 @@ func TestAColourAndAnAssignmentIsEverythingExceptOneThing(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, out.Changed)
 
-	showing, _ := server.Showing("ASUS ROG MAXIMUS Z790 HERO")
-	require.Equal(t, "#ff0000", showing.Colours[0].String(), "the exception")
-	require.Equal(t, "#0000ff", showing.Colours[1].String(), "and everything else")
+	shows(t, board.Device, 1, "#ff0000") // the exception
+	shows(t, board.Device, 2, "#0000ff") // and everything else
 }
 
 func TestASocketPathTooLongForTheKernelSaysThat(t *testing.T) {
@@ -259,12 +224,12 @@ func TestASocketPathTooLongForTheKernelSaysThat(t *testing.T) {
 func TestTheListingSaysWhichModesShowOneColourAndWhichTakeASpeed(t *testing.T) {
 	/*
 		A client drawing an editor has to know before it draws: a colour per
-		light is a control on a device in Direct and a promise the hardware
+		light is a control on a device in Static and a promise the hardware
 		will not keep on the same device in a reactive mode. Asked of the mode
 		rather than of the device, exactly as Dimmable is, because a keyboard
 		is both.
 	*/
-	client := running(t, nil, openrgb.NewFake(board(), keyboard()))
+	client := drawing(t, nil, auraBoard(), k4())
 
 	found, err := client.Devices(t.Context())
 	require.NoError(t, err)
@@ -275,29 +240,19 @@ func TestTheListingSaysWhichModesShowOneColourAndWhichTakeASpeed(t *testing.T) {
 			keys = device
 		}
 	}
-	require.Equal(t, []string{"Solid Reactive"}, keys.OneColour,
-		"Direct takes a colour per light and must not be listed")
+	require.Contains(t, keys.OneColour, "Solid Reactive")
+	require.NotContains(t, keys.OneColour, "Static", "Static takes a colour per light and must not be listed")
 
-	pace, ok := keys.Paced["Solid Reactive"]
+	pace, ok := keys.Paced["Breathing"]
 	require.True(t, ok, "the mode's speed range was not published")
-	require.Equal(t, api.Speed{Slowest: 0, Fastest: 255, Now: 127}, pace)
-	require.NotContains(t, keys.Paced, "Direct")
+	require.Equal(t, api.Speed{Slowest: 0, Fastest: 100, Now: 50}, pace)
+	require.NotContains(t, keys.Paced, "Static")
 }
 
 func TestTheListingSaysHowManyColoursEachModeTakes(t *testing.T) {
 	// Spec 061 R1.3: one picker per slot, the first Least always. A mode
 	// whose colour is the frame takes none of its own.
-	card := devices.Device{
-		Name:     "Test Graphics Card",
-		LEDCount: 2,
-		Modes: []devices.Mode{
-			{Name: "Direct", PerLED: true},
-			{Name: "Breathing", ModeColour: true, ColoursMin: 1, ColoursMax: 2},
-			{Name: "Color Cycle", ModeColour: true, ColoursMin: 2, ColoursMax: 7},
-		},
-		Zones: []devices.Zone{{Name: "Card", First: 0, Count: 2}},
-	}
-	client := running(t, nil, openrgb.NewFake(card, keyboard()))
+	client := drawing(t, nil, auraBoard(), k4())
 
 	found, err := client.Devices(t.Context())
 	require.NoError(t, err)
@@ -307,10 +262,10 @@ func TestTheListingSaysHowManyColoursEachModeTakes(t *testing.T) {
 	}
 
 	require.Equal(t, map[string]api.ColourSlots{
-		"Breathing":   {Least: 1, Most: 2},
-		"Color Cycle": {Least: 2, Most: 7},
-	}, byName["Test Graphics Card"].Coloured)
-	// A mode that carries one colour and reports no count takes one.
-	require.Equal(t, map[string]api.ColourSlots{"Solid Reactive": {Least: 0, Most: 1}},
-		byName["Keychron K4 HE"].Coloured)
+		"Breathing":    {Least: 0, Most: 4},
+		"Spectrum":     {Least: 0, Most: 8},
+		"Rainbow Wave": {Least: 0, Most: 8},
+	}, byName["ASUS ROG MAXIMUS Z790 HERO"].Coloured)
+	// A firmware effect that carries one colour takes one.
+	require.Equal(t, api.ColourSlots{Least: 1, Most: 1}, byName["Keychron K4 HE"].Coloured["Solid Reactive"])
 }

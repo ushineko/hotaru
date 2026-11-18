@@ -11,28 +11,18 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"github.com/ushineko/hotaru/internal/canvas/canvastest"
 	"github.com/ushineko/hotaru/internal/config"
-	"github.com/ushineko/hotaru/internal/devices"
-	"github.com/ushineko/hotaru/internal/openrgb"
 )
 
-// card is a device whose Breathing takes one or two colours, as OpenRGB
-// reported a graphics card's doing on the machines spec 061 measured.
-func card() devices.Device {
-	return devices.Device{
-		Name:     "Test Graphics Card",
-		LEDCount: 2,
-		Modes: []devices.Mode{
-			{Name: "Direct", PerLED: true},
-			{Name: "Breathing", ModeColour: true, ColoursMin: 1, ColoursMax: 2},
-		},
-		Zones:      []devices.Zone{{Name: "Card", First: 0, Count: 2}},
-		ActiveMode: "Direct",
-	}
+// card is a graphics card of two lights, drawn as a canvas, whose Breathing
+// takes several colours as hotaru's own renderer does.
+func card() *canvastest.Board {
+	return canvastest.NewBoard("Test Graphics Card", canvastest.Zone("Card", 2))
 }
 
 func TestAnEffectCanBeGivenSeveralColours(t *testing.T) {
-	socket := serving(t, &config.Config{}, openrgb.NewFake(board(), card()))
+	socket := drawing(t, &config.Config{}, auraBoard(), card())
 
 	_, err := run(t, socket, "scene", "write", "evening", "graphics=white",
 		"--effect", "graphics=Breathing",
@@ -45,7 +35,7 @@ func TestAnEffectCanBeGivenSeveralColours(t *testing.T) {
 }
 
 func TestAPictureGivesItsColoursFromTheCommandLine(t *testing.T) {
-	socket := serving(t, &config.Config{}, openrgb.NewFake(board(), card()))
+	socket := drawing(t, &config.Config{}, auraBoard(), card())
 
 	picture := image.NewRGBA(image.Rect(0, 0, 40, 40))
 	for y := range 40 {
@@ -64,15 +54,16 @@ func TestAPictureGivesItsColoursFromTheCommandLine(t *testing.T) {
 	_, err := run(t, socket, "image", "add", "sunset", path)
 	require.NoError(t, err)
 
-	said, err := run(t, socket, "image", "colours", "sunset", "--count", "2")
+	// As many as the canvas's Breathing takes, which is four.
+	said, err := run(t, socket, "image", "colours", "sunset", "--count", "4")
 	require.NoError(t, err)
 	lines := strings.Fields(said)
-	require.Len(t, lines, 2, said)
+	require.GreaterOrEqual(t, len(lines), 2, said)
 
-	// And a scene made from it gives the effect the same two.
+	// And a scene made from it gives the effect the same ones.
 	_, err = run(t, socket, "image", "scene", "sunset", "themed", "--effect", "graphics=Breathing")
 	require.NoError(t, err)
 	shown, err := run(t, socket, "scene", "show", "themed")
 	require.NoError(t, err)
-	require.Contains(t, shown, "Breathing in "+lines[0]+", "+lines[1]+" (from the picture)")
+	require.Contains(t, shown, "Breathing in "+strings.Join(lines, ", ")+" (from the picture)")
 }

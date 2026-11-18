@@ -14,7 +14,9 @@ import (
 	"github.com/ushineko/hotaru/internal/queue"
 	"github.com/ushineko/hotaru/internal/scenes"
 	"github.com/ushineko/hotaru/internal/service"
+	"github.com/ushineko/hotaru/internal/service/servicetest"
 	"github.com/ushineko/hotaru/internal/state"
+	"github.com/ushineko/sanshoku/lighting"
 )
 
 func recorder(t *testing.T) *state.Store {
@@ -29,50 +31,50 @@ func TestAFreshInstallReconcilesByTouchingNothing(t *testing.T) {
 	// anything has nothing to put back, so a reconcile at boot is a no-op --
 	// which is what stops hotaru stamping over lighting someone configured
 	// with another tool before they ever used it.
-	server := openrgb.NewFake(board(), keyboard())
-	svc := service.New(nil, server, "")
+	board, kb := auraBoard(), k4()
+	svc := servicetest.New(t, nil, board, kb)
 	svc.SetRecorder(recorder(t))
 
 	restore, err := svc.Reconcile(t.Context(), nil)
 	require.NoError(t, err)
 	require.True(t, restore.Complete())
 	require.Zero(t, restore.Applied)
-	require.Empty(t, server.Writes, "a fresh machine was written to")
-	require.Empty(t, server.Modes)
+	time.Sleep(30 * time.Millisecond)
+	require.Zero(t, board.Frames(), "a fresh machine was written to")
+	require.Zero(t, kb.Frames())
+	require.Zero(t, kb.Writes())
 }
 
 func TestWhatWasAppliedIsWhatIsPutBack(t *testing.T) {
-	server := openrgb.NewFake(board())
-	svc := service.New(nil, server, "")
+	board := auraBoard()
+	svc := servicetest.New(t, nil, board)
 	svc.SetRecorder(recorder(t))
 
 	_, err := svc.Apply(t.Context(), service.Request{Assignments: solid("ASUS", "teal")})
 	require.NoError(t, err)
+	require.Eventually(t, func() bool { return shows(t, board.Device, colour.MustParse("teal")) }, eventually, every)
 
-	// Something else moves the device, as a sleeping mouse or a restarted
-	// server would.
-	require.NoError(t, server.SetFrame(t.Context(), "ASUS ROG MAXIMUS Z790 HERO", devices.Frame{
-		Device:  "ASUS ROG MAXIMUS Z790 HERO",
-		Colours: make([]colour.Colour, 4),
-	}))
-	showing, _ := server.Showing("ASUS ROG MAXIMUS Z790 HERO")
-	require.Equal(t, colour.Black, showing.Colours[0])
+	// Something else moves the device, as a sleeping mouse or a rebooted
+	// keyboard would.
+	black := make([]lighting.Pixel, board.Lights)
+	for i := range black {
+		black[i] = lighting.Pixel{ID: byte(i + 1)}
+	}
+	require.NoError(t, board.Frame(t.Context(), black))
+	require.True(t, shows(t, board.Device, colour.Black))
 
 	restore, err := svc.Reconcile(t.Context(), nil)
 	require.NoError(t, err)
 	require.True(t, restore.Complete())
 	require.Equal(t, 1, restore.Applied)
-
-	showing, _ = server.Showing("ASUS ROG MAXIMUS Z790 HERO")
-	require.Equal(t, colour.MustParse("teal"), showing.Colours[0])
+	require.Eventually(t, func() bool { return shows(t, board.Device, colour.MustParse("teal")) }, eventually, every)
 }
 
 func TestAReconcileIsNotANewUserChoice(t *testing.T) {
 	// Desired state must not move underneath a reconcile: if it did, a
 	// re-assert would be indistinguishable from an instruction, and the thing
 	// being restored would slowly become whatever was last restored.
-	server := openrgb.NewFake(board())
-	svc := service.New(nil, server, "")
+	svc := servicetest.New(t, nil, auraBoard())
 	svc.SetRecorder(recorder(t))
 
 	_, err := svc.Apply(t.Context(), service.Request{Assignments: solid("ASUS", "red")})
@@ -89,20 +91,20 @@ func TestAReconcileIsNotANewUserChoice(t *testing.T) {
 }
 
 func TestARestoreThatReachedFewerDevicesIsUnfinished(t *testing.T) {
-	// OpenRGB enumerates once at server start, and a cold boot has been seen
-	// finding two devices out of six. Calling that a success is how a machine
+	// A device can come up later than the service: a wireless keyboard asleep,
+	// a receiver enumerating late. Calling that a success is how a machine
 	// ends up half-lit with everything claiming to be fine.
-	server := openrgb.NewFake(board(), keyboard())
-	svc := service.New(nil, server, "")
+	svc := service.New(nil, nil, servicetest.NoServer)
 	svc.SetRecorder(recorder(t))
+	servicetest.Attach(t, svc, auraBoard())
+	kb := servicetest.Attach(t, svc, k4())
 
 	_, err := svc.Apply(t.Context(), service.Request{Assignments: append(
 		solid("ASUS", "red"), solid("Keychron", "red")...)})
 	require.NoError(t, err)
 
-	// The keyboard has not enumerated this time round.
-	partial := openrgb.NewFake(board())
-	svc.SetClient(partial)
+	// The keyboard has gone this time round.
+	svc.DetachCanvas(kb.Attach)
 
 	restore, err := svc.Reconcile(t.Context(), nil)
 	require.NoError(t, err)
@@ -111,7 +113,7 @@ func TestARestoreThatReachedFewerDevicesIsUnfinished(t *testing.T) {
 	require.Equal(t, 1, restore.Applied)
 
 	// And when it turns up, the restore finishes with no further instruction.
-	partial.Add(keyboard())
+	servicetest.Attach(t, svc, k4())
 	restore, err = svc.Reconcile(t.Context(), nil)
 	require.NoError(t, err)
 	require.True(t, restore.Complete())
@@ -120,8 +122,7 @@ func TestARestoreThatReachedFewerDevicesIsUnfinished(t *testing.T) {
 
 func TestTurningADeviceOffIsNotSomethingToRestore(t *testing.T) {
 	// Putting black back at boot is not what anybody meant by "off".
-	server := openrgb.NewFake(strip())
-	svc := service.New(nil, server, "")
+	svc := servicetest.New(t, nil, genericStrip())
 	svc.SetRecorder(recorder(t))
 
 	_, err := svc.Apply(t.Context(), service.Request{Assignments: solid("Generic", "red")})
@@ -212,6 +213,30 @@ func TestAPartialSceneBuildsOnWhatHotaruWroteNotOnWhatTheDeviceClaims(t *testing
 	require.Equal(t, colour.MustParse("red"), showing.Colours[0], "the exception")
 	require.Equal(t, colour.MustParse("teal"), showing.Colours[1],
 		"the rest of the scene was blanked by trusting the device's report")
+}
+
+// The half of the test above a canvas keeps: an exception composes onto the
+// scene hotaru last wrote (spec 076 moved it off OpenRGB).
+func TestAPartialSceneOnACanvasBuildsOnWhatHotaruWrote(t *testing.T) {
+	board := auraBoard()
+	svc := servicetest.New(t, nil, board)
+	svc.SetRecorder(recorder(t))
+
+	_, err := svc.Apply(t.Context(), service.Request{Assignments: solid("ASUS", "teal")})
+	require.NoError(t, err)
+	target, err := devices.ParseTarget("ASUS/Addressable 1[0:0]")
+	require.NoError(t, err)
+	_, err = svc.Apply(t.Context(), service.Request{Assignments: []devices.Assignment{
+		{Target: target, Colour: colour.MustParse("red")},
+	}})
+	require.NoError(t, err)
+
+	// Key 1 is the board's own light; the header's first is key 2.
+	require.Eventually(t, func() bool {
+		first, _ := board.Showing(2)
+		second, _ := board.Showing(3)
+		return first == lighting.Pixel{ID: 2, R: 255} && second == lighting.Pixel{ID: 3, G: 255, B: 128}
+	}, eventually, every, "the rest of the scene was not kept")
 }
 
 func TestRapidWritesToOneDeviceConvergeOnTheLast(t *testing.T) {

@@ -8,11 +8,13 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"github.com/ushineko/hotaru/internal/canvas/canvastest"
 	"github.com/ushineko/hotaru/internal/colour"
 	hw "github.com/ushineko/hotaru/internal/cooler" // `cooler` is a fixture in this package
 	"github.com/ushineko/hotaru/internal/openrgb"
 	"github.com/ushineko/hotaru/internal/scenes"
 	"github.com/ushineko/hotaru/internal/service"
+	"github.com/ushineko/hotaru/internal/service/servicetest"
 	"github.com/ushineko/hotaru/internal/state"
 )
 
@@ -37,12 +39,49 @@ func lit(t *testing.T, saved ...scenes.Scene) (*service.Service, *openrgb.Fake) 
 	return svc, server
 }
 
-// showing is what a device is displaying on the fake server.
-func showing(t *testing.T, server *openrgb.Fake, device string) []colour.Colour {
+// sceneDesk is the board and keyboard litCanvas draws on.
+type sceneDesk struct {
+	board *canvastest.Board
+	kb    *canvastest.Firmware
+}
+
+// litCanvas is lit on canvases (spec 076): the board and the keyboard as
+// sanshoku gives them, with no OpenRGB server.
+func litCanvas(t *testing.T, saved ...scenes.Scene) (*service.Service, *sceneDesk) {
 	t.Helper()
-	frame, ok := server.Showing(device)
-	require.True(t, ok, "%s is not on the server", device)
-	return frame.Colours
+	desk := &sceneDesk{board: auraBoard(), kb: k4()}
+	svc := servicetest.New(t, nil, desk.board, desk.kb)
+
+	desired, err := state.Open(filepath.Join(t.TempDir(), "state.yml"))
+	require.NoError(t, err)
+	svc.SetRecorder(desired)
+
+	store, err := scenes.Open(filepath.Join(t.TempDir(), "scenes.yml"))
+	require.NoError(t, err)
+	for _, scene := range saved {
+		require.NoError(t, store.Save(scene))
+	}
+	svc.SetScenes(store)
+	return svc, desk
+}
+
+// firmwareGiven is the colour a canvas's firmware runs effect in, failing
+// where it does not run it.
+func firmwareGiven(t *testing.T, f *canvastest.Firmware, effect string) string {
+	t.Helper()
+	running, c := f.Running()
+	require.Equal(t, effect, running, "the firmware was not put in the effect")
+	return colour.Colour{R: c.R, G: c.G, B: c.B}.String()
+}
+
+// lightIs waits for a fake's light (by key id, from 1) to show hex.
+func lightIs(t *testing.T, d *canvastest.Device, id byte, hex string, msg ...any) {
+	t.Helper()
+	want := colour.MustParse(hex)
+	require.Eventually(t, func() bool {
+		p, ok := d.Showing(id)
+		return ok && p.R == want.R && p.G == want.G && p.B == want.B
+	}, eventually, every, msg...)
 }
 
 func blue() scenes.Scene {
@@ -56,7 +95,7 @@ func blue() scenes.Scene {
 }
 
 func TestASceneLightsWhatItNames(t *testing.T) {
-	svc, _ := lit(t, blue())
+	svc, _ := litCanvas(t, blue())
 
 	done, err := svc.ApplyScene(t.Context(), "blue")
 	require.NoError(t, err)
@@ -77,14 +116,14 @@ func TestALaterAssignmentWins(t *testing.T) {
 	scene := blue()
 	scene.Assignments = append(scene.Assignments,
 		scenes.Assignment{Target: "ASUS/Addressable 1[0:0]", Colour: "red"})
-	svc, server := lit(t, scene)
+	svc, desk := litCanvas(t, scene)
 
 	_, err := svc.ApplyScene(t.Context(), "blue")
 	require.NoError(t, err)
 
-	frame := showing(t, server, "ASUS ROG MAXIMUS Z790 HERO")
-	require.Equal(t, "#ff0000", frame[0].String())
-	require.Equal(t, "#0000ff", frame[1].String())
+	// Key 1 is the board's own light; the header's first is key 2.
+	lightIs(t, desk.board.Device, 2, "#ff0000")
+	lightIs(t, desk.board.Device, 3, "#0000ff")
 }
 
 func TestAnEffectIsPreferredForItsOwnDevice(t *testing.T) {
@@ -92,7 +131,7 @@ func TestAnEffectIsPreferredForItsOwnDevice(t *testing.T) {
 	// is why an effect is named per device rather than per request.
 	scene := blue()
 	scene.Effects = map[string]scenes.Effect{"Keychron": {Mode: "Solid Color"}}
-	svc, _ := lit(t, scene)
+	svc, _ := litCanvas(t, scene)
 
 	done, err := svc.ApplyScene(t.Context(), "blue")
 	require.NoError(t, err)
@@ -114,7 +153,7 @@ func TestAnEffectADeviceDoesNotHaveCostsTheEffectNotTheScene(t *testing.T) {
 	*/
 	scene := blue()
 	scene.Effects = map[string]scenes.Effect{"Keychron": {Mode: "Storm"}}
-	svc, _ := lit(t, scene)
+	svc, _ := litCanvas(t, scene)
 
 	done, err := svc.ApplyScene(t.Context(), "blue")
 	require.NoError(t, err)
@@ -133,7 +172,7 @@ func TestAnEffectADeviceDoesNotHaveCostsTheEffectNotTheScene(t *testing.T) {
 func TestApplyingASceneIsRemembered(t *testing.T) {
 	// A scene is what somebody wants their machine to look like, so it
 	// survives a device that forgets and a reboot.
-	svc, _ := lit(t, blue())
+	svc, _ := litCanvas(t, blue())
 
 	_, err := svc.ApplyScene(t.Context(), "blue")
 	require.NoError(t, err)
@@ -144,7 +183,7 @@ func TestApplyingASceneIsRemembered(t *testing.T) {
 
 func TestPreviewingASceneIsNotRemembered(t *testing.T) {
 	// A preview is what somebody is looking at, never what they want.
-	svc, _ := lit(t, blue())
+	svc, _ := litCanvas(t, blue())
 
 	done, err := svc.PreviewScene(t.Context(), "blue", "a test", false)
 	require.NoError(t, err)
@@ -158,7 +197,7 @@ func TestReassertionLeavesADraftAlone(t *testing.T) {
 		seconds. Without this, it does so underneath the person deciding
 		whether they like what they are looking at.
 	*/
-	svc, _ := lit(t, blue())
+	svc, _ := litCanvas(t, blue())
 	_, err := svc.ApplyScene(t.Context(), "blue")
 	require.NoError(t, err)
 
@@ -172,7 +211,7 @@ func TestReassertionLeavesADraftAlone(t *testing.T) {
 }
 
 func TestReleasingAPreviewPutsTheLightsBack(t *testing.T) {
-	svc, server := lit(t, blue())
+	svc, desk := litCanvas(t, blue())
 	_, err := svc.ApplyScene(t.Context(), "blue")
 	require.NoError(t, err)
 
@@ -183,12 +222,11 @@ func TestReleasingAPreviewPutsTheLightsBack(t *testing.T) {
 
 	held, err := svc.PreviewScene(t.Context(), "draft", "a test", false)
 	require.NoError(t, err)
-	require.Equal(t, "#ff0000", showing(t, server, "Keychron K4 HE")[0].String())
+	lightIs(t, desk.kb.Device, 1, "#ff0000")
 
 	_, err = svc.Release(t.Context(), held.Lease.Token)
 	require.NoError(t, err)
-	require.Equal(t, "#0000ff", showing(t, server, "Keychron K4 HE")[0].String(),
-		"ending the preview left the draft on the hardware")
+	lightIs(t, desk.kb.Device, 1, "#0000ff", "ending the preview left the draft on the hardware")
 }
 
 func TestALapsedPreviewIsEndedByTheLoopThatWouldHaveCorrectedIt(t *testing.T) {
@@ -197,7 +235,7 @@ func TestALapsedPreviewIsEndedByTheLoopThatWouldHaveCorrectedIt(t *testing.T) {
 		correction that would have is suspended on that holder's behalf, which
 		is exactly why the lease has to lapse.
 	*/
-	svc, server := lit(t, blue())
+	svc, desk := litCanvas(t, blue())
 	_, err := svc.ApplyScene(t.Context(), "blue")
 	require.NoError(t, err)
 
@@ -213,13 +251,13 @@ func TestALapsedPreviewIsEndedByTheLoopThatWouldHaveCorrectedIt(t *testing.T) {
 	restore, err := svc.Expired(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, 1, restore.Applied)
-	require.Equal(t, "#0000ff", showing(t, server, "Keychron K4 HE")[0].String())
+	lightIs(t, desk.kb.Device, 1, "#0000ff")
 }
 
 func TestAConnectionBoundLeaseDoesNotLapse(t *testing.T) {
 	// Its holder is sitting on an open request, and the socket closing is a
 	// better signal than any clock. Nothing should expire it in the meantime.
-	svc, _ := lit(t, blue())
+	svc, _ := litCanvas(t, blue())
 
 	held, err := svc.PreviewScene(t.Context(), "blue", "a GUI", true)
 	require.NoError(t, err)
@@ -235,7 +273,7 @@ func TestAConnectionBoundLeaseDoesNotLapse(t *testing.T) {
 func TestTwoCallersCannotPreviewTheSameDevice(t *testing.T) {
 	// Writing over a draft somebody else is looking at is the confusion this
 	// whole mechanism exists to prevent.
-	svc, _ := lit(t, blue())
+	svc, _ := litCanvas(t, blue())
 	_, err := svc.PreviewScene(t.Context(), "blue", "the first client", false)
 	require.NoError(t, err)
 
@@ -244,7 +282,7 @@ func TestTwoCallersCannotPreviewTheSameDevice(t *testing.T) {
 }
 
 func TestRenewingKeepsALeaseAlive(t *testing.T) {
-	svc, _ := lit(t, blue())
+	svc, _ := litCanvas(t, blue())
 	held, err := svc.PreviewScene(t.Context(), "blue", "a script", false)
 	require.NoError(t, err)
 
@@ -259,13 +297,13 @@ func TestRenewingKeepsALeaseAlive(t *testing.T) {
 func TestRenewingSomethingThatLapsedSaysSo(t *testing.T) {
 	// The devices may belong to somebody else by now, so a lapsed lease is
 	// not quietly revived.
-	svc, _ := lit(t, blue())
+	svc, _ := litCanvas(t, blue())
 	require.ErrorContains(t, svc.Renew("nothing"), "expired")
 }
 
 func TestASceneSaysWhatItDidToTheScreen(t *testing.T) {
 	// A scene that says nothing about the screen changes nothing about it.
-	svc, _ := lit(t, blue())
+	svc, _ := litCanvas(t, blue())
 
 	done, err := svc.ApplyScene(t.Context(), "blue")
 	require.NoError(t, err)
@@ -280,7 +318,7 @@ func TestAMissingImageCostsTheScreenAndNotTheColours(t *testing.T) {
 	*/
 	scene := blue()
 	scene.Screen = filepath.Join(t.TempDir(), "gone.gif")
-	svc, _ := lit(t, scene)
+	svc, _ := litCanvas(t, scene)
 	svc.SetCooler(&panel{})
 
 	done, err := svc.ApplyScene(t.Context(), "blue")
@@ -297,7 +335,7 @@ func TestASceneCanTakeTheScreen(t *testing.T) {
 
 	scene := blue()
 	scene.Screen = gif
-	svc, _ := lit(t, scene)
+	svc, _ := litCanvas(t, scene)
 	screen := &panel{}
 	svc.SetCooler(screen)
 	svc.SetDashboard(&screenAuthor{})
@@ -310,7 +348,7 @@ func TestASceneCanTakeTheScreen(t *testing.T) {
 
 func TestCapturingKeepsWhatIsShowingNow(t *testing.T) {
 	// The shortcut somebody reaches for after fiddling until it looks right.
-	svc, _ := lit(t, blue())
+	svc, _ := litCanvas(t, blue())
 	_, err := svc.ApplyScene(t.Context(), "blue")
 	require.NoError(t, err)
 
@@ -322,7 +360,7 @@ func TestCapturingKeepsWhatIsShowingNow(t *testing.T) {
 }
 
 func TestCapturingNothingSaysSo(t *testing.T) {
-	svc, _ := lit(t)
+	svc, _ := litCanvas(t)
 	_, err := svc.SceneFrom("empty", "")
 	require.ErrorContains(t, err, "nothing is recorded")
 }
@@ -330,7 +368,7 @@ func TestCapturingNothingSaysSo(t *testing.T) {
 func TestAMachineWithNoScenesFileSaysSoRatherThanFailingQuietly(t *testing.T) {
 	// An unreadable scenes file is somebody's saved work, so the service runs
 	// without scenes rather than replacing them.
-	svc := service.New(nil, openrgb.NewFake(board()), "")
+	svc := servicetest.New(t, nil, auraBoard())
 
 	_, err := svc.Scenes()
 	require.ErrorIs(t, err, service.ErrNoScenes)
@@ -345,7 +383,7 @@ func TestTheShippedKeysApplyTheShippedScenes(t *testing.T) {
 		for two years, and a rearchitecture that changes what a key does has
 		broken something no test would otherwise catch.
 	*/
-	svc, _ := lit(t)
+	svc, _ := litCanvas(t)
 
 	keys, err := svc.Keys()
 	require.NoError(t, err)
@@ -365,21 +403,21 @@ func TestTheShippedKeysApplyTheShippedScenes(t *testing.T) {
 func TestApplyingTheNinthSceneTurnsTheLightsOff(t *testing.T) {
 	// "off" is not a colour. It resolves the device's own Off mode and
 	// honours the keyboard correction, which no assignment can ask for.
-	svc, server := lit(t)
+	svc, desk := litCanvas(t)
 	_, err := svc.ApplyScene(t.Context(), "red")
 	require.NoError(t, err)
-	require.Equal(t, "#ff0000", showing(t, server, "Keychron K4 HE")[0].String())
+	lightIs(t, desk.kb.Device, 1, "#ff0000")
 
 	done, err := svc.ApplyScene(t.Context(), "off")
 	require.NoError(t, err)
 	require.NotEmpty(t, done.Results)
-	require.Equal(t, "#000000", showing(t, server, "Keychron K4 HE")[0].String())
+	lightIs(t, desk.kb.Device, 1, "#000000")
 }
 
 func TestTurningOffIsNotRememberedAsAColour(t *testing.T) {
 	// A device deliberately turned off has nothing to restore: putting black
 	// back at boot is not what anybody meant by "off".
-	svc, _ := lit(t)
+	svc, _ := litCanvas(t)
 	_, err := svc.ApplyScene(t.Context(), "red")
 	require.NoError(t, err)
 	_, err = svc.ApplyScene(t.Context(), "off")
@@ -391,7 +429,7 @@ func TestTurningOffIsNotRememberedAsAColour(t *testing.T) {
 func TestABindingToASceneThatIsNotThereSaysSoBeforeItIsPressed(t *testing.T) {
 	// Otherwise the first anybody hears of it is a key that does nothing,
 	// which is indistinguishable from the key not being registered at all.
-	svc, _ := lit(t)
+	svc, _ := litCanvas(t)
 	require.NoError(t, svc.SaveScene(t.Context(), scenes.Scene{Name: "evening", Colour: "blue"}))
 	require.NoError(t, svc.Bind("Ctrl+Alt+Shift+Num+1", "evening"))
 	require.NoError(t, svc.DeleteScene("evening"))
@@ -408,24 +446,24 @@ func TestABindingToASceneThatIsNotThereSaysSoBeforeItIsPressed(t *testing.T) {
 }
 
 func TestBindingAKeyToANonexistentSceneIsRefused(t *testing.T) {
-	svc, _ := lit(t)
+	svc, _ := litCanvas(t)
 	require.ErrorContains(t, svc.Bind("Ctrl+Alt+Shift+Num+2", "nothing-like-this"), "no scene")
 }
 
 func TestAKeypressTakesTheSamePathAsTheApiCall(t *testing.T) {
 	// One flow, two doors. A keypress that went another way would be a
 	// second implementation of applying a scene.
-	svc, server := lit(t)
+	svc, desk := litCanvas(t)
 
 	said, err := svc.ApplyByName(t.Context(), "green")
 	require.NoError(t, err)
 	require.Contains(t, said, "green")
-	require.Equal(t, "#00ff00", showing(t, server, "Keychron K4 HE")[0].String())
+	lightIs(t, desk.kb.Device, 1, "#00ff00")
 	require.Contains(t, svc.Desired().Devices, "Keychron K4 HE")
 }
 
 func TestAKeypressForASceneThatIsGoneReportsRatherThanCrashing(t *testing.T) {
-	svc, _ := lit(t)
+	svc, _ := litCanvas(t)
 	_, err := svc.ApplyByName(t.Context(), "never-existed")
 	require.Error(t, err)
 }
@@ -444,7 +482,7 @@ func TestASceneAppliesOnAMachineWhoseScreenCannotBeDrawnOn(t *testing.T) {
 
 	scene := blue()
 	scene.Screen = gif
-	svc, _ := lit(t, scene)
+	svc, _ := litCanvas(t, scene)
 	svc.SetCooler(&panel{wrong: hw.ErrNoScreen, refuse: hw.ErrNoScreen})
 	svc.SetDashboard(&screenAuthor{})
 
@@ -462,7 +500,7 @@ func TestAStyleIsGivenToOtherScenesWithoutTheirColours(t *testing.T) {
 		about one scene, and saying so across a bank of nine meant editing
 		nine scenes.
 	*/
-	svc, _ := lit(t,
+	svc, _ := litCanvas(t,
 		scenes.Scene{
 			Name: "evening", Colour: "blue",
 			Effects: map[string]scenes.Effect{"Keychron": {Mode: "Typing Heatmap"}},
@@ -501,7 +539,7 @@ func TestAStyleIsGivenToOtherScenesWithoutTheirColours(t *testing.T) {
 func TestAStyleGoesNowhereWhenAScenesNameIsWrong(t *testing.T) {
 	// Every target is read before any is written: a name that is not there
 	// costs nothing rather than leaving half a bank restyled.
-	svc, _ := lit(t,
+	svc, _ := litCanvas(t,
 		scenes.Scene{Name: "evening", Effects: map[string]scenes.Effect{"Keychron": {Mode: "Splash"}}},
 		scenes.Scene{Name: "red", Colour: "red"},
 	)
@@ -521,24 +559,22 @@ func TestSavingTheSceneOnTheMachineLightsIt(t *testing.T) {
 		by the save, and nothing joined the two -- so the remedy was to apply
 		another scene and come back, which every user found for themselves.
 
-		Asserted on the server's own frame rather than on the outcome: what
+		Asserted on the device's own frame rather than on the outcome: what
 		is being fixed is what the devices are showing, and an outcome that
 		said "applied" while the board stayed blue is exactly the report this
 		bug hid behind.
 	*/
-	svc, server := lit(t, blue())
-	const board = "ASUS ROG MAXIMUS Z790 HERO"
+	svc, desk := litCanvas(t, blue())
 
 	_, err := svc.ApplyScene(t.Context(), "blue")
 	require.NoError(t, err)
-	require.Equal(t, "#0000ff", showing(t, server, board)[0].String())
+	lightIs(t, desk.board.Device, 1, "#0000ff")
 
 	edited := blue()
 	edited.Assignments[0].Colour = "red"
 	require.NoError(t, svc.SaveScene(t.Context(), edited))
 
-	require.Equal(t, "#ff0000", showing(t, server, board)[0].String(),
-		"saving over the scene on the machine did not light it")
+	lightIs(t, desk.board.Device, 1, "#ff0000", "saving over the scene on the machine did not light it")
 }
 
 func TestSavingTheSceneOnTheMachineLightsItAfterARestart(t *testing.T) {
@@ -551,43 +587,40 @@ func TestSavingTheSceneOnTheMachineLightsItAfterARestart(t *testing.T) {
 		apply. The name is kept with the desired state, in the same file,
 		and a new service reads it back.
 	*/
-	const asus = "ASUS ROG MAXIMUS Z790 HERO"
-	server := openrgb.NewFake(board(), keyboard())
 	statePath := filepath.Join(t.TempDir(), "state.yml")
 	saved, err := scenes.Open(filepath.Join(t.TempDir(), "scenes.yml"))
 	require.NoError(t, err)
 	require.NoError(t, saved.Save(blue()))
 
-	start := func() (*service.Service, *state.Store) {
+	start := func() (*service.Service, *state.Store, *canvastest.Board) {
 		desired, err := state.Open(statePath)
 		require.NoError(t, err)
-		svc := service.New(nil, server, "")
+		board := auraBoard()
+		svc := servicetest.New(t, nil, board, k4())
 		svc.SetRecorder(desired)
 		svc.SetScenes(saved)
-		return svc, desired
+		return svc, desired, board
 	}
 
-	before, desired := start()
+	before, desired, _ := start()
 	_, err = before.ApplyScene(t.Context(), "blue")
 	require.NoError(t, err)
 	// As stopping the service does: what the next one reads is the file.
 	require.NoError(t, desired.Flush())
 
-	after, _ := start()
+	after, _, board := start()
 	require.Equal(t, "blue", after.Applied(), "the restarted service forgot which scene was applied")
 
 	edited := blue()
 	edited.Assignments[0].Colour = "red"
 	require.NoError(t, after.SaveScene(t.Context(), edited))
-	require.Equal(t, "#ff0000", showing(t, server, asus)[0].String(),
-		"saving the scene on the machine after a restart did not light it")
+	lightIs(t, board.Device, 1, "#ff0000", "saving the scene on the machine after a restart did not light it")
 }
 
 func TestSavingASceneNobodyIsShowingLeavesTheMachineAlone(t *testing.T) {
 	// A draft saved for later must not take the machine: the scene showing
 	// is the one somebody asked for, and this is not it.
-	svc, server := lit(t, blue())
-	const board = "ASUS ROG MAXIMUS Z790 HERO"
+	svc, desk := litCanvas(t, blue())
 
 	_, err := svc.ApplyScene(t.Context(), "blue")
 	require.NoError(t, err)
@@ -597,8 +630,9 @@ func TestSavingASceneNobodyIsShowingLeavesTheMachineAlone(t *testing.T) {
 	}}
 	require.NoError(t, svc.SaveScene(t.Context(), later))
 
-	require.Equal(t, "#0000ff", showing(t, server, board)[0].String(),
-		"saving a scene nobody asked for took the machine")
+	lightIs(t, desk.board.Device, 1, "#0000ff")
+	time.Sleep(30 * time.Millisecond)
+	lightIs(t, desk.board.Device, 1, "#0000ff", "saving a scene nobody asked for took the machine")
 
 	// And nothing has been applied but the one that was.
 	require.Equal(t, "blue", svc.Applied())
@@ -619,7 +653,7 @@ func TestAnEffectSurvivesAFrameItCannotShow(t *testing.T) {
 	scene.Assignments = append(scene.Assignments,
 		scenes.Assignment{Target: "Keychron/Keyboard[1]", Colour: "red"})
 	scene.Effects = map[string]scenes.Effect{"Keychron": {Mode: "Solid Reactive"}}
-	svc, _ := lit(t, scene)
+	svc, _ := litCanvas(t, scene)
 
 	done, err := svc.ApplyScene(t.Context(), "blue")
 	require.NoError(t, err)
@@ -648,19 +682,12 @@ func TestAnEffectIsLitInTheColourTheSceneMostlyIs(t *testing.T) {
 	scene.Assignments = append(scene.Assignments,
 		scenes.Assignment{Target: "Keychron/Keyboard[1]", Colour: "red"})
 	scene.Effects = map[string]scenes.Effect{"Keychron": {Mode: "Solid Reactive"}}
-	svc, server := lit(t, scene)
+	svc, desk := litCanvas(t, scene)
 
 	_, err := svc.ApplyScene(t.Context(), "blue")
 	require.NoError(t, err)
 
-	var lit *colour.Colour
-	for _, write := range server.Modes {
-		if write.Device == "Keychron K4 HE" && write.Mode == "Solid Reactive" {
-			lit = write.Colour
-		}
-	}
-	require.NotNil(t, lit, "the effect was set without a colour, so it shows the vendor's")
-	require.Equal(t, "#0000ff", lit.String(),
+	require.Equal(t, "#0000ff", firmwareGiven(t, desk.kb, "Solid Reactive"),
 		"the effect was not lit in the colour most of the scene is")
 }
 
@@ -688,24 +715,24 @@ func TestAnEffectIsLitInTheColourTheSceneNames(t *testing.T) {
 	scene.Effects = map[string]scenes.Effect{
 		"Keychron": {Mode: "Solid Reactive", Colour: "#ff0000"},
 	}
-	svc, server := lit(t, scene)
+	svc, desk := litCanvas(t, scene)
 
 	_, err := svc.ApplyScene(t.Context(), "blue")
 	require.NoError(t, err)
 
-	require.Equal(t, "#ff0000", lastMode(t, server, "Keychron K4 HE", "Solid Reactive").Colour.String(),
+	require.Equal(t, "#ff0000", firmwareGiven(t, desk.kb, "Solid Reactive"),
 		"the scene's own colour lost to the frame's")
 }
 
 func TestAnEffectWithNoColourStillTakesTheFrames(t *testing.T) {
 	scene := blue()
 	scene.Effects = map[string]scenes.Effect{"Keychron": {Mode: "Solid Reactive"}}
-	svc, server := lit(t, scene)
+	svc, desk := litCanvas(t, scene)
 
 	_, err := svc.ApplyScene(t.Context(), "blue")
 	require.NoError(t, err)
 
-	require.Equal(t, "#0000ff", lastMode(t, server, "Keychron K4 HE", "Solid Reactive").Colour.String())
+	require.Equal(t, "#0000ff", firmwareGiven(t, desk.kb, "Solid Reactive"))
 }
 
 func TestAnEffectsSpeedIsWritten(t *testing.T) {
@@ -729,7 +756,7 @@ func TestAnEffectsColourIsUnreadableIsSaidRatherThanIgnored(t *testing.T) {
 	scene.Effects = map[string]scenes.Effect{
 		"Keychron": {Mode: "Solid Reactive", Colour: "puce"},
 	}
-	svc, _ := lit(t, scene)
+	svc, _ := litCanvas(t, scene)
 
 	done, err := svc.ApplyScene(t.Context(), "blue")
 	require.NoError(t, err)
@@ -815,7 +842,7 @@ colours is running; desired state is what somebody asked for, and is what the
 lights go back to when the effect comes off.
 */
 func TestTheSceneKeepsItsColoursWhileTheEffectShowsItsOwn(t *testing.T) {
-	svc, _ := lit(t, scenes.Scene{
+	svc, _ := litCanvas(t, scenes.Scene{
 		Name:        "evening",
 		Assignments: []scenes.Assignment{{Target: "Keychron", Colour: "#8c6f6a"}},
 		Effects: map[string]scenes.Effect{
@@ -838,7 +865,7 @@ A per-LED mode is untouched by any of this: the buffer is what it shows, and
 a scene's colours are what go in it.
 */
 func TestTheBufferHoldsTheScenesOwnColours(t *testing.T) {
-	svc, server := lit(t, scenes.Scene{
+	svc, desk := litCanvas(t, scenes.Scene{
 		Name:        "evening",
 		Assignments: []scenes.Assignment{{Target: "Keychron", Colour: "#8c6f6a"}},
 	})
@@ -846,9 +873,7 @@ func TestTheBufferHoldsTheScenesOwnColours(t *testing.T) {
 	_, err := svc.ApplyScene(context.Background(), "evening")
 	require.NoError(t, err)
 
-	frame, ok := server.Showing("Keychron K4 HE")
-	require.True(t, ok)
-	require.Equal(t, "#8c6f6a", frame.Colours[0].String())
+	lightIs(t, desk.kb.Device, 1, "#8c6f6a")
 }
 
 /*
