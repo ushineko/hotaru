@@ -177,3 +177,21 @@ func TestLightMapSaysWhatReplacedIt(t *testing.T) {
 		assert.Contains(t, out, command)
 	}
 }
+
+// A typed number sets the end, and -- moves it back by ten.
+func TestALengthTakesANumberAndTensBack(t *testing.T) {
+	path := rulesAt(t, "devices:\n  - match: \"maximus\"\n")
+	client := api.NewClient(drawing(t, nil, z790("Addressable RGB Header 1", 10, 120)))
+	require.NoError(t, cli.FindLength(t.Context(), client, &scripted{answers: []string{"38", "--", ""}},
+		"maximus/Addressable RGB Header 1"))
+	assert.Equal(t, map[string]int{"Addressable RGB Header 1": 28}, ruleIn(t, path, board).Lengths)
+}
+
+// Fans the device counts itself (the Kraken's) are not divided again.
+func TestFansTheDeviceCountsAreRefused(t *testing.T) {
+	rulesAt(t, "")
+	cooler := canvastest.NewBoard("NZXT Kraken Elite V2", canvastest.Ring("Ring", 24), canvastest.Ring("Fan", 8, 8, 8))
+	client := api.NewClient(drawing(t, nil, cooler))
+	err := cli.SetFans(t.Context(), client, &scripted{}, "kraken/Fan", 3)
+	require.ErrorContains(t, err, "counts what is on Fan itself")
+}

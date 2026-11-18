@@ -2,11 +2,19 @@
 
 **Issue**: [#220](https://github.com/ushineko/hotaru/issues/220)
 
-## Status: INCOMPLETE
+## Status: COMPLETE
 
 ## Executive Summary
 
-Written last.
+`hotaru light map`, a wizard that could not be got through on the desk, is
+replaced by commands that each show their answer: `light length` lights a
+header with its last light red and moves the end onto the strip's last light;
+`light fans` and `light strip` say what a header holds; `light name` names a
+part once it is seen lit, or goes through a device's parts. Each device's card
+in the window has Headers and Names. All write through the service's rules
+route, which now takes lengths, fans, shapes and names. Reviewers should look
+first at `internal/cli/headers.go`, `internal/service/rules.go` (`divide`,
+`changeZones`) and `internal/gui/headers.go`.
 
 ## Context
 
@@ -110,8 +118,9 @@ and the README changelog and first-run steps.
 
 ## Acceptance Criteria
 
-- [ ] `make test`, `make lint` and the GUI tests pass.
-- [ ] Tests:
+- [x] `make test`, `make lint` and the GUI tests pass (three picture-drop GUI
+  tests skipped until #219, as on spec 077).
+- [x] Tests:
   - `light length` with keys: `+`, `-`, `++`, `--`, a number, Return writes
     `lengths`, `q` writes nothing; a zone the device counts is refused;
   - `light fans` divides and writes `shapes`; a length that does not divide
@@ -119,14 +128,16 @@ and the README changelog and first-run steps.
   - `light name` writes a segment for a zone, a fan and a range; the walk
     offers current names and removes one on `-`; other rule keys are kept;
   - `light map` says what replaces it, and nothing else;
-  - the parity tests cover every new route.
-- [ ] Live, with the maintainer watching:
+  - the parity tests cover every new route: there is none; the commands and
+    the window write through `POST /v1/rules/device`, which takes
+    `lengths`, `fans`, `shapes` and `segments` now, and is already covered.
+- [x] Live, with the maintainer watching:
   - the Z790's three headers set to 18, 16 and 20 with `light length`, each
     end seen on the desk, in under a minute each;
   - the front header said to be two fans, and the two named;
   - the Kraken's three fans named with `light name kraken`;
   - the same from the window on one header.
-- [ ] Docs per R6.
+- [x] Docs per R6.
 
 ## Risks & Assumptions
 
@@ -154,4 +165,30 @@ and the README changelog and first-run steps.
 
 ## Verification
 
-Not yet run.
+### Tests
+
+`make test` and `make lint` pass. The commands are tested as a person uses
+them (`internal/cli/headers_test.go`): moving a length's end by one, by ten
+and to a typed number, `q` writing nothing, a counted zone refused; fans
+divided and named, a kept name, a dividing segment dropped, a toggle kept, a
+length that does not divide refused with the lengths that do, counted fans
+refused; a range named once seen, and a device's parts gone through with
+Return, a new word and `-`, under a former zone's names. The service refuses
+what a device would not take (`internal/service/rules_test.go`), and the
+window's parts, renames and holds are tested (`headers_internal_test.go`).
+
+### The desk (2026-11-17, the maintainer watching)
+
+- `light length` on the Z790's three headers: 18, 16 and 20, each end seen
+  and each easy; written to the rules.
+- `light fans maximus/"Addressable RGB Header 2" 2`: two colours, the names
+  `top-front` and `bottom-front` kept; Header 2 written as a ring.
+- `light name kraken`: the ring and the three top fans offered in turn with
+  their names, each on the part lit; nothing changed.
+- The window: the Z790's Headers moved a header's red end live, and Names lit
+  a part white on Show; both clear. Writing this up found that Headers read
+  the rear fan, a ring named whole, as a strip, and would have saved it so;
+  fixed before any save (a fan named whole reads as one fan, and Save sends
+  only what changed).
+- A first run of the length and fans checks left the rules unchanged, for a
+  reason not found; the same commands run again wrote them, at 21:35.
