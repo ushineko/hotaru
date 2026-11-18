@@ -26,6 +26,21 @@ func Header(name string, n, most int) lighting.Zone {
 	return lighting.Zone{Name: name, Count: n, Max: most}
 }
 
+// Grid is a keyboard's zone of n keys, for NewBoard.
+func Grid(name string, n int) lighting.Zone {
+	return lighting.Zone{Name: name, Count: n, Shape: lighting.ShapeGrid}
+}
+
+// Ring is a zone of fans, each part one fan's lights, as the Kraken counts
+// them from its slots, for NewBoard.
+func Ring(name string, parts ...int) lighting.Zone {
+	n := 0
+	for _, p := range parts {
+		n += p
+	}
+	return lighting.Zone{Name: name, Count: n, Shape: lighting.ShapeRing, Parts: parts}
+}
+
 // NewBoard is a canvas called name with the zones given, in order.
 func NewBoard(name string, zones ...lighting.Zone) *Board {
 	b := &Board{Device: New(0), zones: append([]lighting.Zone(nil), zones...)}

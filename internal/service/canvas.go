@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -44,16 +45,23 @@ type Canvas interface {
 	// Zones is the device's own zones, where it names them, or nil (spec
 	// 075).
 	Zones() []lighting.Zone
+	// Resize gives a zone whose length the device cannot read its lights.
+	Resize(zone string, lights int) error
 
 	// Effects is the firmware's own stored effects, or none (spec 071).
 	Effects() []string
+	// Catalogue describes each effect's colours and speeds, where the
+	// device does (spec 077).
+	Catalogue() []lighting.EffectInfo
+	// Stores is whether an effect write wears the device's storage.
+	Stores() bool
 	// Firmware is the effect the firmware was last read or written to run.
 	Firmware() (lighting.Effect, bool)
 	// ReadFirmware reads it from the device.
 	ReadFirmware(ctx context.Context) (lighting.Effect, error)
-	// SetFirmware writes an effect and its colour to the device's storage,
-	// where they differ.
-	SetFirmware(ctx context.Context, effect string, c *lighting.Colour) (bool, error)
+	// SetFirmware writes an effect, its colours and speed to the device,
+	// where they differ. Nil colours and speed keep what it has.
+	SetFirmware(ctx context.Context, effect string, colours []lighting.Colour, speed *int, restart bool) (bool, error)
 	// Say puts a line in the service's log, naming the device.
 	Say(format string, args ...any)
 	// Watch is the power-cycle watcher's notes (spec 071 R6).
@@ -192,9 +200,9 @@ func (d *drawn) zones(keys []lighting.Key) []devices.Zone {
 	}
 	out := make([]devices.Zone, 0, len(own))
 	for _, z := range own {
-		zone := devices.Zone{Name: z.Name, Shape: devices.ShapeLine, First: z.First, Count: z.Count}
-		if z.Count == 1 && !z.Resizable() {
-			zone.Shape = devices.ShapeSingle
+		zone := devices.Zone{
+			Name: z.Name, Shape: shapeOf(z), First: z.First, Count: z.Count,
+			Parts: append([]int(nil), z.Parts...),
 		}
 		if z.Resizable() {
 			zone.Min, zone.Max = z.Min, z.Max
@@ -202,6 +210,91 @@ func (d *drawn) zones(keys []lighting.Key) []devices.Zone {
 		out = append(out, zone)
 	}
 	return out
+}
+
+/*
+thingsOf is the device's fans, rings and strips, for the effects that draw
+per thing or along a zone's chain of them (spec 077 R3.4). A zone is split as
+its device counts its parts (the Kraken's fans), else as the rules' segments
+tile it (the Aura's side fans, as light map wrote them), else it is one
+thing. It is a ring where the device or a rule's shapes says so.
+*/
+func thingsOf(zones []devices.Zone, rule devices.Rule) []render.Thing {
+	var out []render.Thing
+	for z, zone := range zones {
+		if zone.Count == 0 {
+			continue
+		}
+		ring := zone.Shape == devices.ShapeRing || rule.Shapes[zone.Name] == "ring"
+		parts := zone.Parts
+		if len(parts) < 2 {
+			parts = tiles(zone, rule)
+		}
+		if len(parts) == 0 {
+			parts = []int{zone.Count}
+		}
+		first := zone.First
+		for _, n := range parts {
+			lights := make([]int, n)
+			for i := range lights {
+				lights[i] = first + i
+			}
+			out = append(out, render.Thing{Lights: lights, Zone: z, Ring: ring})
+			first += n
+		}
+	}
+	return out
+}
+
+// tiles is how the rules' segments divide a zone, each segment's size in
+// order, where they cover it end to end with no gap; else none.
+func tiles(zone devices.Zone, rule devices.Rule) []int {
+	var spans [][2]int
+	for _, seg := range rule.Segments {
+		if !strings.EqualFold(seg.Zone, zone.Name) || seg.LEDs == nil {
+			continue
+		}
+		spans = append(spans, [2]int{seg.LEDs.First, seg.LEDs.Last})
+	}
+	slices.SortFunc(spans, func(a, b [2]int) int { return a[0] - b[0] })
+	var sizes []int
+	next := 0
+	for _, sp := range spans {
+		if sp[0] != next || sp[1] < sp[0] {
+			return nil
+		}
+		sizes = append(sizes, sp[1]-sp[0]+1)
+		next = sp[1] + 1
+	}
+	if next != zone.Count {
+		return nil
+	}
+	return sizes
+}
+
+/*
+shapeOf is a zone's shape as the driver gives it (sanshoku spec 032). One the
+driver does not know, an addressable header's, is a line until somebody says
+otherwise: it may be a strip or fans in a chain, and only a line or a ring is
+asked about chaining.
+*/
+func shapeOf(z lighting.Zone) devices.Shape {
+	switch z.Shape {
+	case lighting.ShapeSingle:
+		return devices.ShapeSingle
+	case lighting.ShapeRing:
+		return devices.ShapeRing
+	case lighting.ShapeGrid:
+		return devices.ShapeGrid
+	case lighting.ShapeSet:
+		return devices.ShapeSet
+	case lighting.ShapeLine:
+		return devices.ShapeLine
+	}
+	if z.Count == 1 && !z.Resizable() {
+		return devices.ShapeSingle
+	}
+	return devices.ShapeLine
 }
 
 /*
@@ -301,7 +394,8 @@ func (d *drawn) canvasOf() devices.Canvas {
 	d.mu.Unlock()
 	out := devices.Canvas{
 		Drawing: status.Drawing, Interval: status.Interval, Rate: status.Rate, Frames: status.Frames, Own: own,
-		Fades: d.Hold() > 0,
+		Failing: status.Failing,
+		Fades:   d.Hold() > 0,
 	}
 	if watch := d.Watch(); watch.Watched {
 		out.Watch = &devices.Watch{Answering: watch.Answering, Asked: watch.Asked, PutBack: watch.PutBack}
@@ -418,19 +512,40 @@ chosen it with the keyboard's own keys (R6.3). A preview draws the colour
 instead, and skips a different effect (R5.2).
 */
 func (d *drawn) chooseStored(ctx context.Context, name string, style devices.Style) error {
+	var colours []lighting.Colour
+	for _, c := range style.Palette() {
+		colours = append(colours, lighting.Colour{R: c.R, G: c.G, B: c.B})
+	}
+	for _, info := range d.Catalogue() {
+		if strings.EqualFold(info.Name, name) && len(colours) > info.MaxColours {
+			// As many as the effect takes, none for a rainbow: more is
+			// refused by the driver, and the effect lost for colours it
+			// would not have shown (spec 077 E4, Rainbow Flow).
+			colours = colours[:info.MaxColours]
+		}
+	}
 	var want *lighting.Colour
-	if palette := style.Palette(); len(palette) > 0 {
-		want = &lighting.Colour{R: palette[0].R, G: palette[0].G, B: palette[0].B}
+	if len(colours) > 0 {
+		want = &colours[0]
 	}
 	now, known := d.Firmware()
 	sameEffect := known && strings.EqualFold(now.Name, name)
-	if sameEffect && (want == nil || !now.Coloured || (now.Colour != nil && *now.Colour == *want)) {
+	if !style.Restart && sameEffect && showsColours(now, colours) && (style.Speed == nil || (now.Speed != nil && *now.Speed == *style.Speed)) {
 		d.showStored()
 		return nil
 	}
 
 	switch writing(ctx) {
-	case forPreview:
+	case forPreview, forReconcile:
+		if !d.Stores() {
+			// Held in memory: putting it back, or showing it for a lease
+			// that puts the record back after, costs nothing (spec 077
+			// R2.3).
+			break
+		}
+		if writing(ctx) == forReconcile {
+			return &KeepsStored{Device: d.Name(), Effect: name, Why: "hotaru writes the device's storage only when a person asks"}
+		}
 		if !sameEffect {
 			return &KeepsStored{Device: d.Name(), Effect: name, Why: "a preview does not write the device's storage"}
 		}
@@ -441,20 +556,20 @@ func (d *drawn) chooseStored(ctx context.Context, name string, style devices.Sty
 		d.stored = false
 		d.chosen = &choice{effect: static, style: style}
 		return nil
-	case forReconcile:
-		return &KeepsStored{Device: d.Name(), Effect: name, Why: "hotaru writes the device's storage only when a person asks"}
 	case forApply:
 	}
 
 	d.showStored()
-	d.mu.Lock()
-	wait := d.flashed.Add(flashGap).Sub(flashNow())
-	d.mu.Unlock()
-	if wait > 0 && !flashWait(ctx, wait) {
-		return ctx.Err() //nolint:wrapcheck // the caller's own cancellation
+	if d.Stores() {
+		d.mu.Lock()
+		wait := d.flashed.Add(flashGap).Sub(flashNow())
+		d.mu.Unlock()
+		if wait > 0 && !flashWait(ctx, wait) {
+			return ctx.Err() //nolint:wrapcheck // the caller's own cancellation
+		}
 	}
-	wrote, err := d.SetFirmware(ctx, name, want)
-	if wrote {
+	wrote, err := d.SetFirmware(ctx, name, colours, style.Speed, style.Restart)
+	if wrote && d.Stores() {
 		d.mu.Lock()
 		d.flashed = flashNow()
 		d.mu.Unlock()
@@ -533,9 +648,20 @@ func (d *drawn) showLocked(colours []colour.Colour, rule devices.Rule) {
 		Params: render.Params{
 			Colours: d.colours, Palette: pick.style.Palette(),
 			Speed: pick.style.Speed, Brightness: pick.style.Brightness,
+			Things: thingsOf(d.zones(d.Keys()), rule),
+			Pace:   paceOr(pick.style.Pace, rule.Pace[strings.ToLower(pick.effect.Name)]),
 		},
 		Interval: rule.FrameInterval,
+		Restart:  pick.style.Restart,
 	})
+}
+
+// paceOr is a write's own trim, or the rule's where it names none.
+func paceOr(own, rule float64) float64 {
+	if own > 0 {
+		return own
+	}
+	return rule
 }
 
 /*
@@ -609,20 +735,61 @@ func (d *drawn) device() devices.Device {
 }
 
 /*
+showsColours is whether a running effect shows the colours asked for: all of
+them where it says what they are, its first where it says only that. No
+colours asked for, or an effect without colours, is always so.
+*/
+func showsColours(now lighting.Effect, want []lighting.Colour) bool {
+	switch {
+	case len(want) == 0 || !now.Coloured:
+		return true
+	case len(now.Colours) > 0:
+		return slices.Equal(now.Colours, want)
+	default:
+		return now.Colour != nil && *now.Colour == want[0]
+	}
+}
+
+/*
 storedModes is the firmware's effects as modes, marked Stored, in the
-firmware's order. A coloured effect takes one colour of its own, and the
-running one says what it is, where it was read.
+firmware's order. Where the device has a catalogue, each says how many
+colours it takes and the speeds it runs at (spec 077 R2.1); otherwise a
+coloured effect takes one. The running one says its colours and speed, where
+they were read.
 */
 func (d *drawn) storedModes(firmware lighting.Effect, known bool) []devices.Mode {
+	catalogue := map[string]lighting.EffectInfo{}
+	for _, info := range d.Catalogue() {
+		catalogue[strings.ToLower(info.Name)] = info
+	}
 	var out []devices.Mode
 	for _, name := range d.Effects() {
-		mode := devices.Mode{Name: name, Stored: true}
-		if !colourlessEffect(name) {
+		mode := devices.Mode{Name: name, Stored: true, WritesStorage: d.Stores()}
+		running := known && strings.EqualFold(firmware.Name, name)
+		info, described := catalogue[strings.ToLower(name)]
+		switch {
+		case described:
+			mode.ModeColour, mode.ColoursMin, mode.ColoursMax = info.MaxColours > 0, info.MinColours, info.MaxColours
+			if len(info.Speeds) > 1 {
+				now := info.Speed
+				if running && firmware.Speed != nil {
+					now = *firmware.Speed
+				}
+				mode.Speed = &devices.Speed{Slowest: info.Speeds[0], Fastest: info.Speeds[len(info.Speeds)-1], Now: now}
+			}
+		case !colourlessEffect(name):
 			mode.ModeColour, mode.ColoursMin, mode.ColoursMax = true, 1, 1
 		}
-		if known && strings.EqualFold(firmware.Name, name) && firmware.Colour != nil {
-			c := colour.Colour{R: firmware.Colour.R, G: firmware.Colour.G, B: firmware.Colour.B}
-			mode.Colour, mode.Colours = c, []colour.Colour{c}
+		if running {
+			for _, c := range firmware.Colours {
+				mode.Colours = append(mode.Colours, colour.Colour{R: c.R, G: c.G, B: c.B})
+			}
+			if len(mode.Colours) == 0 && firmware.Colour != nil {
+				mode.Colours = []colour.Colour{{R: firmware.Colour.R, G: firmware.Colour.G, B: firmware.Colour.B}}
+			}
+			if len(mode.Colours) > 0 {
+				mode.Colour = mode.Colours[0]
+			}
 		}
 		out = append(out, mode)
 	}
@@ -739,6 +906,40 @@ func (l *lights) refuse(device string) error {
 	}
 	return &NoDevice{Name: device}
 }
+
+/*
+SetLength gives a zone of a device hotaru draws a length, now and until the
+service stops: how light map finds a header's length by trying lengths
+(spec 077 R4.3). Not recorded; the rules' lengths are what a restart uses.
+*/
+func (s *Service) SetLength(_ context.Context, device, zone string, lights int) error {
+	s.mu.RLock()
+	all := s.drawnNow()
+	s.mu.RUnlock()
+	for _, d := range all {
+		if !strings.EqualFold(d.Name(), device) {
+			continue
+		}
+		if err := d.Resize(zone, lights); err != nil {
+			return &BadLength{Device: device, Zone: zone, Lights: lights, Why: err}
+		}
+		return nil
+	}
+	return &NoDevice{Name: device}
+}
+
+// BadLength is a length a device refused for a zone.
+type BadLength struct {
+	Device, Zone string
+	Lights       int
+	Why          error
+}
+
+func (e *BadLength) Error() string {
+	return fmt.Sprintf("%s's %s cannot have %d lights: %v", e.Device, e.Zone, e.Lights, e.Why)
+}
+
+func (e *BadLength) Unwrap() error { return e.Why }
 
 // Handed is a write refused because the device's lights are drawn by hotaru
 // under another name.

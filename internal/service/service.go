@@ -375,6 +375,11 @@ narrows to particular hardware by name substring, for a caller who means one
 device rather than everything in scope.
 */
 type Request struct {
+	// fromLeader is, for each follower given its leader's effect with no
+	// colours, the leader whose colours it takes once the leader is lit
+	// (spec 077 R3.2). Set by withFollowers.
+	fromLeader map[string]string
+
 	// Colour, when set, applies to every device the request covers, before
 	// any assignments. "Everything blue, except the top fan" is this plus one
 	// assignment, which is how a caller says it and how it is stored.
@@ -424,6 +429,12 @@ type Request struct {
 	// reporting it as a success answers a question nobody asked, and looks to
 	// the caller like the mode they named having worked.
 	Exactly bool
+
+	// Pace trims each named device's copy of its effect for this request
+	// only, by any part of its name (spec 077 R3.9).
+	Pace map[string]float64
+	// Restart starts each effect again from its beginning.
+	Restart bool
 }
 
 /*
@@ -515,6 +526,16 @@ func (s *Service) Apply(ctx context.Context, req Request) ([]Result, error) {
 		ctx = withPurpose(ctx, forApply)
 	}
 
+	// Followers take their leader's effect, and leaders are written first
+	// (spec 077 R3.2, R3.5).
+	req, _ = withFollowers(cfg, found, req)
+	found = leadersFirst(cfg, found)
+	leads := map[string]bool{}
+	for _, leader := range req.fromLeader {
+		leads[leader] = true
+	}
+	leaderColours := map[string][]colour.Colour{}
+
 	var results []Result
 	for i := range found {
 		device := found[i]
@@ -525,6 +546,13 @@ func (s *Service) Apply(ctx context.Context, req Request) ([]Result, error) {
 			continue
 		}
 
+		if leader, ok := req.fromLeader[device.Name]; ok {
+			// A follower given its leader's effect with no colours takes the
+			// colours the leader was lit in (spec 077 R3.2).
+			if colours, ok := leaderColours[leader]; ok {
+				req.Effects = withColours(req.Effects, &device, colours)
+			}
+		}
 		assignments := forDevice(req.Assignments, device.Name)
 		if twin, ok := twins[device.Name]; ok {
 			// The scene's colours for the OpenRGB listing of this hardware,
@@ -536,6 +564,20 @@ func (s *Service) Apply(ctx context.Context, req Request) ([]Result, error) {
 			whole := devices.Assignment{Target: devices.Target{Device: device.Name}, Colour: *req.Colour}
 			assignments = append([]devices.Assignment{whole}, assignments...)
 		}
+		if effect := effectFor(req.Effects, device.Name); len(assignments) == 0 && effect.Named() {
+			/*
+				Given an effect and no colours: a follower of a leader the
+				request lit (spec 077 R3.2). Its frame is the effect's first
+				colour, or white for an effect that draws its own.
+			*/
+			whole := colour.MustParse("white")
+			if palette := effect.Palette(); len(palette) > 0 {
+				if c, err := colour.Parse(palette[0]); err == nil {
+					whole = c
+				}
+			}
+			assignments = []devices.Assignment{{Target: devices.Target{Device: device.Name}, Colour: whole}}
+		}
 		if len(assignments) == 0 && !req.Off {
 			continue
 		}
@@ -546,6 +588,9 @@ func (s *Service) Apply(ctx context.Context, req Request) ([]Result, error) {
 			continue
 		}
 		results = append(results, s.applyOne(ctx, client, cfg, &device, assignments, req))
+		if leads[device.Name] {
+			leaderColours[device.Name] = s.coloursLitIn(cfg, &device, assignments, req)
+		}
 	}
 	return results, nil
 }
@@ -554,7 +599,7 @@ func (s *Service) applyOne(ctx context.Context, client machine, cfg *config.Conf
 	device *devices.Device, assignments []devices.Assignment, req Request,
 ) Result {
 	off := req.Off
-	want := preference{mode: req.Mode, exactly: req.Exactly}
+	want := preference{mode: req.Mode, exactly: req.Exactly, restart: req.Restart, pace: paceFor(req.Pace, device.Name)}
 	result := Result{Device: device.Name}
 	/*
 		insist says the preferred mode is not to be dropped for carrying fewer
@@ -599,7 +644,7 @@ func (s *Service) applyOne(ctx context.Context, client machine, cfg *config.Conf
 			*/
 			result.Problems = append(result.Problems,
 				fmt.Sprintf("%s has no effect called %q", device.Name, effect.Mode))
-			want = preference{mode: req.Mode, exactly: req.Exactly}
+			want = preference{mode: req.Mode, exactly: req.Exactly, restart: req.Restart, pace: paceFor(req.Pace, device.Name)}
 		}
 	}
 	rule := devices.RuleFor(cfg, device.Name)
@@ -673,6 +718,21 @@ func modeColoursFor(device *devices.Device, mode string, frame devices.Frame, of
 		// frame's reduction is only ever the fallback -- see spec 051.
 		return named
 	}
+	if known && !m.PerLED && m.ColoursMax > 1 {
+		/*
+			An effect that takes several colours, given none of its own,
+			takes the scene's colours on the device, in order: a red ring and
+			blue fans are Tai Chi in red and blue, not in the one most of the
+			device is (spec 077, the maintainer's model). Before the rule
+			below, which gave Rainbow Wave, a moving gradient through the
+			colours it is given, none: it ran the full rainbow (the live run).
+			Two at least: one colour would hold a rainbow still in it, and a
+			one-colour scene keeps the wheel.
+		*/
+		if picked := sceneColours(frame, m.ColoursMax); len(picked) > 1 {
+			return picked
+		}
+	}
 	if known && !m.ModeColour {
 		return nil
 	}
@@ -732,6 +792,21 @@ type preference struct {
 	colours []colour.Colour
 	// speed is the mode's, in the device's units, where it advertises a range.
 	speed *int
+	// pace trims a drawn effect's period for this write; zero is the rule's.
+	pace float64
+	// restart starts the effect again from its beginning.
+	restart bool
+}
+
+// paceFor is the trim a request names for one device, by any part of its
+// name, or zero.
+func paceFor(pace map[string]float64, device string) float64 {
+	for name, factor := range pace {
+		if strings.Contains(strings.ToLower(device), strings.ToLower(strings.TrimSpace(name))) {
+			return factor
+		}
+	}
+	return 0
 }
 
 /*
@@ -830,6 +905,7 @@ func (s *Service) writeFrame(ctx context.Context, client machine,
 	for _, mode := range candidates {
 		attempt := Attempt{Mode: mode}
 		style := styleOf(rule.Brightness, modeColoursFor(device, mode, frame, off, want.colours), want.speed)
+		style.Pace, style.Restart = want.pace, want.restart
 
 		// The mode, then the frame: a canvas chooses its renderer and draws
 		// in one step (see drawn, in canvas.go).

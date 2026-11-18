@@ -41,7 +41,7 @@ func lightCommand() *cobra.Command {
 		Use:   "light",
 		Short: "Lighting",
 	}
-	cmd.AddCommand(listCommand(), setCommand(), offCommand(), healthCommand(), mapCommand(), releaseCommand())
+	cmd.AddCommand(listCommand(), setCommand(), offCommand(), healthCommand(), mapCommand(), matchCommand(), followCommand(), lengthCommand(), releaseCommand())
 	return cmd
 }
 
@@ -70,7 +70,7 @@ func listCommand() *cobra.Command {
 
 			w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 			_, _ = fmt.Fprintln(w, "DEVICE\tLEDS\tACTIVE\tSCOPE\tMODES")
-			var previewing, stored bool
+			var previewing, stored, writes bool
 			var handed []string
 			for _, device := range list {
 				scope := "-"
@@ -90,6 +90,7 @@ func listCommand() *cobra.Command {
 				_, _ = fmt.Fprintf(w, "%s\t%d\t%s\t%s\t%s\n",
 					device.Name, device.LEDs, active(device), scope, strings.Join(markStored(device), ", "))
 				stored = stored || len(device.Stored) > 0
+				writes = writes || device.WritesStorage
 			}
 			if err := w.Flush(); err != nil {
 				return fmt.Errorf("write the listing: %w", err)
@@ -97,8 +98,11 @@ func listCommand() *cobra.Command {
 			if previewing {
 				cmd.Println("\nSome devices are showing a draft. `hotaru preview` says who is holding it.")
 			}
-			if stored {
-				cmd.Println("\n* is the device's own effect. Choosing one, or its colour, writes the device's storage.")
+			switch {
+			case writes:
+				cmd.Println("\n* is the device's own effect. On a device that keeps it in storage, choosing one, or its colour, writes that storage.")
+			case stored:
+				cmd.Println("\n* is the device's own effect.")
 			}
 			if len(handed) > 0 {
 				cmd.Println()
@@ -147,6 +151,8 @@ func drawing(effect string, c api.Canvas) string {
 		effect = "nothing drawn"
 	}
 	switch {
+	case c.Failing != "":
+		return effect + ", refusing every frame"
 	case c.Drawing:
 		return fmt.Sprintf("%s, %.1f fps", effect, c.Rate)
 	case c.Own:

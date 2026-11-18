@@ -15,6 +15,7 @@ package gui
 
 import (
 	"context"
+	"maps"
 	"sync"
 	"time"
 
@@ -107,9 +108,14 @@ func sameDevice(a, b api.Device) bool {
 	if (a.Preview == nil) != (b.Preview == nil) || a.HandedTo != b.HandedTo {
 		return false
 	}
+	// What it follows and its paces, set from its card (spec 077).
+	if a.Follows != b.Follows || !maps.Equal(a.Pace, b.Pace) {
+		return false
+	}
 	// Drawing or holding is the change a person sees. The rate moves on
 	// every poll and is left for the next rebuild.
-	if (a.Canvas == nil) != (b.Canvas == nil) || (a.Canvas != nil && a.Canvas.Drawing != b.Canvas.Drawing) {
+	if (a.Canvas == nil) != (b.Canvas == nil) ||
+		(a.Canvas != nil && (a.Canvas.Drawing != b.Canvas.Drawing || a.Canvas.Failing != b.Canvas.Failing)) {
 		return false
 	}
 	if len(a.Colours) != len(b.Colours) {

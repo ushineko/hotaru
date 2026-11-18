@@ -1254,9 +1254,24 @@ and the same shape as the screen chooser next to it: a card that says what is
 set, and a dialog that sets it.
 */
 func (s *ScenesSection) chooseEffects(sh *shell.Shell, got Snapshot) {
+	/*
+		Shown on the hardware as it is chosen, as a colour is in the picker,
+		for as long as the dialog is open: an effect that only appeared once
+		the scene was saved and applied again was a change that seemed to do
+		nothing (spec 077, the live run). Cancel puts the draft back; either
+		way the lights go back when it closes.
+	*/
+	before := map[string]api.Effect{}
+	for _, device := range got.Devices {
+		before[device.Name] = s.draft.Effect(device.Name)
+	}
+	sender := newLimiter(s.showDraft)
 	rows := []fyne.CanvasObject{effectFields(sh.Window, got.Devices,
 		func(device string) api.Effect { return s.draft.Effect(device) },
-		func(device string, effect api.Effect) { s.draft.SetEffectWhole(device, effect) })}
+		func(device string, effect api.Effect) {
+			s.draft.SetEffectWhole(device, effect)
+			sender.offer(s.draft.Scene(s.draftName()))
+		})}
 
 	/*
 		And the way to stop setting it nine times.
@@ -1279,7 +1294,18 @@ func (s *ScenesSection) chooseEffects(sh *shell.Shell, got Snapshot) {
 
 	ask := dialog.NewCustomConfirm("What the devices do", "Done", "Cancel",
 		container.NewVScroll(container.NewVBox(rows...)),
-		func(bool) { sh.Invalidate() }, sh.Window)
+		func(keep bool) {
+			// Before the lease goes, as the picker does: a send in flight
+			// would land after the release.
+			sender.stop()
+			if !keep {
+				for device, effect := range before {
+					s.draft.SetEffectWhole(device, effect)
+				}
+			}
+			s.app.EndPreview()
+			sh.Invalidate()
+		}, sh.Window)
 	roomy(ask, sh)
 }
 

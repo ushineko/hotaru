@@ -138,6 +138,9 @@ func (s *SystemSection) Build(sh *shell.Shell) fyne.CanvasObject {
 	body := []fyne.CanvasObject{title("This machine"), s.loaded, s.cooling}
 	for _, device := range got.Devices {
 		var actions []fyne.CanvasObject
+		if device.HandedTo == "" && device.InScope && device.LEDs > 0 {
+			actions = append(actions, s.follows(sh, device, got.Devices))
+		}
 		if device.Canvas != nil {
 			actions = append(actions, s.release(sh, device))
 		}
@@ -207,6 +210,11 @@ func drawDevice(device api.Device, actions ...fyne.CanvasObject) fyne.CanvasObje
 	rows = append(rows, widgets.Dim(strings.Join(facts, " · ")))
 
 	switch {
+	case device.Canvas != nil && device.Canvas.Failing != "":
+		// Above the rest: it is not showing what the line above says it
+		// draws (hotaru #221).
+		rows = append(rows, widgets.Note(
+			"Refusing every frame: "+device.Canvas.Failing+". hotaru opens it again by itself.", fd.StatusBad))
 	case device.HandedTo != "":
 		rows = append(rows, widgets.Note(
 			fmt.Sprintf("hotaru draws this as %s.", device.HandedTo), fd.StatusInfo))

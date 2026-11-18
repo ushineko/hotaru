@@ -79,6 +79,10 @@ type Device struct {
 	Reassert string `json:"reassert,omitempty"`
 	// Segments are the names this machine's owner gave parts of the device.
 	Segments []string `json:"segments,omitempty"`
+	// Follows is the device this one's rule follows, as the rule says it;
+	// Pace its pace per effect, by the effect's name lowercased (spec 077).
+	Follows string             `json:"follows,omitempty"`
+	Pace    map[string]float64 `json:"pace,omitempty"`
 
 	// Toggles are the segments that are switches rather than decoration, so
 	// an editor can offer them their own control.
@@ -95,11 +99,18 @@ type Device struct {
 	OneColour []string `json:"one_colour,omitempty"`
 
 	/*
-		Stored is the modes the device's own firmware runs and keeps in its
-		storage, by name (spec 071). Setting one writes the device's storage,
-		which a listing says before somebody chooses it.
+		Stored is the modes the device's own firmware runs, by name (spec
+		071).
 	*/
 	Stored []string `json:"stored,omitempty"`
+
+	/*
+		WritesStorage is a device whose own effects are kept in storage that
+		wears (the F75's flash), so setting one writes it, which a listing
+		says before somebody chooses one. Absent for a device that holds its
+		effect in memory (spec 077).
+	*/
+	WritesStorage bool `json:"writes_storage,omitempty"`
 
 	/*
 		Coloured is the modes that take colours of their own, by name, with
@@ -150,6 +161,9 @@ type Canvas struct {
 	// Own is the device showing its firmware's own stored effect, Effect,
 	// with nothing drawn (spec 071).
 	Own bool `json:"own,omitempty"`
+	// Failing is why every frame to the device has failed for a while: it
+	// is not showing what it is said to be drawing (hotaru #221).
+	Failing string `json:"failing,omitempty"`
 	// Watch is the power-cycle watcher's notes, for a device it watches.
 	Watch *Watch `json:"watch,omitempty"`
 }
@@ -204,16 +218,53 @@ const (
 	ShapeSingle = "single"
 	ShapeLine   = "line"
 	ShapeGrid   = "grid"
+	ShapeRing   = "ring"
+	ShapeSet    = "set"
 )
 
 // Zone is a contiguous run of LEDs, as the device groups them.
 type Zone struct {
 	Name string `json:"name"`
-	// Shape is "single", "line" or "grid". Only a line can be several separate
-	// things sharing one connector; a grid is one object with many lights.
+	// Shape is "single", "line", "ring", "grid" or "set". Only a line or a
+	// ring can be several separate things sharing one connector; a grid or a
+	// set is one object with many lights.
 	Shape string `json:"shape,omitempty"`
 	First int    `json:"first"`
 	Count int    `json:"count"`
+	// Parts are the lights of each thing chained in the zone, where the
+	// device knows them (spec 077).
+	Parts []int `json:"parts,omitempty"`
+	// Max is the most lights a zone whose length is set may have; absent
+	// for a zone the device counts (spec 077 R4.3).
+	Max int `json:"max,omitempty"`
+}
+
+/*
+RuleRequest is the body of POST /v1/rules/device: a change to one device's
+rule (spec 077 R3.2, R3.9). Follow names a device to follow, empty to stop;
+absent leaves it. Pace sets the pace for each effect named, zero to remove it.
+*/
+type RuleRequest struct {
+	Device string             `json:"device"`
+	Follow *string            `json:"follow,omitempty"`
+	Pace   map[string]float64 `json:"pace,omitempty"`
+}
+
+// RuleResponse says which rule was changed, and in which file.
+type RuleResponse struct {
+	RulesFile string `json:"rules_file"`
+	Match     string `json:"match"`
+}
+
+/*
+LengthRequest is the body of POST /v1/lighting/length: a zone of a device
+hotaru draws, by the device's full name and the zone's, given a length until
+the service stops (spec 077 R4.3). The rules' lengths are what lasts.
+*/
+type LengthRequest struct {
+	Device string `json:"device"`
+	Zone   string `json:"zone"`
+	Lights int    `json:"lights"`
 }
 
 // DevicesResponse is the body of GET /v1/devices.
@@ -274,6 +325,22 @@ type ApplyRequest struct {
 	// this device" cannot be answered by quietly trying Direct instead and
 	// reporting that it worked.
 	Exactly bool `json:"exactly,omitempty"`
+
+	/*
+		Pace trims the pace of the effect each named device's copy runs, by
+		any part of its name, for this request only (spec 077 R3.9): how
+		light match tries a trim before it is written to the rules.
+	*/
+	Pace map[string]float64 `json:"pace,omitempty"`
+
+	// Restart starts each effect again from its beginning, even where
+	// nothing about it changed: how effects are started in step.
+	Restart bool `json:"restart,omitempty"`
+
+	// Effects name what each device should be doing, by any part of its
+	// name, as a scene's do: how a match gives the leader an effect in its
+	// colours, and its followers take it (spec 077).
+	Effects map[string]Effect `json:"effects,omitempty"`
 }
 
 /*

@@ -219,7 +219,7 @@ func TestTheShippedExampleParsesAndMeansWhatItSays(t *testing.T) {
 		"a segment that addresses nothing is a scene silently doing less than it says")
 
 	require.True(t, cfg.RulesFor("Keychron K4 HE")[0].NeverBlank)
-	require.Equal(t, time.Minute, cfg.RulesFor("G502 X PLUS")[0].Reassert.Duration())
+	require.Equal(t, time.Minute, cfg.RulesFor("Logitech USB Receiver")[0].Reassert.Duration())
 	card := cfg.RulesFor("MSI GeForce RTX 4090 Suprim Liquid X")[0].Colour
 	require.InDelta(t, 2.15, *card.Curve.Green, 1e-9)
 
@@ -304,4 +304,19 @@ devices:
 	require.Contains(t, problems[0].Error(), "colour curve red 0 is outside 0-10")
 	require.Contains(t, problems[1].Error(), "colour saturation 1.5 is outside 0-1")
 	require.Contains(t, problems[2].Error(), "colour value -1 is outside 0-1")
+}
+
+// A zone's shape is ring or line, and anything else is reported and ignored
+// (spec 077 R3.4).
+func TestAZonesShapeIsRingOrLine(t *testing.T) {
+	cfg, problems, err := config.Parse("hotaru.yml", []byte(`
+devices:
+  - match: maximus
+    shapes: {"Addressable RGB Header 3": Ring, "Addressable RGB Header 1": line, "Addressable RGB Header 2": star}
+`))
+	require.NoError(t, err)
+	require.Len(t, problems, 1)
+	require.Contains(t, problems[0].Why, "star")
+	shapes := cfg.RulesFor("ASUS ROG MAXIMUS Z790 HERO")[0].Shapes
+	require.Equal(t, map[string]string{"Addressable RGB Header 3": "Ring", "Addressable RGB Header 1": "line"}, shapes)
 }

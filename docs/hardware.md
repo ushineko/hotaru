@@ -144,6 +144,61 @@ one. After a restart it has no record until its first write to the device.
 These numbers are one desk's, matched by eye. Tune them by looking: change
 the rule, run `hotaru reload`, and apply the scene again.
 
+### Effects that follow
+
+Every device hotaru draws runs the Kraken's fourteen effects under the
+Kraken's names, drawn by hotaru to match the cooler by eye (spec 077). A
+device can follow another: its rule's `follow` names the leader, and it takes
+the leader's effect, colours and speed whenever the leader is given one.
+
+```yaml
+devices:
+  - match: maximus
+    follow: kraken
+    shapes: {"Addressable RGB Header 3": ring}
+    pace: {Breathing: 2.2}
+  - match: msi
+    follow: kraken
+```
+
+- **What each device shows.** The Kraken runs its own firmware effect. A
+  device hotaru draws shows hotaru's copy, per fan, along a chain of fans, or
+  staggered fan to fan, as the Kraken does. A device with one light takes the
+  closest effect of its own: on the RTX 4090, Breathing for Breathing, Pulse,
+  Candle and Starry Night; Color Cycle for Fading; Rainbow Wave for the
+  rainbows; Fade In for Alternating, Tai Chi and Water Cooler; Flowing for
+  Covering Marquee and Loading.
+- **Fans and strips.** A zone's fans are the device's own count where it has
+  one, else the rule's segments that cover the zone end to end. `shapes` says
+  whether a header holds fans (`ring`) or a strip (`line`), since the board
+  cannot tell.
+- **Colours.** An effect a scene gives with no colours of its own runs in the
+  scene's colours on that device, in order. A scene with a red ring and blue
+  fans gives the Kraken Tai Chi in red and blue, and its followers the same.
+  hotaru takes the most different of the scene's colours. Where they sit
+  close, as a picture's often do, it pushes them apart so the effect shows.
+  Colours you choose for an effect are used as they are.
+- **Following.** Each device's card in the window's System section has a
+  Follows choice. `hotaru light follow maximus kraken` does the same, and
+  `hotaru light follow maximus none` stops it. A device given a leader starts
+  on the leader's effect at once.
+- **Pace.** The copies run at the Kraken's pace as measured. `hotaru light
+  match <device> <effect>` runs the effect on a device and its leader
+  together. Keys f and s change it by a tenth, F and S by a fiftieth, and a
+  number sets it. Return writes the device's `pace` for that effect. A
+  follower's card in the window has Match pace, with a slider and a field.
+  A shape that differs from the Kraken's, as Breathing's does, drifts apart
+  over minutes whatever the pace.
+- **In step.** The leader is written first and every effect starts again, on
+  an apply and on a full restore.
+- **Limits.** The K4 HE has one brightness for the board, so an effect that
+  dims keys apart dims the board. The MM700's logo has no blue. The F75
+  through its receiver shows a merged palette. A moving effect on the G502
+  costs battery.
+- **A header's length.** `hotaru light map` finds it: it lights the header,
+  then asks whether any red shows as it halves the range, and writes
+  `lengths`. `hotaru light length` tries one by hand.
+
 ## Everything else
 
 hotaru's lighting and the cooler come from sanshoku, a Go module built into

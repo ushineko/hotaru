@@ -12,7 +12,9 @@ import (
 	"github.com/ushineko/hotaru/internal/colour"
 	"github.com/ushineko/hotaru/internal/config"
 	"github.com/ushineko/hotaru/internal/devices"
+	"github.com/ushineko/hotaru/internal/scenes"
 	"github.com/ushineko/hotaru/internal/service"
+	"github.com/ushineko/hotaru/internal/service/servicetest"
 	"github.com/ushineko/hotaru/internal/state"
 )
 
@@ -180,4 +182,31 @@ func TestReleasingTheCoolerKeepsItAttached(t *testing.T) {
 	require.True(t, svc.Stays(coolerName))
 	_, kept := store.Snapshot().Devices[formerName]
 	require.False(t, kept, "the former record would be adopted again and undo the release")
+}
+
+/*
+A scene that names the leader by its former name, as a scene from before
+spec 075 does, still gives a follower the leader's colours: they come from
+the lights the leader is lit in, not from the names (the live run's space-2).
+*/
+func TestAFollowerTakesColoursGivenUnderTheLeadersFormerName(t *testing.T) {
+	cfg := formerRule()
+	cfg.Devices = append(cfg.Devices, config.DeviceRule{Match: "maximus", Follow: "test cooler"})
+	board := canvastest.NewBoard("ASUS ROG MAXIMUS Z790 HERO", canvastest.Zone("Addressable 1", 4))
+	svc := servicetest.New(t, cfg, board)
+	attachCooler(t, svc)
+
+	red, blue := colour.MustParse("red"), colour.MustParse("blue")
+	_, err := svc.Apply(t.Context(), service.Request{
+		Assignments: []devices.Assignment{
+			{Target: devices.Target{Device: formerName, Part: "Channel 1"}, Colour: red},
+			{Target: devices.Target{Device: formerName, Part: "Channel 2"}, Colour: blue},
+		},
+		Effects: map[string]scenes.Effect{coolerName: {Mode: "Tai Chi"}},
+	})
+	require.NoError(t, err)
+	follower := viewOf(t, svc, "ASUS ROG MAXIMUS Z790 HERO").Device
+	require.Equal(t, "Tai Chi", follower.ActiveMode)
+	mode, _ := follower.Mode("Tai Chi")
+	require.Equal(t, []colour.Colour{red, blue}, mode.Colours)
 }

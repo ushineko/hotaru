@@ -123,7 +123,10 @@ whose colour hotaru rewrites on a timer carries the interval in `reassert`.
 **Every device is a canvas device**: hotaru draws it itself (specs 060 and
 075). It carries `canvas`, which says what the drawing is doing, and
 `led_names`, its own names for its keys. Its `modes` are hotaru's renderers.
-With `drawing` false the device is holding the one frame it was sent. A name a
+With `drawing` false the device is holding the one frame it was sent.
+`failing` says why every frame to it has failed for 2 seconds or more: it is
+not showing what it is said to draw. After 10 seconds hotaru opens it again,
+and `health` names it (#221). A name a
 rule says the device was formerly called (spec 073) is listed too, with
 `handed_to` naming the device that draws it, and hotaru writes nothing to it.
 
@@ -182,6 +185,14 @@ Spectrum goes round the colour wheel without them, and round the colours
 given with them. Rainbow Wave is the full rainbow without them, and a moving
 gradient through the colours given with them.
 
+Each zone has a `shape`: `single`, `line`, `ring` (a fan), `grid` (a keyboard)
+or `set` (lights in no order, a mouse's). `parts` are the lights of each fan
+in a zone where the device counts them, and `max` is the most lights a zone
+whose length is set may have. A device whose own effects are kept in storage
+that wears says `writes_storage` (spec 077). `follows` is the device a
+device's rule follows, and `pace` its pace per effect, by the effect's name in
+lower case.
+
 ## POST /v1/lighting/apply
 
 `colour` sets everything in scope. `assignments` are the exceptions. `off`
@@ -221,6 +232,16 @@ $ curl -s --unix-socket $XDG_RUNTIME_DIR/hotaru/hotaru.sock \
 Each attempt is a mode tried and what reading the device back found. A mode
 the device does not take moves hotaru to the next candidate, and every
 attempt is recorded, so that a user learns what their hardware does.
+
+`pace` trims the pace of each named device's drawn effect for this request
+only, by any part of the device's name: `{"maximus": 1.2}` is a fifth slower.
+`restart` starts every effect in the request again from its beginning. `hotaru
+light match` sends both while somebody matches a pace by eye (spec 077).
+
+A device whose rule says `follow` takes its leader's effect, colours and speed
+whenever a request gives the leader one. The request names an effect for the
+follower to override it. The leader is written first, and every effect in the
+request restarts, so they start in step.
 
 `changed` counts the devices that changed, so a client exits non-zero without
 counting the results itself. **A request that changed nothing does not report
@@ -804,6 +825,48 @@ $ curl -s --unix-socket … -X POST http://hotaru/v1/reload
   "rules_file": "/home/you/.config/hotaru/hotaru.yml"
 }
 ```
+
+## POST /v1/rules/device
+
+Changes one device's rule: what it follows, and its pace per effect. The
+window's Follows and Match pace use it, and so do `hotaru light follow` and
+`hotaru light match`. The service writes the rules file and uses it at once.
+
+```console
+$ curl -s --unix-socket $XDG_RUNTIME_DIR/hotaru/hotaru.sock \
+    -d '{"device":"maximus","follow":"kraken","pace":{"Breathing":2.16}}' \
+    http://hotaru/v1/rules/device
+{"rules_file":"/home/you/.config/hotaru/hotaru.yml","match":"maximus"}
+```
+
+- `follow` names the device to follow, by any part of its name. An empty
+  string stops following, and an absent one leaves it as it is. A device
+  given a leader takes the leader's current effect at once, in step.
+- `pace` sets the pace for each effect named, from above 0 to 10. A pace of 0
+  removes it.
+- The rule changed is the last one that matches the device, or a new one.
+  The file before is kept as `hotaru.yml.bak`. Comments in the file are not
+  kept.
+
+A device hotaru does not list is a 404. A leader that is not there, or a pace
+out of range, is a 400, and nothing is written.
+
+## POST /v1/lighting/length
+
+Gives a zone whose length its device cannot count a length, until the service
+stops: an addressable header's strip or fans. `hotaru light map` uses it to
+find a header's length, and `hotaru light length` reaches it by hand. The
+rules' `lengths` are what a restart uses.
+
+```console
+$ curl -s --unix-socket $XDG_RUNTIME_DIR/hotaru/hotaru.sock \
+    -d '{"device":"ASUS ROG MAXIMUS Z790 HERO","zone":"Addressable RGB Header 3","lights":20}' \
+    http://hotaru/v1/lighting/length
+{"device":"ASUS ROG MAXIMUS Z790 HERO","zone":"Addressable RGB Header 3","lights":20}
+```
+
+A device hotaru does not draw is a 404. A length the zone does not take, or a
+zone that is not one whose length is set, is a 400.
 
 ## POST /v1/lighting/release
 

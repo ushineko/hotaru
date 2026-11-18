@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"time"
 
@@ -37,6 +38,7 @@ func Routes() []string {
 		"POST /" + Version + "/screen",
 		"POST /" + Version + "/lighting/apply",
 		"POST /" + Version + "/lighting/release",
+		"POST /" + Version + "/lighting/length",
 		"GET /" + Version + "/scenes",
 		"PUT /" + Version + "/scenes/{name}",
 		"DELETE /" + Version + "/scenes/{name}",
@@ -70,6 +72,7 @@ func Routes() []string {
 		"POST /" + Version + "/preview/release",
 		"POST /" + Version + "/reconcile",
 		"POST /" + Version + "/reload",
+		"POST /" + Version + "/rules/device",
 	}
 }
 
@@ -143,6 +146,24 @@ func Handler(svc *service.Service) http.Handler {
 		Something a person asks for and never a side effect (spec 060 R4):
 		on the first such device it reboots the board.
 	*/
+	mux.HandleFunc("POST /"+Version+"/lighting/length", func(w http.ResponseWriter, r *http.Request) {
+		var req LengthRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			write(w, http.StatusBadRequest, Error{Error: "that request does not decode", Detail: err.Error()})
+			return
+		}
+		err := svc.SetLength(r.Context(), req.Device, req.Zone, req.Lights)
+		var bad *service.BadLength
+		switch {
+		case errors.As(err, &bad):
+			write(w, http.StatusBadRequest, Error{Error: err.Error()})
+		case err != nil:
+			fail(w, err)
+		default:
+			write(w, http.StatusOK, req)
+		}
+	})
+
 	mux.HandleFunc("POST /"+Version+"/lighting/release", func(w http.ResponseWriter, r *http.Request) {
 		var req ReleaseRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -815,6 +836,24 @@ func Handler(svc *service.Service) http.Handler {
 		cannot see until it enumerates again. See spec 058.
 	*/
 
+	mux.HandleFunc("POST /"+Version+"/rules/device", func(w http.ResponseWriter, r *http.Request) {
+		var req RuleRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			write(w, http.StatusBadRequest, Error{Error: "that request does not decode", Detail: err.Error()})
+			return
+		}
+		match, err := svc.SetRule(r.Context(), req.Device, service.RuleChange{Follow: req.Follow, Pace: req.Pace})
+		var bad *service.BadRule
+		switch {
+		case errors.As(err, &bad):
+			write(w, http.StatusBadRequest, Error{Error: err.Error()})
+		case err != nil:
+			fail(w, err)
+		default:
+			write(w, http.StatusOK, RuleResponse{RulesFile: svc.RulesPath(), Match: match})
+		}
+	})
+
 	mux.HandleFunc("POST /"+Version+"/reload", func(w http.ResponseWriter, _ *http.Request) {
 		problems, err := svc.Reload()
 		if err != nil {
@@ -843,7 +882,8 @@ func parse(req ApplyRequest) (service.Request, error) {
 	out := service.Request{
 		Off: req.Off, Devices: req.Devices,
 		Mode: req.Mode, Exactly: req.Exactly, Preview: req.Preview,
-		Brightness: req.Brightness,
+		Brightness: req.Brightness, Pace: req.Pace, Restart: req.Restart,
+		Effects: req.Effects,
 	}
 	if req.Colour != "" {
 		col, err := colour.Parse(req.Colour)
@@ -863,8 +903,8 @@ func parse(req ApplyRequest) (service.Request, error) {
 		}
 		out.Assignments = append(out.Assignments, devices.Assignment{Target: target, Colour: col})
 	}
-	if len(out.Assignments) == 0 && out.Colour == nil && !out.Off {
-		return service.Request{}, errors.New("nothing to apply: give a colour, assignments, or off")
+	if len(out.Assignments) == 0 && out.Colour == nil && !out.Off && len(out.Effects) == 0 {
+		return service.Request{}, errors.New("nothing to apply: give a colour, assignments, effects, or off")
 	}
 	return out, nil
 }
@@ -889,6 +929,7 @@ func describe(view service.View) Device {
 		}
 		if mode.Stored {
 			device.Stored = append(device.Stored, mode.Name)
+			device.WritesStorage = device.WritesStorage || mode.WritesStorage
 		}
 		// How many colours of its own the mode takes, for the editor's
 		// pickers. Asked of every mode, not only those that show one colour:
@@ -913,12 +954,17 @@ func describe(view service.View) Device {
 	for _, zone := range view.Device.Zones {
 		device.Zones = append(device.Zones, Zone{
 			Name: zone.Name, Shape: string(zone.Shape), First: zone.First, Count: zone.Count,
+			Parts: append([]int(nil), zone.Parts...), Max: zone.Max,
 		})
 	}
 	for _, col := range view.Device.Colours {
 		device.Colours = append(device.Colours, col.String())
 	}
 	device.Preview = asPreview(view.Preview)
+	device.Follows = view.Rule.Follow
+	if len(view.Rule.Pace) > 0 {
+		device.Pace = maps.Clone(view.Rule.Pace)
+	}
 	if view.Rule.Reassert > 0 {
 		device.Reassert = view.Rule.Reassert.String()
 	}
@@ -946,7 +992,8 @@ func canvases(in []service.CanvasState) []Canvas {
 }
 
 func asCanvas(c service.CanvasState) *Canvas {
-	out := &Canvas{Device: c.Device, Effect: c.Effect, Drawing: c.Drawing, Rate: c.Rate, Frames: c.Frames, Own: c.Own}
+	out := &Canvas{Device: c.Device, Effect: c.Effect, Drawing: c.Drawing, Rate: c.Rate, Frames: c.Frames, Own: c.Own,
+		Failing: c.Failing}
 	if c.Drawing {
 		out.Interval = c.Interval.String()
 	}

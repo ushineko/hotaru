@@ -27,6 +27,11 @@ func rgb(px lighting.Pixel) colour.Colour { return colour.Colour{R: px.R, G: px.
 func TestEachRendererSaysHowManyColoursItTakes(t *testing.T) {
 	want := map[string]int{
 		render.Static: 0, render.Breathing: 4, render.Spectrum: 8, render.Wave: 8, render.Off: 0,
+		// The Kraken's, as its catalogue gives them (spec 077).
+		render.Fading: 8, render.SpectrumWave: 0, render.CoveringMarquee: 2, render.Alternating: 2,
+		render.Pulse: 8, render.Candle: 1, render.StarryNight: 1, render.RainbowFlow: 0,
+		render.SuperRainbow: 0, render.RainbowPulse: 0, render.TaiChi: 2, render.WaterCooler: 2,
+		render.Loading: 1,
 	}
 	for _, r := range render.Renderers() {
 		require.Equal(t, want[r.Name], r.Colours, "%s takes the wrong number of colours", r.Name)
@@ -120,9 +125,9 @@ func TestTheWaveWithSeveralColoursIsAMovingGradientThatWraps(t *testing.T) {
 	require.Equal(t, []colour.Colour{red, {R: 128, B: 128}, blue, {R: 128, B: 128}},
 		[]colour.Colour{rgb(px[0]), rgb(px[1]), rgb(px[2]), rgb(px[3])})
 
-	// One step later (25 ms at full speed) every light shows its
-	// predecessor's colour, and the first takes the last's.
-	after := draw(t, render.Wave, 25*time.Millisecond, lights(4), p)
+	// One step later (150 ms at full speed, four lights timed as 24) every
+	// light shows its predecessor's colour, and the first takes the last's.
+	after := draw(t, render.Wave, 150*time.Millisecond, lights(4), p)
 	for i := range px {
 		require.Equal(t, rgb(px[(i+3)%4]), rgb(after[i]), "light %d did not move", i)
 	}

@@ -34,6 +34,15 @@ type Rule struct {
 	// Lengths are the LED counts of zones the device cannot read (spec
 	// 075). See config.DeviceRule.
 	Lengths map[string]int
+	// Shapes are what zones the device cannot describe hold (spec 077). See
+	// config.DeviceRule.
+	Shapes map[string]string
+	// Pace trims each named effect's period, by its name in lower case
+	// (spec 077 R3.9). See config.DeviceRule.
+	Pace map[string]float64
+	// Follow names the device this one takes its effect from (spec 077
+	// R3.2). See config.DeviceRule.
+	Follow string
 	// Colour corrects what is written to lights that wash out (spec 066).
 	Colour Profile
 }
@@ -92,6 +101,21 @@ func MergeRules(rules []config.DeviceRule) Rule {
 				out.Lengths = map[string]int{}
 			}
 			out.Lengths[zone] = n
+		}
+		for effect, factor := range r.Pace {
+			if out.Pace == nil {
+				out.Pace = map[string]float64{}
+			}
+			out.Pace[strings.ToLower(strings.TrimSpace(effect))] = factor
+		}
+		if f := strings.TrimSpace(r.Follow); f != "" {
+			out.Follow = f
+		}
+		for zone, shape := range r.Shapes {
+			if out.Shapes == nil {
+				out.Shapes = map[string]string{}
+			}
+			out.Shapes[zone] = strings.ToLower(strings.TrimSpace(shape))
 		}
 		if r.Formerly != nil && strings.TrimSpace(r.Formerly.Name) != "" {
 			former := *r.Formerly

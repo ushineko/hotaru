@@ -124,6 +124,28 @@ type DeviceRule struct {
 	Lengths map[string]int `json:"lengths,omitempty"`
 
 	/*
+		Shapes says what a zone whose device cannot tell holds: "ring" for
+		fans, "line" for a strip (spec 077 R3.4). An addressable header's
+		shape is whatever is plugged in. A zone not named is drawn as a line.
+	*/
+	Shapes map[string]string `json:"shapes,omitempty"`
+
+	/*
+		Pace trims how fast this device runs each named effect hotaru draws
+		on it: a multiplier on the effect's period, so 2 is half as fast
+		(spec 077 R3.9). Set by `hotaru light match`, which matches a copy of
+		the leader's effect by eye.
+	*/
+	Pace map[string]float64 `json:"pace,omitempty"`
+
+	/*
+		Follow names the device whose effect this one takes: its effect,
+		colours and speed, whenever it is given one (spec 077 R3.2). Matched
+		as Match is. Absent is a device set on its own.
+	*/
+	Follow string `json:"follow,omitempty"`
+
+	/*
 		Colour corrects what is written to a device whose lights wash out: a
 		pale colour that the fans show as written looks close to white on a
 		graphics card's LEDs (spec 066). Absent is no correction.
@@ -286,6 +308,18 @@ func decodeRule(i int, raw json.RawMessage) (*DeviceRule, []Problem) {
 	if rule.FrameInterval < 0 {
 		problems = append(problems, Problem{where, "frame_interval is negative, ignored"})
 		rule.FrameInterval = 0
+	}
+	for effect, factor := range rule.Pace {
+		if factor <= 0 || factor > 10 {
+			problems = append(problems, Problem{where, fmt.Sprintf("pace %v for %q is not above 0 and up to 10, ignored", factor, effect)})
+			delete(rule.Pace, effect)
+		}
+	}
+	for zone, shape := range rule.Shapes {
+		if s := strings.ToLower(strings.TrimSpace(shape)); s != "ring" && s != "line" {
+			problems = append(problems, Problem{where, fmt.Sprintf("shape %q of %q is not ring or line, ignored", shape, zone)})
+			delete(rule.Shapes, zone)
+		}
 	}
 
 	if rule.Colour != nil {

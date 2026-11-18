@@ -147,7 +147,7 @@ func (r *Reconciler) reassert(ctx context.Context) {
 			}
 			// Nothing is said about a re-assert that worked. It happens every
 			// minute for as long as the machine is on, and it is not news.
-			if _, err := r.Service.Reconcile(ctx, due); err != nil {
+			if _, err := r.Service.Reassert(ctx, due); err != nil {
 				r.report("could not re-assert %s: %v", strings.Join(due, ", "), err)
 			}
 		}

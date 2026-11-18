@@ -178,94 +178,147 @@ func Map(ctx context.Context, client *api.Client, asker Asker, only ...string) e
 	asker.Say("Lighting things one at a time and asking what you can see.")
 	asker.Say("Answer in your own words -- these become the names you use. Press return to skip anything.\n")
 
-	var found []namedSegment
-	learned := map[string]notes{}
+	m := &mapping{client: client, asker: asker, list: list, existing: existing, learned: map[string]notes{}}
+	var order []string
 	for _, device := range list {
-		if !device.InScope || device.LEDs == 0 || !wanted(only, device.Name) {
+		if !device.InScope || device.LEDs == 0 || device.HandedTo != "" || !wanted(only, device.Name) {
+			// A name a device was formerly called is the same lights, asked
+			// about under the name it has now.
 			continue
 		}
-
-		// Before asking what is on a device, find out whether hotaru can light
-		// it at all. On this author's board the default mode is accepted,
-		// reported, and lights only the onboard LED -- so a user would answer
-		// "nothing" to every zone and map half their case as empty.
-		working, err := lightsUp(ctx, client, asker, device)
-		if err != nil {
+		if err := m.device(ctx, device); err != nil {
 			return err
 		}
-		if working.none {
-			// Say which modes were tried: on a device that will not light, the
-			// useful next step is knowing what was already ruled out.
-			if len(working.tried) > 0 {
-				asker.Say("  Nothing lit, whichever way it was asked. Leaving %s out.", device.Name)
-			} else {
-				asker.Say("  %s would not light at all, so there is nothing to see. Leaving it out.", device.Name)
-			}
-			continue
-		}
-		note := notes{}
-		if working.corrected {
-			note.solidModes = working.order
-			asker.Say("  Noted: %s only lights one particular way, and that is written down.", device.Name)
-		}
+		order = append(order, device.Name)
+	}
 
-		segments, err := mapDevice(ctx, client, asker, device, working.mode, existing, names(list))
-		if err != nil {
+	for {
+		var found []namedSegment
+		for _, name := range order {
+			found = append(found, m.found[name]...)
+		}
+		if len(found) == 0 {
+			asker.Say("\nNothing was named, so there is nothing to write.")
+			return nil
+		}
+		again, err := finish(ctx, client, asker, found, list, m.learned, existing, path, order)
+		if err != nil || again == "" {
 			return err
 		}
-		if len(segments) == 0 {
-			continue // nothing named on it, so nothing to treat specially
-		}
-		found = append(found, segments...)
-
 		/*
-			A device already set to stay dark until touched is asked about.
-
-			Otherwise the choice can never be revisited: it is only offered
-			when a device fails to go dark, and a device configured this way
-			no longer fails. Spec 008's reconfiguration pattern has to reach
-			this answer too.
+			A device gone through again, with this run's answers as the
+			defaults: "no" at the end used to throw every answer away.
 		*/
-		if was := configuredDark(existing, device, names(list)); was != "" {
-			keep, err := asker.Confirm(fmt.Sprintf(
-				"  The %s is set to stay dark until you touch it. Keep that?", knownName(device)))
-			if err != nil {
-				return err
-			}
-			switch {
-			case keep:
-				note.solidModes = withFallbacks(device, was, note.solidModes)
-			default:
-				alt, chosen, err := chooseDark(ctx, client, asker, device, working.mode, true)
-				switch {
-				case err != nil:
+		m.existing = merge(existing, found, m.learned, names(list))
+		for _, device := range list {
+			if device.Name == again {
+				if err := m.device(ctx, device); err != nil {
 					return err
-				case alt != "":
-					note.solidModes = withFallbacks(device, alt, note.solidModes)
-				case chosen:
-					note.plainAgain = true // lit all the time, as it was before
-				default:
-					note.solidModes = withFallbacks(device, was, note.solidModes)
 				}
 			}
 		}
+	}
+}
 
-		// Brightness is offered only where the mode that will be used takes
-		// one, which is rare enough that most runs are never asked.
-		level, dimmable, err := dimmer(ctx, client, asker, device, working.mode)
+// mapping is one run of the wizard: what each device was found to have, and
+// what was learned about it.
+type mapping struct {
+	client   *api.Client
+	asker    Asker
+	list     []api.Device
+	existing *config.Config
+	found    map[string][]namedSegment
+	learned  map[string]notes
+	// dimming is whether this run dims anything, once asked (spec 077 R4.2).
+	dimming *bool
+}
+
+// device asks about one device, replacing anything asked about it before.
+func (m *mapping) device(ctx context.Context, device api.Device) error {
+	client, asker, list, existing := m.client, m.asker, m.list, m.existing
+	if m.found == nil {
+		m.found = map[string][]namedSegment{}
+	}
+	delete(m.found, device.Name)
+	delete(m.learned, device.Name)
+
+	// Before asking what is on a device, find out whether hotaru can light
+	// it at all. On this author's board the default mode is accepted,
+	// reported, and lights only the onboard LED -- so a user would answer
+	// "nothing" to every zone and map half their case as empty.
+	working, err := lightsUp(ctx, client, asker, device)
+	if err != nil {
+		return err
+	}
+	if working.none {
+		// Say which modes were tried: on a device that will not light, the
+		// useful next step is knowing what was already ruled out.
+		if len(working.tried) > 0 {
+			asker.Say("  Nothing lit, whichever way it was asked. Leaving %s out.", device.Name)
+		} else {
+			asker.Say("  %s would not light at all, so there is nothing to see. Leaving it out.", device.Name)
+		}
+		return nil
+	}
+	note := notes{}
+	if working.corrected {
+		note.solidModes = working.order
+		asker.Say("  Noted: %s only lights one particular way, and that is written down.", device.Name)
+	}
+
+	segments, lengths, err := mapDevice(ctx, client, asker, device, working.mode, existing, names(list))
+	if err != nil {
+		return err
+	}
+	note.lengths = lengths
+	if len(segments) == 0 {
+		return nil // nothing named on it, so nothing to treat specially
+	}
+	m.found[device.Name] = segments
+
+	/*
+		A device already set to stay dark until touched is asked about.
+
+		Otherwise the choice can never be revisited: it is only offered
+		when a device fails to go dark, and a device configured this way
+		no longer fails. Spec 008's reconfiguration pattern has to reach
+		this answer too.
+	*/
+	if was := configuredDark(existing, device, names(list)); was != "" {
+		keep, err := asker.Confirm(fmt.Sprintf(
+			"  The %s is set to stay dark until you touch it. Keep that?", knownName(device)))
 		if err != nil {
 			return err
 		}
-		note.brightness = level
-		note.undimmable = !dimmable
-		learned[device.Name] = note
+		switch {
+		case keep:
+			note.solidModes = withFallbacks(device, was, note.solidModes)
+		default:
+			alt, chosen, err := chooseDark(ctx, client, asker, device, working.mode, true)
+			switch {
+			case err != nil:
+				return err
+			case alt != "":
+				note.solidModes = withFallbacks(device, alt, note.solidModes)
+			case chosen:
+				note.plainAgain = true // lit all the time, as it was before
+			default:
+				note.solidModes = withFallbacks(device, was, note.solidModes)
+			}
+		}
 	}
 
-	if len(found) == 0 {
-		asker.Say("\nNothing was named, so there is nothing to write.")
-		return nil
+	// Brightness is offered only where the mode that will be used takes
+	// one, and asked about once a run before any device is (spec 077
+	// R4.2): every device hotaru draws can be dimmed.
+	level, dimmable, err := dimmed(ctx, client, asker, device, working.mode, &m.dimming)
+	if err != nil {
+		return err
 	}
-	return finish(ctx, client, asker, found, list, learned, existing, path)
+	note.brightness = level
+	note.undimmable = !dimmable
+	m.learned[device.Name] = note
+	return nil
 }
 
 /*
@@ -400,7 +453,7 @@ came on. No colour matching, nothing else competing for the answer, and
 */
 func mapDevice(ctx context.Context, client *api.Client, asker Asker, device api.Device, mode string,
 	existing *config.Config, present []string,
-) ([]namedSegment, error) {
+) ([]namedSegment, map[string]int, error) {
 	zones := device.Zones
 	if len(zones) == 0 {
 		zones = []api.Zone{{Name: "", First: 0, Count: device.LEDs}}
@@ -409,18 +462,31 @@ func mapDevice(ctx context.Context, client *api.Client, asker Asker, device api.
 	// Everything else off, so the only lit thing in the case is the thing
 	// being asked about.
 	if err := darken(ctx, client, present, device.Name); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if len(zones) > 1 {
 		asker.Say("  It has %d parts that light separately. Going through them one at a time.", len(zones))
 	}
 
 	var named []namedSegment
+	lengths := map[string]int{}
 	for _, zone := range zones {
+		if zone.Max > 0 {
+			// A header: its device cannot count what is plugged in, so the
+			// length is found first, by looking (spec 077 R4.3).
+			n, err := findLength(ctx, client, asker, device, zone, mode)
+			if err != nil {
+				return nil, nil, err
+			}
+			lengths[zone.Name], zone.Count = n, n
+			if n == 0 {
+				continue
+			}
+		}
 		if err := light(ctx, client, asker, device.Name, mode, []api.Assignment{{
 			Target: target(device.Name, zone.Name), Colour: probeColour,
 		}}); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
 		question := "  What is lit now?"
@@ -431,19 +497,77 @@ func mapDevice(ctx context.Context, client *api.Client, asker Asker, device api.
 
 		what, err := askNameOr(asker, question, knownAs(existing, device.Name, zone.Name, present))
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if what == "" {
 			continue // nothing attached to this one
 		}
 
-		parts, err := split(ctx, client, asker, device, zone, what, mode)
+		parts, err := split(ctx, client, asker, device, zone, what, mode, existing, present)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		named = append(named, parts...)
 	}
-	return named, nil
+	return named, lengths, nil
+}
+
+// lengthCap is the longest a header is tried at: a hundred and twenty lights
+// is more than any fan chain or strip on a desk.
+const lengthCap = 120
+
+/*
+findLength finds how many lights are plugged into a header, which its board
+cannot count. The header is given the most it is tried at and lit; nothing lit
+is an empty header. Then the range is halved, the lights up to the middle
+green and the rest red, and only one thing is asked: is any red showing? Seven
+questions for a hundred and twenty lights, as the maintainer found the Z790's
+by hand (spec 077 R4.3).
+*/
+func findLength(ctx context.Context, client *api.Client, asker Asker, device api.Device, zone api.Zone, mode string) (int, error) {
+	top := min(zone.Max, lengthCap)
+	if err := client.Length(ctx, device.Name, zone.Name, top); err != nil {
+		return 0, quiet(err)
+	}
+	asker.Say("  %s cannot count what is plugged into %s, so this finds out.", knownName(device), zone.Name)
+	if err := light(ctx, client, asker, device.Name, mode, []api.Assignment{{
+		Target: target(device.Name, zone.Name), Colour: probeColour,
+	}}); err != nil {
+		return 0, err
+	}
+	lit, err := asker.Confirm(fmt.Sprintf("  Is anything plugged into %s lit now?", zone.Name))
+	if err != nil {
+		return 0, err
+	}
+	if !lit {
+		asker.Say("    Nothing on it, then.")
+		return 0, client.Length(ctx, device.Name, zone.Name, 0)
+	}
+	lo, hi := 0, top
+	for hi-lo > 1 {
+		mid := (lo + hi) / 2
+		zoned := target(device.Name, zone.Name)
+		if err := light(ctx, client, asker, device.Name, mode, []api.Assignment{
+			{Target: fmt.Sprintf("%s[0:%d]", zoned, mid-1), Colour: "green"},
+			{Target: fmt.Sprintf("%s[%d:%d]", zoned, mid, top-1), Colour: "red"},
+		}); err != nil {
+			return 0, err
+		}
+		red, err := asker.Confirm("  Is any red showing on it?")
+		if err != nil {
+			return 0, err
+		}
+		if red {
+			lo = mid
+		} else {
+			hi = mid
+		}
+	}
+	if err := client.Length(ctx, device.Name, zone.Name, hi); err != nil {
+		return 0, quiet(err)
+	}
+	asker.Say("    %s has %d lights.", zone.Name, hi)
+	return hi, nil
 }
 
 // target names a zone, or the whole device where it has none.
@@ -484,7 +608,7 @@ division arithmetically. Bisection is the fallback for a division that is not
 clean, not the opening move.
 */
 func split(ctx context.Context, client *api.Client, asker Asker,
-	device api.Device, zone api.Zone, what, mode string,
+	device api.Device, zone api.Zone, what, mode string, existing *config.Config, present []string,
 ) ([]namedSegment, error) {
 	whole := namedSegment{Device: device.Name, Zone: zone.Name, Name: what, Whole: true,
 		First: 0, Last: zone.Count - 1}
@@ -498,8 +622,47 @@ func split(ctx context.Context, client *api.Client, asker Asker,
 		are lines, which are grids and which are single lights; a question
 		about chaining belongs only to the first.
 	*/
-	if zone.Shape != "" && zone.Shape != api.ShapeLine {
+	if zone.Shape != "" && zone.Shape != api.ShapeLine && zone.Shape != api.ShapeRing {
 		return []namedSegment{whole}, nil
+	}
+
+	/*
+		A zone whose things the device counts itself (the Kraken's fans, from
+		the accessories in its slots) is divided as the device says, with
+		nothing asked (spec 077 R4.1).
+	*/
+	if len(zone.Parts) == 1 {
+		return []namedSegment{whole}, nil // one thing, as the device counts it
+	}
+	if len(zone.Parts) > 1 {
+		var parts []namedSegment
+		first := 0
+		for _, n := range zone.Parts {
+			parts = append(parts, namedSegment{Device: device.Name, Zone: zone.Name, First: first, Last: first + n - 1})
+			first += n
+		}
+		/*
+			Each still named: lit a colour apiece and asked, with last time's
+			names as the defaults. Left unnamed, the Kraken's fans were
+			written as nothing (the live run).
+		*/
+		asker.Say("  %s is %d things, as the device counts them.", what, len(parts))
+		if err := light(ctx, client, asker, device.Name, mode, partAssignments(device.Name, zone, parts)); err != nil {
+			return nil, err
+		}
+		for i := range parts {
+			was := knownRange(existing, device.Name, zone.Name, parts[i].First, parts[i].Last, present)
+			question := fmt.Sprintf("  What is %s?", palette[i%len(palette)])
+			if was != "" {
+				question = fmt.Sprintf("  What is %s? [%s]", palette[i%len(palette)], was)
+			}
+			name, err := askNameOr(asker, question, was)
+			if err != nil {
+				return nil, err
+			}
+			parts[i].Name = name
+		}
+		return keepNamed(parts), nil
 	}
 
 	/*
@@ -688,14 +851,22 @@ func bisect(ctx context.Context, client *api.Client, asker Asker,
 func names(list []api.Device) []string {
 	out := make([]string, 0, len(list))
 	for _, device := range list {
+		if device.HandedTo != "" {
+			continue // a name the device formerly had: the same lights
+		}
 		out = append(out, device.Name)
 	}
 	return out
 }
 
+/*
+finish lights everything named at once and asks whether it is right. Yes
+writes it; no asks which device to go through again, and returns its name,
+or nothing to stop without writing.
+*/
 func finish(ctx context.Context, client *api.Client, asker Asker, found []namedSegment,
-	present []api.Device, learned map[string]notes, existing *config.Config, path string,
-) error {
+	present []api.Device, learned map[string]notes, existing *config.Config, path string, order []string,
+) (string, error) {
 	presentNames := names(present)
 	asker.Say("\nEverything you named, lit at once:")
 	byDevice := map[string][]namedSegment{}
@@ -712,30 +883,53 @@ func finish(ctx context.Context, client *api.Client, asker Asker, found []namedS
 			asker.Say("  %s → %s", palette[i%len(palette)], segment.Name)
 		}
 		if err := light(ctx, client, asker, device, "", assignments); err != nil {
-			return err
+			return "", err
 		}
 	}
 
 	right, err := asker.Confirm("\nIs that right?")
 	if err != nil {
-		return err
+		return "", err
 	}
 	if !right {
-		asker.Say("Nothing written. Run it again when you are ready.")
-		return nil
+		return goBack(asker, order)
 	}
 
 	if err := blanking(ctx, client, asker, present, learned); err != nil {
-		return err
+		return "", err
 	}
 
 	merged := merge(existing, found, learned, presentNames)
 	rules := yamlFor(merged)
 	asker.Say("\n%s", rules)
 	if err := offerToWrite(ctx, client, asker, rules, path); err != nil {
-		return err
+		return "", err
 	}
-	return useIt(ctx, client, asker)
+	return "", useIt(ctx, client, asker)
+}
+
+// goBack asks which device to go through again, by number, or none.
+func goBack(asker Asker, order []string) (string, error) {
+	asker.Say("Which one should be gone through again?")
+	for i, name := range order {
+		asker.Say("  %d. %s", i+1, name)
+	}
+	for {
+		answer, err := asker.Ask("Its number (return to stop without writing):")
+		if err != nil {
+			return "", err
+		}
+		answer = strings.TrimSpace(answer)
+		if answer == "" {
+			asker.Say("Nothing written. Run it again when you are ready.")
+			return "", nil
+		}
+		var n int
+		if _, err := fmt.Sscan(answer, &n); err == nil && n >= 1 && n <= len(order) {
+			return order[n-1], nil
+		}
+		asker.Say("  A number from 1 to %d.", len(order))
+	}
 }
 
 func targetOf(segment namedSegment) string {
@@ -1167,6 +1361,9 @@ type notes struct {
 	undimmable bool
 	// plainAgain undoes a stay-dark mode chosen on an earlier run.
 	plainAgain bool
+	// lengths are the zones whose length the wizard found, by trying them
+	// (spec 077 R4.3).
+	lengths map[string]int
 }
 
 // dimLevel is what "turned down" means when the wizard offers it. A number
@@ -1425,6 +1622,30 @@ func blanking(ctx context.Context, client *api.Client, asker Asker,
 		learned[device.Name] = note
 	}
 	return nil
+}
+
+/*
+dimmed asks once a run whether any light should be dimmer than full, the
+first time a device that can be dimmed comes up, and offers to turn each
+device down only where the answer was yes. Every device hotaru draws can be
+dimmed, and asking after each was a question most runs answer no to again and
+again.
+*/
+func dimmed(ctx context.Context, client *api.Client, asker Asker, device api.Device, mode string, dimming **bool) (*int, bool, error) {
+	if !slices.Contains(device.Dimmable, mode) {
+		return nil, false, nil
+	}
+	if *dimming == nil {
+		yes, err := asker.Confirm("  Should any of the lights be dimmer than full? [n]")
+		if err != nil {
+			return nil, true, err
+		}
+		*dimming = &yes
+	}
+	if !**dimming {
+		return nil, true, nil
+	}
+	return dimmer(ctx, client, asker, device, mode)
 }
 
 // dimmer offers to turn a device down, for devices that have a brightness at

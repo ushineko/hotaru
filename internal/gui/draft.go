@@ -2,6 +2,7 @@ package gui
 
 import (
 	"fmt"
+	"maps"
 	"strconv"
 	"strings"
 
@@ -354,6 +355,9 @@ save wants the name somebody typed.
 func (d *Draft) Scene(name string) api.Scene {
 	out := d.rest
 	out.Name = name
+	// Its own map: a scene handed to the limiter is sent from its goroutine
+	// while the editor sets the next effect (the race detector, #219).
+	out.Effects = maps.Clone(d.rest.Effects)
 	out.Assignments = nil
 	for _, a := range d.colours {
 		out.Assignments = append(out.Assignments,

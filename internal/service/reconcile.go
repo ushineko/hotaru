@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -105,8 +106,33 @@ func (s *Service) Reconcile(ctx context.Context, only []string) (Restore, error)
 	}
 	desired = adopted(desired, found, s.config())
 
-	var restore Restore
+	/*
+		On a full restore, leaders before the devices that follow them, and
+		each of them started again, so their effects begin in step as they
+		did when applied (spec 077 R3.5).
+	*/
+	cfg := s.config()
+	inStep := map[string]bool{}
+	var order []string
+	for _, d := range leadersFirst(cfg, found) {
+		if _, ok := desired.Devices[d.Name]; ok {
+			order = append(order, d.Name)
+		}
+		if f := devices.RuleFor(cfg, d.Name).Follow; f != "" && len(only) == 0 {
+			inStep[d.Name] = true
+			if l := leaderOf(found, f, d.Name); l != nil {
+				inStep[l.Name] = true
+			}
+		}
+	}
 	for _, name := range sorted(desired.Names()) {
+		if !slices.Contains(order, name) {
+			order = append(order, name)
+		}
+	}
+
+	var restore Restore
+	for _, name := range order {
 		if len(only) > 0 && !named(only, name) {
 			continue
 		}
@@ -155,12 +181,12 @@ func (s *Service) Reconcile(ctx context.Context, only []string) (Restore, error)
 			frame reduces to. See spec 051.
 		*/
 		kept := desired.Devices[name]
-		want := preference{mode: kept.Mode, insist: true, speed: kept.Speed}
+		want := preference{mode: kept.Mode, insist: true, speed: kept.Speed, restart: inStep[name]}
 		if _, has := device.Mode(kept.Mode); !has {
 			// Recorded through OpenRGB, in a mode the canvas does not have
 			// ("Direct", or a firmware mode OpenRGB drove): the colours, in
 			// Static (spec 075).
-			want = preference{mode: canvasStill, insist: true}
+			want = preference{mode: canvasStill, insist: true, restart: inStep[name]}
 		}
 		for _, named := range kept.Named() {
 			if c, err := colour.Parse(named); err == nil {
@@ -182,12 +208,7 @@ func (s *Service) Reconcile(ctx context.Context, only []string) (Restore, error)
 			it: a device that rebooted or slept says nothing through its
 			receiver. One frame each.
 		*/
-		s.mu.RLock()
-		all := s.drawnNow()
-		s.mu.RUnlock()
-		for _, d := range all {
-			d.Redraw()
-		}
+		s.redraw(nil)
 	}
 	return restore, nil
 }
@@ -370,9 +391,8 @@ func (s *Service) ReassertRules(ctx context.Context) (map[string]time.Duration, 
 	}
 	out := map[string]time.Duration{}
 	for _, view := range views {
-		// A canvas holds what it was sent and does not drift, so it is never
-		// re-asserted; its twin is not hotaru's to write (spec 060 R3.6).
-		if view.Device.Canvas != nil || view.Device.HandedTo != "" {
+		// A name a canvas was formerly called is not a device to write.
+		if view.Device.HandedTo != "" {
 			continue
 		}
 		if view.InScope && view.Rule.Reassert > 0 {
@@ -380,6 +400,31 @@ func (s *Service) ReassertRules(ctx context.Context) (map[string]time.Duration, 
 		}
 	}
 	return out, nil
+}
+
+/*
+Reassert restores the named devices, and sends each canvas among them the
+frame it holds again: a device whose rule asks for re-assertion forgets what
+it was sent (a mouse that wakes on its own lighting), so the frame it holds
+is the one to send (spec 077 R5.1). A firmware effect is not written again by
+it. Nothing else re-sends a held frame.
+*/
+func (s *Service) Reassert(ctx context.Context, names []string) (Restore, error) {
+	restore, err := s.Reconcile(ctx, names)
+	s.redraw(names)
+	return restore, err
+}
+
+// redraw sends the canvases named, or every one for none, their frame again.
+func (s *Service) redraw(names []string) {
+	s.mu.RLock()
+	all := s.drawnNow()
+	s.mu.RUnlock()
+	for _, d := range all {
+		if len(names) == 0 || named(names, d.Name()) {
+			d.Redraw()
+		}
+	}
 }
 
 func sorted(in []string) []string {

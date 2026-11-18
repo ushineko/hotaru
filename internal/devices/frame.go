@@ -1,6 +1,10 @@
 package devices
 
-import "github.com/ushineko/hotaru/internal/colour"
+import (
+	"slices"
+
+	"github.com/ushineko/hotaru/internal/colour"
+)
 
 /*
 Assignment is one colour applied to one target.
@@ -72,6 +76,21 @@ func (f Frame) Dominant() (colour.Colour, bool) {
 		}
 	}
 	return best, true
+}
+
+/*
+Distinct is the frame's colours, each once, in the order the lights first
+show them, leaving out black: the scene's colours on a device, as an effect
+with none of its own takes them (spec 077).
+*/
+func (f Frame) Distinct() []colour.Colour {
+	var out []colour.Colour
+	for _, c := range f.Colours {
+		if c != colour.Black && !slices.Contains(out, c) {
+			out = append(out, c)
+		}
+	}
+	return out
 }
 
 // PerLED reports whether showing this frame needs a mode that accepts a colour

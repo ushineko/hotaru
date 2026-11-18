@@ -100,22 +100,27 @@ func TestSpectrumIsOneHueOnEveryLight(t *testing.T) {
 
 func TestTheWaveMovesOneLightPerStep(t *testing.T) {
 	/*
-		At full speed the wave moves 40 lights a second, so a step is 25 ms,
-		and after one step every light shows what the light before it
-		showed. The first light takes the last one's colour, because the
-		wave wraps round.
+		At full speed the wave moves 40 lights a second, and a device of
+		fewer than 24 lights is timed as one of 24 (the MM700's flicker on
+		the live run): on twelve a step is 50 ms, and after one step every
+		light shows what the light before it showed. The first light takes
+		the last one's colour, because the wave wraps round.
 	*/
 	keys := lights(12)
 	p := render.Params{Speed: intp(render.FastestSpeed)}
-	const step = 25 * time.Millisecond
+	const step = 50 * time.Millisecond
 
 	for _, start := range []time.Duration{0, 5 * step, 41 * step} {
 		before := draw(t, render.Wave, start, keys, p)
 		after := draw(t, render.Wave, start+step, keys, p)
 		for i := range keys {
+			// Within one step of a byte: the step is a fraction of a cycle
+			// now, and a colour can round the other way.
 			was := before[(i-1+len(keys))%len(keys)]
-			require.Equal(t, [3]uint8{was.R, was.G, was.B}, [3]uint8{after[i].R, after[i].G, after[i].B},
-				"light %d did not take its neighbour's colour after one step from %v", i, start)
+			for _, pair := range [][2]uint8{{was.R, after[i].R}, {was.G, after[i].G}, {was.B, after[i].B}} {
+				require.InDelta(t, pair[0], pair[1], 1,
+					"light %d did not take its neighbour's colour after one step from %v", i, start)
+			}
 		}
 	}
 
@@ -161,12 +166,18 @@ func TestOffIsBlackAndHeld(t *testing.T) {
 	}
 }
 
-func TestTheNamesAreOpenRGBs(t *testing.T) {
+func TestTheNamesAreTheFirmwaresTheyImitate(t *testing.T) {
 	// A scene that says Breathing means the same thing on every device, so
-	// the names are the ones OpenRGB gives the firmware modes they imitate.
+	// the names are the ones the firmware modes they imitate have: OpenRGB's
+	// for hotaru's own, the Kraken's for its (spec 077).
 	var names []string
 	for _, r := range render.Renderers() {
 		names = append(names, r.Name)
 	}
-	require.Equal(t, []string{"Static", "Breathing", "Spectrum", "Rainbow Wave", "Off"}, names)
+	require.Equal(t, []string{
+		"Static", "Breathing", "Spectrum", "Rainbow Wave", "Off",
+		"Fading", "Spectrum Wave", "Covering Marquee", "Alternating", "Pulse", "Candle",
+		"Starry Night", "Rainbow Flow", "Super Rainbow", "Rainbow Pulse", "Tai Chi",
+		"Water Cooler", "Loading",
+	}, names)
 }

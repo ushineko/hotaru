@@ -3,6 +3,8 @@ package canvas
 import (
 	"context"
 	"errors"
+	"fmt"
+	"reflect"
 	"slices"
 	"sync"
 	"time"
@@ -46,6 +48,10 @@ type Show struct {
 	// Interval is for an animated effect; zero is DefaultInterval. Never
 	// shorter than the canvas's floor, whatever it says.
 	Interval time.Duration
+	// Restart starts the effect again from its beginning even where it is
+	// the one showing: how effects on several devices start in step (spec
+	// 077 R3.5).
+	Restart bool
 }
 
 /*
@@ -62,7 +68,25 @@ type Status struct {
 	Rate float64
 	// Frames is every frame sent since the animator started.
 	Frames int
+	// Failing is why frames have failed, every one for at least failingShown;
+	// empty while they land, and for a failure now and then (hotaru #221).
+	Failing string
 }
+
+/*
+failingShown is how long every frame has to fail before the status says so,
+and reattachAfter how long before the animator gives the device up, so the
+daemon opens it again (hotaru #221): the MM700 refused every frame for an hour
+while the listing said it was drawing.
+*/
+const (
+	failingShown  = 2 * time.Second
+	reattachAfter = 10 * time.Second
+)
+
+// ErrRefusing ends a run whose device has refused every frame for
+// reattachAfter; the daemon opens the device again.
+var ErrRefusing = errors.New("the device has refused every frame")
 
 /*
 Clock is the animator's time, a seam so that a test drives the ticks rather
@@ -108,6 +132,9 @@ type Animator struct {
 	mu     sync.Mutex
 	status Status
 	sent   []time.Time
+	// failingSince is when frames began to fail, every one since; zero
+	// while they land.
+	failingSince time.Time
 }
 
 // rateWindow is how far back Status counts frames to give a rate.
@@ -171,6 +198,9 @@ func (a *Animator) Status() Status {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	out := a.status
+	if a.failingSince.IsZero() || a.clock.Now().Sub(a.failingSince) < failingShown {
+		out.Failing = ""
+	}
 	if out.Drawing && len(a.sent) > 1 {
 		span := a.sent[len(a.sent)-1].Sub(a.sent[0])
 		if span > 0 {
@@ -227,7 +257,7 @@ func (a *Animator) Run(ctx context.Context) error {
 				first frame: a breathing keyboard going dark mid-breath for a
 				write that changed nothing.
 			*/
-			if showing && same(next, current) {
+			if showing && !next.Restart && same(next, current) {
 				continue
 			}
 			if next.Effect.Draw == nil {
@@ -242,6 +272,9 @@ func (a *Animator) Run(ctx context.Context) error {
 			}
 			current, showing, start = next, true, a.clock.Now()
 			at = start
+			// Read again: a zone given a new length changes the lights
+			// (spec 077 R4.3).
+			keys = a.surface.Keys()
 			stop()
 			interval := a.interval(next)
 			if next.Effect.Animated {
@@ -273,6 +306,7 @@ func (a *Animator) Run(ctx context.Context) error {
 		case err == nil:
 			last = px
 			a.count()
+			a.failed(nil)
 			switch {
 			case a.holding(current) && !held:
 				// A device that takes its lights back is sent the frame
@@ -308,6 +342,10 @@ func (a *Animator) Run(ctx context.Context) error {
 				}
 				said = true
 			}
+			if a.failed(err) >= reattachAfter {
+				a.report("every frame has failed for %s; opening it again: %v", reattachAfter, err)
+				return fmt.Errorf("%w: %w", ErrRefusing, err)
+			}
 		}
 	}
 }
@@ -329,6 +367,23 @@ func (a *Animator) interval(s Show) time.Duration {
 }
 
 // count records a frame sent, for Status.
+// failed notes a frame's error, or that one landed, and returns how long
+// every frame has failed.
+func (a *Animator) failed(err error) time.Duration {
+	now := a.clock.Now()
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if err == nil {
+		a.failingSince, a.status.Failing = time.Time{}, ""
+		return 0
+	}
+	if a.failingSince.IsZero() {
+		a.failingSince = now
+	}
+	a.status.Failing = err.Error()
+	return now.Sub(a.failingSince)
+}
+
 func (a *Animator) count() {
 	now := a.clock.Now()
 	a.mu.Lock()
@@ -346,7 +401,8 @@ func same(x, y Show) bool {
 		slices.Equal(x.Params.Colours, y.Params.Colours) &&
 		slices.Equal(x.Params.Palette, y.Params.Palette) &&
 		samePointer(x.Params.Speed, y.Params.Speed) &&
-		samePointer(x.Params.Brightness, y.Params.Brightness)
+		samePointer(x.Params.Brightness, y.Params.Brightness) &&
+		x.Params.Pace == y.Params.Pace && reflect.DeepEqual(x.Params.Things, y.Params.Things)
 }
 
 func samePointer[T int | colour.Colour](x, y *T) bool {

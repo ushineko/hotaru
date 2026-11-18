@@ -357,8 +357,8 @@ func TestWhatTheWizardWritesLoads(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", home)
 
 	person := &scripted{answers: []string{
-		"y", "stick0", "1", "n", // the first stick, not dimmer
-		"y", "stick1", "1", "n", // the second
+		"y", "stick0", "1", "n", // the first stick, and nothing dimmer this run
+		"y", "stick1", "1", // the second, not asked about dimming again
 		"y", "n", "y",
 	}}
 	require.NoError(t, cli.Map(t.Context(), client, person))
@@ -692,8 +692,8 @@ func TestAMachineThatBlanksIsAskedOnlyOnce(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
 	person := &scripted{answers: []string{
-		"y", "front light", "n", // Alpha, not dimmer
-		"y", "rear light", "n", // Beta
+		"y", "front light", "n", // Alpha, and nothing dimmer this run
+		"y", "rear light", // Beta, not asked about dimming again
 		"y", // is that right?
 		"n", // nothing still lit
 		"n", // do not write
@@ -957,4 +957,17 @@ func TestReturnAtTheColourQuestionLeavesTheMachineAlone(t *testing.T) {
 	}}
 	require.NoError(t, cli.Map(t.Context(), client, person))
 	require.NotContains(t, strings.Join(person.said, "\n"), "put it back at boot")
+}
+
+// Dimming is asked about once a run, and per device only after a yes (spec
+// 077 R4.2).
+func TestDimmingIsAskedAboutOnce(t *testing.T) {
+	one := func(name string) sanshoku.Device { return zoned(name, canvastest.Zone("LED", 1)) }
+	client := api.NewClient(drawing(t, nil, one("Alpha Board"), one("Beta Board")))
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	person := &scripted{answers: []string{"y", "front light", "n", "y", "rear light"}}
+	require.NoError(t, cli.Map(t.Context(), client, person))
+	asked := person.questions()
+	require.Equal(t, 1, strings.Count(asked, "dimmer than full"))
+	require.NotContains(t, asked, "Keep it dimmer?", "a device was offered dimming after a no")
 }

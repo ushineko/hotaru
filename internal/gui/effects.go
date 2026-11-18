@@ -140,9 +140,10 @@ func effectSettings(window fyne.Window, device api.Device, effect api.Effect,
 		return nil
 	}
 	var out []fyne.CanvasObject
-	if slices.Contains(device.Stored, effect.Mode) {
+	if device.WritesStorage && slices.Contains(device.Stored, effect.Mode) {
 		// Said before it is chosen, because applying it writes the device
-		// itself rather than its lights (spec 071 R7.2).
+		// itself rather than its lights (spec 071 R7.2). Only where that
+		// storage wears: an effect held in memory costs nothing (spec 077).
 		out = append(out, effectIndent(widgets.Dim(
 			"The device's own effect. Applying the scene writes it to the device's storage.")))
 	}
@@ -208,14 +209,16 @@ func effectColoursField(window fyne.Window, device api.Device, effect api.Effect
 			buttons.Add(widget.NewButton("Clear", func() { keep(withoutSlot(palette, i)) }))
 		}
 
-		label := widgets.Dim("")
 		if i == 0 {
-			label = widgets.Dim(slotsSaid(slots))
+			// On a line of its own: "takes up to 8 colours" is wider than
+			// the column, and the swatch was drawn over it (the live run).
+			rows = append(rows, container.NewBorder(nil, nil, column(effectSettingWidth, widgets.Dim("")), nil,
+				widgets.Dim(slotsSaid(slots))))
 		}
 		// The buttons hold a width, so "Choose" lines up down the slots
 		// whether or not a slot has a second button beside it.
 		rows = append(rows, container.NewBorder(nil, nil,
-			column(effectSettingWidth, label), column(effectButtonsWidth, buttons),
+			column(effectSettingWidth, widgets.Dim("")), column(effectButtonsWidth, buttons),
 			container.NewHBox(swatch, widgets.Dim(said))))
 	}
 
@@ -264,12 +267,19 @@ func slotsSaid(slots api.ColourSlots) string {
 /*
 fallbackSaid is what an empty slot shows: what the device fills it with.
 
-The first falls back to the frame for a mode that shows one colour of its own,
-and to nothing for one that draws without colours. A later one repeats the
-colour before it, as the hardware path fills slots past the ones given.
+With none given, an effect that takes several colours takes the scene's colours
+on the device, in order. Otherwise the first falls back to the frame for a mode
+that shows one colour of its own, and to nothing for one that draws without
+colours. A later one repeats the colour before it, as the hardware path fills
+slots past the ones given.
 */
 func fallbackSaid(device api.Device, mode string, palette []string, slot int) string {
+	slots, _ := colourSlots(device, mode)
 	switch {
+	case len(palette) == 0 && slots.Most > 1:
+		// The scene's colours on the device, in order, as many as the
+		// effect takes; its followers take the same (spec 077).
+		return "the scene's colours on this device"
 	case len(palette) > 0 || slot > 0:
 		return "the same as the one above"
 	case slices.Contains(device.OneColour, mode):

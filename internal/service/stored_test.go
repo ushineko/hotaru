@@ -84,7 +84,7 @@ func TestAKeyboardListsItsOwnEffectsAsStoredModesBeforeTheRenderers(t *testing.T
 	names := device.ModeNames()
 	require.Equal(t, "Off", names[0])
 	require.Equal(t, "Self-define", names[19])
-	require.Equal(t, []string{"Static", "Breathing", "Spectrum", "Rainbow Wave"}, names[20:],
+	require.Equal(t, []string{"Static", "Breathing", "Spectrum", "Rainbow Wave", "Fading"}, names[20:25],
 		"the renderers follow, and the firmware's Off takes the name")
 
 	reaction, _ := device.Mode("Reaction")

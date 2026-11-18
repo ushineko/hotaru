@@ -242,7 +242,10 @@ func (d *Device) Resize(zone string, lights int) error {
 	if err := z.Resize(zone, lights); err != nil {
 		return fmt.Errorf("%s: %w", d.Name(), err)
 	}
-	d.keys = d.draw.Keys()
+	keys := d.draw.Keys()
+	d.mu.Lock()
+	d.keys = keys
+	d.mu.Unlock()
 	return nil
 }
 
@@ -257,6 +260,23 @@ func (d *Device) Effects() []string {
 		return nil
 	}
 	return d.onboard.Effects()
+}
+
+// Stores is whether the firmware keeps its effect in storage that wears,
+// so a write is made only when a person asks (sanshoku spec 034). Otherwise
+// the effect is held in memory, and a restore may put it back.
+func (d *Device) Stores() bool {
+	_, ok := d.onboard.(lighting.Storing)
+	return ok
+}
+
+// Catalogue is each of the firmware's effects as the device describes it
+// (sanshoku spec 025), or none for a device that does not.
+func (d *Device) Catalogue() []lighting.EffectInfo {
+	if c, ok := d.onboard.(lighting.Catalogue); ok {
+		return c.Catalogue()
+	}
+	return nil
 }
 
 /*
@@ -298,9 +318,25 @@ the wrong one (sanshoku spec 023 R2.8a).
 sanshoku writes nothing where the stored value already matches, so a call
 that changes nothing costs the two reads and no flash.
 */
-func (d *Device) SetFirmware(ctx context.Context, effect string, c *lighting.Colour) (wrote bool, err error) {
+func (d *Device) SetFirmware(ctx context.Context, effect string, colours []lighting.Colour, speed *int, restart bool) (wrote bool, err error) {
 	if d.onboard == nil {
 		return false, fmt.Errorf("%s: %w", d.Name(), errNoFirmware)
+	}
+	if tuned, ok := d.onboard.(lighting.Tuned); ok && (len(colours) > 1 || speed != nil || restart) {
+		// All the colours and the speed, in one write (sanshoku spec 032),
+		// and again from its beginning where asked (sanshoku spec 035).
+		wrote, err := tuned.SetEffectWith(ctx, effect, lighting.Settings{Colours: colours, Speed: speed, Restart: restart})
+		if err != nil {
+			return wrote, d.check(err) //nolint:wrapcheck // the driver names the device
+		}
+		if _, err := d.ReadFirmware(ctx); err != nil {
+			return wrote, err
+		}
+		return wrote, nil
+	}
+	var c *lighting.Colour
+	if len(colours) > 0 {
+		c = &colours[0]
 	}
 	wroteEffect, err := d.onboard.SetEffect(ctx, effect)
 	if err != nil {
@@ -361,7 +397,11 @@ func (d *Device) Name() string { return d.dev.Identity().Name }
 func (d *Device) Path() string { return d.dev.Identity().Path }
 
 // Keys are the lights a frame may address, in the device's order.
-func (d *Device) Keys() []lighting.Key { return append([]lighting.Key(nil), d.keys...) }
+func (d *Device) Keys() []lighting.Key {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return append([]lighting.Key(nil), d.keys...)
+}
 
 // Floor is the shortest interval at which the device shows every frame.
 func (d *Device) Floor() time.Duration { return d.draw.Floor() }

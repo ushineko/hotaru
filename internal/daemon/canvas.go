@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"sort"
 	"strings"
 	"sync"
@@ -160,7 +161,12 @@ func serveCanvas(ctx context.Context, svc *service.Service, device *canvas.Devic
 	drawn := make(chan struct{})
 	go func() {
 		defer close(drawn)
-		_ = animator.Run(drawing) // ErrGone closes the adapter, which Gone below sees
+		// ErrGone closes the adapter, which Gone below sees; a device that
+		// refuses every frame is given up the same way, to be opened again
+		// (hotaru #221).
+		if err := animator.Run(drawing); errors.Is(err, canvas.ErrRefusing) {
+			device.Lose()
+		}
 	}()
 
 	restore := svc.Reconcile

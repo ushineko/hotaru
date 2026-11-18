@@ -93,6 +93,19 @@ func (s *Service) Health(ctx context.Context) Health {
 
 	health.State = StateHealthy
 	health.Detail = fmt.Sprintf("%d of %d devices are in scope", health.InScope, len(drawn))
+	for _, c := range health.Canvases {
+		if c.Failing == "" {
+			continue
+		}
+		/*
+			Still healthy, as a misfit is: the rest are drawn. But a device
+			refusing every frame shows nothing it is asked, and the listing
+			said it was drawing (hotaru #221).
+		*/
+		health.Detail += fmt.Sprintf(". %s refuses every frame: %s", c.Device, c.Failing)
+		health.Remedies = append(health.Remedies, fmt.Sprintf(
+			"hotaru opens %s again by itself; if it keeps refusing, another program may hold its lighting.", c.Device))
+	}
 	if short := s.misfits(drawn); len(short) > 0 {
 		/*
 			Still healthy: hotaru can drive every one of these. But a device
