@@ -47,7 +47,7 @@ flowchart TB
 
     subgraph hw["Hardware"]
         LIT["Lit devices<br/>Kraken · GPU · Aura · MM700 · G502 · Keychron<br/>Apex Pro TKL Wireless Gen 3 · AULA F75"]
-        LCD["Kraken LCD<br/>640x640, GIF only"]
+        LCD["Kraken LCD<br/>640x640, GIF or full-colour frames"]
         TELEM["Cooler telemetry<br/>coolant · pump · fans"]
         TEMP["CPU package · GPU"]
     end
@@ -71,7 +71,7 @@ flowchart TB
 
     MBOX -->|"renderer + frame"| ANIM
     ANIM -->|"frames, identical ones skipped"| CANV
-    RECON -->|"dashboard frames<br/>hash gate + size floor"| COOL
+    RECON -->|"dashboard frames<br/>hash gate, resend at 25 s"| COOL
     CORE -->|"status, coalesced"| COOL
     CORE -->|"package + card temps"| HWMON
 
@@ -230,6 +230,14 @@ them.
   is the `nzxt` package of [sanshoku](https://github.com/ushineko/sanshoku),
   which hayami also uses. `internal/cooler` adapts it to the service (spec 059).
   A cooler that goes away is let go and waited for again.
+- **The dashboard on the panel.** hotaru paints the dashboard in full colour.
+  On a panel that takes frames (the Kraken Elite, spec 080), it renders the
+  dashboard every second and sends a frame only when the content changes. The
+  firmware returns to its readout 30 s after the last frame, so hotaru sends
+  the same frame again every 25 s. A render takes about 3 ms and a frame about
+  95 ms of USB time. A panel that takes only GIFs receives a GIF with 256
+  colours, no sooner than its floor. A picture and the readout stop the
+  dashboard, and resends stop with it.
 - **Effects hotaru draws.** Every lit device is a *canvas device*: hotaru
   draws its effects on the host and sends it frames, as the Apex Pro TKL
   Wireless Gen 3's vendor software does (spec 060). hotaru finds canvas

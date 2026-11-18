@@ -31,7 +31,7 @@ support list.
 
 | Device | Through | Notes |
 |---|---|---|
-| NZXT Kraken 2024 Elite (`1e71:3012`) | sanshoku | hotaru draws the ring and the fans itself, through sanshoku, on the same handle that reads the telemetry and draws the 640x640 panel (spec 073). The radiator fans' RGB daisy-chains into the cooler. hotaru never writes into the bucket the panel is displaying, because the panel blanks for the length of that transfer (spec 013) |
+| NZXT Kraken 2024 Elite (`1e71:3012`) | sanshoku | hotaru draws the ring and the fans itself, through sanshoku, on the same handle that reads the telemetry and draws the 640x640 panel (spec 073). The dashboard goes to the panel as full-colour frames (spec 080). The radiator fans' RGB daisy-chains into the cooler. hotaru never writes into the bucket the panel is displaying, because the panel blanks for the length of that transfer (spec 013) |
 | MSI GeForce RTX 4090 Suprim Liquid X | sanshoku | Drawn through sanshoku over the card's I2C adapter (spec 075; sanshoku spec 029), on Linux only. One light: a colour is the card's static mode, at most about four a second, and its own effects (Breathing and the rest) carry it moving. **Its LEDs wash out.** A pale colour looks close to white, and its middle greens look too bright. A `colour` rule corrects it (spec 066) |
 | ASUS ROG Maximus Z790 Hero | sanshoku | Drawn through sanshoku (spec 075; sanshoku spec 027): the onboard LED and four addressable headers. **The board cannot read a header's length**, so a `lengths` rule gives it. On this desk the accent strip has 18, the side fans 16 and the rear fan 20; OpenRGB had 16 for each |
 | Corsair MM700 | sanshoku | Drawn through sanshoku (spec 075; sanshoku spec 026). It keeps a frame. Its logo has no blue channel, so a request for purple appears as dim red (spec 009). Its LEDs wash out like the graphics card's |
@@ -257,8 +257,11 @@ once, and the usbfs claim keeps a second program off the panel.
 
 **The panel: hotaru itself, on coolers that have one.** The Kraken Z and Elite
 families store images in sixteen buckets of their own memory. Most coolers
-have nothing of the kind. The firmware does not retain a still picture, so
-hotaru sends one-frame GIFs.
+have nothing of the kind. A GIF in a bucket stays on the panel, so pictures
+from `hotaru screen show` go there. The Kraken Elite also takes streamed
+frames in full colour, as NZXT CAM sends them (spec 080). The firmware returns
+to its readout 30 s after the last frame, so hotaru sends the dashboard's frame
+again every 25 s. Other panels receive the dashboard as a one-frame GIF.
 
 **Temperatures: the kernel.** The CPU package comes from `coretemp`, read by
 label. An AMD processor is read from `k10temp` or `zenpower`, in the order

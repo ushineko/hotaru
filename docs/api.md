@@ -585,9 +585,18 @@ needs between frames of that size. With a body, it draws that unsaved edit
 instead of the stored dashboard, which is what an editor with a preview in it
 needs. With no body, it draws the stored one.
 
-The service renders the frame rather than the client. The panel takes a
-640x640 GIF, and this route makes them. A second renderer would be a second
-answer about what the screen shows.
+The service renders the frame rather than the client. A second renderer would
+be a second answer about what the screen shows.
+
+The frame is in the panel's own format, named by `format`. A panel that takes
+frames receives the dashboard in full colour, so the route returns a PNG, and
+`floor_seconds` is 0 (spec 080). A panel that takes only GIFs receives a
+640x640 GIF, so the route returns that GIF and its floor.
+
+```console
+$ curl -s --unix-socket … -X POST http://hotaru/v1/dashboards/coolant/preview
+{"image":"iVBORw0KGgo…","format":"png","bytes":113971,"floor_seconds":0}
+```
 
 ## GET /v1/readings
 
