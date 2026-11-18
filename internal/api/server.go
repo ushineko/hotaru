@@ -186,11 +186,13 @@ func Handler(svc *service.Service) http.Handler {
 			fail(w, err)
 			return
 		}
-		write(w, http.StatusOK, ReleaseResponse{
-			Device: name,
-			Detail: name + " shows its own lighting again. It re-enumerates first, so it drops off the bus " +
-				"for a moment; hotaru finds it again and sends it nothing until a scene asks.",
-		})
+		detail := name + " shows its own lighting again. It re-enumerates first, so it drops off the bus " +
+			"for a moment; hotaru finds it again and sends it nothing until a scene asks."
+		if svc.Stays(name) {
+			detail = name + " keeps the colours it was showing, stored in the device. hotaru stays " +
+				"attached and sends it nothing until a scene asks."
+		}
+		write(w, http.StatusOK, ReleaseResponse{Device: name, Detail: detail})
 	})
 
 	mux.HandleFunc("GET /"+Version+"/status", func(w http.ResponseWriter, r *http.Request) {

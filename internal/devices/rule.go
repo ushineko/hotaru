@@ -29,6 +29,9 @@ type Rule struct {
 	// config.DeviceRule.
 	FrameInterval time.Duration
 	Twin          string
+	// Formerly is the device's OpenRGB name and zones, for one OpenRGB no
+	// longer lists (spec 073). See config.DeviceRule.
+	Formerly *config.Former
 	// Colour corrects what is written to lights that wash out (spec 066).
 	Colour Profile
 }
@@ -85,6 +88,10 @@ func MergeRules(rules []config.DeviceRule) Rule {
 		if strings.TrimSpace(r.Twin) != "" {
 			out.Twin = strings.TrimSpace(r.Twin)
 		}
+		if r.Formerly != nil && strings.TrimSpace(r.Formerly.Name) != "" {
+			former := *r.Formerly
+			out.Formerly = &former
+		}
 		// One setting at a time, so one rule can give saturation and a
 		// later one value.
 		if r.Colour != nil && r.Colour.Saturation != nil {
@@ -116,7 +123,28 @@ func RuleFor(cfg *config.Config, device string) Rule {
 	if cfg == nil {
 		return Rule{}
 	}
-	return MergeRules(cfg.RulesFor(device))
+	return Renamed(MergeRules(cfg.RulesFor(device)), device)
+}
+
+/*
+Renamed is a rule as it applies to the device it is for. A rule with a former
+name, applied to the device under its new one, has its segments' zones renamed
+through the former zones, so a segment written as {zone: "Hue 2 Channel 2"}
+finds the canvas's Fan zone (spec 073). Under the former name it is unchanged.
+*/
+func Renamed(r Rule, device string) Rule {
+	if r.Formerly == nil || strings.EqualFold(device, r.Formerly.Name) || len(r.Formerly.Zones) == 0 {
+		return r
+	}
+	segments := make(map[string]config.Segment, len(r.Segments))
+	for name, seg := range r.Segments {
+		if to, ok := r.Formerly.Zones[seg.Zone]; ok {
+			seg.Zone = to
+		}
+		segments[name] = seg
+	}
+	r.Segments = segments
+	return r
 }
 
 // namesSolidModes reports whether the rule states its own order, as opposed to

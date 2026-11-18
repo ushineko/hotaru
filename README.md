@@ -269,6 +269,16 @@ MIT. See [LICENSE](LICENSE).
 
 ### Unreleased
 
+- hotaru draws the Kraken's ring and fans itself, through sanshoku, on the
+  handle that reads its telemetry and draws its panel (spec
+  [073](specs/073-the-kraken-drawn-through-sanshoku.md),
+  [#208](https://github.com/ushineko/hotaru/issues/208)). OpenRGB's detector
+  for the cooler is switched off. A rule's `formerly` keeps scenes written
+  for OpenRGB's listing working. The 12 s resend of spec 070 is gone,
+  because sanshoku stores the frame before the screen's readout puts the
+  stored lighting back. The cooler's 14 firmware effects are listed and run
+  from a scene's `effects` (sanshoku spec 025). Fixes
+  [#206](https://github.com/ushineko/hotaru/issues/206).
 - The README and the docs describe Windows: how to build and run the
   installer, what works there and what does not yet, and the Windows test
   machine in `docs/hardware.md`.

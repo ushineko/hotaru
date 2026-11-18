@@ -37,6 +37,9 @@ type Device struct {
 	Name   string
 	Path   string
 	Lights int
+	// Names names the lights in order, where set; otherwise they are L1,
+	// L2 and on. The cooler's are "ring 1" and "fan 1" (spec 073).
+	Names []string
 	// FloorAt is the device's floor; zero is 16 ms.
 	FloorAt time.Duration
 
@@ -64,7 +67,11 @@ func (d *Device) Identity() sanshoku.Identity {
 func (d *Device) Keys() []lighting.Key {
 	out := make([]lighting.Key, d.Lights)
 	for i := range out {
-		out[i] = lighting.Key{ID: byte(i + 1), Name: fmt.Sprintf("light %d", i+1)}
+		name := fmt.Sprintf("L%d", i+1)
+		if i < len(d.Names) {
+			name = d.Names[i]
+		}
+		out[i] = lighting.Key{ID: byte(i + 1), Name: name}
 	}
 	return out
 }

@@ -106,7 +106,7 @@ func TestACanvasIsListedAsADeviceWithItsRenderersAsModes(t *testing.T) {
 	require.NotNil(t, device.Canvas, "a canvas device is not marked as drawn")
 	require.Equal(t, 6, device.LEDCount)
 	require.Equal(t, []devices.Zone{{Name: "Keys", Shape: devices.ShapeGrid, First: 0, Count: 6}}, device.Zones)
-	require.Equal(t, "light 1", device.LEDNames[0])
+	require.Equal(t, "L1", device.LEDNames[0])
 	require.Equal(t, []string{"Static", "Breathing", "Spectrum", "Rainbow Wave", "Off"}, device.ModeNames())
 
 	breathing, _ := device.Mode("breathing")
@@ -409,7 +409,7 @@ func TestAScenePaintedOnTheTwinLightsTheCanvas(t *testing.T) {
 	// numbers its lights the other way round here, so an index would land
 	// on the wrong key.
 	listing := twin()
-	listing.LEDNames = []string{"light 6", "light 5", "light 4", "light 3", "light 2", "light 1"}
+	listing.LEDNames = []string{"L6", "L5", "L4", "L3", "L2", "L1"}
 	svc := service.New(nil, openrgb.NewFake(listing, board()), "")
 	svc.SetRecorder(recorder(t))
 	d := attachDrawn(t, svc)

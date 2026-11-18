@@ -113,6 +113,15 @@ type DeviceRule struct {
 	Twin string `json:"twin,omitempty"`
 
 	/*
+		Formerly is the name a device hotaru draws itself had as an OpenRGB
+		listing, for hardware OpenRGB no longer lists: the Kraken's ring and
+		fans, once OpenRGB's detector for the cooler is off (spec 073).
+		Scenes, segments and recorded colours written against the old name
+		land on the canvas, and no file is rewritten.
+	*/
+	Formerly *Former `json:"formerly,omitempty"`
+
+	/*
 		Colour corrects what is written to a device whose lights wash out: a
 		pale colour that the fans show as written looks close to white on a
 		graphics card's LEDs (spec 066). Absent is no correction.
@@ -141,6 +150,15 @@ type Curve struct {
 	Red   *float64 `json:"red,omitempty"`
 	Green *float64 `json:"green,omitempty"`
 	Blue  *float64 `json:"blue,omitempty"`
+}
+
+/*
+Former is a device's OpenRGB name and its zones' names there, each mapped to
+the canvas zone that is the same lights: {"Hue 2 Channel 1": "Ring"}.
+*/
+type Former struct {
+	Name  string            `json:"name"`
+	Zones map[string]string `json:"zones,omitempty"`
 }
 
 // Segment is a named part of a device: a whole zone, or a range within one.

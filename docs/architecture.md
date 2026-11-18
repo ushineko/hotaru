@@ -283,6 +283,12 @@ them.
   OpenRGB location, which carries the hidraw path. OpenRGB keeps the path it
   found at start after the keyboard moves to another node, so a `twin` rule
   can name it instead.
+- **The cooler's lights are a canvas on the cooler's handle.** sanshoku's
+  Kraken is a cooler, a panel and a canvas in one device. The daemon draws
+  on it through the cooler's own handle, and canvas discovery does not scan
+  for it. The canvas never closes the handle, and releasing it keeps it
+  attached. A `formerly` rule maps the name OpenRGB listed it under onto the
+  canvas, as a twin that is not listed (spec 073).
 - **A canvas device comes and goes.** OpenRGB's exit reboots the Apex. The
   daemon attaches canvas devices as it attaches the cooler, with the same
   backoff, and checks every two seconds that the node is the one it opened.

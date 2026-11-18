@@ -317,8 +317,9 @@ func serveCooler(ctx context.Context, svc *service.Service, found *cooler.Cooler
 	if err := svc.RestoreScreen(ctx); err != nil {
 		report("could not put the screen back: %v", err)
 	}
-	retouched := make(chan struct{})
-	go func() { defer close(retouched); retouch(drawing, svc, handback, report) }()
+	// The cooler's own lights, drawn on its handle (spec 073).
+	lit := make(chan struct{})
+	go func() { defer close(lit); lightCooler(drawing, svc, found, connectBackoff, report) }()
 
 	gone := false
 	select {
@@ -328,7 +329,7 @@ func serveCooler(ctx context.Context, svc *service.Service, found *cooler.Cooler
 	}
 	stop()
 	<-drawn
-	<-retouched
+	<-lit
 
 	svc.SetDashboard(nil)
 	svc.SetCooler(nil)
@@ -337,40 +338,26 @@ func serveCooler(ctx context.Context, svc *service.Service, found *cooler.Cooler
 }
 
 /*
-handback is how long after the cooler's screen changes hands its lights are
-sent their frame again: long enough for the firmware to have finished, as
-measured for hotaru #24 (0.3 s was too soon, 12 s was not).
-*/
-var handback = 12 * time.Second
+lightCooler draws on the cooler's lights as a canvas on the cooler's own handle
+(spec 073), until the cooler goes or the service stops. A cooler whose
+accessory list has not answered is asked again on the backoff, and a cooler
+that has no lights is asked nothing: Borrow finds no canvas without a write.
 
-/*
-retouch sends the cooler's own lights their recorded frame again, a while
-after the service takes the screen and a while after each switch to the
-cooler's readout (see service/handback.go). A switch inside the wait starts
-it again, so a run of them costs one frame.
+The canvas is detached before this returns, so the cooler closes a handle
+nothing else is using.
 */
-func retouch(ctx context.Context, svc *service.Service, after time.Duration, report func(string, ...any)) {
-	timer := time.NewTimer(after)
-	defer timer.Stop()
-	for {
+func lightCooler(ctx context.Context, svc *service.Service, found *cooler.Cooler,
+	backoff []time.Duration, report func(string, ...any),
+) {
+	for attempt := 0; ; attempt++ {
+		if device, ok := canvas.Borrow(found.Shared()); ok {
+			serveCanvas(ctx, svc, device, report)
+			attempt = 0
+		}
 		select {
 		case <-ctx.Done():
 			return
-		case <-svc.Handbacks():
-			timer.Reset(after)
-		case <-timer.C:
-			restore, err := svc.Retouch(ctx)
-			switch {
-			case err != nil:
-				report("could not send the cooler's lights their colours again: %v", err)
-			case restore.Applied > 0:
-				report("sent the cooler's lights their colours again after the screen changed hands")
-			}
-			for _, result := range restore.Results {
-				if result.Err != nil {
-					report("could not send %s its colours again: %v", result.Device, result.Err)
-				}
-			}
+		case <-time.After(backoff[min(attempt, len(backoff)-1)]):
 		}
 	}
 }
