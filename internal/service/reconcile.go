@@ -170,6 +170,12 @@ func (s *Service) Reconcile(ctx context.Context, only []string) (Restore, error)
 		*/
 		kept := desired.Devices[name]
 		want := preference{mode: kept.Mode, insist: true, speed: kept.Speed}
+		if _, has := device.Mode(kept.Mode); device.Canvas != nil && !has {
+			// Recorded through OpenRGB, in a mode the canvas does not have
+			// ("Direct", or a firmware mode OpenRGB drove): the colours, in
+			// Static (spec 075).
+			want = preference{mode: canvasStill, insist: true}
+		}
 		for _, named := range kept.Named() {
 			if c, err := colour.Parse(named); err == nil {
 				want.colours = append(want.colours, c)
@@ -262,6 +268,7 @@ func (s *Service) restoreOne(ctx context.Context, client openrgb.Client,
 	device *devices.Device, kept state.Device, want preference,
 ) Result {
 	device, resized, problems := regrow(ctx, client, device, kept.Zones)
+	kept.Colours = refit(device, kept)
 	if len(kept.Colours) != device.LEDCount {
 		/*
 			Written anyway. The LEDs the frame and the device share are still
@@ -281,6 +288,48 @@ func (s *Service) restoreOne(ctx context.Context, client openrgb.Client,
 }
 
 /*
+refit is a record's colours laid out for the device's zones as they are now.
+
+A canvas's zones need not have the sizes OpenRGB recorded: a header's length
+is a rule's now, and OpenRGB had it wrong (spec 075). Each recorded zone is
+stretched or shrunk over the zone's length, so a fan's gradient goes round
+the whole fan, and the zones after it start where they now start. A record
+whose sizes do not add up to its colours, or that fits already, is returned
+as it is.
+*/
+func refit(device *devices.Device, kept state.Device) []colour.Colour {
+	if device.Canvas == nil || len(kept.Zones) == 0 || len(kept.Colours) == device.LEDCount {
+		return kept.Colours
+	}
+	sizes := make([]int, len(device.Zones))
+	total := 0
+	for i, zone := range device.Zones {
+		sizes[i] = zone.Count
+		if n, ok := kept.Zones[zone.Name]; ok {
+			sizes[i] = n
+		}
+		total += sizes[i]
+	}
+	if total != len(kept.Colours) {
+		return kept.Colours
+	}
+	out := make([]colour.Colour, 0, device.LEDCount)
+	from := 0
+	for i, zone := range device.Zones {
+		was := kept.Colours[from : from+sizes[i]]
+		from += sizes[i]
+		for j := range zone.Count {
+			if len(was) == 0 {
+				out = append(out, colour.Colour{})
+				continue
+			}
+			out = append(out, was[j*len(was)/zone.Count])
+		}
+	}
+	return out
+}
+
+/*
 regrow gives each of a device's zones that is smaller than recorded the size
 it was recorded with, and returns the device as the server reports it after.
 
@@ -291,6 +340,11 @@ more LEDs than recorded is somebody's change, not a loss.
 func regrow(ctx context.Context, client openrgb.Client, device *devices.Device,
 	recorded map[string]int,
 ) (*devices.Device, []string, []string) {
+	if device.Canvas != nil {
+		// Its lengths are the rules', and a size OpenRGB recorded for the
+		// same name may be wrong (spec 075).
+		return device, nil, nil
+	}
 	var resized, problems []string
 	for _, zone := range device.Zones {
 		want, ok := recorded[zone.Name]

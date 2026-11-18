@@ -122,6 +122,13 @@ type DeviceRule struct {
 	Formerly *Former `json:"formerly,omitempty"`
 
 	/*
+		Lengths gives a zone whose length its device cannot read its LED
+		count: an addressable header's strip, which the board only knows by
+		being told (spec 075). OpenRGB kept this in its own profile.
+	*/
+	Lengths map[string]int `json:"lengths,omitempty"`
+
+	/*
 		Colour corrects what is written to a device whose lights wash out: a
 		pale colour that the fans show as written looks close to white on a
 		graphics card's LEDs (spec 066). Absent is no correction.

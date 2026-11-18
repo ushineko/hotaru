@@ -74,6 +74,16 @@ github.com/ushineko/sanshoku v0.1.20-0.20261117034504-1af48339b9b3 h1:C99ijCMK1T
 github.com/ushineko/sanshoku v0.1.20-0.20261117034504-1af48339b9b3/go.mod h1:fCmgH+mFCK66xoZEW7QST/5CLoXhezR6gNFGeT/1qWY=
 github.com/ushineko/sanshoku v0.1.20-0.20261117034811-0111a5305971 h1:Sy8fWsDveOfIBUaFzHybkE3zK/Zhd4M1M5BeikK/Fxo=
 github.com/ushineko/sanshoku v0.1.20-0.20261117034811-0111a5305971/go.mod h1:fCmgH+mFCK66xoZEW7QST/5CLoXhezR6gNFGeT/1qWY=
+github.com/ushineko/sanshoku v0.1.20-0.20261117084426-67784b5da6bc h1:HOIj91wEHXWFv0Qn/A1HnuGiHNnnEI7LwefJ39IaVNE=
+github.com/ushineko/sanshoku v0.1.20-0.20261117084426-67784b5da6bc/go.mod h1:fCmgH+mFCK66xoZEW7QST/5CLoXhezR6gNFGeT/1qWY=
+github.com/ushineko/sanshoku v0.1.20-0.20261117085247-d53af835f479 h1:PNC6JYl95CGAUOxEaHrm9z57dpXMiDZcbDIIrg63S8U=
+github.com/ushineko/sanshoku v0.1.20-0.20261117085247-d53af835f479/go.mod h1:fCmgH+mFCK66xoZEW7QST/5CLoXhezR6gNFGeT/1qWY=
+github.com/ushineko/sanshoku v0.1.20-0.20261117151743-0d29051f11c9 h1:Awx6rWKZP3n4vnJ7j2O+lMUpu/TmCevo9/CpL1F5cn0=
+github.com/ushineko/sanshoku v0.1.20-0.20261117151743-0d29051f11c9/go.mod h1:fCmgH+mFCK66xoZEW7QST/5CLoXhezR6gNFGeT/1qWY=
+github.com/ushineko/sanshoku v0.1.20-0.20261117153911-9691066abda5 h1:eSGzSjbUNPDnd4HONmV/+TNW4zHnouEq63qWviX39rM=
+github.com/ushineko/sanshoku v0.1.20-0.20261117153911-9691066abda5/go.mod h1:fCmgH+mFCK66xoZEW7QST/5CLoXhezR6gNFGeT/1qWY=
+github.com/ushineko/sanshoku v0.1.20-0.20261117161130-afa4e685911f h1:r/i6OHOMv3mCdRDYlo0BQvpFeaViea6nn9FDwC8Jb44=
+github.com/ushineko/sanshoku v0.1.20-0.20261117161130-afa4e685911f/go.mod h1:fCmgH+mFCK66xoZEW7QST/5CLoXhezR6gNFGeT/1qWY=
 github.com/yuin/goldmark v1.8.2 h1:kEGpgqJXdgbkhcOgBxkC0X0PmoPG1ZyoZ117rDVp4zE=
 github.com/yuin/goldmark v1.8.2/go.mod h1:ip/1k0VRfGynBgxOz0yCqHrbZXhcjxyuS66Brc7iBKg=
 go.yaml.in/yaml/v3 v3.0.4/go.mod h1:DhzuOOF2ATzADvBadXxruRBLzYTpT36CKvDb3+aBEFg=

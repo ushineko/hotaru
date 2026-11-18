@@ -289,6 +289,10 @@ them.
   for it. The canvas never closes the handle, and releasing it keeps it
   attached. A `formerly` rule maps the name OpenRGB listed it under onto the
   canvas, as a twin that is not listed (spec 073).
+- **sanshoku is the backend.** Every device hotaru supports is drawn through
+  sanshoku as a canvas (spec 075). OpenRGB is optional, for hardware sanshoku
+  does not drive. A device's zones are the driver's, and a header's length is
+  a rule.
 - **hotaru's own devices do not wait for OpenRGB.** With no server, a canvas
   device stands beside a server with no devices. It is listed, written and
   restored as usual, and a write to an OpenRGB device is refused as the

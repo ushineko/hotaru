@@ -29,6 +29,12 @@ and the backends use no `optdepends`. The graceful-degradation rules in spec
 001 stand as written. They describe a machine's state, not a package's
 manifest.
 
+**OpenRGB is no longer one of hotaru's backends** (spec 075). hotaru draws
+every device it supports through sanshoku, a Go module built into the binary,
+and speaks to an OpenRGB server only for hardware sanshoku does not drive. So
+`openrgb` is an `optdepends`: installing it adds devices, and leaving it out
+loses none that hotaru supports.
+
 ## Split: `hotaru` and `hotaru-gui`
 
 One PKGBUILD, two packages.
@@ -76,14 +82,15 @@ Verified against this machine's repositories:
 
 | Package | Repo | Role |
 |---|---|---|
-| `openrgb` | extra | Lighting. Without it, lighting is absent |
+| `openrgb` | extra | Optional: lighting for devices sanshoku does not drive |
 | `go` | extra | Build only |
 | `libglvnd`, `libx11`, `libxcursor`, `libxrandr`, `libxinerama`, `libxi`, `libxxf86vm`, `libxkbcommon`, `wayland` | extra | The GUI's runtime graphics stack |
 
 ```
 # hotaru
-depends=('glibc' 'openrgb')
-optdepends=('nvidia-utils: GPU temperature on the dashboard')
+depends=('glibc')
+optdepends=('nvidia-utils: GPU temperature on the dashboard'
+            'openrgb: lighting for devices sanshoku does not drive')
 
 # hotaru-gui
 depends=('hotaru' 'libglvnd' 'libx11' 'libxcursor' 'libxrandr'
@@ -293,8 +300,9 @@ It installs:
   failure;
 - a Start Menu entry for the window.
 
-It does not install OpenRGB. Install OpenRGB 1.1 or later and run its
-SDK server. `docs/hardware.md` says why 1.0 is excluded.
+It does not install OpenRGB, which is optional (spec 075): install OpenRGB
+1.1 or later and run its SDK server only for hardware sanshoku does not
+drive. `docs/hardware.md` says why 1.0 is excluded.
 
 The service makes `%ProgramData%\hotaru` when it first starts. The
 uninstaller in `C:\Program Files\hotaru` removes the service and the
@@ -316,8 +324,9 @@ See [spec 007](../specs/007-packaging-and-release.md).
   built from the same tree in the same run, and the two copies would drift.
 - **OpenRGB's device permissions stay with the `openrgb` package.** A second
   package with opinions about another package's devices is how two udev rules
-  come to disagree. hotaru ships a rule for the cooler it drives itself, and
-  nothing else.
+  come to disagree. hotaru ships rules for the devices it drives itself
+  through sanshoku (the cooler, and since spec 075 every device it lights),
+  and nothing else.
 
 The PKGBUILD is in [`packaging/`](../packaging/), versioned with what it
 packages.

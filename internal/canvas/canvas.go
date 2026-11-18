@@ -26,9 +26,14 @@ import (
 	"time"
 
 	"github.com/ushineko/sanshoku"
+	"github.com/ushineko/sanshoku/asus"
 	"github.com/ushineko/sanshoku/aula"
 	"github.com/ushineko/sanshoku/battery"
+	"github.com/ushineko/sanshoku/corsair"
+	"github.com/ushineko/sanshoku/keychron"
 	"github.com/ushineko/sanshoku/lighting"
+	"github.com/ushineko/sanshoku/logitech"
+	"github.com/ushineko/sanshoku/msi"
 	"github.com/ushineko/sanshoku/steelseries"
 )
 
@@ -41,7 +46,13 @@ too), so Open keeps only what satisfies lighting.Canvas and closes the rest
 unused.
 */
 func drivers() []sanshoku.Driver {
-	return []sanshoku.Driver{steelseries.Driver{}, aula.Driver{}}
+	return []sanshoku.Driver{
+		steelseries.Driver{}, aula.Driver{},
+		// Every device on the desk OpenRGB drew (spec 075). nzxt is not
+		// here: the cooler's lights are drawn on the cooler's handle (spec
+		// 073).
+		asus.Driver{}, corsair.Driver{}, keychron.Driver{}, msi.Driver{}, logitech.Driver{},
+	}
 }
 
 // ErrNoCanvas is a machine with no device hotaru draws on. An ordinary state,
@@ -162,11 +173,16 @@ func (d *Device) NotePutBack(at time.Time) {
 	d.watch.PutBack = at
 }
 
-// New adapts an open device, and says whether it is a canvas at all. Open
-// calls it; a test hands it a fake.
+/*
+New adapts an open device, and says whether it is a canvas at all. Open calls
+it; a test hands it a fake.
+
+A canvas with no keys is not one: every Logitech receiver node satisfies
+lighting.Canvas, and one with nothing lit behind it has no lights (spec 075).
+*/
 func New(dev sanshoku.Device) (*Device, bool) {
 	draw, ok := dev.(lighting.Canvas)
-	if !ok {
+	if !ok || len(draw.Keys()) == 0 {
 		return nil, false
 	}
 	out := &Device{
@@ -203,6 +219,32 @@ func Borrow(dev sanshoku.Device) (*Device, bool) {
 // Borrowed is whether the device is another owner's (see Borrow): it stays
 // attached when released.
 func (d *Device) Borrowed() bool { return d.borrowed }
+
+// Zones is the device's own zones where it names them (lighting.Zoned), or
+// nil (spec 075).
+func (d *Device) Zones() []lighting.Zone {
+	if z, ok := d.draw.(lighting.Zoned); ok {
+		return z.Zones()
+	}
+	return nil
+}
+
+/*
+Resize gives a zone whose length the device cannot read its lights (an
+addressable header's strip, spec 075), and reads the keys again. Done when
+the canvas is attached, before anything draws on it.
+*/
+func (d *Device) Resize(zone string, lights int) error {
+	z, ok := d.draw.(lighting.Zoned)
+	if !ok {
+		return fmt.Errorf("%s has no zones to resize: %w", d.Name(), lighting.ErrNoZone)
+	}
+	if err := z.Resize(zone, lights); err != nil {
+		return fmt.Errorf("%s: %w", d.Name(), err)
+	}
+	d.keys = d.draw.Keys()
+	return nil
+}
 
 // Hold is how long a frame shows before the device takes its lights back,
 // or zero for a device that keeps its last frame.

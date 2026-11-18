@@ -11,3 +11,16 @@ func TestDiscoveryNeverOpensTheCooler(t *testing.T) {
 		}
 	}
 }
+
+// Every device OpenRGB drew on the desk is found (spec 075 R1.1).
+func TestDiscoveryScansEveryLightingDriver(t *testing.T) {
+	names := map[string]bool{}
+	for _, d := range drivers() {
+		names[d.Name()] = true
+	}
+	for _, want := range []string{"steelseries", "aula", "asus", "corsair", "keychron", "msi", "logitech"} {
+		if !names[want] {
+			t.Errorf("canvas discovery does not scan %s", want)
+		}
+	}
+}

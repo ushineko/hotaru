@@ -35,7 +35,7 @@ live dashboard on the cooler's screen, and bind it all to keys.
 
 | | |
 |---|---|
-| **Lighting** | Supports every device OpenRGB can see, addressed by device, zone, LED range, or a segment. The user can label devices in plain words, e.g. "top fan red, bottom fan blue" |
+| **Lighting** | Drives its supported devices directly through sanshoku, and anything else OpenRGB can see, addressed by device, zone, LED range, or a segment. The user can label devices in plain words, e.g. "top fan red, bottom fan blue" |
 | **Scenes** | A named set of colour assignments, an effect per device and what the screen shows, applied as a previewable unit. |
 | **The cooler** | Coolant and CPU temperature, pump and fan speeds, read from the device directly. |
 | **The screen** | The cooler's LCD: its own readout, an image, an animation, or a live dashboard rendered from the telemetry |
@@ -53,12 +53,11 @@ $ paru -S hotaru hotaru-gui     # or hotaru alone, on a machine with no desktop
 [`hotaru`](https://aur.archlinux.org/packages/hotaru) is one PKGBUILD building both, from the release tarball.
 
 `hotaru` is the CLI and the service and needs no graphics stack, so it
-installs on a headless box; `hotaru-gui` is the window. Installing pulls in
-OpenRGB, because hotaru contains no lighting drivers of its own. See
-[docs/packaging.md](docs/packaging.md) for why the backends are hard
-dependencies rather than a list of suggestions.
+installs on a headless box; `hotaru-gui` is the window. hotaru draws the
+devices it supports itself, through sanshoku; OpenRGB is optional, for
+hardware sanshoku does not drive. See [docs/packaging.md](docs/packaging.md).
 
-Hotaru supports direct device integration with the NZXT Kraken Elite cooler (LCD screen); fans supported through OpenRGB. Other cooler LCD screens are not currently supported by hotaru.
+Hotaru supports direct device integration with the NZXT Kraken Elite cooler: its LCD screen, its ring and its fans. Other cooler LCD screens are not currently supported by hotaru.
 
 ### Anywhere else
 
@@ -101,8 +100,9 @@ the `PATH`, a Start Menu entry for the window, and the Windows service
 keeps its files in `%ProgramData%\hotaru`. Any user signed in at the machine
 can use it, from the CLI or the window, with no flag.
 
-The installer does not install OpenRGB. Install OpenRGB 1.1 or later, not
-1.0, and start its SDK server, ideally as a service at boot.
+The installer does not install OpenRGB, which is optional: hotaru draws the
+devices it supports through sanshoku. For other hardware, install OpenRGB 1.1
+or later, not 1.0, and start its SDK server, ideally as a service at boot.
 [docs/hardware.md](docs/hardware.md) explains why 1.0 is excluded. The
 uninstaller keeps `%ProgramData%\hotaru`, so a reinstall puts the lights back
 as they were. [docs/packaging.md](docs/packaging.md#windows-the-installer) has
@@ -269,6 +269,16 @@ MIT. See [LICENSE](LICENSE).
 
 ### Unreleased
 
+- hotaru draws every device it supports through sanshoku, and OpenRGB is
+  optional (spec [075](specs/075-every-device-through-sanshoku.md),
+  [#211](https://github.com/ushineko/hotaru/issues/211)): the ASUS Aura
+  mainboard, the Corsair MM700, the Keychron K4 HE, the G502 X PLUS and the
+  MSI RTX 4090, beside the Apex, the F75 and the Kraken. Zones are named as
+  OpenRGB named them; a header's length is a `lengths` rule; a record in
+  OpenRGB's Direct restores in Static, fitted zone by zone to the new
+  lengths; the keyboard's own effects come back. With no OpenRGB server and
+  devices drawn, `hotaru light health` is healthy. The package no longer
+  depends on `openrgb`, and the udev rules grant the new devices.
 - The devices hotaru draws itself (the Apex, the F75, the Kraken's lights)
   work with no OpenRGB server: listed, lit by scenes and colours, and
   restored at start (spec

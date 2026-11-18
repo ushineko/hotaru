@@ -48,3 +48,8 @@ func AttachCanvases(ctx context.Context, svc *service.Service, open CanvasOpener
 ) {
 	attachCanvases(ctx, svc, open, backoff, report)
 }
+
+// Lengthen is lengthen, for a test.
+func Lengthen(svc *service.Service, device *canvas.Device, report func(string, ...any)) {
+	lengthen(svc, device, report)
+}

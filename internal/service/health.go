@@ -116,6 +116,17 @@ func (s *Service) Health(ctx context.Context) Health {
 	cfg, client, addr := s.current()
 	health := Health{Address: addr, Canvases: s.Canvases()}
 
+	if !s.serving() && len(health.Canvases) > 0 {
+		/*
+			OpenRGB is optional (spec 075): hotaru draws these itself, and a
+			server adds only hardware sanshoku does not drive.
+		*/
+		health.State = StateHealthy
+		health.Devices, health.InScope = len(health.Canvases), len(health.Canvases)
+		health.Detail = fmt.Sprintf("%d devices drawn by hotaru; no OpenRGB server at %s, "+
+			"which only hardware hotaru does not draw needs", len(health.Canvases), addr)
+		return health
+	}
 	if !s.serving() {
 		health.State = StateUnreachable
 		health.Detail = fmt.Sprintf("no OpenRGB server at %s. Start it, and lighting works from then on.", addr)
@@ -177,7 +188,7 @@ func (s *Service) misfits(found []devices.Device) []string {
 	var out []string
 	for _, device := range found {
 		kept, ok := desired.Devices[device.Name]
-		if !ok || device.HandedTo != "" || len(kept.Colours) == 0 || len(kept.Colours) == device.LEDCount {
+		if !ok || device.HandedTo != "" || len(kept.Colours) == 0 || len(refit(&device, kept)) == device.LEDCount {
 			continue
 		}
 		out = append(out, fmt.Sprintf("%s has an LED count of %d and its recorded colours are for %d",

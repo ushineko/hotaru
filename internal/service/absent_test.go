@@ -74,8 +74,9 @@ func TestACanvasIsRestoredWithNoServer(t *testing.T) {
 	}
 }
 
-// What is OpenRGB's stays OpenRGB's: a write to its device, health and probe
-// still say there is no server (R2.1).
+// What is OpenRGB's stays OpenRGB's: a write to its device and a probe still
+// say there is no server (R2.1). Health does not, since OpenRGB is optional
+// and hotaru draws the canvas (spec 075 R3.3).
 func TestWithNoServerOpenRGBsPartsStillSaySo(t *testing.T) {
 	svc := service.New(nil, nil, noServer)
 	svc.SetRecorder(recorder(t))
@@ -90,8 +91,12 @@ func TestWithNoServerOpenRGBsPartsStillSaySo(t *testing.T) {
 	}
 
 	health := svc.Health(t.Context())
-	require.Equal(t, service.StateUnreachable, health.State)
+	require.Equal(t, service.StateHealthy, health.State)
+	require.Contains(t, health.Detail, "no OpenRGB server")
 	require.NotEmpty(t, health.Canvases, "health no longer lists the canvas")
+
+	bare := service.New(nil, nil, noServer)
+	require.Equal(t, service.StateUnreachable, bare.Health(t.Context()).State, "nothing drawn and no server is healthy")
 
 	_, err = svc.Probe(t.Context(), nil)
 	unreachable(t, err)
