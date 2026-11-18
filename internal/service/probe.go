@@ -74,7 +74,7 @@ for: it asks a person to look.
 */
 func (s *Service) Probe(ctx context.Context, only []string) ([]Finding, error) {
 	cfg, client, addr := s.current()
-	if client == nil {
+	if !s.serving() {
 		return nil, unreachable(addr)
 	}
 	found, err := client.Devices(ctx)

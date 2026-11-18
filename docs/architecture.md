@@ -289,6 +289,11 @@ them.
   for it. The canvas never closes the handle, and releasing it keeps it
   attached. A `formerly` rule maps the name OpenRGB listed it under onto the
   canvas, as a twin that is not listed (spec 073).
+- **hotaru's own devices do not wait for OpenRGB.** With no server, a canvas
+  device stands beside a server with no devices. It is listed, written and
+  restored as usual, and a write to an OpenRGB device is refused as the
+  server being unreachable. Health, `probe` and `rescan` still need the
+  server (spec 074).
 - **A canvas device comes and goes.** OpenRGB's exit reboots the Apex. The
   daemon attaches canvas devices as it attaches the cooler, with the same
   backoff, and checks every two seconds that the node is the one it opened.

@@ -169,11 +169,22 @@ func isEffect(name string) bool {
 	return true
 }
 
-// storedSolid is the stored mode a solid colour goes to on a device that has
-// them, or "" on one that does not. See SolidCandidates.
+/*
+storedSolid is the stored mode a solid colour goes to on a device that has
+them, or "" on one that does not. See SolidCandidates.
+
+The running effect, where it takes a colour. Otherwise the firmware's first
+effect that takes one, but only on a canvas whose frames fade: the F75's is
+Fixed on, which holds a colour its frames cannot. A canvas that holds a frame
+draws the colour itself. The Kraken's first coloured effect is Fading, and a
+solid colour came out fading (spec 074).
+*/
 func (d *Device) storedSolid() string {
 	if active, ok := d.Mode(d.ActiveMode); ok && active.Stored && active.ModeColour {
 		return active.Name
+	}
+	if d.Canvas != nil && !d.Canvas.Fades {
+		return ""
 	}
 	for _, mode := range d.Modes {
 		if mode.Stored && mode.ModeColour {

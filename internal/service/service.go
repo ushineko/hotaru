@@ -336,14 +336,21 @@ nothing behaves differently from before spec 060.
 
 With a colour profile in the rules, the client corrects what it writes and
 reports what was meant (see corrected, and spec 066).
+
+With no server and a canvas device attached, the canvases stand beside a
+server with no devices (see absent, and spec 074). With neither, the client
+is nil and every caller says the server is unreachable.
 */
 func (s *Service) current() (*config.Config, openrgb.Client, string) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	if s.client == nil {
-		return s.cfg, s.client, s.addr
-	}
 	client := s.client
+	if client == nil {
+		if len(s.canvases) == 0 {
+			return s.cfg, nil, s.addr
+		}
+		client = absent{addr: s.addr}
+	}
 	if len(s.canvases) > 0 {
 		client = &lights{Client: client, cfg: s.cfg, drawn: s.drawnNow()}
 	}

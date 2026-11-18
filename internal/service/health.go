@@ -116,7 +116,7 @@ func (s *Service) Health(ctx context.Context) Health {
 	cfg, client, addr := s.current()
 	health := Health{Address: addr, Canvases: s.Canvases()}
 
-	if client == nil {
+	if !s.serving() {
 		health.State = StateUnreachable
 		health.Detail = fmt.Sprintf("no OpenRGB server at %s. Start it, and lighting works from then on.", addr)
 		health.Remedies = s.remedies(ctx)

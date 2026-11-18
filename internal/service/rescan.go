@@ -147,7 +147,7 @@ func (s *Service) putBack(ctx context.Context) (Rescan, error) {
 // the lights on it.
 func (s *Service) putBackOnce(ctx context.Context) (Rescan, error) {
 	_, client, addr := s.current()
-	if client == nil {
+	if !s.serving() {
 		return Rescan{}, unreachable(addr)
 	}
 	found, err := client.Devices(ctx)

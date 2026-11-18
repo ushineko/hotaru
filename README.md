@@ -269,6 +269,13 @@ MIT. See [LICENSE](LICENSE).
 
 ### Unreleased
 
+- The devices hotaru draws itself (the Apex, the F75, the Kraken's lights)
+  work with no OpenRGB server: listed, lit by scenes and colours, and
+  restored at start (spec
+  [074](specs/074-sanshoku-devices-without-openrgb.md),
+  [#210](https://github.com/ushineko/hotaru/issues/210)). The first step of
+  retiring OpenRGB
+  ([#212](https://github.com/ushineko/hotaru/issues/212)).
 - hotaru draws the Kraken's ring and fans itself, through sanshoku, on the
   handle that reads its telemetry and draws its panel (spec
   [073](specs/073-the-kraken-drawn-through-sanshoku.md),
