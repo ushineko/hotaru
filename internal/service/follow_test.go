@@ -253,3 +253,23 @@ func TestAnEffectTakesTheScenesColoursAndSoDoItsFollowers(t *testing.T) {
 	mode, _ := follower.Mode("Tai Chi")
 	assert.Equal(t, []colour.Colour{red, blue}, mode.Colours, "the follower is not in the leader's colours")
 }
+
+// Rainbow Wave given no colours takes the scene's, as a gradient through
+// them, rather than running the full rainbow (the live run).
+func TestRainbowWaveTakesTheScenesColours(t *testing.T) {
+	board := canvastest.NewBoard("ASUS ROG MAXIMUS Z790 HERO", canvastest.Zone("Addressable 1", 4))
+	svc := servicetest.New(t, nil, board)
+	teal, green := colour.MustParse("#4c8c88"), colour.MustParse("#788c60")
+	_, err := svc.Apply(t.Context(), service.Request{
+		Assignments: []devices.Assignment{
+			{Target: devices.Target{Device: "maximus", Part: "Addressable 1", Picks: []config.LEDs{{First: 0, Last: 1}}}, Colour: teal},
+			{Target: devices.Target{Device: "maximus", Part: "Addressable 1", Picks: []config.LEDs{{First: 2, Last: 3}}}, Colour: green},
+		},
+		Effects: map[string]scenes.Effect{"maximus": {Mode: "Rainbow Wave"}},
+	})
+	require.NoError(t, err)
+	got := viewOf(t, svc, "ASUS ROG MAXIMUS Z790 HERO").Device
+	require.Equal(t, "Rainbow Wave", got.ActiveMode)
+	mode, _ := got.Mode("Rainbow Wave")
+	assert.Equal(t, []colour.Colour{teal, green}, mode.Colours, "it ran the full rainbow")
+}

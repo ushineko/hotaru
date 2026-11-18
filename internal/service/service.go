@@ -718,19 +718,23 @@ func modeColoursFor(device *devices.Device, mode string, frame devices.Frame, of
 		// frame's reduction is only ever the fallback -- see spec 051.
 		return named
 	}
-	if known && !m.ModeColour {
-		return nil
-	}
 	if known && !m.PerLED && m.ColoursMax > 1 {
 		/*
 			An effect that takes several colours, given none of its own,
 			takes the scene's colours on the device, in order: a red ring and
 			blue fans are Tai Chi in red and blue, not in the one most of the
-			device is (spec 077, the maintainer's model).
+			device is (spec 077, the maintainer's model). Before the rule
+			below, which gave Rainbow Wave, a moving gradient through the
+			colours it is given, none: it ran the full rainbow (the live run).
+			Two at least: one colour would hold a rainbow still in it, and a
+			one-colour scene keeps the wheel.
 		*/
 		if picked := sceneColours(frame, m.ColoursMax); len(picked) > 1 {
 			return picked
 		}
+	}
+	if known && !m.ModeColour {
+		return nil
 	}
 	if uniform, ok := frame.Uniform(); ok {
 		return []colour.Colour{uniform}
