@@ -2,7 +2,7 @@
 
 *lights, cooler, action!*
 
-**Version**: 0.1.29
+**Version**: 2.0.0
 
 RGB lighting and AIO cooler control for Linux and Windows, as a CLI, a
 background service and a desktop GUI.
@@ -276,7 +276,7 @@ MIT. See [LICENSE](LICENSE).
 
 ## Changelog
 
-### Unreleased
+### 2.0.0 (2026-11-17)
 
 - `hotaru light map` is replaced by commands that show their answer (spec
   [078](specs/078-replace-light-map.md),
