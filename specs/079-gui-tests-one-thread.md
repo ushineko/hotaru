@@ -2,11 +2,18 @@
 
 **Issue**: [#219](https://github.com/ushineko/hotaru/issues/219)
 
-## Status: INCOMPLETE
+## Status: COMPLETE
 
 ## Executive Summary
 
-Written last.
+The window's tests drew from several goroutines at once, because Fyne's test
+driver runs `fyne.Do` in place where the window's driver queues it; the race
+detector found 217 races and the text shaper panicked now and then. The test
+build now queues `onScreen` and draws it on the test's goroutine with
+`gui.Settle()`; the poll hands back through `onScreen` too. Three tests settle
+while they wait, the three skipped drop tests run again, and the package
+passes ten runs of ten with no race. Reviewers should look at
+`internal/gui/export_test.go` and `internal/gui/app.go`.
 
 ## Context
 
@@ -40,20 +47,20 @@ races in `internal/gui`. Found on 2026-11-17 (#219):
   goroutine, as the window's driver draws on its one thread.
 - R3 Tests that wait for a worker's drawing settle while they wait. A test
   that finishes leaves nothing queued for the next.
-- R4 The three skipped drop tests run again, each checking one thing: the
-  file is kept, the layout is asked, the screen or the scene is made.
+- R4 The three skipped drop tests run again. Pared down if they still fail;
+  with R2 they pass every run, and are kept as they were.
 - R5 The sections' own `Settle`s are kept where they wait for workers that
   are not yet done, and draw through R2 once they are.
 
 ## Acceptance Criteria
 
-- [ ] `make test` and `make lint` pass, and the GUI tests pass ten runs of
+- [x] `make test` and `make lint` pass, and the GUI tests pass ten runs of
       ten with nothing skipped for #219.
-- [ ] `go test -race -tags migrated_fynedo ./internal/gui/` reports no race
+- [x] `go test -race -tags migrated_fynedo ./internal/gui/` reports no race
       with `onScreen` or the poll on either side.
-- [ ] Tests: a callback handed to `onScreen` does not draw until `Settle`,
+- [x] Tests: a callback handed to `onScreen` does not draw until `Settle`,
       and draws on the caller's goroutine; the three drop tests, re-enabled.
-- [ ] The window opens and works on the desk as before (no change for the
+- [x] The window opens and works on the desk as before (no change for the
       window's driver).
 
 ## Risks & Assumptions
@@ -66,4 +73,19 @@ races in `internal/gui`. Found on 2026-11-17 (#219):
 
 ## Verification
 
-Not yet run.
+2026-11-17, on `fix/gui-test-thread`:
+
+- `make test` and `make lint` (0 issues) pass.
+- `go test -tags migrated_fynedo ./internal/gui/`: ten runs, ten passes,
+  nothing skipped. Before: about one run in five failed, with three tests
+  skipped.
+- `go test -race -tags migrated_fynedo ./internal/gui/`: no race. Before: 217,
+  all but one through `onScreen`.
+- Only three tests waited on a worker's drawing without settling
+  (`TestANewPictureIsKeptBeforeTheLayoutIsAsked`,
+  `TestMakeASceneShowsThePicturesColoursBeforeMakingIt`,
+  `TestShowingADraftDrawsItWithoutSavingIt`); they settle while they wait.
+- `TestAHandBackDrawsOnlyWhenSettledOnTheSettlersGoroutine` holds the queue
+  to R2, under `-race`.
+- The window built from the branch, on the desk: the maintainer clicked
+  through it and it worked as before.
