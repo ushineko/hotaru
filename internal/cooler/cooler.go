@@ -85,9 +85,9 @@ func Open(ctx context.Context) (*Cooler, error) {
 // one fact the daemon needs, that the device has gone.
 type Cooler struct {
 	dev    sanshoku.Device
-	source cooling.Source // nil for a device that reports no status
-	panel  screen.Panel   // nil for a device without one
-	framer screen.Framer  // nil for a panel that takes no frames (spec 080)
+	source cooling.Source  // nil for a device that reports no status
+	panel  screen.Panel    // nil for a device without one
+	framer screen.Streamer // nil for a panel that takes no frames (spec 080)
 	once   sync.Once
 	gone   chan struct{}
 	mu     sync.Mutex
@@ -99,7 +99,7 @@ func New(dev sanshoku.Device) *Cooler {
 	c := &Cooler{dev: dev, gone: make(chan struct{})}
 	c.source, _ = dev.(cooling.Source)
 	c.panel, _ = dev.(screen.Panel)
-	c.framer, _ = dev.(screen.Framer)
+	c.framer, _ = dev.(screen.Streamer)
 	return c
 }
 
@@ -142,7 +142,7 @@ func (c *Cooler) Frame(ctx context.Context, img image.Image) error {
 	if c.framer == nil {
 		return ErrNoFrames
 	}
-	return c.draw(func(screen.Panel) error { return c.framer.Frame(ctx, img) }) //nolint:wrapcheck // the driver names the device
+	return c.draw(func(screen.Panel) error { return c.framer.Stream(ctx, img) }) //nolint:wrapcheck // the driver names the device
 }
 
 // FrameHold is the longest the panel keeps a frame with nothing newer sent;
@@ -151,7 +151,7 @@ func (c *Cooler) FrameHold() time.Duration {
 	if c.framer == nil {
 		return 0
 	}
-	return c.framer.FrameHold()
+	return c.framer.StreamHold()
 }
 
 // Show puts a GIF on the screen, which the cooler keeps and plays by itself

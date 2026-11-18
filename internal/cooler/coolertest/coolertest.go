@@ -174,8 +174,8 @@ type FramePanel struct {
 // NewFramePanel is a cooler whose panel takes frames.
 func NewFramePanel() *FramePanel { return &FramePanel{Panel: NewPanel()} }
 
-// Frame records what was drawn, and returns Refuse.
-func (p *FramePanel) Frame(_ context.Context, img image.Image) error {
+// Stream records what was drawn, and returns Refuse.
+func (p *FramePanel) Stream(_ context.Context, img image.Image) error {
 	if p.Refuse != nil {
 		return p.Refuse
 	}
@@ -185,8 +185,8 @@ func (p *FramePanel) Frame(_ context.Context, img image.Image) error {
 	return nil
 }
 
-// FrameHold is the nzxt driver's.
-func (p *FramePanel) FrameHold() time.Duration { return 25 * time.Second }
+// StreamHold is the nzxt driver's.
+func (p *FramePanel) StreamHold() time.Duration { return 25 * time.Second }
 
 // Frames is how many frames were drawn.
 func (p *FramePanel) Frames() int {
