@@ -157,3 +157,21 @@ func TestZoneChangesTheDeviceWouldNotTakeAreRefused(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 18, viewOf(t, svc, "ASUS ROG MAXIMUS Z790 HERO").Device.Zones[1].Count, "the length is not in use")
 }
+
+// One fan on a header named whole keeps its name (the rear fan, on the live
+// run): divided, it is the same lights.
+func TestOneFanKeepsAWholeZonesName(t *testing.T) {
+	header := canvastest.NewBoard("ASUS ROG MAXIMUS Z790 HERO", canvastest.Zone("Aura Mainboard", 1),
+		canvastest.Header("Addressable RGB Header 3", 20, 120))
+	svc, path := withRules(t, `devices:
+  - match: "maximus"
+    segments:
+      rear-fan: {zone: "Addressable RGB Header 3"}
+`, header)
+	_, err := svc.SetRule(t.Context(), "maximus", service.RuleChange{Fans: map[string]int{"Addressable RGB Header 3": 1}})
+	require.NoError(t, err)
+	written, _, err := config.Load(path)
+	require.NoError(t, err)
+	assert.Contains(t, written.Devices[0].Segments, "rear-fan")
+	assert.Len(t, written.Devices[0].Segments, 1)
+}

@@ -44,8 +44,12 @@ func TestPartsAndTheirNames(t *testing.T) {
 	assert.Equal(t, "Addressable RGB Header 3", changes["back-fan"].Zone)
 	assert.NotContains(t, changes, "top-front", "an unchanged name was sent")
 
-	assert.Equal(t, "2 fans", holding(device, "Addressable RGB Header 2"))
-	assert.Equal(t, "a strip", holding(device, "Addressable RGB Header 3"))
+	assert.Equal(t, "2 fans", holding(device, device.Zones[1]))
+	assert.Equal(t, "a strip", holding(device, device.Zones[2]))
+	// The rear fan: a ring named whole, which saving as a strip undid.
+	ring := device.Zones[2]
+	ring.Shape = api.ShapeRing
+	assert.Equal(t, "1 fan", holding(device, ring), "a fan named whole was read as a strip")
 	assert.Len(t, settable(device), 2)
 
 	marked := endMarked(device.Name, "Addressable RGB Header 3", 20)

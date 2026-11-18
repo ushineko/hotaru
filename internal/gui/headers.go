@@ -54,13 +54,20 @@ func endMarked(device, zone string, n int) []api.Assignment {
 // holds are the choices for what a header holds; the index is the fans.
 var holds = []string{"a strip", "1 fan", "2 fans", "3 fans", "4 fans"}
 
-// holding is what a zone holds now, from its rings in the listing.
-func holding(device api.Device, zone string) string {
+/*
+holding is what a zone holds now: its named rings in the listing, or one fan
+where the zone is a ring with no rings named in it, as the rear fan is, named
+whole. Read as a strip, saving would have made it one (the live run).
+*/
+func holding(device api.Device, zone api.Zone) string {
 	fans := 0
 	for _, part := range device.Named {
-		if strings.EqualFold(part.Zone, zone) && part.First != nil {
+		if strings.EqualFold(part.Zone, zone.Name) && part.First != nil {
 			fans++
 		}
+	}
+	if fans == 0 && zone.Shape == api.ShapeRing {
+		fans = 1
 	}
 	if fans > 0 && fans < len(holds) {
 		return holds[fans]
@@ -101,7 +108,7 @@ func (s *SystemSection) openHeaders(sh *shell.Shell, device api.Device, zones []
 	for _, zone := range zones {
 		name := zone.Name
 		lengths[name] = max(zone.Count, 1)
-		held[name] = holding(device, name)
+		held[name] = holding(device, zone)
 		entry := widget.NewEntry()
 		entry.SetText(strconv.Itoa(lengths[name]))
 		set := func(n int) {
@@ -145,13 +152,26 @@ func (s *SystemSection) openHeaders(sh *shell.Shell, device api.Device, zones []
 					}
 					return nil
 				}
-				req := api.RuleRequest{Device: device.Name, Lengths: chosen, Fans: map[string]int{}, Shapes: map[string]string{}}
-				for zone, picked := range kept {
-					if fans := slices.Index(holds, picked); fans > 0 {
-						req.Fans[zone] = fans
-					} else {
-						req.Shapes[zone] = string(api.ShapeLine)
+				// Only what was changed: a header left alone keeps its rule.
+				req := api.RuleRequest{Device: device.Name, Lengths: map[string]int{}, Fans: map[string]int{}, Shapes: map[string]string{}}
+				for _, zone := range zones {
+					if chosen[zone.Name] != zone.Count {
+						req.Lengths[zone.Name] = chosen[zone.Name]
 					}
+				}
+				for _, zone := range zones {
+					picked := kept[zone.Name]
+					if picked == holding(device, zone) {
+						continue
+					}
+					if fans := slices.Index(holds, picked); fans > 0 {
+						req.Fans[zone.Name] = fans
+					} else {
+						req.Shapes[zone.Name] = string(api.ShapeLine)
+					}
+				}
+				if len(req.Lengths)+len(req.Fans)+len(req.Shapes) == 0 {
+					return nil
 				}
 				if _, err := s.app.client.Rule(ctx, req); err != nil {
 					return err

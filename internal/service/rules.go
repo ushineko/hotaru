@@ -240,6 +240,15 @@ func divide(rule *config.DeviceRule, device *devices.Device, fans map[string]int
 					names[i] = named
 				}
 			}
+			if names[i] == "" && n == 1 {
+				// One fan is the whole zone: a name already on all of it is
+				// kept, as the rear fan's is (the live run).
+				for named, seg := range rule.Segments {
+					if strings.EqualFold(seg.Zone, zone.Name) && seg.LEDs == nil {
+						names[i] = named
+					}
+				}
+			}
 			if names[i] == "" {
 				names[i] = fmt.Sprintf("%s-fan-%d", zoneSlug(zone.Name), i+1)
 			}
