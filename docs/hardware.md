@@ -175,6 +175,9 @@ devices:
 - **Colours.** An effect a scene gives with no colours of its own runs in the
   scene's colours on that device, in order. A scene with a red ring and blue
   fans gives the Kraken Tai Chi in red and blue, and its followers the same.
+  hotaru takes the most different of the scene's colours. Where they sit
+  close, as a picture's often do, it pushes them apart so the effect shows.
+  Colours you choose for an effect are used as they are.
 - **Following.** Each device's card in the window's System section has a
   Follows choice. `hotaru light follow maximus kraken` does the same, and
   `hotaru light follow maximus none` stops it. A device given a leader starts

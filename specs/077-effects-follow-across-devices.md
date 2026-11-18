@@ -107,7 +107,14 @@ What sanshoku has and lacks (sanshoku #89):
   colours on the device, each once, in the order its lights show them, as
   many as the effect takes; a follower takes the same colours. The rule is
   the default and the scene the override, as the maintainer put it on
-  2026-11-17: an existing scene, given an effect, runs it in its colours. The window and `light map` set
+  2026-11-17: an existing scene, given an effect, runs it in its colours.
+  The colours are the most different of the scene's on the device, the
+  main one first, kept apart unless nobody could tell them apart. Where
+  they sit close, as a picture's often do, they are pushed apart from their
+  average, each in its own direction, until the furthest two are visibly
+  different: an effect through a subtle scene looked like no effect, and the
+  maintainer chose to spread them. A rainbow effect given one colour keeps
+  its wheel. The window and `light map` set
   and clear `follow`, as they set every other rule. The maintainer's rules
   start with the Aura and the RTX 4090 following the Kraken; the rest are the
   maintainer's to choose.
