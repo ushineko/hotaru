@@ -327,8 +327,10 @@ MIT. See [LICENSE](LICENSE).
   photographs and gradients are no longer held to 256 colours. The firmware
   returns to its readout 30 s after a frame, so hotaru sends the same frame
   again every 25 s. The preview in the window and `hotaru dashboard preview`
-  show the panel's format, a PNG for frames. Pictures from `hotaru screen
-  show` still go to the panel as GIFs. The shipped GIF moved at the edges of
+  show the panel's format, a PNG for frames. The image library keeps a
+  full-colour copy of each still picture added from now on, for dashboards;
+  add a picture again from its original to get one. Pictures from `hotaru
+  screen show` still go to the panel as GIFs. The shipped GIF moved at the edges of
   text (522 pixels).
 
 - The README says what hardware works and how an owner can help: what

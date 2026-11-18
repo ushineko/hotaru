@@ -75,6 +75,15 @@ a check every second.
     GIFs; and the frames sent in those 10 minutes.
   - R5.2 `docs/architecture.md` states the background work: a render every
     second, a frame on change, a resend every 25 s.
+- **R7 Pictures in full colour.** Added during the live run: the image
+  library stores only a 640x640 GIF of each picture, so a photograph behind a
+  dashboard was at 256 colours before the dashboard drew it.
+  - R7.1 Adding a still picture also stores a full-colour PNG, cropped and
+    scaled as the GIF is. An animation or a slideshow has no copy.
+  - R7.2 Replacing, renaming and removing a picture do the same to its copy.
+  - R7.3 A dashboard's picture background reads the copy where there is one,
+    else the GIF. A picture added before this spec is in full colour once it
+    is added again from its original.
 - **R6 Docs.** `docs/api.md` (the `format` field), `docs/hardware.md` (the
   Kraken Elite's screen takes frames; the 30 s return), `docs/architecture.md`
   (R5.2), README changelog under `### Unreleased` with this spec and #226.
@@ -111,6 +120,11 @@ a check every second.
         2 minutes: the ring does not change at the frames, the resends or
         the stop (moved here from sanshoku spec 037);
   - [ ] the window's preview of a dashboard matches the panel.
+- [ ] Tests for R7: a still is kept and read in full colour; an animation has
+      no copy, and replacing a still with one removes the old copy; the copy
+      follows a rename and a remove; a picture without a copy reads its GIF.
+- [ ] Live: a picture added again from its original shows in full colour
+      behind a dashboard.
 - [ ] Cost recorded per R5.1.
 - [ ] Docs per R6.
 
@@ -139,6 +153,8 @@ a check every second.
   live ring criterion checks both.
 - **Depends on sanshoku #102.** Built on its commit as a pseudo-version until
   a sanshoku release carries it.
+- **Disk.** A full-colour copy is a PNG of 0.3 to 1 MB per still picture,
+  beside a GIF of 50 to 200 KB.
 - **Rollback.** Revert the branch: the pusher goes back to GIFs, and the API
   field disappears (clients ignore it). Nothing is stored in a new format.
 

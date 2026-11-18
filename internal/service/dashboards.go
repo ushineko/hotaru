@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"image"
-	"image/gif"
 	"image/png"
 
 	"github.com/ushineko/hotaru/internal/dashboard"
@@ -187,15 +186,12 @@ func (s *Service) behind(_ context.Context, one dashboard.Dashboard) image.Image
 	if err != nil {
 		return nil
 	}
-	body, err := library.Read(one.Background.Picture)
+	// In full colour where the library kept a copy (spec 080).
+	still, err := library.Still(one.Background.Picture)
 	if err != nil {
 		return nil
 	}
-	decoded, err := gif.Decode(bytes.NewReader(body))
-	if err != nil {
-		return nil
-	}
-	return decoded
+	return still
 }
 
 // Preview is a dashboard frame encoded as the panel would show it.

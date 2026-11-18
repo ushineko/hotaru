@@ -24,7 +24,7 @@ import (
 	"image/draw"
 	"image/gif"
 	_ "image/jpeg" // the formats a wallpaper arrives in
-	_ "image/png"
+	"image/png"
 	"io"
 	"os"
 	"path/filepath"
@@ -93,6 +93,20 @@ func (l *Library) Add(name string, source []byte) (Image, error) {
 	if err != nil {
 		return Image{}, err
 	}
+	/*
+		A still picture is also kept in full colour, for a panel that takes
+		frames (spec 080): the GIF holds it to 256 colours, and the original
+		is not kept. An animation is a GIF on every panel and has no copy.
+	*/
+	if stored.Frames == 1 {
+		full, err := Full(source)
+		if err != nil {
+			return Image{}, err
+		}
+		if err := os.WriteFile(l.full(stored.Name), full, 0o600); err != nil {
+			return Image{}, fmt.Errorf("store %s in full colour: %w", stored.Name, err)
+		}
+	}
 	stored.Source = SourceHash(source)
 	if err := os.WriteFile(l.record(stored.Name), []byte(stored.Source+"\n"), 0o600); err != nil {
 		return Image{}, fmt.Errorf("record where %s came from: %w", stored.Name, err)
@@ -134,9 +148,12 @@ func (l *Library) keep(name string, convert func() ([]byte, int, error)) (Image,
 		return Image{}, fmt.Errorf("store %s: %w", name, err)
 	}
 	// Whatever was recorded for the picture this replaces is not where this
-	// one came from. Add writes its own afterwards; a slideshow has none.
-	if err := os.Remove(l.record(name)); err != nil && !os.IsNotExist(err) {
-		return Image{}, fmt.Errorf("store %s: %w", name, err)
+	// one came from, and its full-colour copy is not this picture. Add writes
+	// its own afterwards; a slideshow has neither.
+	for _, stale := range []string{l.record(name), l.full(name)} {
+		if err := os.Remove(stale); err != nil && !os.IsNotExist(err) {
+			return Image{}, fmt.Errorf("store %s: %w", name, err)
+		}
 	}
 	return Image{
 		Name: name, Path: path, Bytes: int64(len(converted)),
@@ -173,7 +190,7 @@ func (l *Library) All() ([]Image, error) {
 // Remove deletes one. Removing something that is not there is not an error:
 // the caller wanted it gone and it is gone.
 func (l *Library) Remove(name string) error {
-	for _, path := range []string{l.path(clean(name)), l.record(clean(name))} {
+	for _, path := range []string{l.path(clean(name)), l.record(clean(name)), l.full(clean(name))} {
 		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("remove %s: %w", name, err)
 		}
@@ -209,14 +226,17 @@ func (l *Library) Rename(from, to string) (Image, error) {
 	if err := os.Rename(l.path(from), l.path(to)); err != nil {
 		return Image{}, fmt.Errorf("rename %s: %w", from, err)
 	}
-	// The record goes with the picture. A picture with none has none to move,
-	// and a stale one under the new name is not this picture's.
-	if err := os.Rename(l.record(from), l.record(to)); err != nil {
-		if !os.IsNotExist(err) {
-			return Image{}, fmt.Errorf("rename %s: %w", from, err)
-		}
-		if err := os.Remove(l.record(to)); err != nil && !os.IsNotExist(err) {
-			return Image{}, fmt.Errorf("rename %s: %w", from, err)
+	// The record and the full-colour copy go with the picture. A picture
+	// with none has none to move, and a stale one under the new name is not
+	// this picture's.
+	for _, side := range []func(string) string{l.record, l.full} {
+		if err := os.Rename(side(from), side(to)); err != nil {
+			if !os.IsNotExist(err) {
+				return Image{}, fmt.Errorf("rename %s: %w", from, err)
+			}
+			if err := os.Remove(side(to)); err != nil && !os.IsNotExist(err) {
+				return Image{}, fmt.Errorf("rename %s: %w", from, err)
+			}
 		}
 	}
 
@@ -234,6 +254,30 @@ func (l *Library) Rename(from, to string) (Image, error) {
 // both halves of.
 func (l *Library) Path(name string) string { return l.path(clean(name)) }
 
+/*
+Still is a stored picture as one image, for drawing behind a dashboard: the
+full-colour copy where there is one, else the GIF's first frame. A picture
+added before spec 080 has only the GIF; adding it again from its original
+keeps the copy.
+*/
+func (l *Library) Still(name string) (image.Image, error) {
+	if body, err := os.ReadFile(l.full(clean(name))); err == nil { //nolint:gosec // a name this package cleaned
+		decoded, err := png.Decode(bytes.NewReader(body))
+		if err == nil {
+			return decoded, nil
+		}
+	}
+	body, err := l.Read(name)
+	if err != nil {
+		return nil, err
+	}
+	decoded, err := gif.Decode(bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", name, err)
+	}
+	return decoded, nil
+}
+
 // Read is a stored image's bytes, for sending to the panel.
 func (l *Library) Read(name string) ([]byte, error) {
 	body, err := os.ReadFile(l.path(clean(name))) //nolint:gosec // a name this package cleaned
@@ -245,6 +289,11 @@ func (l *Library) Read(name string) ([]byte, error) {
 
 func (l *Library) path(name string) string {
 	return filepath.Join(l.dir, name+".gif")
+}
+
+// full is where a still picture's full-colour copy is kept (spec 080).
+func (l *Library) full(name string) string {
+	return filepath.Join(l.dir, name+".png")
 }
 
 // record is where a picture's source hash is kept, beside it. All lists only
@@ -308,6 +357,22 @@ func Convert(source []byte) (converted []byte, frames int, err error) {
 		return nil, 0, err
 	}
 	return out, 1, nil
+}
+
+/*
+Full is a still picture cropped and scaled as Convert does it, in full colour,
+as a PNG: what a panel that takes frames shows behind a dashboard (spec 080).
+*/
+func Full(source []byte) ([]byte, error) {
+	decoded, _, err := image.Decode(bytes.NewReader(source))
+	if err != nil {
+		return nil, fmt.Errorf("that is not an image this can read: %w", err)
+	}
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, square(decoded)); err != nil {
+		return nil, fmt.Errorf("encode in full colour: %w", err)
+	}
+	return buf.Bytes(), nil
 }
 
 // convertAnimation scales every frame of a GIF, keeping its timing.

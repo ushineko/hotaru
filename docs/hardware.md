@@ -261,7 +261,9 @@ have nothing of the kind. A GIF in a bucket stays on the panel, so pictures
 from `hotaru screen show` go there. The Kraken Elite also takes streamed
 frames in full colour, as NZXT CAM sends them (spec 080). The firmware returns
 to its readout 30 s after the last frame, so hotaru sends the dashboard's frame
-again every 25 s. Other panels receive the dashboard as a one-frame GIF.
+again every 25 s. Other panels receive the dashboard as a one-frame GIF. For a picture behind a
+dashboard, the image library keeps a full-colour copy of each still picture
+beside its GIF.
 
 **Temperatures: the kernel.** The CPU package comes from `coretemp`, read by
 label. An AMD processor is read from `k10temp` or `zenpower`, in the order
