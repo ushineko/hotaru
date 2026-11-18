@@ -2,7 +2,7 @@
 
 *lights, cooler, action!*
 
-**Version**: 2.0.0
+**Version**: 2.1.0
 
 RGB lighting and AIO cooler control for Linux and Windows, as a CLI, a
 background service and a desktop GUI.
@@ -318,7 +318,7 @@ MIT. See [LICENSE](LICENSE).
 
 ## Changelog
 
-### Unreleased
+### 2.1.0 (2026-11-18)
 
 - **The dashboard is in full colour, sent as frames** (spec 080,
   [#226](https://github.com/ushineko/hotaru/issues/226)). hotaru paints every
