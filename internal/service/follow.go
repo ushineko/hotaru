@@ -277,18 +277,21 @@ func leadersFirst(cfg *config.Config, found []devices.Device) []devices.Device {
 	return out
 }
 
-// mergeDistance is how near two colours are to count as one shade when an
-// effect takes a scene's colours: a picture's teals and greens a few steps
-// apart are one colour to an eye, and eight of them are not eight colours.
-const mergeDistance = 48
+/*
+mergeDistance is how near two colours are to count as one when an effect
+takes a scene's colours: near enough that nobody could tell them apart. A
+picture's teals and greens a few steps apart are kept apart, because the
+subtle spread is the scene (the maintainer, on the live run).
+*/
+const mergeDistance = 8
 
 /*
 sceneColours is up to most of a frame's colours for an effect that takes
 several and was given none: the one most of the frame is, then each time the
-one furthest from those chosen, until the rest are near one already chosen;
-in the order the lights first show them. A frame from a picture is many
-shades, and its first few lights' shades were not a fair sample (the live
-run).
+one furthest from those chosen, until the rest are all but the same as one
+already chosen; in the order the lights first show them. A frame from a
+picture is many shades, and its first few lights' shades were not a fair
+sample of its range (the live run).
 */
 func sceneColours(frame devices.Frame, most int) []colour.Colour {
 	distinct := frame.Distinct()
