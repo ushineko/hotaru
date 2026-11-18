@@ -174,6 +174,7 @@ func dropWindow(t *testing.T, client *api.Client, part string) (*gui.App, *shell
 // chooseLayoutIn picks an option in the layout chooser and confirms it.
 func chooseLayoutIn(t *testing.T, window fyne.Window, label string) []string {
 	t.Helper()
+	gui.Settle() // the chooser, handed to the screen by the drop (spec 079)
 	shown := window.Canvas().Overlays().Top()
 	require.NotNil(t, shown, "the layout chooser did not open")
 	chooser := fynetest.Find[*widget.RadioGroup](shown)
@@ -202,12 +203,6 @@ func TestADroppedFileTheLibraryHoldsIsNotKeptAgain(t *testing.T) {
 }
 
 func TestAPictureDroppedOnScreenOpensTheEditorWithItBehind(t *testing.T) {
-	// Skipped until #219 is fixed properly: the dashboard this builds
-	// redraws from a worker, and Fyne's test driver draws that beside the
-	// test, so the shared text shaper panics, in this test or a later one.
-	// The window's own driver queues it and is not affected. Re-enable with
-	// the fix.
-	t.Skip("#219: the dashboard's redraw worker draws beside the test under Fyne's test driver")
 	// Spec 062 R5: a saved screen's layout, with the picture behind it, in
 	// the editor and not yet saved.
 	routes, path := alreadyKept(t)
@@ -246,12 +241,6 @@ func TestAPictureDroppedOnScreenOpensTheEditorWithItBehind(t *testing.T) {
 }
 
 func TestAPictureDroppedOnScenesMakesAScreenAndAScene(t *testing.T) {
-	// Skipped until #219 is fixed properly: the dashboard this builds
-	// redraws from a worker, and Fyne's test driver draws that beside the
-	// test, so the shared text shaper panics, in this test or a later one.
-	// The window's own driver queues it and is not affected. Re-enable with
-	// the fix.
-	t.Skip("#219: the dashboard's redraw worker draws beside the test under Fyne's test driver")
 	// Spec 062 R6: the chooser, then Make a scene, then a screen and a scene
 	// that shows it.
 	routes, path := alreadyKept(t)
@@ -295,12 +284,6 @@ func TestAPictureDroppedOnScenesMakesAScreenAndAScene(t *testing.T) {
 }
 
 func TestAPictureAloneMakesASceneAndNoScreen(t *testing.T) {
-	// Skipped until #219 is fixed properly: the dashboard this builds
-	// redraws from a worker, and Fyne's test driver draws that beside the
-	// test, so the shared text shaper panics, in this test or a later one.
-	// The window's own driver queues it and is not affected. Re-enable with
-	// the fix.
-	t.Skip("#219: the dashboard's redraw worker draws beside the test under Fyne's test driver")
 	routes, path := alreadyKept(t)
 	client, requests := recording(t, routes)
 	app, sh, window, _ := dropWindow(t, client, "Scenes")
@@ -352,6 +335,7 @@ func TestANewPictureIsKeptBeforeTheLayoutIsAsked(t *testing.T) {
 	require.NoError(t, os.WriteFile(path, []byte("a file nobody has kept"), 0o600))
 	gui.Drop(app, sh, []fyne.URI{storage.NewFileURI(path)})
 	gui.Library(app).Settle()
+	gui.Settle() // the conversion's dialog, drawn here (spec 079)
 
 	shown := window.Canvas().Overlays().Top()
 	require.NotNil(t, shown, "the conversion was not shown")
@@ -361,6 +345,7 @@ func TestANewPictureIsKeptBeforeTheLayoutIsAsked(t *testing.T) {
 	test.Tap(keep)
 
 	require.Eventually(t, func() bool {
+		gui.Settle()
 		top := window.Canvas().Overlays().Top()
 		return top != nil && strings.Contains(fynetest.Text(top), "A layout for aurora")
 	}, 3*time.Second, 20*time.Millisecond, "the layout chooser did not follow the keep")

@@ -258,7 +258,7 @@ func (a *App) redraw() {
 		arrives here every poll instead.
 	*/
 	if ticker, ok := current.(Ticker); ok {
-		fyne.Do(func() { ticker.Tick(got) })
+		onScreen(func() { ticker.Tick(got) })
 	}
 
 	/*
@@ -275,7 +275,7 @@ func (a *App) redraw() {
 		Cheap enough to do unconditionally: a handful of labels, against a
 		poll that already asked the service four questions.
 	*/
-	fyne.Do(a.shell.RedrawStatus)
+	onScreen(a.shell.RedrawStatus)
 
 	changed := !got.Same(a.drawn)
 	if watcher, ok := current.(Watcher); ok {
@@ -284,7 +284,7 @@ func (a *App) redraw() {
 	a.drawn = got
 
 	if changed {
-		fyne.Do(func() { a.shell.Invalidate() })
+		onScreen(func() { a.shell.Invalidate() })
 	}
 }
 
@@ -339,8 +339,12 @@ a minute, on somebody's desk, because a status line was written from the wrong
 goroutine.
 
 fyne.Do, never DoAndWait: the worker must not wait on the thread it is feeding.
+
+A variable for the tests, which queue it and draw it on their own goroutine
+with Settle (spec 079): Fyne's test driver runs fyne.Do in place, on whichever
+goroutine asks, and two workers' callbacks drew at once there.
 */
-func onScreen(do func()) { fyne.Do(do) }
+var onScreen = fyne.Do //nolint:gochecknoglobals // the tests' seam to one thread
 
 /*
 dropped takes files dragged onto the window: the library's part is shown, and

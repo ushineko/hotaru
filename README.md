@@ -276,6 +276,15 @@ MIT. See [LICENSE](LICENSE).
 
 ## Changelog
 
+### Unreleased
+
+- The window's tests draw on one thread (spec
+  [079](specs/079-gui-tests-one-thread.md),
+  [#219](https://github.com/ushineko/hotaru/issues/219)). Fyne's test driver
+  drew workers' hand-backs beside the test, and the text shaper panicked now
+  and then; the tests now draw them on their own goroutine, pass every run,
+  and report no race. The window itself is unchanged.
+
 ### 2.0.0 (2026-11-17)
 
 - `hotaru light map` is replaced by commands that show their answer (spec
