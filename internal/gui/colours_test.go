@@ -133,6 +133,7 @@ func TestMakeASceneShowsThePicturesColoursBeforeMakingIt(t *testing.T) {
 	choose.SetSelected("Breathing")
 
 	require.Eventually(t, func() bool {
+		gui.Settle()
 		return len(fynetest.Text(window.Canvas().Overlays().Top())) > 0 &&
 			containsAll(fynetest.Text(window.Canvas().Overlays().Top()), "#ff0000", "#0000ff", "picked from the picture")
 	}, soon, every, "the picked colours were not shown")

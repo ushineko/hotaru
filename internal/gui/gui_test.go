@@ -2599,6 +2599,7 @@ func TestShowingADraftDrawsItWithoutSavingIt(t *testing.T) {
 
 	built := section.Build(sh)
 	section.Settle() // the frame the editor draws itself with
+	gui.Settle()     // and its hand-back to the screen (spec 079)
 
 	window := test.NewWindow(built)
 	t.Cleanup(window.Close)
@@ -2612,7 +2613,7 @@ func TestShowingADraftDrawsItWithoutSavingIt(t *testing.T) {
 	test.Tap(show)
 	section.Settle()
 
-	require.Eventually(t, func() bool { return times("/"+api.Version+"/screen") > 0 },
+	require.Eventually(t, func() bool { gui.Settle(); return times("/"+api.Version+"/screen") > 0 },
 		3*time.Second, 20*time.Millisecond, "nothing was drawn on the panel")
 	require.Zero(t, times("/"+api.Version+"/dashboards/quiet"),
 		"showing the draft saved it")
