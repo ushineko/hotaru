@@ -36,7 +36,6 @@ func Routes() []string {
 		"GET /" + Version + "/cooling",
 		"POST /" + Version + "/screen",
 		"POST /" + Version + "/lighting/apply",
-		"POST /" + Version + "/lighting/probe",
 		"POST /" + Version + "/lighting/release",
 		"GET /" + Version + "/scenes",
 		"PUT /" + Version + "/scenes/{name}",
@@ -70,7 +69,6 @@ func Routes() []string {
 		"POST /" + Version + "/preview/renew",
 		"POST /" + Version + "/preview/release",
 		"POST /" + Version + "/reconcile",
-		"POST /" + Version + "/rescan",
 		"POST /" + Version + "/reload",
 	}
 }
@@ -90,8 +88,6 @@ func Handler(svc *service.Service) http.Handler {
 			State:    string(health.State),
 			Detail:   health.Detail,
 			Remedies: health.Remedies,
-			Address:  health.Address,
-			Protocol: health.Protocol,
 			Devices:  health.Devices,
 			InScope:  health.InScope,
 			Version:  version.Version,
@@ -141,26 +137,6 @@ func Handler(svc *service.Service) http.Handler {
 		write(w, http.StatusOK, out)
 	})
 
-	mux.HandleFunc("POST /"+Version+"/lighting/probe", func(w http.ResponseWriter, r *http.Request) {
-		var req ProbeRequest
-		if r.ContentLength > 0 {
-			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-				write(w, http.StatusBadRequest, Error{Error: "that request does not decode", Detail: err.Error()})
-				return
-			}
-		}
-		findings, err := svc.Probe(r.Context(), req.Devices)
-		if err != nil {
-			fail(w, err)
-			return
-		}
-		out := ProbeResponse{Findings: make([]Finding, 0, len(findings))}
-		for _, found := range findings {
-			out.Findings = append(out.Findings, finding(found))
-		}
-		write(w, http.StatusOK, out)
-	})
-
 	/*
 		Handing a canvas device's lighting back to its firmware.
 
@@ -195,14 +171,10 @@ func Handler(svc *service.Service) http.Handler {
 		write(w, http.StatusOK, ReleaseResponse{Device: name, Detail: detail})
 	})
 
-	mux.HandleFunc("GET /"+Version+"/status", func(w http.ResponseWriter, r *http.Request) {
-		health := svc.Health(r.Context())
+	mux.HandleFunc("GET /"+Version+"/status", func(w http.ResponseWriter, _ *http.Request) {
 		desired := svc.Desired()
 		status := Status{
 			Version:    version.Version,
-			Connected:  health.State != service.StateUnreachable,
-			Address:    health.Address,
-			Protocol:   health.Protocol,
 			RulesFile:  svc.RulesPath(),
 			Scene:      svc.Applied(),
 			Showing:    svc.Showing(),
@@ -842,19 +814,6 @@ func Handler(svc *service.Service) http.Handler {
 		reaches: a device unplugged and plugged back in, which the server
 		cannot see until it enumerates again. See spec 058.
 	*/
-	mux.HandleFunc("POST /"+Version+"/rescan", func(w http.ResponseWriter, r *http.Request) {
-		done, err := svc.Rescan(r.Context())
-		if err != nil {
-			fail(w, err)
-			return
-		}
-		write(w, http.StatusOK, RescanResponse{
-			Devices:  done.Devices,
-			Applied:  done.Applied,
-			Missing:  done.Missing,
-			Complete: len(done.Missing) == 0,
-		})
-	})
 
 	mux.HandleFunc("POST /"+Version+"/reload", func(w http.ResponseWriter, _ *http.Request) {
 		problems, err := svc.Reload()
@@ -870,28 +829,6 @@ func Handler(svc *service.Service) http.Handler {
 	})
 
 	return mux
-}
-
-func finding(in service.Finding) Finding {
-	out := Finding{
-		Device:    in.Device,
-		NoOffMode: in.NoOffMode,
-		Suggested: in.Suggested,
-	}
-	if in.Err != nil {
-		out.Error = in.Err.Error()
-	}
-	for _, mode := range in.Modes {
-		out.Modes = append(out.Modes, ModeFinding{
-			Name: mode.Name, PerLED: mode.PerLED, Tried: mode.Tried, Took: mode.Took,
-		})
-	}
-	for _, zone := range in.Zones {
-		out.Zones = append(out.Zones, Zone{
-			Name: zone.Name, Shape: string(zone.Shape), First: zone.First, Count: zone.Count,
-		})
-	}
-	return out
 }
 
 func sortedNames(in []string) []string {
@@ -1037,7 +974,6 @@ func result(got service.Result) Result {
 		Superseded:  got.Superseded,
 		Unconfirmed: got.Unconfirmed,
 		Problems:    got.Problems,
-		Resized:     got.Resized,
 	}
 	if got.Err != nil {
 		out.Error = got.Err.Error()
@@ -1048,7 +984,6 @@ func result(got service.Result) Result {
 			Accepted: attempt.Accepted,
 			Active:   attempt.Active,
 			Showing:  attempt.Showing,
-			Settled:  attempt.Settled,
 			Why:      attempt.Why,
 		})
 	}
@@ -1056,23 +991,13 @@ func result(got service.Result) Result {
 }
 
 /*
-fail maps a service error onto a status.
-
-An unreachable OpenRGB server is 503: the request was fine, the machine is not
-ready, and a client should say so rather than blame what was asked.
+fail maps a service error onto a status. A device hotaru does not draw is 404:
+the request named something that is not there.
 */
 func fail(w http.ResponseWriter, err error) {
-	var down *service.Unreachable
-	if errors.As(err, &down) {
-		write(w, http.StatusServiceUnavailable, Error{Error: err.Error()})
-		return
-	}
-	// A server this user may not restart is 409: the request was understood
-	// and refused by the machine's arrangement, not by anything being broken.
-	// The body carries the command they would type instead.
-	var notOurs *service.NotOurs
-	if errors.As(err, &notOurs) {
-		write(w, http.StatusConflict, Error{Error: err.Error()})
+	var missing *service.NoDevice
+	if errors.As(err, &missing) {
+		write(w, http.StatusNotFound, Error{Error: err.Error()})
 		return
 	}
 	write(w, http.StatusInternalServerError, Error{Error: err.Error()})

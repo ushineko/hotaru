@@ -11,7 +11,6 @@ import (
 	"github.com/ushineko/hotaru/internal/colour"
 	"github.com/ushineko/hotaru/internal/config"
 	"github.com/ushineko/hotaru/internal/devices"
-	"github.com/ushineko/hotaru/internal/openrgb"
 	"github.com/ushineko/hotaru/internal/state"
 )
 
@@ -59,8 +58,8 @@ func (s *Service) Desired() state.Snapshot {
 Restore is the outcome of reconciling toward desired state.
 
 Missing is the part that matters. A restore that reached fewer devices than
-were recorded is **unfinished**, not successful: OpenRGB enumerates once at
-server start, and a cold boot has been seen finding two devices out of six.
+were recorded is **unfinished**, not successful: devices appear over the first
+seconds of a boot, and a cold boot has been seen finding two devices of six.
 Reporting that as a success is how a machine ends up half-lit with everything
 claiming to be fine.
 */
@@ -94,10 +93,7 @@ func (s *Service) Reconcile(ctx context.Context, only []string) (Restore, error)
 		return Restore{}, nil
 	}
 
-	_, client, addr := s.current()
-	if client == nil {
-		return Restore{}, unreachable(addr)
-	}
+	_, client := s.current()
 	found, err := client.Devices(ctx)
 	if err != nil {
 		return Restore{}, err
@@ -129,25 +125,15 @@ func (s *Service) Reconcile(ctx context.Context, only []string) (Restore, error)
 			continue
 		}
 		device, here := present[name]
-		if !here && s.handedByRule(name) {
-			/*
-				An OpenRGB listing a canvas device draws, and not on the
-				server now. It is not waited for: nothing would be written to
-				it if it came back. OpenRGB's exit reboots the first canvas
-				device, so a restarted server often starts before the device
-				is back and does not list it at all.
-			*/
-			continue
-		}
 		if !here {
-			// Recorded, and not on the server. The device may enumerate later,
+			// Recorded, and not found. The device may be plugged in later,
 			// which is why this is reported rather than forgotten.
 			restore.Missing = append(restore.Missing, name)
 			continue
 		}
 		if device.HandedTo != "" {
-			// Recorded before hotaru drew on it, and OpenRGB's no longer: it
-			// is the canvas device that is restored now (spec 060 R1.3).
+			// Recorded under a name a canvas was formerly called: it is the
+			// canvas that is restored (spec 073).
 			continue
 		}
 
@@ -170,7 +156,7 @@ func (s *Service) Reconcile(ctx context.Context, only []string) (Restore, error)
 		*/
 		kept := desired.Devices[name]
 		want := preference{mode: kept.Mode, insist: true, speed: kept.Speed}
-		if _, has := device.Mode(kept.Mode); device.Canvas != nil && !has {
+		if _, has := device.Mode(kept.Mode); !has {
 			// Recorded through OpenRGB, in a mode the canvas does not have
 			// ("Direct", or a firmware mode OpenRGB drove): the colours, in
 			// Static (spec 075).
@@ -193,8 +179,8 @@ func (s *Service) Reconcile(ctx context.Context, only []string) (Restore, error)
 		/*
 			A canvas already showing the recorded scene was skipped above as
 			unchanged, but a full restore is when its device most likely lost
-			it: OpenRGB's exit reboots the first canvas device, and through
-			its receiver nothing reports that. One frame each.
+			it: a device that rebooted or slept says nothing through its
+			receiver. One frame each.
 		*/
 		s.mu.RLock()
 		all := s.drawnNow()
@@ -255,34 +241,25 @@ func adopted(desired state.Snapshot, found []devices.Device, cfg *config.Config)
 const canvasStill = "Static"
 
 /*
-restoreOne writes one device's recorded state back, after giving its zones
-back the sizes the frame was recorded with.
-
-A zone's size lives in the OpenRGB server, not in the hardware, and a server
-can come back without it: OpenRGB 1.1 did not read the sizes 1.0 had saved,
-and a board's four addressable headers came up at 0 LEDs. The recorded frame
-was then written to the one LED left, the write succeeded, and the board sat
-in its firmware rainbow while every report said it was restored (spec 069).
+restoreOne writes one device's recorded state back, fitted to its zones as
+they are now.
 */
-func (s *Service) restoreOne(ctx context.Context, client openrgb.Client,
+func (s *Service) restoreOne(ctx context.Context, client machine,
 	device *devices.Device, kept state.Device, want preference,
 ) Result {
-	device, resized, problems := regrow(ctx, client, device, kept.Zones)
+	var problems []string
 	kept.Colours = refit(device, kept)
 	if len(kept.Colours) != device.LEDCount {
 		/*
 			Written anyway. The LEDs the frame and the device share are still
-			the right colours, and a device left in the server's power-on
-			state is no better; but it is said, because "restored" is not
-			true of the rest.
+			the right colours; but it is said, because "restored" is not true
+			of the rest.
 		*/
 		problems = append(problems, fmt.Sprintf(
-			"%s has an LED count of %d and its recorded colours are for %d; "+
-				"a zone may have lost its size in OpenRGB",
+			"%s has an LED count of %d and its recorded colours are for %d",
 			device.Name, device.LEDCount, len(kept.Colours)))
 	}
 	result := s.writeFrame(ctx, client, device, kept.Frame(device.Name), false, want, nil)
-	result.Resized = resized
 	result.Problems = append(result.Problems, problems...)
 	return result
 }
@@ -298,7 +275,7 @@ whose sizes do not add up to its colours, or that fits already, is returned
 as it is.
 */
 func refit(device *devices.Device, kept state.Device) []colour.Colour {
-	if device.Canvas == nil || len(kept.Zones) == 0 || len(kept.Colours) == device.LEDCount {
+	if len(kept.Zones) == 0 || len(kept.Colours) == device.LEDCount {
 		return kept.Colours
 	}
 	sizes := make([]int, len(device.Zones))
@@ -330,49 +307,10 @@ func refit(device *devices.Device, kept state.Device) []colour.Colour {
 }
 
 /*
-regrow gives each of a device's zones that is smaller than recorded the size
-it was recorded with, and returns the device as the server reports it after.
-
-Only where the zone's size is one a person sets, the recorded size is within
-what the zone allows, and the zone is smaller now. Never smaller: a zone with
-more LEDs than recorded is somebody's change, not a loss.
-*/
-func regrow(ctx context.Context, client openrgb.Client, device *devices.Device,
-	recorded map[string]int,
-) (*devices.Device, []string, []string) {
-	if device.Canvas != nil {
-		// Its lengths are the rules', and a size OpenRGB recorded for the
-		// same name may be wrong (spec 075).
-		return device, nil, nil
-	}
-	var resized, problems []string
-	for _, zone := range device.Zones {
-		want, ok := recorded[zone.Name]
-		if !ok || zone.Count >= want || !zone.Fits(want) {
-			continue
-		}
-		if err := client.ResizeZone(ctx, device.Name, zone.Name, want); err != nil {
-			problems = append(problems, err.Error())
-			continue
-		}
-		resized = append(resized, fmt.Sprintf("%s from %d to %d LEDs", zone.Name, zone.Count, want))
-	}
-	if len(resized) == 0 {
-		return device, nil, problems
-	}
-	after, err := client.Device(ctx, device.Name)
-	if err != nil {
-		return device, resized, append(problems, err.Error())
-	}
-	return &after, resized, problems
-}
-
-/*
 Reasserter re-sends colours to devices that do not hold them.
 
 Some hardware forgets: a wireless mouse restores its onboard colour when it
-wakes, and OpenRGB sets a volatile effect it has no way to make stick. The only
-remedy is to send it again, on an interval, forever.
+wakes. The only remedy is to send it again, on an interval, forever.
 
 Scoped to devices whose rule asks for it. Re-asserting everything would write
 constantly to hardware that has no such problem, and a write nobody needs is

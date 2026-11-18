@@ -13,7 +13,6 @@ import (
 	"github.com/ushineko/hotaru/internal/colour"
 	"github.com/ushineko/hotaru/internal/daemon"
 	"github.com/ushineko/hotaru/internal/service"
-	"github.com/ushineko/hotaru/internal/service/servicetest"
 	"github.com/ushineko/hotaru/internal/state"
 )
 
@@ -65,7 +64,7 @@ func TestACanvasThatGoesIsAttachedAgainAndItsScenePutBack(t *testing.T) {
 	*/
 	store, err := state.Open(filepath.Join(t.TempDir(), "state.yml"))
 	require.NoError(t, err)
-	svc := service.New(nil, nil, servicetest.NoServer)
+	svc := service.New(nil)
 	svc.SetRecorder(store)
 
 	first, second := canvasBoard(), canvasBoard()
@@ -103,7 +102,7 @@ func TestAReleasedCanvasIsAttachedAgainAndSentNothing(t *testing.T) {
 	// without writing to it until a scene asks.
 	store, err := state.Open(filepath.Join(t.TempDir(), "state.yml"))
 	require.NoError(t, err)
-	svc := service.New(nil, nil, servicetest.NoServer)
+	svc := service.New(nil)
 	svc.SetRecorder(store)
 
 	first, second := canvasBoard(), canvasBoard()

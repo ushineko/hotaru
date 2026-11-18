@@ -1,6 +1,6 @@
 # hotaru — see specs/001-scope-migration-and-lighting-core.md
 #
-# Tests need no hardware, no OpenRGB, no liquidctl and no root. That is a
+# Tests need no hardware, no liquidctl and no root. That is a
 # packaging property as much as a testing one: a PKGBUILD's check() runs this.
 
 TAG        := $(shell cat .tag)

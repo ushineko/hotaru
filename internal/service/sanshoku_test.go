@@ -11,7 +11,6 @@ import (
 	"github.com/ushineko/hotaru/internal/canvas/canvastest"
 	"github.com/ushineko/hotaru/internal/colour"
 	"github.com/ushineko/hotaru/internal/devices"
-	"github.com/ushineko/hotaru/internal/openrgb"
 	"github.com/ushineko/hotaru/internal/service"
 	"github.com/ushineko/hotaru/internal/state"
 )
@@ -36,7 +35,7 @@ func attachBoard(t *testing.T, svc *service.Service) *canvastest.Board {
 
 // A zoned canvas is listed with the device's own zones (spec 075 R2.1).
 func TestAZonedCanvasIsListedWithItsZones(t *testing.T) {
-	svc := service.New(nil, nil, noServer)
+	svc := service.New(nil)
 	attachBoard(t, svc)
 	got := viewOf(t, svc, boardName).Device
 	assert.Equal(t, []devices.Zone{
@@ -51,7 +50,7 @@ name in Static, and the zone sizes OpenRGB recorded do not resize it (spec
 075 R2.3, R3.1).
 */
 func TestAnOpenRGBRecordRestoresTheCanvas(t *testing.T) {
-	svc := service.New(nil, nil, noServer)
+	svc := service.New(nil)
 	store := recorder(t)
 	svc.SetRecorder(store)
 	reds := make([]colour.Colour, 5)
@@ -67,33 +66,11 @@ func TestAnOpenRGBRecordRestoresTheCanvas(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, restore.Results, 1)
 	assert.Equal(t, "Static", restore.Results[0].Mode)
-	assert.Empty(t, restore.Results[0].Resized, "a canvas was regrown to OpenRGB's size")
 	assert.Equal(t, 4, board.Zones()[1].Count)
 	require.Eventually(t, func() bool {
 		p, ok := board.Showing(5)
 		return ok && p.R == 255
 	}, eventually, every)
-}
-
-// While OpenRGB still runs, its device of the canvas's name is the canvas's
-// twin: the graphics card's OpenRGB location is not a node (spec 075 R3.2).
-func TestAnOpenRGBDeviceOfTheCanvassNameIsItsTwin(t *testing.T) {
-	gpu := devices.Device{
-		Name: boardName, Location: "I2C: NVIDIA i2c adapter 1, address 0x68", LEDCount: 1,
-		Zones: []devices.Zone{{Name: "GPU", Shape: devices.ShapeSingle, Count: 1}},
-		Modes: []devices.Mode{{Name: "Direct", PerLED: true}},
-	}
-	svc := service.New(nil, openrgb.NewFake(gpu), "")
-	attachBoard(t, svc)
-	views, err := svc.List(t.Context())
-	require.NoError(t, err)
-	handed := 0
-	for _, v := range views {
-		if v.Device.Name == boardName && v.Device.HandedTo == boardName {
-			handed++
-		}
-	}
-	assert.Equal(t, 1, handed)
 }
 
 /*
@@ -102,7 +79,7 @@ recorded colours are stretched over its four lights, and the board's light
 keeps its own (spec 075).
 */
 func TestARecordIsFittedToTheZonesAsTheyAre(t *testing.T) {
-	svc := service.New(nil, nil, noServer)
+	svc := service.New(nil)
 	store := recorder(t)
 	svc.SetRecorder(store)
 	require.NoError(t, store.Record(boardName, state.Device{

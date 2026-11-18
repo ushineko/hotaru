@@ -252,7 +252,8 @@ devices:
 }
 
 func TestADrawnDeviceCanBePacedAndItsTwinNamed(t *testing.T) {
-	// Spec 060: the two keys a device hotaru draws itself can carry.
+	// Spec 060: the two keys a device hotaru draws itself can carry. twin is
+	// ignored since spec 076, and a file with it still loads.
 	cfg, problems, err := config.Parse("hotaru.yml", []byte(`
 devices:
   - match: canvas board

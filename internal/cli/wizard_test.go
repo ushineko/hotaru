@@ -17,8 +17,6 @@ import (
 	"github.com/ushineko/hotaru/internal/cli"
 	"github.com/ushineko/hotaru/internal/colour"
 	"github.com/ushineko/hotaru/internal/config"
-	"github.com/ushineko/hotaru/internal/devices"
-	"github.com/ushineko/hotaru/internal/openrgb"
 	"github.com/ushineko/sanshoku"
 )
 
@@ -88,24 +86,6 @@ func (s *scripted) questions() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return strings.Join(s.asked, "\n")
-}
-
-// cooler is the development machine's, near enough: two channels of 24, one
-// carrying three daisy-chained fans and one carrying nothing.
-func cooler() devices.Device {
-	return devices.Device{
-		Name:     "NZXT Kraken 2024 ELITE Series RGB",
-		LEDCount: 48,
-		Modes: []devices.Mode{
-			{Name: "Static", PerLED: false},
-			{Name: "Direct", PerLED: true},
-		},
-		Zones: []devices.Zone{
-			{Name: "Hue 2 Channel 1", First: 0, Count: 24},
-			{Name: "Hue 2 Channel 2", First: 24, Count: 24},
-		},
-		ActiveMode: "Direct",
-	}
 }
 
 func TestTheWizardMapsAMachineFromWhatAPersonCanSee(t *testing.T) {
@@ -181,14 +161,14 @@ func TestAZoneReportedDarkIsLeftUnnamed(t *testing.T) {
 }
 
 func TestAnUnhealthyMachineIsNotAskedAboutAtAll(t *testing.T) {
-	client := api.NewClient(serving(t, nil, nil))
+	client := api.NewClient(drawing(t, nil))
 	person := &scripted{}
 
 	err := cli.Map(t.Context(), client, person)
 	require.Error(t, err)
 	require.True(t, cli.Silent(err))
 	require.Empty(t, person.asked, "a machine hotaru cannot see was still asked about")
-	require.Contains(t, strings.Join(person.said, "\n"), "unreachable")
+	require.Contains(t, strings.Join(person.said, "\n"), "no-devices")
 }
 
 func TestNothingIsWrittenWithoutASayingSo(t *testing.T) {
@@ -610,83 +590,6 @@ func TestTheWizardSpeaksNoJargon(t *testing.T) {
 	}
 }
 
-func TestTheProbeAsksAboutTheWayAWriteWillActuallyLightIt(t *testing.T) {
-	/*
-		A board that lights in Direct and not in Static, whose own list puts
-		Direct first. Asked in the device's order, somebody sees red on the
-		first try, says yes, and no correction is written -- and then setting a
-		colour picks Static, as hotaru's preference order always would, and
-		their strips go out. The probe has to ask about what a write will use.
-	*/
-	board := devices.Device{
-		Name:     "Z790 AORUS MASTER X",
-		LEDCount: 1,
-		Modes: []devices.Mode{
-			{Name: "Direct", PerLED: true}, // the device lists this one first
-			{Name: "Static", PerLED: true},
-		},
-		Zones:      []devices.Zone{{Name: "LED_C", First: 0, Count: 1}},
-		ActiveMode: "Rainbow Wave",
-	}
-	client := api.NewClient(serving(t, nil, openrgb.NewFake(board)))
-	home := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", home)
-
-	person := &scripted{answers: []string{
-		"n",           // Static, which hotaru would choose: nothing lights
-		"y",           // Direct: there it is
-		"desk strips", // and it is the strips
-		"y", "n", "y",
-	}}
-	require.NoError(t, cli.Map(t.Context(), client, person))
-
-	rules, err := os.ReadFile(filepath.Join(home, "hotaru", "hotaru.yml"))
-	require.NoError(t, err)
-	require.Contains(t, string(rules), "solid_modes: [direct, static]",
-		"the correction was not written, so setting a colour will still pick the mode that lights nothing")
-}
-
-func TestWhatItWritesIsInUseBeforeItPutsTheLightsBack(t *testing.T) {
-	/*
-		The service reads its rules at startup, so a file the wizard writes
-		changes nothing until it is told. Leaving that as an instruction meant
-		the last act of a successful run was to put the lights back using the
-		rules from before it ran -- and on one machine that meant the
-		correction just established was ignored and the strips went out again.
-	*/
-	board := devices.Device{
-		Name:     "Z790 AORUS MASTER X",
-		LEDCount: 1,
-		Modes: []devices.Mode{
-			{Name: "Direct", PerLED: true},
-			{Name: "Static", PerLED: true},
-		},
-		Zones:      []devices.Zone{{Name: "LED_C", First: 0, Count: 1}},
-		ActiveMode: "Rainbow Wave",
-	}
-	// Static is accepted, reports Static, and lights nothing -- which no fake
-	// can express, because it is a fact about a case and not about a
-	// protocol. The person says so: "n" to Static, "y" to Direct.
-	home := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", home) // before the service starts, as on a real machine
-
-	server := openrgb.NewFake(board)
-	client := api.NewClient(serving(t, nil, server))
-
-	person := &scripted{answers: []string{"n", "y", "desk strips", "y", "n", "y"}}
-	require.NoError(t, cli.Map(t.Context(), client, person))
-
-	require.Contains(t, strings.Join(person.said, "\n"), "in use now",
-		"somebody was told to run a command the program could run itself")
-
-	// The proof: a write now picks the corrected mode without anyone
-	// reloading anything.
-	out, err := client.Apply(t.Context(), api.ApplyRequest{Colour: "purple"})
-	require.NoError(t, err)
-	require.Equal(t, "Direct", out.Results[0].Mode,
-		"the correction the wizard had just established was not in use")
-}
-
 func TestWhatItWritesIsInUseBeforeItPutsTheLightsBackOnACanvas(t *testing.T) {
 	// The same, drawn: a name the wizard has just written can be lit without
 	// anyone reloading anything.
@@ -713,67 +616,6 @@ func TestWhatItWritesIsInUseBeforeItPutsTheLightsBackOnACanvas(t *testing.T) {
 		c, ok := shows(t, strips.Device, 0)
 		return ok && c == colour.MustParse("purple")
 	}, eventually, every)
-}
-
-func TestOnlyALineOfLightsIsAskedAboutChaining(t *testing.T) {
-	/*
-		"How many separate things are chained on keyboard?" -- asked of a
-		device with a hundred addressable keys, somebody quite reasonably
-		wondered whether they were being asked about keys.
-
-		They were not: the question is about separate objects sharing one
-		connector, which only a line of lights can be. A keyboard is a grid,
-		and a grid is one object however many lights it has.
-	*/
-	keyboard := devices.Device{
-		Name:     "Keychron K4 HE",
-		LEDCount: 100,
-		Modes:    []devices.Mode{{Name: "Direct", PerLED: true}},
-		Zones: []devices.Zone{
-			{Name: "Keyboard", Shape: devices.ShapeGrid, First: 0, Count: 100},
-		},
-		ActiveMode: "Direct",
-	}
-	fans := devices.Device{
-		Name:     "NZXT Kraken",
-		LEDCount: 24,
-		Modes:    []devices.Mode{{Name: "Direct", PerLED: true}},
-		Zones: []devices.Zone{
-			{Name: "Hue 2 Channel 2", Shape: devices.ShapeLine, First: 0, Count: 24},
-		},
-		ActiveMode: "Direct",
-	}
-	client := api.NewClient(serving(t, nil, openrgb.NewFake(keyboard, fans)))
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-
-	person := &scripted{answers: []string{
-		"y", "keyboard", // no chaining question follows a grid
-		"y", "radiator", "1", // a line gets one
-		"n", "n",
-	}}
-	require.NoError(t, cli.Map(t.Context(), client, person))
-
-	asked := person.questions()
-	require.NotContains(t, asked, "chained on keyboard",
-		"somebody was asked how many things were chained on a keyboard")
-	require.Contains(t, asked, "chained on radiator",
-		"a line of lights is exactly where the question belongs")
-}
-
-// keyboardThatWillNotBlank is the Keychron: it advertises a reactive mode, and
-// on the real board a dark frame is taken as "the host has stopped talking"
-// and replaced by the firmware's own white.
-func keyboardThatWillNotBlank() devices.Device {
-	return devices.Device{
-		Name:     "Keychron K4 HE",
-		LEDCount: 2,
-		Modes: []devices.Mode{
-			{Name: "Direct", PerLED: true},
-			{Name: "Solid Splash"},
-		},
-		Zones:      []devices.Zone{{Name: "Keyboard", Shape: devices.ShapeGrid, First: 0, Count: 2}},
-		ActiveMode: "Direct",
-	}
 }
 
 func TestADeviceThatWillNotGoDarkIsRecorded(t *testing.T) {
@@ -862,17 +704,6 @@ func TestAMachineThatBlanksIsAskedOnlyOnce(t *testing.T) {
 	require.Equal(t, 1, asked, "a machine that blanks was interrogated device by device")
 }
 
-func TestADeviceWithNoBrightnessIsNotOfferedOne(t *testing.T) {
-	// A question nobody can act on is not a question. Spec 008's rule, and
-	// the reason this one is gated on what the device reports.
-	client := api.NewClient(serving(t, nil, openrgb.NewFake(cooler())))
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-
-	person := &scripted{answers: []string{"y", "desk strip", "y", "n", "n"}}
-	require.NoError(t, cli.Map(t.Context(), client, person))
-	require.NotContains(t, person.questions(), "turned down")
-}
-
 func TestTheOffQuestionDoesNotAssertItsOwnAnswer(t *testing.T) {
 	/*
 		It used to say "Everything is off now. Is anything still lit?".
@@ -892,27 +723,6 @@ func TestTheOffQuestionDoesNotAssertItsOwnAnswer(t *testing.T) {
 		"the wizard stated the outcome it was asking about")
 	require.Contains(t, strings.Join(person.said, " "), "should be dark",
 		"somebody has to be told what they are looking for")
-}
-
-func TestDimmingIsOfferedOnlyForTheModeThatWillBeUsed(t *testing.T) {
-	/*
-		A Keychron's Direct mode -- the one hotaru writes a colour in -- takes
-		no brightness, while its animated cycle modes all do. Gated on "does
-		the device have a dimmable mode", hotaru offered to dim it, dimmed
-		nothing, and wrote a brightness that could never apply.
-	*/
-	device := keyboardThatWillNotBlank()
-	device.Modes = []devices.Mode{
-		{Name: "Direct", PerLED: true},        // used, not dimmable
-		{Name: "Cycle All", Brightness: true}, // dimmable, never used
-	}
-	client := api.NewClient(serving(t, nil, openrgb.NewFake(device)))
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-
-	person := &scripted{answers: []string{"y", "keyboard", "y", "n", "n"}}
-	require.NoError(t, cli.Map(t.Context(), client, person))
-	require.NotContains(t, person.questions(), "turned down",
-		"a device was offered a dimming that would do nothing")
 }
 
 func TestAChoiceOfDarkModesIsOffered(t *testing.T) {
@@ -941,32 +751,6 @@ func TestAChoiceOfDarkModesIsOffered(t *testing.T) {
 		"the second offer was accepted and the first was written instead")
 	require.Contains(t, string(rules), "solid_modes: [Solid Reactive Simple, static]",
 		"a single mode leaves nowhere to go if it stops working")
-}
-
-func TestABrightnessThatCannotApplyIsRemovedOnARerun(t *testing.T) {
-	/*
-		An earlier run of this very wizard wrote `brightness: 40` for a
-		keyboard whose Direct mode takes no brightness. A setting that cannot
-		apply is worse in a file than absent: somebody reads it and believes
-		it.
-	*/
-	device := keyboardThatWillNotBlank()
-	device.Modes = []devices.Mode{{Name: "Direct", PerLED: true}}
-
-	home := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", home)
-	require.NoError(t, os.MkdirAll(filepath.Join(home, "hotaru"), 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(home, "hotaru", "hotaru.yml"), []byte(
-		"devices:\n  - match: \"keychron\"\n    brightness: 40\n    segments:\n      keyboard: {zone: \"Keyboard\"}\n"), 0o600))
-
-	client := api.NewClient(serving(t, nil, openrgb.NewFake(device)))
-	person := &scripted{answers: []string{"y", "keyboard", "y", "n", "y"}}
-	require.NoError(t, cli.Map(t.Context(), client, person))
-
-	rules, err := os.ReadFile(filepath.Join(home, "hotaru", "hotaru.yml"))
-	require.NoError(t, err)
-	require.NotContains(t, string(rules), "brightness",
-		"a brightness this device cannot use survived a run that knew better")
 }
 
 func TestAPreviousDarkModeChoiceCanBeRevisited(t *testing.T) {

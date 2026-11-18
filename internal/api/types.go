@@ -122,14 +122,14 @@ type Device struct {
 	LEDNames []string `json:"led_names,omitempty"`
 
 	/*
-		Canvas, when set, is a device hotaru draws itself (spec 060): its
-		modes are hotaru's renderers, and this says what the drawing is
-		doing. Absent for every device OpenRGB drives.
+		Canvas is what hotaru's drawing of the device is doing (spec 060):
+		its modes are hotaru's renderers, and its device's own effects.
+		Absent on a name a device was formerly called.
 	*/
 	Canvas *Canvas `json:"canvas,omitempty"`
 
-	// HandedTo, when set, is the device hotaru draws as this one. OpenRGB
-	// lists the same hardware, and hotaru does not write to it there.
+	// HandedTo, when set, is the device hotaru draws under this name's
+	// place: a name a rule says it was formerly called (spec 073).
 	HandedTo string `json:"handed_to,omitempty"`
 }
 
@@ -306,10 +306,6 @@ type Result struct {
 	// Present even on a write that succeeded: an exception that did not apply
 	// is a scene quietly doing something other than what was asked.
 	Problems []string `json:"problems,omitempty"`
-
-	// Resized are zones a restore gave back their recorded size, each as a
-	// sentence. See spec 069.
-	Resized []string `json:"resized,omitempty"`
 }
 
 // Attempt is one mode that was tried, and what the device did with it.
@@ -320,10 +316,7 @@ type Attempt struct {
 	// Showing is whether the device was displaying the colours it was sent.
 	// False with Active matching Mode is a device that took the mode and
 	// ignored the frame -- which looks like success to everything but a read.
-	Showing bool `json:"showing"`
-	// Settled is a device that needed the colours written twice, because its
-	// mode change had not finished when the first frame arrived.
-	Settled bool   `json:"settled,omitempty"`
+	Showing bool   `json:"showing"`
 	Why     string `json:"why,omitempty"`
 }
 
@@ -339,7 +332,7 @@ type ApplyResponse struct {
 /*
 Health is the body of GET /v1/health.
 
-State is one of "unreachable", "no-devices", "none-in-scope", "healthy", and
+State is one of "no-devices", "none-in-scope", "healthy", and
 Detail says what to do about it in a sentence meant for a person.
 */
 type Health struct {
@@ -348,48 +341,12 @@ type Health struct {
 	// Remedies are things a person could do about it, each a sentence with a
 	// command in it.
 	Remedies []string `json:"remedies,omitempty"`
-	Address  string   `json:"address"`
-	Protocol uint32   `json:"protocol,omitempty"`
 	Devices  int      `json:"devices"`
 	InScope  int      `json:"in_scope"`
 	Version  string   `json:"version"`
 
 	// Canvases are the devices hotaru draws itself, and what each is doing.
 	Canvases []Canvas `json:"canvases,omitempty"`
-}
-
-/*
-Finding is what probing learned about one device.
-
-Probing writes: it sets modes to see which ones a device honours, and puts
-everything back afterwards. It is a POST for that reason.
-*/
-type Finding struct {
-	Device    string        `json:"device"`
-	Modes     []ModeFinding `json:"modes,omitempty"`
-	Zones     []Zone        `json:"zones,omitempty"`
-	NoOffMode bool          `json:"no_off_mode,omitempty"`
-	Suggested string        `json:"suggested,omitempty"`
-	Error     string        `json:"error,omitempty"`
-}
-
-// ModeFinding is one mode, and what the device did with it. Tried without Took
-// is the interesting case: accepted, and not honoured.
-type ModeFinding struct {
-	Name   string `json:"name"`
-	PerLED bool   `json:"per_led"`
-	Tried  bool   `json:"tried"`
-	Took   bool   `json:"took"`
-}
-
-// ProbeRequest narrows probing to particular devices.
-type ProbeRequest struct {
-	Devices []string `json:"devices,omitempty"`
-}
-
-// ProbeResponse is the body of POST /v1/lighting/probe.
-type ProbeResponse struct {
-	Findings []Finding `json:"findings"`
 }
 
 /*
@@ -411,9 +368,6 @@ type Status struct {
 	Scene   string `json:"scene,omitempty"`
 	Showing string `json:"showing,omitempty"`
 
-	Connected  bool     `json:"connected"`
-	Address    string   `json:"address"`
-	Protocol   uint32   `json:"protocol,omitempty"`
 	RulesFile  string   `json:"rules_file,omitempty"`
 	Remembered []string `json:"remembered,omitempty"`
 }
@@ -421,20 +375,6 @@ type Status struct {
 // RestoreResponse is the body of POST /v1/reconcile.
 type RestoreResponse struct {
 	Results  []Result `json:"results,omitempty"`
-	Applied  int      `json:"applied"`
-	Missing  []string `json:"missing,omitempty"`
-	Complete bool     `json:"complete"`
-}
-
-/*
-RescanResponse is the body of POST /v1/rescan.
-
-Devices is what the server found the second time. That is the number the whole
-operation is about: a server that has re-detected its hardware holds live
-connections to it, where before it held one to a device that had gone.
-*/
-type RescanResponse struct {
-	Devices  int      `json:"devices"`
 	Applied  int      `json:"applied"`
 	Missing  []string `json:"missing,omitempty"`
 	Complete bool     `json:"complete"`

@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"github.com/ushineko/hotaru/internal/api"
-	"github.com/ushineko/hotaru/internal/stale"
 )
 
 /*
@@ -39,20 +38,6 @@ type Machine struct {
 	cooling api.Cooling
 	keys    api.KeysResponse
 	scenes  []api.Scene
-
-	/*
-		stale answers the one thing the service cannot.
-
-		Whether the OpenRGB server still has a live connection to the hardware
-		it lists means reading its descriptors, which has to happen in the
-		server's own mount namespace -- and the service is sandboxed outside
-		one. This window is an ordinary process of the user's, so it looks.
-
-		Kept on the Machine rather than made per refresh because it remembers
-		where to look: finding the server's PID is several subprocesses, and
-		this runs every couple of seconds. See internal/stale and spec 058.
-	*/
-	stale stale.Checker
 
 	// err is what went wrong reaching the service, which is the ordinary
 	// first-run answer rather than a fault: nothing is running yet.
@@ -110,7 +95,7 @@ func (s Snapshot) Same(other Snapshot) bool {
 // counts, not the remedy list, which moves only when the verdict does.
 func sameHealth(a, b api.Health) bool {
 	return a.State == b.State && a.Detail == b.Detail &&
-		a.Devices == b.Devices && a.InScope == b.InScope && a.Address == b.Address
+		a.Devices == b.Devices && a.InScope == b.InScope
 }
 
 // sameDevice compares what the window draws about one: its state and its
@@ -189,24 +174,6 @@ func (m *Machine) Refresh(ctx context.Context, client *api.Client) {
 	// inside a builder is a call made on every rebuild, and the window
 	// rebuilds for reasons that have nothing to do with scenes.
 	scenes, _ := client.Scenes(ctx)
-
-	/*
-		The verdict the service could not reach, added to the one it gave.
-
-		After the devices, because naming the hardware that moved needs the
-		names the server uses for it. Before the snapshot is published, so the
-		status bar and the Service card cannot disagree about what state the
-		machine is in.
-	*/
-	if health.State == stale.Healthy {
-		names := make([]string, 0, len(devices))
-		for _, device := range devices {
-			names = append(names, device.Name)
-		}
-		verdict := m.stale.Check(ctx, names)
-		health.State, health.Detail, health.Remedies =
-			verdict.Apply(health.State, health.Detail, health.Remedies)
-	}
 
 	m.mu.Lock()
 	m.health, m.status, m.devices, m.cooling, m.keys, m.scenes = health, status, devices, cooling, keys, scenes

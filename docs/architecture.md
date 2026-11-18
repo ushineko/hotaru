@@ -40,15 +40,13 @@ flowchart TB
     end
 
     subgraph backends["Backends"]
-        ORGB["OpenRGB server<br/>SDK protocol, TCP 6742<br/>systemd unit or Windows service,<br/>enumeration gate"]
         COOL["Cooler · sanshoku nzxt driver<br/>/dev/hidraw + usbfs, Linux only<br/>NZXT protocol, no cgo"]
-        CANV["Canvas devices · sanshoku lighting.Canvas<br/>hidraw on Linux, HID on Windows<br/>acknowledged frames"]
+        CANV["Canvas devices · sanshoku lighting.Canvas<br/>hidraw and I2C on Linux, HID on Windows<br/>acknowledged frames"]
         HWMON["Kernel sensors, Linux only<br/>/sys/class/hwmon by label<br/>nvidia-smi where there is none"]
     end
 
     subgraph hw["Hardware"]
-        LIT["Lit devices<br/>Kraken · GPU · Aura · MM700 · G502 · Keychron"]
-        KEYS["Keyboards hotaru draws on<br/>Apex Pro TKL Wireless Gen 3 · AULA F75"]
+        LIT["Lit devices<br/>Kraken · GPU · Aura · MM700 · G502 · Keychron<br/>Apex Pro TKL Wireless Gen 3 · AULA F75"]
         LCD["Kraken LCD<br/>640x640, GIF only"]
         TELEM["Cooler telemetry<br/>coolant · pump · fans"]
         TEMP["CPU package · GPU"]
@@ -60,7 +58,7 @@ flowchart TB
     KEY --> KWIN
     KWIN -->|"Apply scene N"| DBUS
     GUI -->|"stage · preview · save · bind"| API
-    CLI -->|"list · set · probe · health"| API
+    CLI -->|"list · set · map · health"| API
     DEV -.->|"curl --unix-socket<br/>one-off clients, early"| API
 
     DBUS --> CORE
@@ -71,15 +69,13 @@ flowchart TB
     RECON --> MBOX
     CORE --> MBOX
 
-    MBOX -->|"mode + frame<br/>per zone / per LED"| ORGB
     MBOX -->|"renderer + frame"| ANIM
     ANIM -->|"frames, identical ones skipped"| CANV
     RECON -->|"dashboard frames<br/>hash gate + size floor"| COOL
     CORE -->|"status, coalesced"| COOL
     CORE -->|"package + card temps"| HWMON
 
-    ORGB --> LIT
-    CANV --> KEYS
+    CANV --> LIT
     COOL --> LCD
     COOL --> TELEM
     HWMON --> TEMP
@@ -94,8 +90,8 @@ flowchart TB
     classDef entry fill:#292c30,stroke:#3c4045,color:#fcfcfc
 
     class DBUS,API,CORE,STATE,RECON,MBOX,ANIM,CFG svcnode
-    class ORGB,COOL,CANV,HWMON backend
-    class LIT,KEYS,LCD,TELEM,TEMP hwnode
+    class COOL,CANV,HWMON backend
+    class LIT,LCD,TELEM,TEMP hwnode
     class KEY,GUI,CLI,KWIN entry
     class DEV future
     class FUTURE,PBM future
@@ -134,21 +130,19 @@ flowchart TB
     SERVE -->|"no recorded state"| INERT["<b>Inert</b><br/>nothing to restore,<br/>nothing written"]
     SERVE -->|"state recorded"| WAIT
 
-    WAIT["<b>Waiting for OpenRGB</b><br/>health: server unreachable"]
-    WAIT -->|"no server · retry with backoff"| WAIT
-    WAIT -->|"connected, device list short"| PART
-    WAIT -->|"connected, every recorded<br/>device present"| REST
+    WAIT["<b>Waiting for devices</b><br/>health: no-devices"]
+    WAIT -->|"nothing found · look again with backoff"| WAIT
+    WAIT -->|"some recorded devices found"| PART
+    WAIT -->|"every recorded<br/>device present"| REST
 
     PART["<b>Partial</b><br/>fewer devices than recorded —<br/>reported incomplete, never done"]
     PART -->|"retry with backoff"| PART
-    PART -->|"the rest enumerate"| REST
-    PART -->|"user restarts the server"| REST
+    PART -->|"the rest appear"| REST
 
     REST["<b>Restoring</b><br/>one frame per device,<br/>read back to confirm"] --> STEADY
 
     STEADY["<b>Reconciling</b><br/>steady state"]
     STEADY -->|"re-assert per device rule"| STEADY
-    STEADY -->|"server went away"| WAIT
     INERT -->|"first scene applied by hand"| REST
 
     classDef ok fill:#292c30,stroke:#3daee9,color:#fcfcfc
@@ -161,21 +155,12 @@ flowchart TB
     class BOOT entry
 ```
 
-**Why there is no "wait for OpenRGB" edge at the start.** hotaru declares no
-`After=` or `Requires=` on any OpenRGB unit. No single unit exists to name: the
-`openrgb` package ships a system unit, this machine runs a user unit, and
-other people start the server by hand. Ordering would not help in any case. A
-cold boot has reached `Started` with two devices of six enumerated, because
-OpenRGB detects devices once and USB enumeration had not finished. hotaru
-judges readiness by the device list instead. That is why **Partial** is a
-state of its own, rather than a successful restore with fewer lights than
-expected.
-
-**What "went away" means.** A connection has gone when its socket fails, or
-when a request gets no answer within five seconds. A request finishes or
-times out on its own; a caller that stops waiting does not cut it short. The
-OpenRGB SDK cannot recover from an abandoned request. Its late answer blocks
-every request after it (spec 063).
+**Why there is no "wait for the devices" edge at the start.** hotaru declares
+no `After=` or `Requires=` on anything. A cold boot reaches `Started` before
+USB enumeration has finished, and a wireless device may not answer until it
+wakes. hotaru looks for each device again until it appears, and judges
+readiness by the devices it has found. That is why **Partial** is a state of
+its own, rather than a successful restore with fewer lights than expected.
 
 **The screen is restored too.** The state file also records the scene applied
 last and what the cooler's panel was last asked to show. When the cooler
@@ -238,25 +223,20 @@ them.
   for one device compose into one complete frame before anything is written.
   That makes a write atomic from the device's point of view, and it lets a
   single-slot mailbox coalesce writes without dropping half a scene.
-- **Two paths, one device.** The Kraken's lighting belongs to OpenRGB. Its
-  telemetry and its screen are hotaru's own, over `/dev/hidraw` and usbfs. The
-  hardware sets that split rather than a preference. OpenRGB exposes the
-  colour channels and nothing else, and liquidctl, which used to fill the gap,
-  exposes no colour channels for this model at all. Reading the cooler
+- **One cooler, one handle.** The Kraken's telemetry, its screen and its
+  lights are hotaru's own, over `/dev/hidraw` and usbfs. Reading the cooler
   directly removed a Python interpreter and a subprocess per reading from the
   service, and took a reading from 105 ms to about two (spec 012). The driver
   is the `nzxt` package of [sanshoku](https://github.com/ushineko/sanshoku),
   which hayami also uses. `internal/cooler` adapts it to the service (spec 059).
   A cooler that goes away is let go and waited for again.
-- **Effects hotaru draws.** Most lit devices carry their effects in
-  firmware. A *canvas device* has none: its vendor's software draws every
-  effect on the host and streams frames to it. The first is the Apex Pro TKL
-  Wireless Gen 3. hotaru finds canvas devices through sanshoku's
-  `lighting.Canvas` and lists each one as a device. Its modes are hotaru's
-  *renderers* (Static, Breathing, Spectrum, Rainbow Wave, Off), which
-  `internal/render` draws as pure functions of time. Scenes, targets and the
-  wizard reach a canvas device through the same write path as an OpenRGB
-  device (spec 060).
+- **Effects hotaru draws.** Every lit device is a *canvas device*: hotaru
+  draws its effects on the host and sends it frames, as the Apex Pro TKL
+  Wireless Gen 3's vendor software does (spec 060). hotaru finds canvas
+  devices through sanshoku's `lighting.Canvas` and lists each one as a
+  device. Its modes are hotaru's *renderers* (Static, Breathing, Spectrum,
+  Rainbow Wave, Off), which `internal/render` draws as pure functions of time.
+  Scenes, targets and the wizard reach every device through one write path.
 - **Stored modes beside drawn ones.** A canvas device whose firmware also
   runs effects of its own (sanshoku's `lighting.Onboard`, the AULA F75 first)
   lists those effects first, as modes marked `Stored`. Choosing one stops the
@@ -277,28 +257,21 @@ them.
   nothing, and the device keeps its last frame. `hotaru light release`
   hands the lighting back to the firmware, and that is the only call that
   does.
-- **One writer per keyboard.** OpenRGB lists the same keyboard as a device of
-  its own, its *twin*. While the canvas device is attached, hotaru writes
-  nothing to the twin and lists it as handed over. A twin is found by its
-  OpenRGB location, which carries the hidraw path. OpenRGB keeps the path it
-  found at start after the keyboard moves to another node, so a `twin` rule
-  can name it instead.
 - **The cooler's lights are a canvas on the cooler's handle.** sanshoku's
   Kraken is a cooler, a panel and a canvas in one device. The daemon draws
   on it through the cooler's own handle, and canvas discovery does not scan
   for it. The canvas never closes the handle, and releasing it keeps it
-  attached. A `formerly` rule maps the name OpenRGB listed it under onto the
-  canvas, as a twin that is not listed (spec 073).
-- **sanshoku is the backend.** Every device hotaru supports is drawn through
-  sanshoku as a canvas (spec 075). OpenRGB is optional, for hardware sanshoku
-  does not drive. A device's zones are the driver's, and a header's length is
-  a rule.
-- **hotaru's own devices do not wait for OpenRGB.** With no server, a canvas
-  device stands beside a server with no devices. It is listed, written and
-  restored as usual, and a write to an OpenRGB device is refused as the
-  server being unreachable. Health, `probe` and `rescan` still need the
-  server (spec 074).
-- **A canvas device comes and goes.** OpenRGB's exit reboots the Apex. The
+  attached.
+- **Names carried over.** A `formerly` rule lists a device under the name it
+  had before, handed to the device that draws it. Records and scenes made
+  under the old name find the device (spec 073).
+- **sanshoku is the only backend.** Every device hotaru supports is drawn
+  through sanshoku as a canvas (specs 075 and 076). A device's zones are the
+  driver's, and a header's length is a rule. A record made with other zone
+  sizes is fitted to the sizes now. OpenRGB is gone; hardware sanshoku does
+  not drive is not lit.
+- **A canvas device comes and goes.** Releasing the Apex reboots it, and a
+  wireless device sleeps. The
   daemon attaches canvas devices as it attaches the cooler, with the same
   backoff, and checks every two seconds that the node is the one it opened.
   A new attachment puts back the scene that was last applied.
@@ -311,12 +284,12 @@ them.
   with no desktop dependency. On Windows it is a service of the machine that
   starts automatically. Either way it restores recorded state by reconciling
   toward it.
-  The OpenRGB server is a resource that appears, rather than a unit to order
+  Every device is a resource that appears, rather than a unit to order
   after. Started is not ready, as a cold boot that found two devices of six
   showed. The desktop pieces, such as the KWin script, attach when the session
   appears and attach again when it restarts.
-- **Every backend is optional.** OpenRGB, the cooler and the kernel's sensors
-  are independent legs. A missing leg removes its capabilities from the API
+- **Every backend is optional.** The lit devices, the cooler and the kernel's
+  sensors are independent legs. A missing leg removes its capabilities from the API
   and the window, and the others continue. The service keeps running. A
   machine with no liquid cooler is the ordinary case rather than an error, and
   it reports that through the same route a reading would take. The KWin script
@@ -324,10 +297,8 @@ them.
 - **One service layer.** `internal/host` is the only code that knows how
   hotaru was started. Under the Windows service manager it answers the
   manager and ends the service's context on a stop. Anywhere else it ends the
-  context on Ctrl+C or SIGTERM. `internal/services` asks the machine's
-  service manager about OpenRGB: systemd on Linux, the Windows service
-  manager on Windows. Installing hotaru's own service is packaging's job,
-  not the program's (spec 072).
+  context on Ctrl+C or SIGTERM. Installing hotaru's own service is
+  packaging's job, not the program's (spec 072).
 - **Files of the machine on Windows.** The installed Windows service runs as
   `NT SERVICE\hotaru` and keeps everything under `%ProgramData%\hotaru`. It
   makes that directory and sets who may use it before it opens anything.

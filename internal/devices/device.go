@@ -46,8 +46,8 @@ type Device struct {
 	LEDNames []string
 
 	/*
-		Canvas is set on a device hotaru draws itself, and says what the
-		drawing is doing (spec 060). Nil for every device OpenRGB drives.
+		Canvas says what hotaru's drawing of the device is doing (spec
+		060). Nil on a name a device was formerly called.
 
 		Such a device's modes are hotaru's renderers rather than firmware
 		modes, and its ActiveMode is the renderer it was last asked for.
@@ -55,12 +55,10 @@ type Device struct {
 	Canvas *Canvas
 
 	/*
-		HandedTo names the canvas device this one is the same hardware as,
-		while that canvas is attached.
-
-		OpenRGB lists the device too, and two programs streaming to one
-		keyboard would alternate frames. hotaru writes nothing to a device
-		handed over, and lists it so a person can see why (spec 060 R1.3).
+		HandedTo names the canvas device this name now belongs to: a name a
+		rule says the canvas was formerly called (spec 073). hotaru writes
+		nothing under the old name, and lists it so a person can see where
+		it went.
 	*/
 	HandedTo string
 }

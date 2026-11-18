@@ -12,7 +12,6 @@ import (
 	"github.com/ushineko/hotaru/internal/cooler/coolertest"
 	"github.com/ushineko/hotaru/internal/daemon"
 	"github.com/ushineko/hotaru/internal/service"
-	"github.com/ushineko/hotaru/internal/service/servicetest"
 )
 
 // quick is a backoff a test can wait on.
@@ -104,7 +103,7 @@ func TestACoolerThatGoesIsDetachedAndFoundAgain(t *testing.T) {
 		}
 	}
 
-	svc := service.New(nil, nil, servicetest.NoServer)
+	svc := service.New(nil)
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan struct{})
 	go func() {

@@ -11,29 +11,28 @@ machine".
 
 ## The rule that decides everything else
 
-**The backends are hard dependencies. Runtime optionality is a separate claim.**
+**What a working program needs is a hard dependency. Runtime optionality is a
+separate claim.**
 
 These are two different questions, and keeping them apart matters:
 
 - *What must be installed for `pacman -S hotaru` to give somebody a working
-  program?* All three backends. A user cannot know which pieces of hotaru come
-  from which daemon, because that is internal detail. The package decides for
-  them, rather than making the choice a prerequisite for a working program.
+  program?* Today, nothing beyond `glibc`: every device is driven through
+  sanshoku, a Go module built into the binary. When hotaru needed daemons, the
+  package named them, because a user cannot know which pieces of hotaru come
+  from which daemon.
 - *What must be present for hotaru to keep running?* Nothing. A daemon can
   stop, a device can vanish, and a user who installed with `go install` has no
   package manager at all. The program degrades in every one of those cases,
   and this page does not change that requirement.
 
-So `depends` states the supported install rather than a runtime precondition,
-and the backends use no `optdepends`. The graceful-degradation rules in spec
-001 stand as written. They describe a machine's state, not a package's
-manifest.
+So `depends` states the supported install rather than a runtime precondition.
+The graceful-degradation rules in spec 001 stand as written. They describe a
+machine's state, not a package's manifest.
 
-**OpenRGB is no longer one of hotaru's backends** (spec 075). hotaru draws
-every device it supports through sanshoku, a Go module built into the binary,
-and speaks to an OpenRGB server only for hardware sanshoku does not drive. So
-`openrgb` is an `optdepends`: installing it adds devices, and leaving it out
-loses none that hotaru supports.
+**hotaru no longer speaks to OpenRGB** (specs 075 and 076). It was a hard
+dependency until then, the one lighting daemon hotaru drove. hotaru supports
+the hardware sanshoku drives, and the package depends on no daemon.
 
 ## Split: `hotaru` and `hotaru-gui`
 
@@ -82,15 +81,13 @@ Verified against this machine's repositories:
 
 | Package | Repo | Role |
 |---|---|---|
-| `openrgb` | extra | Optional: lighting for devices sanshoku does not drive |
 | `go` | extra | Build only |
 | `libglvnd`, `libx11`, `libxcursor`, `libxrandr`, `libxinerama`, `libxi`, `libxxf86vm`, `libxkbcommon`, `wayland` | extra | The GUI's runtime graphics stack |
 
 ```
 # hotaru
 depends=('glibc')
-optdepends=('nvidia-utils: GPU temperature on the dashboard'
-            'openrgb: lighting for devices sanshoku does not drive')
+optdepends=('nvidia-utils: GPU temperature on the dashboard')
 
 # hotaru-gui
 depends=('hotaru' 'libglvnd' 'libx11' 'libxcursor' 'libxrandr'
@@ -110,8 +107,7 @@ that was installed for one field of the snapshot.
 
 `nvidia-utils` is the one `optdepends`, and it earns the label. A machine with
 no NVIDIA card has no GPU temperature, which is a missing number rather than a
-broken program. That is what `optdepends` is for, and it is what separates
-this case from the backends below.
+broken program. That is what `optdepends` is for.
 
 ### Device permissions are part of the package
 
@@ -147,22 +143,13 @@ The third rule is for a canvas device, a keyboard whose effects hotaru draws
 that, rather than as missing hardware. "Permission denied on /dev/hidraw7" is
 a sentence somebody can act on. "No cooler found" is not.
 
-The alternative was `optdepends`, and install size is not why this page
-rejects it. **`optdepends` asks the user a question they cannot answer.**
-Choosing correctly from that list means knowing already that lighting comes
-from OpenRGB, which means knowing how hotaru is built internally. Nobody who
-installs a program to make their fans blue should read an architecture
-document first. A user who guesses wrong gets a program that looks broken, and
-nothing tells them that it is not.
+**`optdepends` asks the user a question they cannot answer**, which is why
+anything a working program needs is a hard dependency. Choosing correctly from
+that list means knowing how hotaru is built internally. A user who guesses
+wrong gets a program that looks broken, and nothing tells them that it is not.
 
-Hard dependencies move that knowledge into the package, where it belongs. The
-packager pays the cost once, in disk space, instead of a stranger paying it in
-debugging.
-
-A user *can* reason about all this from [docs/hardware.md](hardware.md), which
-says what each backend contributes and what hardware it covers. "Why does this
-install a Corsair daemon?" has an answer there, in devices rather than in
-package manifests.
+[docs/hardware.md](hardware.md) says which hardware hotaru supports, in
+devices rather than in package manifests.
 
 The PKGBUILD lists `kwin` in neither form, deliberately. The hotkey
 integration is a Plasma convenience, and on every other desktop the CLI is the
@@ -182,7 +169,7 @@ go build -ldflags "-linkmode=external -X ${_module}/internal/version.Version=${p
 ```
 
 `check()` runs `go test ./...`. That check means something because the suite
-is headless and needs no hardware, no OpenRGB and no root, which is a
+is headless and needs no hardware and no root, which is a
 packaging property as much as a testing one.
 
 ## What gets installed
@@ -202,20 +189,15 @@ packaging property as much as a testing one.
   matches the window to the entry that way. A mismatch gives a generic icon
   and reports nothing
 - `/usr/share/doc/hotaru/hotaru.yml.example`. The example rules file for this
-  desk, in the same YAML the program reads. It ships with an example systemd
-  drop-in that gates OpenRGB's start on device enumeration. **Examples, not
-  defaults**: the enumeration gate exists because of one machine's boot
-  ordering, and shipping it as active configuration would fit the packaging to
+  desk, in the same YAML the program reads. **An example, not a default**:
+  shipping one desk's rules as active configuration would fit the package to
   that machine
 - `/usr/share/licenses/hotaru/LICENSE`
 
-The service unit carries **no ordering or dependency on OpenRGB at all**:
-no `After=`, and no `Wants=`. No single unit exists to name. The `openrgb`
-package ships a system unit, this developer's machine runs a user unit, and
-other people start the server by hand. Ordering would not help in any case,
-because OpenRGB reaching `Started` does not mean its devices are enumerated.
-hotaru retries, and judges readiness by the device list. It starts whether or
-not anything is there to talk to.
+The service unit carries **no ordering on any device or daemon**: no
+`After=`, and no `Wants=`. Devices appear when they appear, and hotaru looks
+for them again until they do. It starts whether or not anything is there to
+draw on.
 
 The unit is also **not tied to a desktop session**. It uses
 `WantedBy=default.target` and no `graphical-session.target`, so hotaru
@@ -300,10 +282,6 @@ It installs:
   failure;
 - a Start Menu entry for the window.
 
-It does not install OpenRGB, which is optional (spec 075): install OpenRGB
-1.1 or later and run its SDK server only for hardware sanshoku does not
-drive. `docs/hardware.md` says why 1.0 is excluded.
-
 The service makes `%ProgramData%\hotaru` when it first starts. The
 uninstaller in `C:\Program Files\hotaru` removes the service and the
 programs, and keeps `%ProgramData%\hotaru`, which holds the rules, the record
@@ -322,11 +300,10 @@ See [spec 007](../specs/007-packaging-and-release.md).
 - **`hotaru-gui` is a split package** of the same PKGBUILD, as this page
   assumed. A second AUR repository would duplicate a PKGBUILD for a binary
   built from the same tree in the same run, and the two copies would drift.
-- **OpenRGB's device permissions stay with the `openrgb` package.** A second
-  package with opinions about another package's devices is how two udev rules
-  come to disagree. hotaru ships rules for the devices it drives itself
-  through sanshoku (the cooler, and since spec 075 every device it lights),
-  and nothing else.
+- **hotaru ships the udev rules for the devices it drives**, through
+  sanshoku: the cooler, and since spec 075 every device it lights. A package
+  with opinions about devices it does not drive is how two udev rules come to
+  disagree, so it ships nothing else.
 
 The PKGBUILD is in [`packaging/`](../packaging/), versioned with what it
 packages.

@@ -2,7 +2,6 @@ package service_test
 
 import (
 	"context"
-	"strings"
 	"testing"
 	"time"
 
@@ -12,7 +11,6 @@ import (
 	"github.com/ushineko/hotaru/internal/colour"
 	"github.com/ushineko/hotaru/internal/config"
 	"github.com/ushineko/hotaru/internal/devices"
-	"github.com/ushineko/hotaru/internal/openrgb"
 	"github.com/ushineko/hotaru/internal/scenes"
 	"github.com/ushineko/hotaru/internal/service"
 	"github.com/ushineko/hotaru/internal/service/servicetest"
@@ -26,19 +24,6 @@ const (
 	eventually = 2 * time.Second
 	every      = 2 * time.Millisecond
 )
-
-// twin is the canvas device as OpenRGB lists it: the same hardware, at the
-// same node, in Direct.
-func twin() devices.Device {
-	return devices.Device{
-		Name:       twinName,
-		Location:   "HID: " + drawnPath,
-		LEDCount:   6,
-		Modes:      []devices.Mode{{Name: "Direct", PerLED: true}, {Name: "Onboard"}},
-		Zones:      []devices.Zone{{Name: "Keyboard", Shape: devices.ShapeGrid, First: 0, Count: 6}},
-		ActiveMode: "Onboard",
-	}
-}
 
 // drawing is a canvas attached to a service, with its animator running.
 type drawing struct {
@@ -71,17 +56,6 @@ func (d *drawing) frames(t *testing.T, n int) {
 		"the canvas has %d frames, not %d", d.fake.Frames(), n)
 }
 
-// untouched asserts that OpenRGB was sent nothing for a device.
-func untouched(t *testing.T, server *openrgb.Fake, name string) {
-	t.Helper()
-	for _, w := range server.Writes {
-		require.NotEqual(t, name, w.Device, "OpenRGB was sent a frame for the canvas's twin")
-	}
-	for _, m := range server.Modes {
-		require.NotEqual(t, name, m.Device, "OpenRGB was sent a mode for the canvas's twin")
-	}
-}
-
 func viewOf(t *testing.T, svc *service.Service, name string) service.View {
 	t.Helper()
 	views, err := svc.List(t.Context())
@@ -98,7 +72,7 @@ func viewOf(t *testing.T, svc *service.Service, name string) service.View {
 func TestACanvasIsListedAsADeviceWithItsRenderersAsModes(t *testing.T) {
 	// R1.2: one zone, a light per key named by the key, and hotaru's
 	// renderers where a firmware device has modes.
-	svc := service.New(nil, nil, servicetest.NoServer)
+	svc := service.New(nil)
 	attachDrawn(t, svc)
 
 	view := viewOf(t, svc, drawnName)
@@ -118,88 +92,8 @@ func TestACanvasIsListedAsADeviceWithItsRenderersAsModes(t *testing.T) {
 	require.True(t, static.Brightness)
 }
 
-func TestTheTwinIsMatchedByItsHidrawNode(t *testing.T) {
-	near := twin()
-	near.Name, near.Location = "Another Board", "HID: "+drawnPath+"0" // hidraw-test90, not 9
-	svc := service.New(nil, openrgb.NewFake(twin(), near), "")
-	attachDrawn(t, svc)
-
-	require.Equal(t, drawnName, viewOf(t, svc, twinName).Device.HandedTo)
-	require.Empty(t, viewOf(t, svc, "Another Board").Device.HandedTo,
-		"a node whose path only starts with the canvas's was taken for its twin")
-}
-
-func TestARuleNamesTheTwinWhereTheLocationDoesNot(t *testing.T) {
-	// The reading spec 060 records: OpenRGB kept the node it found at start
-	// after the keyboard moved, so its location names a node that is gone.
-	stale := twin()
-	stale.Location = "HID: /dev/hidraw-test5"
-	cfg := &config.Config{Devices: []config.DeviceRule{{Match: "canvas board", Twin: "(openrgb)"}}}
-	svc := service.New(cfg, openrgb.NewFake(stale, board()), "")
-	attachDrawn(t, svc)
-
-	require.Equal(t, drawnName, viewOf(t, svc, twinName).Device.HandedTo)
-	require.Empty(t, viewOf(t, svc, board().Name).Device.HandedTo)
-}
-
-func TestTheTwinIsNeverWrittenWhileTheCanvasIsAttached(t *testing.T) {
-	// R1.3, through every path that writes: apply, reconcile, re-assert,
-	// probe, and a write that names the twin directly.
-	server := openrgb.NewFake(twin(), board())
-	cfg := &config.Config{Devices: []config.DeviceRule{{Match: "openrgb", Reassert: config.Duration(time.Second)}}}
-	svc := service.New(cfg, server, "")
-	store := recorder(t)
-	svc.SetRecorder(store)
-
-	// Before the canvas: OpenRGB drives the twin, and desired state records it.
-	_, err := svc.Apply(t.Context(), service.Request{Colour: ptr(colour.MustParse("teal"))})
-	require.NoError(t, err)
-	require.Contains(t, svc.Desired().Names(), twinName)
-	server.Writes, server.Modes = nil, nil
-
-	d := attachDrawn(t, svc)
-
-	results, err := svc.Apply(t.Context(), service.Request{Colour: ptr(colour.MustParse("red"))})
-	require.NoError(t, err)
-	byDevice := map[string]service.Result{}
-	for _, r := range results {
-		byDevice[r.Device] = r
-	}
-	require.True(t, byDevice[drawnName].Applied, "the canvas was not lit: %+v", byDevice[drawnName])
-	require.True(t, byDevice[board().Name].Applied)
-	require.Contains(t, byDevice[twinName].Skipped, "drawn by hotaru as "+drawnName,
-		"the twin was not reported as handed over")
-	d.frames(t, 1)
-
-	restore, err := svc.Reconcile(t.Context(), nil)
-	require.NoError(t, err)
-	require.True(t, restore.Complete(), "the twin was counted as missing: %v", restore.Missing)
-
-	rules, err := svc.ReassertRules(t.Context())
-	require.NoError(t, err)
-	require.NotContains(t, rules, twinName, "the twin is due a re-assert")
-	require.NotContains(t, rules, drawnName, "a canvas is due a re-assert")
-	_, err = svc.Reconcile(t.Context(), []string{twinName})
-	require.NoError(t, err)
-
-	findings, err := svc.Probe(t.Context(), []string{"openrgb"})
-	require.NoError(t, err)
-	require.Len(t, findings, 1)
-	require.Error(t, findings[0].Err)
-
-	_, err = svc.Apply(t.Context(), service.Request{Devices: []string{"(openrgb)"}, Off: true})
-	require.NoError(t, err)
-
-	untouched(t, server, twinName)
-	require.NotEmpty(t, server.Writes, "the other devices were not written either")
-
-	// Detached, the twin is OpenRGB's again.
-	svc.DetachCanvas(d.attach)
-	require.Empty(t, viewOf(t, svc, twinName).Device.HandedTo)
-}
-
 func TestAStaticSceneIsOneFrameOnTheCanvas(t *testing.T) {
-	svc := service.New(nil, nil, servicetest.NoServer)
+	svc := service.New(nil)
 	svc.SetRecorder(recorder(t))
 	d := attachDrawn(t, svc)
 
@@ -238,7 +132,7 @@ func TestAStaticSceneIsOneFrameOnTheCanvas(t *testing.T) {
 func TestASceneEffectIsARendererOnTheCanvas(t *testing.T) {
 	// R5.1: a scene names a canvas's renderer as it names a firmware mode,
 	// with its colour and speed.
-	svc := service.New(nil, nil, servicetest.NoServer)
+	svc := service.New(nil)
 	svc.SetRecorder(recorder(t))
 	d := attachDrawn(t, svc)
 	speed := 100
@@ -275,7 +169,7 @@ func TestTheDeviceRulesBrightnessIsAMultiply(t *testing.T) {
 	// R2.4.
 	half := 50
 	cfg := &config.Config{Devices: []config.DeviceRule{{Match: "canvas", Brightness: &half}}}
-	svc := service.New(cfg, nil, servicetest.NoServer)
+	svc := service.New(cfg)
 	d := attachDrawn(t, svc)
 
 	_, err := svc.Apply(t.Context(), service.Request{Colour: ptr(colour.Colour{R: 200, G: 100, B: 50})})
@@ -286,7 +180,7 @@ func TestTheDeviceRulesBrightnessIsAMultiply(t *testing.T) {
 
 func TestTheFrameIntervalIsTheRulesAndNeverUnderTheFloor(t *testing.T) {
 	cfg := &config.Config{Devices: []config.DeviceRule{{Match: "canvas", FrameInterval: config.Duration(time.Millisecond)}}}
-	svc := service.New(cfg, nil, servicetest.NoServer)
+	svc := service.New(cfg)
 	d := attachDrawn(t, svc)
 
 	_, err := svc.Apply(t.Context(), service.Request{
@@ -299,7 +193,7 @@ func TestTheFrameIntervalIsTheRulesAndNeverUnderTheFloor(t *testing.T) {
 }
 
 func TestOffIsABlackFrameAndForgetsTheDevice(t *testing.T) {
-	svc := service.New(nil, nil, servicetest.NoServer)
+	svc := service.New(nil)
 	svc.SetRecorder(recorder(t))
 	d := attachDrawn(t, svc)
 
@@ -320,7 +214,7 @@ func TestReleaseHandsTheLightingBackAndForgetsTheScene(t *testing.T) {
 	// R4.2, and the half of its criterion the service owns: once released,
 	// nothing is recorded, so the device attached again is sent nothing
 	// until a scene asks.
-	svc := service.New(nil, nil, servicetest.NoServer)
+	svc := service.New(nil)
 	svc.SetRecorder(recorder(t))
 	d := attachDrawn(t, svc)
 	_, err := svc.Apply(t.Context(), service.Request{Colour: ptr(colour.MustParse("red"))})
@@ -342,47 +236,14 @@ func TestReleaseHandsTheLightingBackAndForgetsTheScene(t *testing.T) {
 	}
 }
 
-func TestNothingChangesWithNoCanvas(t *testing.T) {
-	// The rollback rule: with no canvas attached the client is OpenRGB's.
-	server := openrgb.NewFake(twin())
-	svc := service.New(nil, server, "")
-	results, err := svc.Apply(t.Context(), service.Request{Colour: ptr(colour.MustParse("red"))})
-	require.NoError(t, err)
-	require.True(t, results[0].Applied)
-	require.True(t, strings.EqualFold(server.Modes[0].Device, twinName))
-	require.Empty(t, svc.Canvases())
-}
-
 func ptr[T any](v T) *T { return &v }
-
-func TestATwinTheServerNoLongerListsIsNotWaitedFor(t *testing.T) {
-	// OpenRGB's exit reboots the first canvas device, so a restarted server
-	// can come up before the device is back and not list it. Desired state
-	// still names the twin; reconcile must not wait for a listing it would
-	// never write to.
-	store := recorder(t)
-	before := service.New(nil, openrgb.NewFake(twin(), board()), "")
-	before.SetRecorder(store)
-	_, err := before.Apply(t.Context(), service.Request{Colour: ptr(colour.MustParse("teal"))})
-	require.NoError(t, err)
-	require.Contains(t, store.Snapshot().Names(), twinName)
-
-	cfg := &config.Config{Devices: []config.DeviceRule{{Match: "canvas board", Twin: "(openrgb)"}}}
-	after := service.New(cfg, openrgb.NewFake(board()), "")
-	after.SetRecorder(store)
-	attachDrawn(t, after)
-
-	restore, err := after.Reconcile(t.Context(), nil)
-	require.NoError(t, err)
-	require.True(t, restore.Complete(), "the absent twin was waited for: %v", restore.Missing)
-}
 
 func TestAFullRestoreRedrawsACanvasAndANamedOneDoesNot(t *testing.T) {
 	// Through a receiver the first canvas device reboots behind a node that
 	// never changes, so a restore -- OpenRGB reconnecting, whose exit is
 	// what reboots it -- sends the frame again even though it is unchanged.
 	// A reconcile of named devices (re-assert, a preview ending) does not.
-	svc := service.New(nil, nil, servicetest.NoServer)
+	svc := service.New(nil)
 	svc.SetRecorder(recorder(t))
 	d := attachDrawn(t, svc)
 	other := genericStrip()
@@ -399,35 +260,4 @@ func TestAFullRestoreRedrawsACanvasAndANamedOneDoesNot(t *testing.T) {
 	_, err = svc.Reconcile(t.Context(), nil)
 	require.NoError(t, err)
 	d.frames(t, 2)
-}
-
-func TestAScenePaintedOnTheTwinLightsTheCanvas(t *testing.T) {
-	// A picture scene written before the canvas existed colours the OpenRGB
-	// listing light by light. hotaru does not write that listing any more,
-	// so the colours are carried to the canvas by key name -- the listing
-	// numbers its lights the other way round here, so an index would land
-	// on the wrong key.
-	listing := twin()
-	listing.LEDNames = []string{"L6", "L5", "L4", "L3", "L2", "L1"}
-	svc := service.New(nil, openrgb.NewFake(listing, board()), "")
-	svc.SetRecorder(recorder(t))
-	d := attachDrawn(t, svc)
-
-	results, err := svc.Apply(t.Context(), service.Request{
-		Assignments: solid(twinName+"/Keyboard[0]", "red"),
-	})
-	require.NoError(t, err)
-	lit := false
-	for _, r := range results {
-		if r.Device == drawnName {
-			lit = r.Applied
-		}
-	}
-	require.True(t, lit, "the canvas was not written: %+v", results)
-	d.frames(t, 1)
-	held, ok := d.fake.Showing(6)
-	require.True(t, ok)
-	require.Equal(t, uint8(255), held.R, "the twin's first light, light 6, is not red on the canvas")
-	held, _ = d.fake.Showing(1)
-	require.Zero(t, held.R, "the colour landed by index rather than by name")
 }

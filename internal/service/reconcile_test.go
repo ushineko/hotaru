@@ -2,17 +2,12 @@ package service_test
 
 import (
 	"path/filepath"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 	"github.com/ushineko/hotaru/internal/colour"
-	"github.com/ushineko/hotaru/internal/config"
 	"github.com/ushineko/hotaru/internal/devices"
-	"github.com/ushineko/hotaru/internal/openrgb"
-	"github.com/ushineko/hotaru/internal/queue"
-	"github.com/ushineko/hotaru/internal/scenes"
 	"github.com/ushineko/hotaru/internal/service"
 	"github.com/ushineko/hotaru/internal/service/servicetest"
 	"github.com/ushineko/hotaru/internal/state"
@@ -94,7 +89,7 @@ func TestARestoreThatReachedFewerDevicesIsUnfinished(t *testing.T) {
 	// A device can come up later than the service: a wireless keyboard asleep,
 	// a receiver enumerating late. Calling that a success is how a machine
 	// ends up half-lit with everything claiming to be fine.
-	svc := service.New(nil, nil, servicetest.NoServer)
+	svc := service.New(nil)
 	svc.SetRecorder(recorder(t))
 	servicetest.Attach(t, svc, auraBoard())
 	kb := servicetest.Attach(t, svc, k4())
@@ -134,19 +129,6 @@ func TestTurningADeviceOffIsNotSomethingToRestore(t *testing.T) {
 	require.NotContains(t, svc.Desired().Devices, "Generic Strip")
 }
 
-func TestOnlyDevicesWithARuleAreReasserted(t *testing.T) {
-	// Re-asserting everything would write constantly to hardware that has no
-	// such problem, and a write nobody needs can still collide with something.
-	cfg := &config.Config{Devices: []config.DeviceRule{
-		{Match: "keychron", Reassert: config.Duration(time.Minute)},
-	}}
-	svc := service.New(cfg, openrgb.NewFake(board(), keyboard()), "")
-
-	rules, err := svc.ReassertRules(t.Context())
-	require.NoError(t, err)
-	require.Equal(t, map[string]time.Duration{"Keychron K4 HE": time.Minute}, rules)
-}
-
 func TestADeviceIsDueTheFirstTimeAndThenOnItsInterval(t *testing.T) {
 	// Due immediately on first sight: hotaru has no idea what happened while
 	// it was not running, and the cheapest way to find out is to send what
@@ -163,56 +145,6 @@ func TestADeviceIsDueTheFirstTimeAndThenOnItsInterval(t *testing.T) {
 	// happened while it was gone is exactly what is not known.
 	reassert.Forget("Mouse")
 	require.Equal(t, []string{"Mouse"}, reassert.Due(now.Add(62*time.Second), rules))
-}
-
-func TestReconcilingWithNoServerSaysSoRatherThanForgetting(t *testing.T) {
-	svc := service.New(nil, nil, "127.0.0.1:6742")
-	svc.SetRecorder(recorder(t))
-
-	server := openrgb.NewFake(board())
-	svc.SetClient(server)
-	_, err := svc.Apply(t.Context(), service.Request{Assignments: solid("ASUS", "red")})
-	require.NoError(t, err)
-
-	svc.SetClient(nil)
-	_, err = svc.Reconcile(t.Context(), nil)
-	var down *service.Unreachable
-	require.ErrorAs(t, err, &down)
-	require.Contains(t, svc.Desired().Devices, "ASUS ROG MAXIMUS Z790 HERO",
-		"a server that went away is not a reason to forget what the lights should be")
-}
-
-func TestAPartialSceneBuildsOnWhatHotaruWroteNotOnWhatTheDeviceClaims(t *testing.T) {
-	// A device's reported colours are its LED buffer only while it is in a
-	// per-LED mode. Observed on real hardware: a board in Static reports its
-	// mode colour, and a cooler in Static reports black while visibly lit.
-	// Composing an exception onto either would blank the rest of the scene.
-	server := openrgb.NewFake(board())
-	svc := service.New(nil, server, "")
-	svc.SetRecorder(recorder(t))
-
-	_, err := svc.Apply(t.Context(), service.Request{Assignments: solid("ASUS", "teal")})
-	require.NoError(t, err)
-
-	// The device now misreports what it is showing, as real hardware does.
-	lying := openrgb.NewFake(board())
-	require.NoError(t, lying.SetFrame(t.Context(), "ASUS ROG MAXIMUS Z790 HERO", devices.Frame{
-		Device: "ASUS ROG MAXIMUS Z790 HERO", Colours: make([]colour.Colour, 4),
-	}))
-	svc.SetClient(lying)
-
-	// One LED is changed; the rest should keep the teal hotaru last wrote.
-	target, err := devices.ParseTarget("ASUS/Addressable 1[0:0]")
-	require.NoError(t, err)
-	_, err = svc.Apply(t.Context(), service.Request{Assignments: []devices.Assignment{
-		{Target: target, Colour: colour.MustParse("red")},
-	}})
-	require.NoError(t, err)
-
-	showing, _ := lying.Showing("ASUS ROG MAXIMUS Z790 HERO")
-	require.Equal(t, colour.MustParse("red"), showing.Colours[0], "the exception")
-	require.Equal(t, colour.MustParse("teal"), showing.Colours[1],
-		"the rest of the scene was blanked by trusting the device's report")
 }
 
 // The half of the test above a canvas keeps: an exception composes onto the
@@ -237,145 +169,4 @@ func TestAPartialSceneOnACanvasBuildsOnWhatHotaruWrote(t *testing.T) {
 		second, _ := board.Showing(3)
 		return first == lighting.Pixel{ID: 2, R: 255} && second == lighting.Pixel{ID: 3, G: 255, B: 128}
 	}, eventually, every, "the rest of the scene was not kept")
-}
-
-func TestRapidWritesToOneDeviceConvergeOnTheLast(t *testing.T) {
-	// Spec 026's failure, in the shape it should have had: three scenes in a
-	// second produced twelve jobs against a bounded queue that dropped the
-	// oldest. Here the newest replaces the pending one, nobody is dropped
-	// silently, and the device ends up showing what was last asked for.
-	server := openrgb.NewFake(board())
-	server.Delay = 20 * time.Millisecond
-
-	q := queue.New(t.Context())
-	defer q.Close()
-	svc := service.New(nil, server, "")
-	svc.SetRecorder(recorder(t))
-	svc.SetQueue(q)
-
-	colours := []string{"red", "green", "blue", "purple", "teal"}
-	var wg sync.WaitGroup
-	results := make([]service.Result, len(colours))
-	for i, name := range colours {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			out, err := svc.Apply(t.Context(), service.Request{Assignments: solid("ASUS", name)})
-			require.NoError(t, err)
-			if len(out) > 0 {
-				results[i] = out[0]
-			}
-		}()
-		time.Sleep(2 * time.Millisecond) // pressed in quick succession, not simultaneously
-	}
-	wg.Wait()
-
-	var applied, superseded int
-	for _, result := range results {
-		switch {
-		case result.Applied:
-			applied++
-		case result.Superseded:
-			superseded++
-		}
-	}
-	require.Positive(t, superseded, "every write waited its turn rather than being replaced")
-	require.Positive(t, applied)
-
-	// Whatever was reported, the device is showing a colour someone asked for,
-	// and the queue never wrote two frames at once.
-	showing, _ := server.Showing("ASUS ROG MAXIMUS Z790 HERO")
-	require.Contains(t, []string{"#ff0000", "#00ff00", "#0000ff", "#8000ff", "#00ff80"},
-		showing.Colours[0].String())
-}
-
-func TestASupersededWriteIsNotAFailure(t *testing.T) {
-	server := openrgb.NewFake(board())
-	server.Delay = 30 * time.Millisecond
-
-	q := queue.New(t.Context())
-	defer q.Close()
-	svc := service.New(nil, server, "")
-	svc.SetQueue(q)
-
-	// One write in flight, one waiting, one replacing the waiter.
-	go func() { _, _ = svc.Apply(t.Context(), service.Request{Assignments: solid("ASUS", "red")}) }()
-	time.Sleep(10 * time.Millisecond)
-
-	first := make(chan service.Result, 1)
-	go func() {
-		out, err := svc.Apply(t.Context(), service.Request{Assignments: solid("ASUS", "green")})
-		require.NoError(t, err)
-		first <- out[0]
-	}()
-	time.Sleep(5 * time.Millisecond)
-
-	out, err := svc.Apply(t.Context(), service.Request{Assignments: solid("ASUS", "blue")})
-	require.NoError(t, err)
-	require.True(t, out[0].Applied)
-
-	replaced := <-first
-	require.True(t, replaced.Superseded)
-	require.False(t, replaced.Applied)
-	require.Empty(t, replaced.Skipped, "superseded is not a device declining to do something")
-	require.NoError(t, replaced.Err, "nor an error")
-}
-
-func TestAnEffectIsPutBackOverAFrameItCannotShow(t *testing.T) {
-	/*
-		Re-assertion restores the mode as well as the colours, and the mode a
-		scene asked for is exactly the one a frame of many colours used to
-		disqualify. A keyboard rippling under typing coming back from a
-		reconcile sitting in Direct is the same bug as the scene never
-		applying it, one reconcile later.
-	*/
-	server := openrgb.NewFake(keyboard())
-	svc := service.New(nil, server, "")
-	svc.SetRecorder(recorder(t))
-
-	_, err := svc.Apply(t.Context(), service.Request{
-		Assignments: solid("Keychron/Keyboard[0]", "blue"),
-		Effects:     map[string]scenes.Effect{"Keychron": {Mode: "Solid Reactive"}},
-	})
-	require.NoError(t, err)
-
-	// Something else moves the keyboard, as a restarted server would.
-	require.NoError(t, server.SetMode(t.Context(), "Keychron K4 HE", "Direct", openrgb.Style{}))
-
-	restore, err := svc.Reconcile(t.Context(), nil)
-	require.NoError(t, err)
-	require.Equal(t, 1, restore.Applied)
-	require.Equal(t, "Solid Reactive", restore.Results[0].Mode,
-		"the effect was resolved away when it was put back")
-}
-
-func TestAnEffectIsPutBackInTheColourItWasGiven(t *testing.T) {
-	/*
-		Re-assertion re-derives the mode's colour from the frame otherwise,
-		which is the right answer only where nobody named one: a keyboard
-		rippling red over mostly-blue keys would come back blue.
-	*/
-	server := openrgb.NewFake(keyboard())
-	svc := service.New(nil, server, "")
-	svc.SetRecorder(recorder(t))
-
-	speed := 40
-	_, err := svc.Apply(t.Context(), service.Request{
-		Assignments: solid("Keychron/Keyboard[0]", "blue"),
-		Effects: map[string]scenes.Effect{
-			"Keychron": {Mode: "Solid Reactive", Colour: "#ff0000", Speed: &speed},
-		},
-	})
-	require.NoError(t, err)
-	require.NoError(t, server.SetMode(t.Context(), "Keychron K4 HE", "Direct", openrgb.Style{}))
-
-	_, err = svc.Reconcile(t.Context(), nil)
-	require.NoError(t, err)
-
-	last := server.Modes[len(server.Modes)-1]
-	require.Equal(t, "Solid Reactive", last.Mode)
-	require.NotNil(t, last.Colour)
-	require.Equal(t, "#ff0000", last.Colour.String(), "the named colour was re-derived from the frame")
-	require.NotNil(t, last.Speed)
-	require.Equal(t, 40, *last.Speed)
 }

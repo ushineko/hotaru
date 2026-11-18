@@ -10,147 +10,15 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/ushineko/hotaru/internal/canvas/canvastest"
 	"github.com/ushineko/hotaru/internal/colour"
-	"github.com/ushineko/hotaru/internal/devices"
-	"github.com/ushineko/hotaru/internal/openrgb"
 	"github.com/ushineko/hotaru/internal/scenes"
 	"github.com/ushineko/hotaru/internal/service"
 	"github.com/ushineko/hotaru/internal/service/servicetest"
 )
 
-/*
-Spec 061: an effect's several colours, through every path that writes one.
-
-The device below has the shapes OpenRGB reported on the machines measured: a
-Breathing that takes one or two colours and holds one, as a graphics card's
-does, and a Color Shift that takes exactly two, as a stick of RAM's does.
-*/
-
 const graphicsName = "Test Graphics Card"
 
-func graphics() devices.Device {
-	return devices.Device{
-		Name:     graphicsName,
-		LEDCount: 3,
-		Modes: []devices.Mode{
-			{Name: "Direct", PerLED: true},
-			{Name: "Breathing", ModeColour: true, ColoursMin: 1, ColoursMax: 2,
-				Colours: []colour.Colour{colour.MustParse("lime")}},
-			{Name: "Color Shift", ModeColour: true, ColoursMin: 2, ColoursMax: 2},
-			{Name: "Rainbow Wave"},
-		},
-		Zones:      []devices.Zone{{Name: "Card", First: 0, Count: 3}},
-		ActiveMode: "Direct",
-	}
-}
-
-func twoColours(mode string, colours ...string) map[string]scenes.Effect {
-	effect := scenes.Effect{Mode: mode}
-	effect.SetPalette(colours)
-	return map[string]scenes.Effect{"Graphics": effect}
-}
-
-func TestATwoColourFirmwareModeIsWrittenWithBoth(t *testing.T) {
-	server := openrgb.NewFake(graphics())
-	svc := service.New(nil, server, "")
-	svc.SetRecorder(recorder(t))
-
-	results, err := svc.Apply(t.Context(), service.Request{
-		Assignments: solid("Graphics", "white"),
-		Effects:     twoColours("Breathing", "#ff0000", "#0000ff"),
-	})
-	require.NoError(t, err)
-	require.Len(t, results, 1)
-	require.True(t, results[0].Applied, results[0].Skipped)
-	require.Empty(t, results[0].Unconfirmed, "both colours took and the read-back did not agree")
-
-	last := server.Modes[len(server.Modes)-1]
-	require.Equal(t, "Breathing", last.Mode)
-	require.Equal(t, []colour.Colour{colour.MustParse("#ff0000"), colour.MustParse("#0000ff")}, last.Colours)
-	require.Equal(t, "#ff0000", last.Colour.String(), "the first colour is not the style's colour")
-
-	after, err := server.Device(t.Context(), graphicsName)
-	require.NoError(t, err)
-	breathing, _ := after.Mode("Breathing")
-	require.Equal(t, []colour.Colour{colour.MustParse("#ff0000"), colour.MustParse("#0000ff")}, breathing.Colours)
-
-	kept := svc.Desired().Devices[graphicsName]
-	require.Equal(t, []string{"#ff0000", "#0000ff"}, kept.Named())
-	require.Equal(t, "#ff0000", kept.ModeColour, "an older build reads the first colour")
-}
-
-func TestAReconcileWritesBothColoursBack(t *testing.T) {
-	server := openrgb.NewFake(graphics())
-	svc := service.New(nil, server, "")
-	svc.SetRecorder(recorder(t))
-
-	_, err := svc.Apply(t.Context(), service.Request{
-		Assignments: solid("Graphics", "white"),
-		Effects:     twoColours("Breathing", "#ff0000", "#0000ff"),
-	})
-	require.NoError(t, err)
-	// Something else moves the card, as a restarted server would.
-	require.NoError(t, server.SetMode(t.Context(), graphicsName, "Direct", openrgb.Style{}))
-
-	restore, err := svc.Reconcile(t.Context(), nil)
-	require.NoError(t, err)
-	require.Equal(t, 1, restore.Applied)
-
-	last := server.Modes[len(server.Modes)-1]
-	require.Equal(t, "Breathing", last.Mode)
-	require.Equal(t, []colour.Colour{colour.MustParse("#ff0000"), colour.MustParse("#0000ff")}, last.Colours,
-		"the reconcile put back only the first colour")
-}
-
-func TestOneColourFillsAModeThatTakesExactlyTwo(t *testing.T) {
-	server := openrgb.NewFake(graphics())
-	svc := service.New(nil, server, "")
-
-	_, err := svc.Apply(t.Context(), service.Request{
-		Assignments: solid("Graphics", "white"),
-		Effects:     twoColours("Color Shift", "#00ff00"),
-	})
-	require.NoError(t, err)
-
-	after, err := server.Device(t.Context(), graphicsName)
-	require.NoError(t, err)
-	shift, _ := after.Mode("Color Shift")
-	require.Equal(t, []colour.Colour{colour.MustParse("#00ff00"), colour.MustParse("#00ff00")}, shift.Colours)
-}
-
-func TestAnUnreadableColourCostsThatColourAndIsSaid(t *testing.T) {
-	server := openrgb.NewFake(graphics())
-	svc := service.New(nil, server, "")
-
-	results, err := svc.Apply(t.Context(), service.Request{
-		Assignments: solid("Graphics", "white"),
-		Effects:     twoColours("Breathing", "#ff0000", "not a colour"),
-	})
-	require.NoError(t, err)
-	require.NotEmpty(t, results[0].Problems)
-
-	last := server.Modes[len(server.Modes)-1]
-	require.Equal(t, "#ff0000", last.Colour.String())
-	require.Empty(t, last.Colours, "one readable colour is written as one")
-}
-
-func TestASavedSceneKeepsEveryColourTheModeWasGiven(t *testing.T) {
-	server := openrgb.NewFake(graphics())
-	svc := service.New(nil, server, "")
-	svc.SetRecorder(recorder(t))
-
-	_, err := svc.Apply(t.Context(), service.Request{
-		Assignments: solid("Graphics", "white"),
-		Effects:     twoColours("Breathing", "#ff0000", "#0000ff"),
-	})
-	require.NoError(t, err)
-
-	scene, err := svc.SceneFrom("kept", "")
-	require.NoError(t, err)
-	require.Equal(t, []string{"#ff0000", "#0000ff"}, scene.Effects[graphicsName].Palette())
-}
-
 func TestACanvasBreathesBetweenTheColoursItIsGiven(t *testing.T) {
-	svc := service.New(nil, nil, servicetest.NoServer)
+	svc := service.New(nil)
 	attachDrawn(t, svc)
 
 	effect := scenes.Effect{Mode: "Breathing"}
@@ -174,7 +42,7 @@ func TestACanvasSpectrumWithNoColoursIsNotGivenTheFramesColour(t *testing.T) {
 		own. Spectrum shows the wheel without colours, and given the frame's
 		one it would hold still in it.
 	*/
-	svc := service.New(nil, nil, servicetest.NoServer)
+	svc := service.New(nil)
 	attachDrawn(t, svc)
 
 	_, err := svc.Apply(t.Context(), service.Request{

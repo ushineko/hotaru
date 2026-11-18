@@ -14,7 +14,6 @@ import (
 	"github.com/ushineko/hotaru/internal/colour"
 	"github.com/ushineko/hotaru/internal/config"
 	"github.com/ushineko/hotaru/internal/devices"
-	"github.com/ushineko/hotaru/internal/openrgb"
 	"github.com/ushineko/hotaru/internal/render"
 	"github.com/ushineko/sanshoku/lighting"
 )
@@ -64,9 +63,8 @@ type Canvas interface {
 /*
 AttachCanvas gives the service a canvas device to draw on.
 
-From here until DetachCanvas the device is listed beside OpenRGB's devices,
-and the OpenRGB device that is the same hardware is listed as handed to it
-and is not written to.
+From here until DetachCanvas the device is listed, written and restored, and a
+name a rule says it was formerly called is listed as handed to it (spec 073).
 */
 func (s *Service) AttachCanvas(c Canvas) {
 	s.mu.Lock()
@@ -79,7 +77,6 @@ func (s *Service) AttachCanvas(c Canvas) {
 }
 
 // DetachCanvas takes a canvas device away, as the daemon does when it goes.
-// The twin is OpenRGB's again from here.
 func (s *Service) DetachCanvas(c Canvas) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -343,10 +340,10 @@ type drawn struct {
 // choice is a renderer and the style the write path set it with.
 type choice struct {
 	effect render.Renderer
-	style  openrgb.Style
+	style  devices.Style
 }
 
-func (d *drawn) choose(ctx context.Context, mode string, style openrgb.Style, rule devices.Rule) error {
+func (d *drawn) choose(ctx context.Context, mode string, style devices.Style, rule devices.Rule) error {
 	if name := d.storedName(mode); name != "" {
 		return d.chooseStored(ctx, name, style)
 	}
@@ -420,7 +417,7 @@ the keyboard on something else leaves it there, because a person may have
 chosen it with the keyboard's own keys (R6.3). A preview draws the colour
 instead, and skips a different effect (R5.2).
 */
-func (d *drawn) chooseStored(ctx context.Context, name string, style openrgb.Style) error {
+func (d *drawn) chooseStored(ctx context.Context, name string, style devices.Style) error {
 	var want *lighting.Colour
 	if palette := style.Palette(); len(palette) > 0 {
 		want = &lighting.Colour{R: palette[0].R, G: palette[0].G, B: palette[0].B}
@@ -660,93 +657,67 @@ func firmwareShows(firmware lighting.Effect, n int) []colour.Colour {
 }
 
 /*
-lights is the OpenRGB server with the attached canvas devices beside it: the
-openrgb.Client every operation in this package already speaks.
+lights is the devices hotaru draws, as every operation in this package speaks
+to them (spec 076).
 
-A canvas device is listed, read back and written through the same calls as an
-OpenRGB device, so applying, reconciling, previewing and probing reach it with
-no second code path. The OpenRGB device that is the same hardware is marked
-HandedTo and refuses every write here, whatever asked for it.
+A device a rule says was formerly called something else is listed under that
+name too, handed to the canvas, so a record or scene made under the old name
+says where it went (spec 073); a write to it is refused with that reason.
 */
 type lights struct {
-	openrgb.Client
 	cfg   *config.Config
 	drawn []*drawn
-
-	mu sync.Mutex
-	// handed is OpenRGB's device names mapped to the canvas each is handed
-	// to, from the last listing.
-	handed map[string]string
 }
 
-// Devices is OpenRGB's devices, twins marked, and then the canvas devices.
-func (l *lights) Devices(ctx context.Context) ([]devices.Device, error) {
-	found, err := l.Client.Devices(ctx)
-	if err != nil {
-		return nil, err //nolint:wrapcheck // the client says which server
-	}
-	handed := map[string]string{}
-	for i := range found {
-		if to := twinOf(found[i], l.drawn, l.cfg); to != "" {
-			found[i].HandedTo = to
-			handed[found[i].Name] = to
-		}
-	}
-	listed := make(map[string]bool, len(found))
-	for _, device := range found {
-		listed[strings.ToLower(device.Name)] = true
+var _ machine = (*lights)(nil)
+
+// Devices is the canvas devices, then the names they were formerly called.
+func (l *lights) Devices(context.Context) ([]devices.Device, error) {
+	found := make([]devices.Device, 0, len(l.drawn))
+	listed := make(map[string]bool, len(l.drawn))
+	for _, d := range l.drawn {
+		found = append(found, d.device())
+		listed[strings.ToLower(d.Name())] = true
 	}
 	for _, d := range l.drawn {
-		device := d.device()
-		found = append(found, device)
 		former := devices.RuleFor(l.cfg, d.Name()).Formerly
 		if former == nil || listed[strings.ToLower(former.Name)] {
 			continue
 		}
-		found = append(found, formerly(device, *former))
-		handed[former.Name] = d.Name()
+		listed[strings.ToLower(former.Name)] = true
+		found = append(found, formerly(d.device(), *former))
 	}
-	l.mu.Lock()
-	l.handed = handed
-	l.mu.Unlock()
 	return found, nil
 }
 
-// Device is one device by name, a canvas device's own snapshot for one.
+// Device is one device by name.
 func (l *lights) Device(ctx context.Context, name string) (devices.Device, error) {
 	if d := l.canvas(name); d != nil {
 		return d.device(), nil
 	}
-	found, err := l.Client.Device(ctx, name)
-	if err != nil {
-		return found, err //nolint:wrapcheck // the client says which server
+	found, _ := l.Devices(ctx)
+	for _, device := range found {
+		if strings.EqualFold(device.Name, name) {
+			return device, nil
+		}
 	}
-	found.HandedTo = twinOf(found, l.drawn, l.cfg)
-	return found, nil
+	return devices.Device{}, &NoDevice{Name: name}
 }
 
-// SetMode chooses a canvas device's renderer, refuses a twin, and passes
-// anything else to OpenRGB.
-func (l *lights) SetMode(ctx context.Context, device, mode string, style openrgb.Style) error {
+// SetMode chooses a canvas device's renderer.
+func (l *lights) SetMode(ctx context.Context, device, mode string, style devices.Style) error {
 	if d := l.canvas(device); d != nil {
 		return d.choose(ctx, mode, style, devices.RuleFor(l.cfg, d.Name()))
 	}
-	if err := l.refuse(ctx, device); err != nil {
-		return err
-	}
-	return l.Client.SetMode(ctx, device, mode, style) //nolint:wrapcheck // the client says which server
+	return l.refuse(device)
 }
 
-// SetFrame draws a frame on a canvas device, refuses a twin, and passes
-// anything else to OpenRGB.
-func (l *lights) SetFrame(ctx context.Context, device string, frame devices.Frame) error {
+// SetFrame draws a frame on a canvas device.
+func (l *lights) SetFrame(_ context.Context, device string, frame devices.Frame) error {
 	if d := l.canvas(device); d != nil {
 		return d.draw(frame, devices.RuleFor(l.cfg, d.Name()))
 	}
-	if err := l.refuse(ctx, device); err != nil {
-		return err
-	}
-	return l.Client.SetFrame(ctx, device, frame) //nolint:wrapcheck // the client says which server
+	return l.refuse(device)
 }
 
 func (l *lights) canvas(name string) *drawn {
@@ -758,86 +729,31 @@ func (l *lights) canvas(name string) *drawn {
 	return nil
 }
 
-/*
-refuse is the twin rule at the last place it can be kept.
-
-Apply, reconcile and probe skip a twin before writing, and say why. This is
-for anything that does not, so that no path reaches OpenRGB with a write for
-hardware hotaru is drawing on: two streams to one keyboard alternate frames.
-*/
-func (l *lights) refuse(ctx context.Context, device string) error {
-	l.mu.Lock()
-	handed := l.handed
-	l.mu.Unlock()
-	if handed == nil {
-		if _, err := l.Devices(ctx); err != nil {
-			return err
+// refuse is the error for a write to a device that is not drawn: handed, for
+// a name a canvas was formerly called, and otherwise not there.
+func (l *lights) refuse(device string) error {
+	for _, d := range l.drawn {
+		if former := devices.RuleFor(l.cfg, d.Name()).Formerly; former != nil && strings.EqualFold(former.Name, device) {
+			return &Handed{Device: device, To: d.Name()}
 		}
-		l.mu.Lock()
-		handed = l.handed
-		l.mu.Unlock()
 	}
-	if to, ok := handed[device]; ok {
-		return &Handed{Device: device, To: to}
-	}
-	return nil
+	return &NoDevice{Name: device}
 }
 
 // Handed is a write refused because the device's lights are drawn by hotaru
-// as another device.
+// under another name.
 type Handed struct{ Device, To string }
 
 func (e *Handed) Error() string { return handedReason(e.Device, e.To) }
 
 func handedReason(device, to string) string {
-	return fmt.Sprintf("%s is drawn by hotaru as %s, so OpenRGB is not written to", device, to)
+	return fmt.Sprintf("%s is drawn by hotaru as %s", device, to)
 }
 
-/*
-twinOf is the canvas device an OpenRGB device is the same hardware as, or "".
+// NoDevice is a write or read for a device hotaru does not draw.
+type NoDevice struct{ Name string }
 
-A rule on the canvas device that names its twin decides alone. Otherwise the
-twin is the OpenRGB device whose location is the canvas's own hidraw node:
-OpenRGB writes a HID device's location as "HID: /dev/hidrawN". The paths are
-compared whole, so /dev/hidraw1 does not match /dev/hidraw10.
-
-The location is what OpenRGB found when it started, and it is not updated
-when a device re-enumerates on another node (measured on 2026-10-01: OpenRGB
-listed the keyboard at /dev/hidraw5 after it had moved to /dev/hidraw4). A
-twin that will not match is named in a rule; spec 060 records the reading.
-*/
-func twinOf(device devices.Device, all []*drawn, cfg *config.Config) string {
-	for _, d := range all {
-		if rule := devices.RuleFor(cfg, d.Name()); rule.Twin != "" {
-			if strings.Contains(strings.ToLower(device.Name), strings.ToLower(rule.Twin)) {
-				return d.Name()
-			}
-			continue
-		}
-		where := strings.TrimSpace(strings.TrimPrefix(device.Location, "HID:"))
-		if where != "" && where == d.Path() {
-			return d.Name()
-		}
-		// A canvas named as OpenRGB names the same hardware (spec 075): the
-		// graphics card's OpenRGB location is an I2C one, not a node.
-		if strings.EqualFold(device.Name, d.Name()) && device.Canvas == nil {
-			return d.Name()
-		}
-	}
-	return ""
-}
-
-/*
-handedByRule reports whether a name is the OpenRGB twin of an attached canvas
-device by a rule's twin key. It is how reconcile recognises a twin that
-OpenRGB is not listing, when there is no location to match.
-*/
-func (s *Service) handedByRule(name string) bool {
-	s.mu.RLock()
-	all := s.drawnNow()
-	s.mu.RUnlock()
-	return twinOf(devices.Device{Name: name}, all, s.config()) != ""
-}
+func (e *NoDevice) Error() string { return fmt.Sprintf("no device called %q", e.Name) }
 
 /*
 PutBack writes a device's recorded stored effect and colour back to its

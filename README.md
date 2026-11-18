@@ -7,16 +7,18 @@
 RGB lighting and AIO cooler control for Linux and Windows, as a CLI, a
 background service and a desktop GUI.
 
-It drives lighting through [OpenRGB](https://openrgb.org/). On Linux it also
-drives an NZXT Kraken Elite and its LCD screen directly, over `/dev/hidraw` and
-usbfs. The user can set colours down to individual fans, define scenes, put a
+It drives every device itself, through
+[sanshoku](https://github.com/ushineko/sanshoku): the lighting on the desk's
+devices and, on Linux, an NZXT Kraken Elite and its LCD screen, over
+`/dev/hidraw`, usbfs and I2C. The user can set colours down to individual fans, define scenes, put a
 live dashboard on the cooler's screen, and bind it all to keys.
 
 > **Status**: working on Linux: lighting, the cooler, its screen, scenes,
 > the hotkeys, the CLI, the service and its API, the mapping wizard and the
 > window. Tested on two Linux machines with different hardware.
-> **On Windows**: lighting, scenes, the CLI, the window and the service work.
-> The cooler, readings and hotkeys do not yet. See
+> **On Windows**: the AULA F75, scenes, the CLI, the window and the service
+> work. The other lit devices are expected and not yet tested there. The
+> cooler, readings and hotkeys do not work yet. See
 > [What it runs on](#what-it-runs-on) and the [Roadmap](#roadmap).
 
 ## Contents
@@ -35,7 +37,7 @@ live dashboard on the cooler's screen, and bind it all to keys.
 
 | | |
 |---|---|
-| **Lighting** | Drives its supported devices directly through sanshoku, and anything else OpenRGB can see, addressed by device, zone, LED range, or a segment. The user can label devices in plain words, e.g. "top fan red, bottom fan blue" |
+| **Lighting** | Drives the devices sanshoku supports directly, addressed by device, zone, LED range, or a segment. The user can label devices in plain words, e.g. "top fan red, bottom fan blue" |
 | **Scenes** | A named set of colour assignments, an effect per device and what the screen shows, applied as a previewable unit. |
 | **The cooler** | Coolant and CPU temperature, pump and fan speeds, read from the device directly. |
 | **The screen** | The cooler's LCD: its own readout, an image, an animation, or a live dashboard rendered from the telemetry |
@@ -53,9 +55,9 @@ $ paru -S hotaru hotaru-gui     # or hotaru alone, on a machine with no desktop
 [`hotaru`](https://aur.archlinux.org/packages/hotaru) is one PKGBUILD building both, from the release tarball.
 
 `hotaru` is the CLI and the service and needs no graphics stack, so it
-installs on a headless box; `hotaru-gui` is the window. hotaru draws the
-devices it supports itself, through sanshoku; OpenRGB is optional, for
-hardware sanshoku does not drive. See [docs/packaging.md](docs/packaging.md).
+installs on a headless box; `hotaru-gui` is the window. hotaru draws every
+device it supports itself, through sanshoku, and needs no other daemon. See
+[docs/packaging.md](docs/packaging.md).
 
 Hotaru supports direct device integration with the NZXT Kraken Elite cooler: its LCD screen, its ring and its fans. Other cooler LCD screens are not currently supported by hotaru.
 
@@ -80,7 +82,7 @@ $ loginctl enable-linger $USER    # so lighting comes back at boot, not at login
 Starting the daemon and turning on the user
 manager at boot is the prerequisite. `hotaru light health` will tell you if anything is missing.
 
-The cooler needs no root. logind puts an ACL on a device the package's udev
+The devices need no root. logind puts an ACL on a device the package's udev
 rule tags, but the rule only applies to a device plugged in after it lands.
 The first run after installing may want a reboot or
 `udevadm trigger`. `hotaru light health` will report the devices it can see.
@@ -100,10 +102,7 @@ the `PATH`, a Start Menu entry for the window, and the Windows service
 keeps its files in `%ProgramData%\hotaru`. Any user signed in at the machine
 can use it, from the CLI or the window, with no flag.
 
-The installer does not install OpenRGB, which is optional: hotaru draws the
-devices it supports through sanshoku. For other hardware, install OpenRGB 1.1
-or later, not 1.0, and start its SDK server, ideally as a service at boot.
-[docs/hardware.md](docs/hardware.md) explains why 1.0 is excluded. The
+hotaru draws the devices it supports itself and needs no other program. The
 uninstaller keeps `%ProgramData%\hotaru`, so a reinstall puts the lights back
 as they were. [docs/packaging.md](docs/packaging.md#windows-the-installer) has
 the details.
@@ -116,8 +115,8 @@ $ hotaru light set red     # it works
 $ hotaru wizard            # name this machine's lights by looking at them
 ```
 
-The wizard is optional. With no configuration at all, every device OpenRGB
-reports is in scope and every decision comes from what the hardware says about
+The wizard is optional. With no configuration at all, every device hotaru
+finds is in scope and every decision comes from what the hardware says about
 itself.
 
 ## Architecture
@@ -155,17 +154,17 @@ flowchart TB
     DOOR --> CORE
     CORE --> STATE --> RECON --> MBOX
     CORE --> MBOX
-    MBOX -->|"mode + frame"| ORGB["OpenRGB server"]
+    MBOX -->|"renderer + frame"| CANV["sanshoku drivers<br/>hidraw · I2C"]
     MBOX -->|"dashboard frames"| HID["cooler · hidraw + usbfs<br/>Linux"]
     CORE -->|"telemetry"| HID
-    ORGB --> LIT["lit devices"]
+    CANV --> LIT["lit devices"]
     HID --> COOL["cooler + LCD"]
 
     classDef s fill:#292c30,stroke:#3daee9,color:#fcfcfc
     classDef b fill:#1d1f22,stroke:#3c4045,color:#fcfcfc
     classDef h fill:#141618,stroke:#3c4045,color:#a1a9b1
     class API,DOOR,CORE,STATE,RECON,MBOX s
-    class ORGB,HID,SM b
+    class CANV,HID,SM b
     class LIT,COOL h
 ```
 
@@ -178,9 +177,9 @@ Salient design decisions:
   Windows service.
 - **Machine, not desktop scoped.** On Linux the service is a user unit with
   no session dependency. On Windows it is a service of the machine. Either
-  way the lights come back at boot. Hotaru waits intelligently for OpenRGB to fully identify its devices before proceeding.
+  way the lights come back at boot. hotaru waits for each device to appear before it puts the lights back.
 - **The service reconciles state.** hotaru maintains the scene as an active daemon so devices can't drift or fail to configure.
-- **It is fast.** Native Go, callouts to OpenRGB SDK, backend is REST over UNIX domain sockets. Cooler LCD display support is native Go. No external programs needed. No python needed.
+- **It is fast.** Native Go device drivers, through sanshoku; the backend is REST over UNIX domain sockets. No external programs needed. No python needed.
 - **Plays nice with others.** With nothing recorded, hotaru discovers your
   hardware and touches none of it until asked.
 - **Designed to work out of the box.** Built in wizard, config, and diagnostics. Implements reasonable defaults. 
@@ -191,17 +190,21 @@ Full detail is in [docs/architecture.md](docs/architecture.md).
 
 **Linux**, KDE Plasma 6.x. Developed on Arch/CachyOS but may work on other distros. You will have the best experience on KDE Plasma/CachyOS.
 
-**Windows 11**, in part. The service, the CLI, the window, lighting through
-OpenRGB, scenes and the AULA F75 work, and the service runs at boot. Not yet:
+**Windows 11**, in part. The service, the CLI, the window, scenes and the
+AULA F75 work, and the service runs at boot. The other lit devices are
+expected through sanshoku and not yet tested; the RTX 4090's driver is Linux
+only. Not yet:
 the Kraken and its screen, readings for the dashboard, the hotkeys, and
 putting the lights back after sleep. The port is tracked in specs 067, 071
 and 072.
 
-**Lighting is owned by OpenRGB**. hotaru does not do lighting itself. The cooler is the
-exception: hotaru speaks NZXT's protocol directly, so telemetry and the screen
-do not depend on liquidctl (python) (spec 012).
-[docs/hardware.md](docs/hardware.md) lists what has actually been tested, and
-points at OpenRGB's own device list for everything else.
+**Supported hardware is what sanshoku drives.** On the development desk that
+is the NZXT Kraken Elite, the SteelSeries Apex Pro TKL Wireless Gen 3, the
+AULA F75, an ASUS Aura mainboard (the Z790 Hero), the Corsair MM700, the
+Keychron K4 HE, the MSI RTX 4090 Suprim Liquid X (Linux only) and the Logitech
+G502 X PLUS. hotaru speaks to each device directly, with no daemon between
+(specs 012, 075 and 076). [docs/hardware.md](docs/hardware.md) lists what has
+actually been tested, and points at sanshoku's device list for everything else.
 
 Nothing is assumed about your hardware. All features should work consistently everywhere. However, some functions such as the ability to display the LCD dashboards, pictures, and animated GIFs, require a supported cooler display.
 
@@ -220,6 +223,8 @@ Nothing is assumed about your hardware. All features should work consistently ev
 | 067 | Windows: the service, the CLI and the window build and run | **done** — [#190](https://github.com/ushineko/hotaru/issues/190) |
 | 071 | The AULA F75 | **done** — [#193](https://github.com/ushineko/hotaru/issues/193) |
 | 072 | Windows: a service at boot, and an installer | **done** — [#202](https://github.com/ushineko/hotaru/issues/202) |
+| 075 | Every device through sanshoku | in review — [#211](https://github.com/ushineko/hotaru/issues/211) |
+| 076 | OpenRGB removed | in review — [#215](https://github.com/ushineko/hotaru/issues/215) |
 | — | Windows: readings, hotkeys, the Kraken, sleep and resume | not started |
 
 
@@ -234,8 +239,9 @@ hotaru is a ground-up rearchitecture. Hardware learnings are carried over.
 The cooler driver hotaru wrote for itself (spec 012) now lives in
 [sanshoku](https://github.com/ushineko/sanshoku), a Go module of device
 drivers shared with hayami. hotaru reads and draws on the Kraken through its
-`nzxt` package (spec 059), and draws the effects on a keyboard that has none of
-its own through sanshoku's lighting capability, `lighting.Canvas` (spec 060).
+`nzxt` package (spec 059), and draws every lit device through sanshoku's
+lighting capability, `lighting.Canvas` (specs 060 and 075). hotaru drove
+lighting through [OpenRGB](https://openrgb.org/) until spec 076.
 
 ## Documentation
 
@@ -245,7 +251,7 @@ its own through sanshoku's lighting capability, `lighting.Canvas` (spec 060).
   the decisions behind it.
 * [docs/api.md](docs/api.md) - the HTTP and JSON API, route by route.
 * [docs/hardware.md](docs/hardware.md) - what has been tested, and the known
-  faults of particular devices and OpenRGB releases.
+  faults of particular devices.
 * [docs/packaging.md](docs/packaging.md) - the AUR packages and the Windows
   installer.
 * [docs/migration.md](docs/migration.md) - the move from
@@ -269,6 +275,16 @@ MIT. See [LICENSE](LICENSE).
 
 ### Unreleased
 
+- OpenRGB is gone (spec [076](specs/076-remove-the-openrgb-backend.md),
+  [#215](https://github.com/ushineko/hotaru/issues/215)). hotaru supports what
+  sanshoku drives, and draws every device itself. `light rescan`, `light
+  probe` and their routes are removed, with the `--openrgb` flag of `serve`.
+  Health has three states: `no-devices`, `none-in-scope` and `healthy`.
+  Status has no `connected`, `address` or `protocol`; a result has no
+  `resized`, an attempt no `settled`. A request for a device hotaru does not
+  draw is a 404. A rules file with `twin` still loads, and the key is ignored.
+  Records and scenes made through OpenRGB still apply, through `formerly` and
+  the zone fit.
 - hotaru draws every device it supports through sanshoku, and OpenRGB is
   optional (spec [075](specs/075-every-device-through-sanshoku.md),
   [#211](https://github.com/ushineko/hotaru/issues/211)): the ASUS Aura

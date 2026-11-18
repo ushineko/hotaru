@@ -92,14 +92,6 @@ func (c *Client) Apply(ctx context.Context, req ApplyRequest) (ApplyResponse, er
 	return out, err
 }
 
-// Probe asks the service to find out what each device can actually do. It
-// writes, and puts everything back.
-func (c *Client) Probe(ctx context.Context, req ProbeRequest) ([]Finding, error) {
-	var out ProbeResponse
-	err := c.do(ctx, http.MethodPost, "/"+Version+"/lighting/probe", req, &out)
-	return out.Findings, err
-}
-
 // Release hands a device hotaru draws back to its firmware, which on the first
 // such device reboots it.
 func (c *Client) Release(ctx context.Context, device string) (ReleaseResponse, error) {
@@ -112,14 +104,6 @@ func (c *Client) Release(ctx context.Context, device string) (ReleaseResponse, e
 func (c *Client) Status(ctx context.Context) (Status, error) {
 	var out Status
 	err := c.do(ctx, http.MethodGet, "/"+Version+"/status", nil, &out)
-	return out, err
-}
-
-// Rescan restarts the OpenRGB server so it detects hardware again, and puts
-// the lights back on what it finds.
-func (c *Client) Rescan(ctx context.Context) (RescanResponse, error) {
-	var out RescanResponse
-	err := c.do(ctx, http.MethodPost, "/"+Version+"/rescan", struct{}{}, &out)
 	return out, err
 }
 

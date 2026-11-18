@@ -2,8 +2,8 @@
 Package state remembers what the lights should be showing.
 
 Desired state, not observed: what the user last asked for, which is the thing
-worth putting back after a reboot, after a device wakes up having forgotten, or
-after an OpenRGB server restarts and hands back devices with no colour.
+worth putting back after a reboot, or after a device wakes up having
+forgotten.
 
 It lives in $XDG_STATE_HOME rather than among the configuration, because it is
 not configuration. It changes every time a scene is applied, it means nothing on

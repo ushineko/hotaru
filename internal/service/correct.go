@@ -8,7 +8,6 @@ import (
 	"github.com/ushineko/hotaru/internal/colour"
 	"github.com/ushineko/hotaru/internal/config"
 	"github.com/ushineko/hotaru/internal/devices"
-	"github.com/ushineko/hotaru/internal/openrgb"
 )
 
 /*
@@ -28,7 +27,7 @@ reported in the asked-for one. One in any other colour was changed by
 something else, and is reported as the device gives it.
 */
 type corrected struct {
-	openrgb.Client
+	machine
 	cfg  *config.Config
 	kept *corrections
 }
@@ -64,10 +63,10 @@ func (c *corrected) profile(device string) devices.Profile {
 	return devices.RuleFor(c.cfg, device).Colour
 }
 
-func (c *corrected) SetMode(ctx context.Context, device, mode string, style openrgb.Style) error {
+func (c *corrected) SetMode(ctx context.Context, device, mode string, style devices.Style) error {
 	profile := c.profile(device)
 	if profile.Zero() || len(style.Palette()) == 0 {
-		return c.Client.SetMode(ctx, device, mode, style) //nolint:wrapcheck // the client says which server
+		return c.machine.SetMode(ctx, device, mode, style) //nolint:wrapcheck // the client says which server
 	}
 	asked := style.Palette()
 	written := style
@@ -76,7 +75,7 @@ func (c *corrected) SetMode(ctx context.Context, device, mode string, style open
 		written.Colour = &first
 	}
 	written.Colours = profile.Colours(style.Colours)
-	if err := c.Client.SetMode(ctx, device, mode, written); err != nil {
+	if err := c.machine.SetMode(ctx, device, mode, written); err != nil {
 		return err //nolint:wrapcheck // the client says which server
 	}
 	c.kept.mode(device, mode, asked, profile.Colours(asked))
@@ -86,10 +85,10 @@ func (c *corrected) SetMode(ctx context.Context, device, mode string, style open
 func (c *corrected) SetFrame(ctx context.Context, device string, frame devices.Frame) error {
 	profile := c.profile(device)
 	if profile.Zero() {
-		return c.Client.SetFrame(ctx, device, frame) //nolint:wrapcheck // the client says which server
+		return c.machine.SetFrame(ctx, device, frame) //nolint:wrapcheck // the client says which server
 	}
 	written := devices.Frame{Device: frame.Device, Colours: profile.Colours(frame.Colours)}
-	if err := c.Client.SetFrame(ctx, device, written); err != nil {
+	if err := c.machine.SetFrame(ctx, device, written); err != nil {
 		return err //nolint:wrapcheck // the client says which server
 	}
 	c.kept.frame(device, frame.Colours, written.Colours)
@@ -97,7 +96,7 @@ func (c *corrected) SetFrame(ctx context.Context, device string, frame devices.F
 }
 
 func (c *corrected) Devices(ctx context.Context) ([]devices.Device, error) {
-	found, err := c.Client.Devices(ctx)
+	found, err := c.machine.Devices(ctx)
 	if err != nil {
 		return nil, err //nolint:wrapcheck // the client says which server
 	}
@@ -108,7 +107,7 @@ func (c *corrected) Devices(ctx context.Context) ([]devices.Device, error) {
 }
 
 func (c *corrected) Device(ctx context.Context, name string) (devices.Device, error) {
-	found, err := c.Client.Device(ctx, name)
+	found, err := c.machine.Device(ctx, name)
 	if err != nil {
 		return found, err //nolint:wrapcheck // the client says which server
 	}

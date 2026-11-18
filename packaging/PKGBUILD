@@ -57,18 +57,16 @@ build() {
 
 check() {
   cd "$pkgbase-$pkgver"
-  # No hardware, no OpenRGB, no display and no root. That is a packaging
+  # No hardware, no display and no root. That is a packaging
   # property as much as a testing one.
   go test ./...
 }
 
 package_hotaru() {
-  # OpenRGB is optional (spec 075): hotaru draws every device it supports
-  # through sanshoku, and speaks to an OpenRGB server only for devices sanshoku
-  # does not drive.
+  # hotaru draws every device it supports through sanshoku, built into the
+  # binary (spec 076).
   optdepends=('nvidia-utils: GPU temperature on the dashboard'
-              'hotaru-gui: the desktop window'
-              'openrgb: lighting for devices sanshoku does not drive')
+              'hotaru-gui: the desktop window')
 
   cd "$pkgbase-$pkgver"
 
@@ -80,17 +78,15 @@ package_hotaru() {
   install -Dm644 packaging/hotaru.service \
     "$pkgdir/usr/lib/systemd/user/hotaru.service"
 
-  # Without this the service sees the cooler and cannot open it. See
+  # Without this the service finds the devices and cannot open them. See
   # packaging/60-hotaru.rules.
   install -Dm644 packaging/60-hotaru.rules \
     "$pkgdir/usr/lib/udev/rules.d/60-hotaru.rules"
 
   # Examples, not configuration: hotaru ships no rules at all and drives every
-  # device OpenRGB reports until it is told otherwise.
+  # device it finds until it is told otherwise.
   install -Dm644 examples/hotaru.yml \
     "$pkgdir/usr/share/doc/$pkgname/hotaru.yml.example"
-  install -Dm644 packaging/openrgb-enumeration.conf.example \
-    "$pkgdir/usr/share/doc/$pkgname/openrgb-enumeration.conf.example"
 
   install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"

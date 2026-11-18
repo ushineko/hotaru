@@ -13,7 +13,6 @@ import (
 	"github.com/ushineko/hotaru/internal/api"
 	"github.com/ushineko/hotaru/internal/cooler"
 	"github.com/ushineko/hotaru/internal/service"
-	"github.com/ushineko/hotaru/internal/service/servicetest"
 	"github.com/ushineko/hotaru/internal/testsock"
 )
 
@@ -52,7 +51,7 @@ func ask(t *testing.T, svc *service.Service, path string) api.Cooling {
 }
 
 func TestTheCoolerIsServedFromTheService(t *testing.T) {
-	svc := service.New(nil, nil, servicetest.NoServer)
+	svc := service.New(nil)
 	svc.SetCooler(fakeCooler{})
 
 	got := ask(t, svc, "/"+api.Version+"/cooling")
@@ -71,7 +70,7 @@ func TestAMachineWithNoCoolerAnswersRatherThanFailing(t *testing.T) {
 		apart from a broken socket, and a dashboard that cannot distinguish
 		them shows an alarm for an ordinary desktop.
 	*/
-	svc := service.New(nil, nil, servicetest.NoServer)
+	svc := service.New(nil)
 
 	got := ask(t, svc, "/"+api.Version+"/cooling")
 	require.True(t, got.Absent)
@@ -82,7 +81,7 @@ func TestAMachineWithNoCoolerAnswersRatherThanFailing(t *testing.T) {
 func TestACoolerThatWillNotAnswerIsNamedRatherThanHidden(t *testing.T) {
 	// Present and silent is a different problem from absent, and the device
 	// name is the first thing somebody needs in order to chase it.
-	svc := service.New(nil, nil, servicetest.NoServer)
+	svc := service.New(nil)
 	svc.SetCooler(fakeCooler{err: errors.New("no 7501 reply: none in 12 reports")})
 
 	got := ask(t, svc, "/"+api.Version+"/cooling")
@@ -98,7 +97,7 @@ func TestCoolingIsReachableThroughTheClient(t *testing.T) {
 	listener, err := api.Listen(t.Context(), socket)
 	require.NoError(t, err)
 
-	svc := service.New(nil, nil, servicetest.NoServer)
+	svc := service.New(nil)
 	svc.SetCooler(fakeCooler{})
 
 	ctx, cancel := context.WithCancel(t.Context())
