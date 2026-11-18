@@ -322,7 +322,7 @@ maintainer comparing:
 - Loading: "choppy" on the side fans' 16-LED strip; the head and tail now
   glide between lights: "smoother, close enough".
 
-Not yet run: E2 to E5, and the live criteria.
+E2 to E5 and the live criteria: below.
 
 ### E2 and E3: drift and the mouse's sleep (2026-11-17, the maintainer watching)
 
@@ -364,3 +364,39 @@ Three faults found and fixed on the way, each with a test:
 | Rainbow Pulse | Rainbow Wave | close enough |
 | Tai Chi | Fade In | fair (E2 run, red/blue) |
 | Water Cooler | Fade In | close enough |
+
+### E5: the other drawn devices (2026-11-17, the maintainer watching)
+
+The MM700, the G502 (on its receiver) and the K4 HE given `follow: kraken`
+for the test.
+
+- Tai Chi: MM700, G502, K4 HE all read as Tai Chi
+- Spectrum Wave: all three read as Spectrum Wave
+- Breathing: all three breathe red (K4 HE on its own firmware Breathing)
+- Candle: all three flicker orange
+
+The G502's battery over 2 hours 10 minutes of moving effects, read every five
+minutes with `sanshoku-bench read`: 79% at 14:48, 78% at 15:23, 77% at 16:23,
+and 77% at 16:58. About 1% an hour, read in whole percents; Logitech rates the
+mouse at about 37 hours with its lighting on, near 2.7% an hour. A still colour
+for the same time was not measured: the drain a moving effect adds is too
+small to matter at this reading.
+
+### The live criteria (2026-11-17, the maintainer watching)
+
+- Fading three colours: all devices red green blue together
+- Speed change: Spectrum Wave at 80, all turning fast together
+- No follow: MM700 kept Spectrum Wave while the others took Tai Chi
+- Multinexus at 55 kept through a service restart (device reports now 55)
+- light match: Breathing on the Aura beside the Kraken; a tenth a step too coarse (2.14 a hair fast, next too slow); F/S fine step added; 2.16 closest; the breath's shape differs, so the two drift apart over time
+- The window: the MM700's card set to follow the Kraken; with the Kraken on
+  Tai Chi, the mousepad took it at once, in step.
+- A scene of the maintainer's, given an effect on the Kraken with no colours
+  of its own: the Kraken and its followers ran Tai Chi in the scene's Kraken
+  colours, and changing the scene to Starry Night carried through. This is
+  the model the maintainer set out: System's Follows is the default, the
+  scene the override, and an effect runs in the scene's colours.
+- Found on the way and fixed: the match ran Tai Chi in red alone, a still
+  ring; the MM700 refused every frame after a Wine game left its lighting
+  endpoint open (sanshoku #99, hotaru #221, both before the release).
+
