@@ -322,7 +322,50 @@ func sceneColours(frame devices.Frame, most int) []colour.Colour {
 	slices.SortStableFunc(chosen, func(a, b colour.Colour) int {
 		return slices.Index(distinct, a) - slices.Index(distinct, b)
 	})
-	return chosen
+	return stretched(chosen)
+}
+
+// visibleSpread is how far apart the furthest two of an effect's colours from
+// a scene are made to be, and stretchMost the most they are pushed for it.
+const (
+	visibleSpread = 120
+	stretchMost   = 4.0
+)
+
+/*
+stretched is a scene's colours pushed apart from their average, each in its
+own direction, until the furthest two are visibly different: teal more teal,
+olive more olive. A picture's colours on one device can sit so close that an
+effect through them looks like no effect (space-2's teals and olives, a
+shimmer nobody saw); the maintainer chose to keep them the scene's and make
+them visible. Colours already far enough apart are left as they are.
+*/
+func stretched(colours []colour.Colour) []colour.Colour {
+	if len(colours) < 2 {
+		return colours
+	}
+	widest := 0.0
+	var r, g, b float64
+	for i, c := range colours {
+		r, g, b = r+float64(c.R), g+float64(c.G), b+float64(c.B)
+		for _, d := range colours[i+1:] {
+			widest = math.Max(widest, apart(c, d))
+		}
+	}
+	if widest >= visibleSpread || widest == 0 {
+		return colours
+	}
+	n := float64(len(colours))
+	r, g, b = r/n, g/n, b/n
+	k := math.Min(stretchMost, visibleSpread/widest)
+	push := func(v, mean float64) uint8 {
+		return uint8(math.Round(math.Max(0, math.Min(255, mean+(v-mean)*k)))) //nolint:gosec // clamped to a byte
+	}
+	out := make([]colour.Colour, len(colours))
+	for i, c := range colours {
+		out[i] = colour.Colour{R: push(float64(c.R), r), G: push(float64(c.G), g), B: push(float64(c.B), b)}
+	}
+	return out
 }
 
 // apart is how far two colours are, in RGB.

@@ -259,7 +259,7 @@ func TestAnEffectTakesTheScenesColoursAndSoDoItsFollowers(t *testing.T) {
 func TestRainbowWaveTakesTheScenesColours(t *testing.T) {
 	board := canvastest.NewBoard("ASUS ROG MAXIMUS Z790 HERO", canvastest.Zone("Addressable 1", 4))
 	svc := servicetest.New(t, nil, board)
-	teal, green := colour.MustParse("#4c8c88"), colour.MustParse("#788c60")
+	teal, green := colour.MustParse("#00a0a0"), colour.MustParse("#a0a000")
 	_, err := svc.Apply(t.Context(), service.Request{
 		Assignments: []devices.Assignment{
 			{Target: devices.Target{Device: "maximus", Part: "Addressable 1", Picks: []config.LEDs{{First: 0, Last: 1}}}, Colour: teal},
