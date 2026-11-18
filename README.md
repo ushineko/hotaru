@@ -26,6 +26,7 @@ live dashboard on the cooler's screen, and bind it all to keys.
 - [Install](#install)
 - [Architecture](#architecture)
 - [What it runs on](#what-it-runs-on)
+- [Hardware: what works and how to help](#hardware-what-works-and-how-to-help)
 - [Roadmap](#roadmap)
 - [Where it comes from](#where-it-comes-from)
 - [Documentation](#documentation)
@@ -211,6 +212,47 @@ actually been tested, and points at sanshoku's device list for everything else.
 
 Nothing is assumed about your hardware. All features should work consistently everywhere. However, some functions such as the ability to display the LCD dashboards, pictures, and animated GIFs, require a supported cooler display.
 
+## Hardware: what works and how to help
+
+sanshoku's [device list](https://github.com/ushineko/sanshoku/blob/main/docs/devices.md)
+puts every device in one of three places:
+
+- **Tested**: run on real hardware, with the results recorded. The devices on
+  the development desk are all here.
+- **Expected**: the protocol is known from public sources, and the driver
+  opens it, but nobody has run it yet. The MSI cards beside the RTX 4090, the
+  Kraken 2024 Plus, more ASUS Aura controllers and the MM700 3XL are here.
+- **Not listed**: hotaru does not open it at all.
+
+**A device that is not listed is left alone.** hotaru writes nothing to it,
+reports no error, and lights everything else as usual. Its own software, or
+its last colour, stays in charge of it.
+
+**Since 2.0 that includes devices only OpenRGB drove.** Before 2.0, hotaru
+lit anything OpenRGB supported. It now drives every device itself, through
+sanshoku, so a device sanshoku has no driver for stays dark in hotaru. Many
+Corsair coolers and controllers are in that group. A device without a
+sanshoku driver needs one written; see below.
+
+### How to help
+
+You do not need to write code to move a device forward.
+
+- **You own an expected device:** install `sanshoku-bench` and send a
+  [device report](https://github.com/ushineko/sanshoku/issues/new?template=device-report.yml).
+  `scan` and `read` only read; the report says how to run the light test as
+  well. One clean report moves a device from expected to tested.
+- **Your device is not listed:** send the same report, with a USB capture of
+  the vendor's own app changing a colour if you can make one. The report
+  explains how. A driver starts from what the device is seen to accept.
+- **hotaru lights a device wrongly, or not at all:** open an
+  [issue here](https://github.com/ushineko/hotaru/issues/new/choose) with
+  what `hotaru light list` and `hotaru light health` print.
+
+Bench output never contains a serial number or a Bluetooth address. Code is
+welcome too: [CONTRIBUTING.md](CONTRIBUTING.md) here, and sanshoku's own for
+drivers.
+
 ## Roadmap
 
 | Spec | | |
@@ -278,6 +320,10 @@ MIT. See [LICENSE](LICENSE).
 
 ### Unreleased
 
+- The README says what hardware works and how an owner can help: what
+  tested, expected and not listed mean, that a device sanshoku has no driver
+  for is left alone, and that since 2.0 that includes devices only OpenRGB
+  drove. Issue forms in hotaru and sanshoku ask for what a device needs.
 - The window's tests draw on one thread (spec
   [079](specs/079-gui-tests-one-thread.md),
   [#219](https://github.com/ushineko/hotaru/issues/219)). Fyne's test driver
