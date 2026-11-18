@@ -51,7 +51,7 @@ back to what they were showing.`,
 		},
 	}
 	cmd.Flags().String("with", "", "the device to match against; the device's follow rule where absent")
-	cmd.Flags().String("colour", "red", "the effect's colour while matching")
+	cmd.Flags().String("colour", "red,blue", "the effect's colours while matching, first to last")
 	return cmd
 }
 
@@ -104,8 +104,13 @@ func Match(ctx context.Context, client *api.Client, asker Asker, device, effect,
 	}
 
 	show := func() error {
+		// Both are given the effect, whether or not the device follows, in
+		// colours enough to show it: Tai Chi in one is a still ring (the
+		// live run).
+		shown := api.Effect{Mode: effect}
+		shown.SetPalette(strings.Split(shade, ","))
 		_, err := client.Apply(ctx, api.ApplyRequest{
-			Colour: shade, Devices: []string{target.Name, leader.Name}, Mode: effect, Exactly: true,
+			Devices: []string{target.Name, leader.Name}, Effects: map[string]api.Effect{leader.Name: shown, target.Name: shown},
 			Preview: true, Restart: true, Pace: map[string]float64{target.Name: pace},
 		})
 		return quiet(err)

@@ -333,6 +333,11 @@ type ApplyRequest struct {
 	// Restart starts each effect again from its beginning, even where
 	// nothing about it changed: how effects are started in step.
 	Restart bool `json:"restart,omitempty"`
+
+	// Effects name what each device should be doing, by any part of its
+	// name, as a scene's do: how a match gives the leader an effect in its
+	// colours, and its followers take it (spec 077).
+	Effects map[string]Effect `json:"effects,omitempty"`
 }
 
 /*

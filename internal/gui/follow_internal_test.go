@@ -27,6 +27,8 @@ func TestTheLeaderAndItsEffects(t *testing.T) {
 	assert.True(t, req.Restart, "the two do not start together")
 	assert.Equal(t, map[string]float64{card.Name: 1.4}, req.Pace)
 	assert.ElementsMatch(t, []string{card.Name, kraken.Name}, req.Devices)
+	assert.Equal(t, "Tai Chi", req.Effects[kraken.Name].Mode, "the leader is not given the effect")
+	assert.Len(t, req.Effects[kraken.Name].Palette(), 2, "one colour shows Tai Chi as a still ring")
 
 	_, ok = leaderNamed([]api.Device{kraken}, api.Device{Name: "Corsair MM700"})
 	assert.False(t, ok)

@@ -883,6 +883,7 @@ func parse(req ApplyRequest) (service.Request, error) {
 		Off: req.Off, Devices: req.Devices,
 		Mode: req.Mode, Exactly: req.Exactly, Preview: req.Preview,
 		Brightness: req.Brightness, Pace: req.Pace, Restart: req.Restart,
+		Effects: req.Effects,
 	}
 	if req.Colour != "" {
 		col, err := colour.Parse(req.Colour)
@@ -902,8 +903,8 @@ func parse(req ApplyRequest) (service.Request, error) {
 		}
 		out.Assignments = append(out.Assignments, devices.Assignment{Target: target, Colour: col})
 	}
-	if len(out.Assignments) == 0 && out.Colour == nil && !out.Off {
-		return service.Request{}, errors.New("nothing to apply: give a colour, assignments, or off")
+	if len(out.Assignments) == 0 && out.Colour == nil && !out.Off && len(out.Effects) == 0 {
+		return service.Request{}, errors.New("nothing to apply: give a colour, assignments, effects, or off")
 	}
 	return out, nil
 }

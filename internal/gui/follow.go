@@ -118,16 +118,22 @@ func paceOf(device api.Device, effect string) float64 {
 }
 
 /*
-matchRequest runs an effect on a device and its leader together, from the
-start, at a trial pace: a preview, so nothing is recorded, and the lights go
-back when the dialog closes.
+matchRequest gives the device and its leader an effect in red and blue, both
+from the start, at a trial pace: a preview, so
+nothing is recorded, and the lights go back when the dialog closes. Two
+colours, because Tai Chi in one is a still ring (the live run).
 */
 func matchRequest(device, leader, effect string, pace float64) api.ApplyRequest {
+	shown := api.Effect{Mode: effect}
+	shown.SetPalette(matchColours)
 	return api.ApplyRequest{
-		Colour: "red", Devices: []string{device, leader}, Mode: effect, Exactly: true,
+		Devices: []string{device, leader}, Effects: map[string]api.Effect{leader: shown, device: shown},
 		Preview: true, Restart: true, Pace: map[string]float64{device: pace},
 	}
 }
+
+// matchColours are what a match runs an effect in.
+var matchColours = []string{"#ff0000", "#0000ff"}
 
 // Pace limits as the rules take them; the slider covers the useful part.
 const (
