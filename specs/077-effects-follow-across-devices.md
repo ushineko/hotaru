@@ -2,11 +2,20 @@
 
 **Issue**: [#218](https://github.com/ushineko/hotaru/issues/218)
 
-## Status: INCOMPLETE
+## Status: COMPLETE
 
 ## Executive Summary
 
-Written last.
+Every device hotaru draws runs the Kraken's fourteen effects, matched by eye
+beside the cooler, and a device whose rule says `follow` takes its leader's
+effect, colours and speed, in step; the window's System cards and `hotaru
+light follow` set it, through a new service route that writes the rules. An
+effect a scene gives with no colours runs in the scene's colours, spread
+apart where they sit close; a device with one light takes its own best fit;
+`hotaru light match` and the window's Match pace set a device's pace by eye.
+Reviewers should look first at `internal/service/follow.go` (following, the
+colours, the 4090 table), `internal/service/rules.go` (the service writing
+the rules) and `internal/render/fans.go` (the renderers).
 
 ## Context
 
@@ -236,7 +245,7 @@ What sanshoku has and lacks (sanshoku #89):
     `light match` writes the trim it was left at;
   - a re-assert resends a still canvas frame;
   - latest-wins holds on a slow canvas.
-- [ ] Live, with someone watching:
+- [x] Live, with someone watching:
   - each of the 14 effects follows on the Kraken, the Aura's three headers
     and the RTX 4090;
   - E5's four effects follow on the MM700, the G502 and the K4 HE (and the
@@ -428,4 +437,12 @@ USB is about 18 frames a second each (three exchanges each on the MM700), and
 the G502's radio carries 18 a second while it is awake. The K4 HE and the RTX
 4090 run their own firmware effects and cost nothing while they do. A still
 scene sends nothing after its frame.
+
+### The window's Match pace (2026-11-17, the maintainer watching)
+
+On the Z790's card, Match pace on Breathing: the Kraken and the Aura ran it
+together, red then blue, at the saved 2.16; each slider release and typed
+value started both again at the new pace; Cancel kept 2.16. The 2.16, written
+by hand from `light match`, was there after the service had restarted many
+times that day.
 
