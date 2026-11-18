@@ -172,6 +172,9 @@ devices:
   one, else the rule's segments that cover the zone end to end. `shapes` says
   whether a header holds fans (`ring`) or a strip (`line`), since the board
   cannot tell.
+- **Colours.** An effect a scene gives with no colours of its own runs in the
+  scene's colours on that device, in order. A scene with a red ring and blue
+  fans gives the Kraken Tai Chi in red and blue, and its followers the same.
 - **Following.** Each device's card in the window's System section has a
   Follows choice. `hotaru light follow maximus kraken` does the same, and
   `hotaru light follow maximus none` stops it. A device given a leader starts

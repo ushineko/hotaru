@@ -218,3 +218,38 @@ func TestColoursOnAColourlessEffectAreLeftOut(t *testing.T) {
 	running, _ := cooler.Running()
 	assert.Equal(t, "Spectrum Wave", running)
 }
+
+/*
+An effect given no colours of its own takes the scene's colours on the
+device, in order, and a follower takes the same: a red ring and blue fans are
+Tai Chi in red and blue on the Kraken and on what follows it (the
+maintainer's model of scenes and following).
+*/
+func TestAnEffectTakesTheScenesColoursAndSoDoItsFollowers(t *testing.T) {
+	cooler := canvastest.NewFirmware(canvastest.NewBoard("NZXT Kraken Elite V2",
+		canvastest.Ring("Ring", 24), canvastest.Ring("Fan", 8, 8, 8)), "Fading", "Tai Chi")
+	cooler.MaxColours, cooler.Speeds = 3, []int{350, 300, 250, 150, 80}
+	board := canvastest.NewBoard("ASUS ROG MAXIMUS Z790 HERO", canvastest.Zone("Addressable 1", 4))
+	svc := servicetest.New(t, &config.Config{Devices: []config.DeviceRule{{Match: "maximus", Follow: "kraken"}}},
+		board, cooler)
+
+	red, blue := colour.MustParse("red"), colour.MustParse("blue")
+	_, err := svc.Apply(t.Context(), service.Request{
+		Assignments: []devices.Assignment{
+			{Target: devices.Target{Device: "kraken", Part: "Ring"}, Colour: red},
+			{Target: devices.Target{Device: "kraken", Part: "Fan"}, Colour: blue},
+		},
+		Effects: map[string]scenes.Effect{"kraken": {Mode: "Tai Chi"}},
+	})
+	require.NoError(t, err)
+
+	running, _ := cooler.Running()
+	require.Equal(t, "Tai Chi", running)
+	colours, _ := cooler.Settings()
+	assert.Equal(t, []lighting.Colour{{R: 255}, {B: 255}}, colours, "the Kraken's effect is not in the scene's colours")
+
+	follower := viewOf(t, svc, "ASUS ROG MAXIMUS Z790 HERO").Device
+	require.Equal(t, "Tai Chi", follower.ActiveMode)
+	mode, _ := follower.Mode("Tai Chi")
+	assert.Equal(t, []colour.Colour{red, blue}, mode.Colours, "the follower is not in the leader's colours")
+}

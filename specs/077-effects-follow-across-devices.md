@@ -102,7 +102,12 @@ What sanshoku has and lacks (sanshoku #89):
   effect for a follower overrides it for that device, for that scene. Any
   device may lead; a follower of a follower takes the first leader's, and a
   loop of follows takes nothing, since none of it is given an effect first. A
-  device with one light takes its own best fit (R3.6) over a drawn copy. The window and `light map` set
+  device with one light takes its own best fit (R3.6) over a drawn copy.
+  An effect a scene gives with no colours of its own takes the scene's
+  colours on the device, each once, in the order its lights show them, as
+  many as the effect takes; a follower takes the same colours. The rule is
+  the default and the scene the override, as the maintainer put it on
+  2026-11-17: an existing scene, given an effect, runs it in its colours. The window and `light map` set
   and clear `follow`, as they set every other rule. The maintainer's rules
   start with the Aura and the RTX 4090 following the Kraken; the rest are the
   maintainer's to choose.

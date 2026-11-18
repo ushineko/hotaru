@@ -701,6 +701,17 @@ func modeColoursFor(device *devices.Device, mode string, frame devices.Frame, of
 	if known && !m.ModeColour {
 		return nil
 	}
+	if known && !m.PerLED && m.ColoursMax > 1 {
+		/*
+			An effect that takes several colours, given none of its own,
+			takes the scene's colours on the device, in order: a red ring and
+			blue fans are Tai Chi in red and blue, not in the one most of the
+			device is (spec 077, the maintainer's model).
+		*/
+		if distinct := frame.Distinct(); len(distinct) > 1 {
+			return distinct[:min(len(distinct), m.ColoursMax)]
+		}
+	}
 	if uniform, ok := frame.Uniform(); ok {
 		return []colour.Colour{uniform}
 	}

@@ -265,12 +265,19 @@ func slotsSaid(slots api.ColourSlots) string {
 /*
 fallbackSaid is what an empty slot shows: what the device fills it with.
 
-The first falls back to the frame for a mode that shows one colour of its own,
-and to nothing for one that draws without colours. A later one repeats the
-colour before it, as the hardware path fills slots past the ones given.
+With none given, an effect that takes several colours takes the scene's colours
+on the device, in order. Otherwise the first falls back to the frame for a mode
+that shows one colour of its own, and to nothing for one that draws without
+colours. A later one repeats the colour before it, as the hardware path fills
+slots past the ones given.
 */
 func fallbackSaid(device api.Device, mode string, palette []string, slot int) string {
+	slots, _ := colourSlots(device, mode)
 	switch {
+	case len(palette) == 0 && slots.Most > 1:
+		// The scene's colours on the device, in order, as many as the
+		// effect takes; its followers take the same (spec 077).
+		return "the scene's colours on this device"
 	case len(palette) > 0 || slot > 0:
 		return "the same as the one above"
 	case slices.Contains(device.OneColour, mode):

@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/ushineko/hotaru/internal/colour"
 	"github.com/ushineko/hotaru/internal/config"
 	"github.com/ushineko/hotaru/internal/devices"
 	"github.com/ushineko/hotaru/internal/render"
@@ -52,6 +53,11 @@ func withFollowers(cfg *config.Config, found []devices.Device, req Request) (Req
 			if !given.Named() && req.Mode != "" && named(req.Devices, leader.Name) {
 				given = scenes.Effect{Mode: req.Mode}
 			}
+			if given.Named() && len(given.Palette()) == 0 {
+				// The leader's colours in the request, which its own effect
+				// takes too: the follower shows what the leader does.
+				given.SetPalette(coloursOn(req, leader))
+			}
 			if !given.Named() {
 				continue
 			}
@@ -74,6 +80,30 @@ func withFollowers(cfg *config.Config, found []devices.Device, req Request) (Req
 		req.Restart = true // started in step (R3.5)
 	}
 	return req, followed
+}
+
+/*
+coloursOn is the colours a request gives a device, each once, in the order
+given, leaving out black: its assignments to the device or its parts, else
+the request's colour.
+*/
+func coloursOn(req Request, device *devices.Device) []string {
+	var out []string
+	add := func(c colour.Colour) {
+		if c != colour.Black && !slices.Contains(out, c.String()) {
+			out = append(out, c.String())
+		}
+	}
+	lowered := strings.ToLower(device.Name)
+	for _, a := range req.Assignments {
+		if a.Target.Device != "" && strings.Contains(lowered, strings.ToLower(a.Target.Device)) {
+			add(a.Colour)
+		}
+	}
+	if len(out) == 0 && req.Colour != nil {
+		add(*req.Colour)
+	}
+	return out
 }
 
 // leaderOf is the device a follow rule names, by any part of its name, other
