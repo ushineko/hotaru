@@ -394,7 +394,8 @@ func (d *drawn) canvasOf() devices.Canvas {
 	d.mu.Unlock()
 	out := devices.Canvas{
 		Drawing: status.Drawing, Interval: status.Interval, Rate: status.Rate, Frames: status.Frames, Own: own,
-		Fades: d.Hold() > 0,
+		Failing: status.Failing,
+		Fades:   d.Hold() > 0,
 	}
 	if watch := d.Watch(); watch.Watched {
 		out.Watch = &devices.Watch{Answering: watch.Answering, Asked: watch.Asked, PutBack: watch.PutBack}

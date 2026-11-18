@@ -992,7 +992,8 @@ func canvases(in []service.CanvasState) []Canvas {
 }
 
 func asCanvas(c service.CanvasState) *Canvas {
-	out := &Canvas{Device: c.Device, Effect: c.Effect, Drawing: c.Drawing, Rate: c.Rate, Frames: c.Frames, Own: c.Own}
+	out := &Canvas{Device: c.Device, Effect: c.Effect, Drawing: c.Drawing, Rate: c.Rate, Frames: c.Frames, Own: c.Own,
+		Failing: c.Failing}
 	if c.Drawing {
 		out.Interval = c.Interval.String()
 	}

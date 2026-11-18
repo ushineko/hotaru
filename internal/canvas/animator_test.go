@@ -279,3 +279,60 @@ func TestTheSameEffectInOtherColoursIsShown(t *testing.T) {
 	require.Eventually(t, func() bool { return len(r.clock.Tickers()) == 2 }, soon, poll,
 		"the new colours were taken for the show already running")
 }
+
+/*
+A device that refuses every frame says so after failingShown, and is given up
+after reattachAfter, for the daemon to open again; a failure now and then
+says nothing (hotaru #221: the MM700 refused for an hour while it was listed
+as drawing).
+*/
+func TestADeviceRefusingEveryFrameSaysSoAndIsGivenUp(t *testing.T) {
+	fake := canvastest.New(3)
+	fake.SilentNext = 1000
+	r := start(t, fake)
+	r.anim.Show(show(render.Spectrum, render.Params{}, 500*time.Millisecond))
+	require.Eventually(t, func() bool { return r.clock.Running() == 1 }, soon, poll)
+
+	tick := func() {
+		ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
+		defer cancel()
+		r.clock.Tick(ctx)
+	}
+	tick() // half a second of refusals
+	require.Empty(t, r.anim.Status().Failing, "a moment's failure was said")
+	for range 4 {
+		tick()
+	}
+	require.Eventually(t, func() bool { return r.anim.Status().Failing != "" }, soon, poll,
+		"two seconds of refusals were not said")
+
+	var ended error
+	for range 30 {
+		tick()
+		select {
+		case ended = <-r.done:
+			r.done <- ended // for the cleanup
+		default:
+			continue
+		}
+		break
+	}
+	require.ErrorIs(t, ended, canvas.ErrRefusing, "ten seconds of refusals did not give the device up")
+}
+
+// A frame that lands clears what was said.
+func TestAFrameThatLandsClearsTheRefusal(t *testing.T) {
+	fake := canvastest.New(3)
+	fake.SilentNext = 6
+	r := start(t, fake)
+	r.anim.Show(show(render.Spectrum, render.Params{}, 500*time.Millisecond))
+	require.Eventually(t, func() bool { return r.clock.Running() == 1 }, soon, poll)
+	for range 5 {
+		require.True(t, r.clock.Tick(t.Context()))
+	}
+	require.Eventually(t, func() bool { return r.anim.Status().Failing != "" }, soon, poll)
+	require.True(t, r.clock.Tick(t.Context()))
+	require.True(t, r.clock.Tick(t.Context()))
+	require.Eventually(t, func() bool { return r.anim.Status().Failing == "" }, soon, poll,
+		"a frame that landed did not clear it")
+}

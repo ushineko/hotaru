@@ -151,6 +151,8 @@ func drawing(effect string, c api.Canvas) string {
 		effect = "nothing drawn"
 	}
 	switch {
+	case c.Failing != "":
+		return effect + ", refusing every frame"
 	case c.Drawing:
 		return fmt.Sprintf("%s, %.1f fps", effect, c.Rate)
 	case c.Own:

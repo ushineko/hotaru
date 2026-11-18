@@ -114,7 +114,8 @@ func sameDevice(a, b api.Device) bool {
 	}
 	// Drawing or holding is the change a person sees. The rate moves on
 	// every poll and is left for the next rebuild.
-	if (a.Canvas == nil) != (b.Canvas == nil) || (a.Canvas != nil && a.Canvas.Drawing != b.Canvas.Drawing) {
+	if (a.Canvas == nil) != (b.Canvas == nil) ||
+		(a.Canvas != nil && (a.Canvas.Drawing != b.Canvas.Drawing || a.Canvas.Failing != b.Canvas.Failing)) {
 		return false
 	}
 	if len(a.Colours) != len(b.Colours) {

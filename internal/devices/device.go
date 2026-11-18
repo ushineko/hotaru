@@ -74,6 +74,8 @@ type Canvas struct {
 	Rate float64
 	// Frames is every frame sent since the device was attached.
 	Frames int
+	// Failing is why every frame has failed for a while (hotaru #221).
+	Failing string
 
 	// Own is the device showing its firmware's own stored effect, with
 	// nothing drawn over it (spec 071).

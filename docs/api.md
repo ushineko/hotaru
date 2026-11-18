@@ -123,7 +123,10 @@ whose colour hotaru rewrites on a timer carries the interval in `reassert`.
 **Every device is a canvas device**: hotaru draws it itself (specs 060 and
 075). It carries `canvas`, which says what the drawing is doing, and
 `led_names`, its own names for its keys. Its `modes` are hotaru's renderers.
-With `drawing` false the device is holding the one frame it was sent. A name a
+With `drawing` false the device is holding the one frame it was sent.
+`failing` says why every frame to it has failed for 2 seconds or more: it is
+not showing what it is said to draw. After 10 seconds hotaru opens it again,
+and `health` names it (#221). A name a
 rule says the device was formerly called (spec 073) is listed too, with
 `handed_to` naming the device that draws it, and hotaru writes nothing to it.
 

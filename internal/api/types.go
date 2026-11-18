@@ -161,6 +161,9 @@ type Canvas struct {
 	// Own is the device showing its firmware's own stored effect, Effect,
 	// with nothing drawn (spec 071).
 	Own bool `json:"own,omitempty"`
+	// Failing is why every frame to the device has failed for a while: it
+	// is not showing what it is said to be drawing (hotaru #221).
+	Failing string `json:"failing,omitempty"`
 	// Watch is the power-cycle watcher's notes, for a device it watches.
 	Watch *Watch `json:"watch,omitempty"`
 }
