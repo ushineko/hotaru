@@ -1,0 +1,59 @@
+name: A device is not lit, or not lit right
+description: hotaru leaves a device dark, lights it wrongly, or reports something odd about it.
+title: "device: <product name>, <what goes wrong>"
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        hotaru drives the devices sanshoku has a driver for. Its
+        [device list](https://github.com/ushineko/sanshoku/blob/main/docs/devices.md) says which are
+        **tested**, which are **expected**, and a device that is not listed is left alone.
+
+        If your device is expected or not listed, a
+        [device report in sanshoku](https://github.com/ushineko/sanshoku/issues/new?template=device-report.yml)
+        helps the most: it is how a driver is confirmed or started. Open this issue as well when
+        hotaru itself is part of the problem.
+  - type: input
+    id: product
+    attributes:
+      label: Product
+      description: The device's name as sold, and the line `lsusb` prints for it.
+      placeholder: "Corsair MM700, ID 1b1c:1b9b"
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: hotaru version and system
+      description: What `hotaru --version` prints, the operating system, and how hotaru was installed.
+      placeholder: "hotaru version 2.0.0, CachyOS, from the AUR"
+    validations:
+      required: true
+  - type: textarea
+    id: wrong
+    attributes:
+      label: What goes wrong
+      description: What you asked for, what you expected, and what the device did.
+    validations:
+      required: true
+  - type: textarea
+    id: list
+    attributes:
+      label: hotaru light list
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: health
+    attributes:
+      label: hotaru light health
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: journal
+    attributes:
+      label: The service's log (optional)
+      description: "`journalctl --user -u hotaru -n 100`, with anything personal taken out."
+      render: text
