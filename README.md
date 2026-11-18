@@ -14,8 +14,7 @@ devices and, on Linux, an NZXT Kraken Elite and its LCD screen, over
 live dashboard on the cooler's screen, and bind it all to keys.
 
 > **Status**: working on Linux: lighting, the cooler, its screen, scenes,
-> the hotkeys, the CLI, the service and its API, the mapping wizard and the
-> window. Tested on two Linux machines with different hardware.
+> the hotkeys, the CLI, the service and its API, and the window. Tested on two Linux machines with different hardware.
 > **On Windows**: the AULA F75, scenes, the CLI, the window and the service
 > work. The other lit devices are expected and not yet tested there. The
 > cooler, readings and hotkeys do not work yet. See
@@ -112,12 +111,16 @@ the details.
 ```console
 $ hotaru light list        # what it found
 $ hotaru light set red     # it works
-$ hotaru wizard            # name this machine's lights by looking at them
 ```
 
-The wizard is optional. With no configuration at all, every device hotaru
-finds is in scope and every decision comes from what the hardware says about
-itself.
+On a board with addressable headers, give each header with lights on it its
+length: `hotaru light length <board>/<header>` lights it, and you move the
+red end onto the strip's last light. `hotaru light fans` says a header holds
+fans. Naming parts is optional: `hotaru light name <device>` goes through
+them, and a scene can always say `device/zone`. The window's System section
+has the same on each device's card. With no configuration at all, every
+device hotaru finds is in scope and every decision comes from what the
+hardware says about itself.
 
 ## Architecture
 
@@ -182,7 +185,7 @@ Salient design decisions:
 - **It is fast.** Native Go device drivers, through sanshoku; the backend is REST over UNIX domain sockets. No external programs needed. No python needed.
 - **Plays nice with others.** With nothing recorded, hotaru discovers your
   hardware and touches none of it until asked.
-- **Designed to work out of the box.** Built in wizard, config, and diagnostics. Implements reasonable defaults. 
+- **Designed to work out of the box.** Built in setup commands, config, and diagnostics. Implements reasonable defaults. 
 
 Full detail is in [docs/architecture.md](docs/architecture.md).
 
@@ -275,6 +278,15 @@ MIT. See [LICENSE](LICENSE).
 
 ### Unreleased
 
+- `hotaru light map` is replaced by commands that show their answer (spec
+  [078](specs/078-replace-light-map.md),
+  [#220](https://github.com/ushineko/hotaru/issues/220)). `light length`
+  lights a header with its last light red, moved until it sits on the strip's
+  end; `light fans` and `light strip` say what a header holds; `light name`
+  names a part once it is seen lit, or goes through a device's parts. Each
+  device's card in the window has Headers and Names. `light map` says what
+  replaced it. A keyboard that cannot go dark, and a brightness, are set by
+  hand in the rules.
 - Effects follow across devices (spec
   [077](specs/077-effects-follow-across-devices.md),
   [#218](https://github.com/ushineko/hotaru/issues/218)). Every device hotaru
@@ -285,10 +297,11 @@ MIT. See [LICENSE](LICENSE).
   memory is put back after a restart. `hotaru light match` sets a device's
   `pace` by eye, from the CLI or a follower's card in the window, and `hotaru
   light follow` or the card's Follows sets what a device follows, written to
-  the rules by the service; `hotaru light map` finds a header's length and asks a
-  keyboard nothing about chaining; `shapes` says what a header holds. A
-  `reassert` rule reaches a device hotaru draws. `light map` now writes back
-  every rule key, where it dropped several.
+  the rules by the service. An effect with no colours of its own runs in the
+  scene's, spread apart where they sit close. `shapes` says what a header
+  holds. A `reassert` rule reaches a device hotaru draws. A device that
+  refuses every frame is said in health, the list and the window, and opened
+  again ([#221](https://github.com/ushineko/hotaru/issues/221)).
 - OpenRGB is gone (spec [076](specs/076-remove-the-openrgb-backend.md),
   [#215](https://github.com/ushineko/hotaru/issues/215)). hotaru supports what
   sanshoku drives, and draws every device itself. `light rescan`, `light

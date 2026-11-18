@@ -9,9 +9,12 @@ import (
 	"io"
 	"maps"
 	"net/http"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/ushineko/hotaru/internal/colour"
+	"github.com/ushineko/hotaru/internal/config"
 	"github.com/ushineko/hotaru/internal/cooler"
 	"github.com/ushineko/hotaru/internal/devices"
 	"github.com/ushineko/hotaru/internal/images"
@@ -842,7 +845,22 @@ func Handler(svc *service.Service) http.Handler {
 			write(w, http.StatusBadRequest, Error{Error: "that request does not decode", Detail: err.Error()})
 			return
 		}
-		match, err := svc.SetRule(r.Context(), req.Device, service.RuleChange{Follow: req.Follow, Pace: req.Pace})
+		change := service.RuleChange{Follow: req.Follow, Pace: req.Pace, Lengths: req.Lengths, Shapes: req.Shapes, Fans: req.Fans}
+		for name, seg := range req.Segments {
+			if change.Segments == nil {
+				change.Segments = map[string]*config.Segment{}
+			}
+			if seg == nil {
+				change.Segments[name] = nil
+				continue
+			}
+			named := &config.Segment{Zone: seg.Zone}
+			if seg.First != nil || seg.Last != nil {
+				named.LEDs = &config.LEDs{First: deref(seg.First), Last: deref(seg.Last)}
+			}
+			change.Segments[name] = named
+		}
+		match, err := svc.SetRule(r.Context(), req.Device, change)
 		var bad *service.BadRule
 		switch {
 		case errors.As(err, &bad):
@@ -968,10 +986,17 @@ func describe(view service.View) Device {
 	if view.Rule.Reassert > 0 {
 		device.Reassert = view.Rule.Reassert.String()
 	}
-	for name := range view.Rule.Segments {
+	for name, seg := range view.Rule.Segments {
 		device.Segments = append(device.Segments, name)
+		part := NamedPart{Name: name, RuleSegment: RuleSegment{Zone: seg.Zone}}
+		if seg.LEDs != nil {
+			first, last := seg.LEDs.First, seg.LEDs.Last
+			part.First, part.Last = &first, &last
+		}
+		device.Named = append(device.Named, part)
 	}
 	sortStrings(device.Segments)
+	slices.SortFunc(device.Named, func(a, b NamedPart) int { return strings.Compare(a.Name, b.Name) })
 	device.Toggles = append(device.Toggles, view.Rule.Toggles...)
 	device.LEDNames = view.Device.LEDNames
 	device.HandedTo = view.Device.HandedTo
@@ -1233,4 +1258,12 @@ func orEmpty(list []string) []string {
 		return []string{}
 	}
 	return list
+}
+
+// deref is a number, or 0 where there is none.
+func deref(n *int) int {
+	if n == nil {
+		return 0
+	}
+	return *n
 }

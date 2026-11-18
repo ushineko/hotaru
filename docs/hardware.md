@@ -195,9 +195,27 @@ devices:
   dims keys apart dims the board. The MM700's logo has no blue. The F75
   through its receiver shows a merged palette. A moving effect on the G502
   costs battery.
-- **A header's length.** `hotaru light map` finds it: it lights the header,
-  then asks whether any red shows as it halves the range, and writes
-  `lengths`. `hotaru light length` tries one by hand.
+- **A header's length.** `hotaru light length <board>/<header>` lights it
+  green with its last light red; + and - move the end until the red is on
+  the strip's last light, and Return writes `lengths`. The window's Headers
+  on the board's card does the same.
+
+### Set by hand
+
+`hotaru light map` once asked about two things no command sets now. Both
+stay in the rules file:
+
+```yaml
+devices:
+  - match: keychron
+    never_blank: true                        # it cannot go dark
+    solid_modes: [Solid Reactive Multinexus] # lit only where you type
+  - match: mm700
+    brightness: 40                           # turned down, of 100
+```
+
+`hotaru light set --brightness` dims a device for one scene. `hotaru reload`
+reads the rules again.
 
 ## Everything else
 
@@ -409,7 +427,8 @@ arrives when the login does.
 ```bash
 hotaru light list             # what hotaru sees, with modes and scope
 hotaru light health           # why, if it sees nothing
-hotaru light map              # work out which light is which, by looking
+hotaru light length maximus/"Addressable RGB Header 3"   # a header's length
+hotaru light name kraken      # names for a device's zones and fans
 hotaru cooling                # the cooler, or the fact that there is not one
 hotaru light release apex     # a device's own lighting back
 ```
