@@ -168,3 +168,13 @@ func TestAPaceTrimChangesThePeriod(t *testing.T) {
 	assert.Equal(t, red, rgb(draw(t, render.Breathing, time.Second, lights(1), breathe)[0]),
 		"hotaru's own effects take the trim too: a 1 s breath trimmed to 2 s is full at 1 s")
 }
+
+// A wave on a device of a few lights goes through its colours at the pace it
+// does on the Kraken's ring, not a pace set by its own few lights (the MM700,
+// on the live run).
+func TestAWaveOnAFewLightsKeepsTheRingsPace(t *testing.T) {
+	at := 1300 * time.Millisecond
+	few := draw(t, render.Wave, at, lights(3), render.Params{})
+	ring := draw(t, render.Wave, at, lights(24), render.Params{})
+	assert.Equal(t, rgb(ring[0]), rgb(few[0]), "the first light is not where the ring's is")
+}

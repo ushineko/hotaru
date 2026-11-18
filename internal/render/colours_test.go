@@ -125,9 +125,9 @@ func TestTheWaveWithSeveralColoursIsAMovingGradientThatWraps(t *testing.T) {
 	require.Equal(t, []colour.Colour{red, {R: 128, B: 128}, blue, {R: 128, B: 128}},
 		[]colour.Colour{rgb(px[0]), rgb(px[1]), rgb(px[2]), rgb(px[3])})
 
-	// One step later (25 ms at full speed) every light shows its
-	// predecessor's colour, and the first takes the last's.
-	after := draw(t, render.Wave, 25*time.Millisecond, lights(4), p)
+	// One step later (150 ms at full speed, four lights timed as 24) every
+	// light shows its predecessor's colour, and the first takes the last's.
+	after := draw(t, render.Wave, 150*time.Millisecond, lights(4), p)
 	for i := range px {
 		require.Equal(t, rgb(px[(i+3)%4]), rgb(after[i]), "light %d did not move", i)
 	}

@@ -266,19 +266,31 @@ func wave(t time.Duration, keys []lighting.Key, p Params) []lighting.Pixel {
 	}
 	shift := float64(t.Nanoseconds()) * speed / float64(time.Second)
 	width := float64(max(len(keys), 1))
+	/*
+		One trip through the colours takes as long as the wave takes to
+		cross the device, and a device of a few lights is timed as one of
+		waveFloor, its lights still spanning the whole gradient: the MM700's three went through every colour sixteen
+		times as fast as the Kraken's forty-eight, a jumpy flicker out of
+		step with it (spec 077, the live run).
+	*/
+	// The whole gradient still spans the device; only its pace is the ring's.
+	moved := shift / math.Max(width, waveFloor)
 	place := positions(keys)
 	palette := p.palette(cycleColours)
 	return paint(keys, p, func(i int) colour.Colour {
-		at := math.Mod(place[i]*width-shift, width)
+		at := math.Mod(place[i]-moved, 1)
 		if at < 0 {
-			at += width
+			at++
 		}
 		if len(palette) > 0 {
-			return along(palette, at/width)
+			return along(palette, at)
 		}
-		return hue(360 * at / width)
+		return hue(360 * at)
 	})
 }
+
+// waveFloor is the fewest lights a wave is timed as: the Kraken's ring.
+const waveFloor = 24.0
 
 // blank is black on every light.
 func blank(_ time.Duration, keys []lighting.Key, p Params) []lighting.Pixel {

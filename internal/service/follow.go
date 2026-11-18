@@ -322,7 +322,34 @@ func sceneColours(frame devices.Frame, most int) []colour.Colour {
 	slices.SortStableFunc(chosen, func(a, b colour.Colour) int {
 		return slices.Index(distinct, a) - slices.Index(distinct, b)
 	})
-	return stretched(chosen)
+	return stretched(path(chosen))
+}
+
+/*
+path is three or more colours in an order a gradient runs smoothly through:
+the first, then each time the nearest of the rest. In the order the lights
+showed them, a picture's colours zigzag, teal, blue, teal, green, and a wave
+through them snapped back and forth (the live run). One or two are left in
+the order the lights show them, which says which is the ring's.
+*/
+func path(colours []colour.Colour) []colour.Colour {
+	if len(colours) < 3 {
+		return colours
+	}
+	rest := slices.Clone(colours[1:])
+	out := []colour.Colour{colours[0]}
+	for len(rest) > 0 {
+		last := out[len(out)-1]
+		next := 0
+		for i, c := range rest {
+			if apart(c, last) < apart(rest[next], last) {
+				next = i
+			}
+		}
+		out = append(out, rest[next])
+		rest = slices.Delete(rest, next, next+1)
+	}
+	return out
 }
 
 // visibleSpread is how far apart the furthest two of an effect's colours from

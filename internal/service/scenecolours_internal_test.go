@@ -21,7 +21,9 @@ func TestSceneColoursAreTheOnesThatDiffer(t *testing.T) {
 	frame := devices.Frame{Colours: []colour.Colour{
 		teal1, teal2, teal3, same, teal1, teal1, colour.Black, magenta, teal2, teal1,
 	}}
-	assert.Equal(t, []colour.Colour{teal1, teal2, teal3, magenta}, sceneColours(frame, 8), // far apart: as they are
+	// Far apart already, so not stretched; in a smooth order, each next the
+	// nearest, so a wave through them does not snap back and forth.
+	assert.Equal(t, []colour.Colour{teal1, teal3, teal2, magenta}, sceneColours(frame, 8),
 		"the shades are kept apart, and a colour a step away is the same one")
 	assert.Equal(t, []colour.Colour{teal1, magenta}, sceneColours(frame, 2),
 		"two are the main one and the furthest from it")
