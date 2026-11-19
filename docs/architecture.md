@@ -248,6 +248,10 @@ them.
   samples, a frame each time it has moved a pixel: about 1 to 2 a second, for
   any dashboard with a trail. An animated background plays continuously at its
   own pace, at most 20 frames a second. The service decodes its frames once.
+  Measured on the desk over 10 minutes: a dashboard that only drifts uses
+  about 5% of a core, as spec 080's still one did. Numbers that melt on
+  every reading use about 13%, melt and a comet ring 16%, and an animated
+  picture 13%.
 - **Effects hotaru draws.** Every lit device is a *canvas device*: hotaru
   draws its effects on the host and sends it frames, as the Apex Pro TKL
   Wireless Gen 3's vendor software does (spec 060). hotaru finds canvas

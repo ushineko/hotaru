@@ -326,3 +326,36 @@ func TestASlowPanelGetsFramesBackToBack(t *testing.T) {
 		require.Less(t, g, 65*time.Millisecond, "a slow frame waited a whole pace after it")
 	}
 }
+
+/*
+A panel that takes frames and not motion gets spec 080's frames: a dashboard
+that melts, comets and sits over an animated picture sends one frame for a
+changed reading and none in between, and never asks for the picture's frames
+(R5, the panel without Mover).
+*/
+func TestAPanelWithoutMotionGetsStills(t *testing.T) {
+	d := ringDashboard()
+	d.Background = Background{Kind: Picture, Picture: "spin"}
+	c := &clock{now: time.Date(2026, 11, 18, 12, 0, 0, 0, time.UTC)}
+	f := &framing{}
+	r := reading()
+	p := NewPusher(f, func(context.Context) Reading { return r })
+	p.Now = c.Now
+	p.Look = func(context.Context) (Dashboard, image.Image) { return d, nil }
+	backs := 0
+	p.Backdrop = func(context.Context, Dashboard) Backdrop { backs++; return Backdrop{} }
+	run := func(span time.Duration) {
+		end := c.now.Add(span)
+		for c.now.Before(end) {
+			c.pass(p.cycle(context.Background()))
+		}
+	}
+
+	run(3 * time.Second)
+	require.Equal(t, 1, f.frames(), "a still dashboard sent more than one frame")
+	r = reading()
+	r.Set(readings.Coolant, 47)
+	run(3 * time.Second)
+	require.Equal(t, 2, f.frames(), "a change was not one frame")
+	require.Zero(t, backs, "the picture's frames were asked for")
+}

@@ -2,11 +2,18 @@
 
 **Issue**: [#228](https://github.com/ushineko/hotaru/issues/228)
 
-## Status: INCOMPLETE
+## Status: COMPLETE
 
 ## Executive Summary
 
-(Written last.)
+Dashboards on the Kraken Elite now move. A dashboard's `motion` melts, morphs
+or rolls the numbers that changed and sweeps its rings, at up to 20 frames a
+second; the trail drifts between samples on every dashboard, at a 1 s
+interval by default; an animated picture behind a dashboard plays. Every
+frame on the panel is Q565. Drift costs what spec 080's still dashboard did
+(about 5% of a core); motion, which is opt-in, costs 13 to 16%. Review
+`internal/dashboard/animate.go` (the loop) and `internal/motion` (the
+effects) first.
 
 ## Context
 
@@ -95,13 +102,16 @@ melt or morph took 40 to 80 ms per change, because it measured the whole
   - R4.2 The trace's range blends at the same rate from the old samples'
     range to the new.
   - R4.3 A frame is sent only when the trace has moved at least a pixel:
-    about 2 frames a second with 5 s buckets.
-  - R4.4 A frame that only drifts is a full-colour still (`Stream`), so a
-    dashboard at rest keeps 24-bit colour. Motion frames (`Move`) are for
-    number and ring transitions and animated backgrounds. A drift frame does
-    not advance the tick.
+    about 2 frames a second.
+  - R4.4 **Every frame on a panel that takes motion frames is a motion frame
+    (`Move`)**, at rest and drifting as much as moving: tens of kilobytes
+    where a full-colour frame is 1.2 MB, and 16-bit colour is not told apart
+    from 24-bit on the Kraken Elite's panel (the maintainer, 2026-11-18). A
+    drift frame does not advance the tick. *(Revised: the first draft kept
+    drift frames as full-colour stills.)*
   - R4.5 **The trail's interval is the dashboard's**: `trail.every`, 1, 2 or
-    5 seconds (default 5, today's), over the same 5-minute span. The history
+    5 seconds (default 1; revised from 5 after the live run), over the same
+    5-minute span. The history
     keeps 1-second buckets for the span (300 a source), and a dashboard's
     trail averages them into its interval: 300, 150 or 60 points. The trace
     is drawn with as many points as its interval gives, so a shorter
@@ -124,6 +134,9 @@ melt or morph took 40 to 80 ms per change, because it measured the whole
   sent until the dashboard is released. Stopping the service stops it before
   the cooler closes.
 - **R8 Cost, measured.**
+  - R8.0 Drift, on every dashboard with a trail, costs no more CPU than spec
+    080's still dashboard did. *(Added after the first cost run found 8.5%
+    of a core against about 5.5%.)*
   - R8.1 The spec records the service's CPU time over 10 minutes, with the
     frames sent, for: ice1 as spec 080 left it (drift only); ice1 with
     `numbers: melt`; load with `numbers: melt, ring: comet`; and a dashboard
@@ -138,45 +151,47 @@ melt or morph took 40 to 80 ms per change, because it measured the whole
 
 ## Acceptance Criteria
 
-- [ ] `make test`, `make lint`, `make lint-windows` and the GUI tests pass.
-- [ ] Tests, with an injected clock and a fake Mover:
-  - [ ] layers composed give the same pixels as `Render` for every shipped
+- [x] `make test`, `make lint`, `make lint-windows` and the GUI tests pass.
+- [x] Tests, with an injected clock and a fake Mover:
+  - [x] layers composed give the same pixels as `Render` for every shipped
         dashboard, still (R6);
-  - [ ] changed regions: a reading that changes one number yields one region
+  - [x] changed regions: a reading that changes one number yields one region
         around it, and labels are outside every region;
-  - [ ] each of melt, morph and roll: at the start the old text, at the end
+  - [x] each of melt, morph and roll: at the start the old text, at the end
         the new, unchanged text identical throughout;
-  - [ ] a benchmark of preparing a change, recorded (R2.6);
-  - [ ] a change with `numbers: melt` sends motion frames at 50 ms apart for
-        700 ms, then a still; with `motion` empty, one still as before;
-  - [ ] a change during a transition starts from the frame on the panel;
-  - [ ] drift: the trace moves one step per bucket, keeps its length (the
-        leaving sample drawn at the left), sends a still only when it has
+  - [x] a benchmark of preparing a change, recorded (R2.6);
+  - [x] a change with `numbers: melt` sends motion frames at 50 ms apart for
+        700 ms, the last drawing the new reading; with `motion` empty, one
+        frame as before;
+  - [x] a change during a transition starts from the frame on the panel;
+  - [x] drift: the trace moves one step per bucket, keeps its length (the
+        leaving sample drawn at the left), sends a frame only when it has
         moved a pixel, and does not advance the tick;
-  - [ ] the history keeps 300 one-second buckets; a trail at `every` 1, 2
+  - [x] the history keeps 300 one-second buckets; a trail at `every` 1, 2
         and 5 has 300, 150 and 60 points, each the mean of its buckets, over
-        the same span; `every` 5 draws as spec 080 did;
-  - [ ] an animated background sends a frame per picture frame at its delay
+        the same span, so a 5 s trail spans the band a 1 s one does; the
+        default is 1 s; every second has a reading (no gaps in a 1 s trail);
+  - [x] an animated background sends a frame per picture frame at its delay
         clamped to 50 ms, loops, and decodes the picture once;
-  - [ ] held, nothing is sent; released, the dashboard draws at once;
-  - [ ] a panel without `Mover` gets spec 080's frames and a first-frame
+  - [x] held, nothing is sent; released, the dashboard draws at once;
+  - [x] a panel without `Mover` gets spec 080's frames and a first-frame
         background;
-  - [ ] `motion` round-trips through the API and the store, an unknown value
+  - [x] `motion` round-trips through the API and the store, an unknown value
         is refused, and the shipped dashboards leave it empty.
-- [ ] Live, the maintainer watching:
-  - [ ] ice1 with `numbers: melt`: changed numbers melt, labels stay, the
+- [x] Live, the maintainer watching:
+  - [x] ice1 with `numbers: melt`: changed numbers melt, labels stay, the
         trails drift and keep their length, no flash;
-  - [ ] load with `numbers: melt, ring: comet`: as above, and the rings sweep
+  - [x] load with `numbers: melt, ring: comet`: as above, and the rings sweep
         with the comet;
-  - [ ] `morph` and `roll` each once;
-  - [ ] ice1 with `trail.every: 1`: a finer trace that still drifts
+  - [x] `morph` and `roll` each once;
+  - [x] ice1 with `trail.every: 1`: a finer trace that still drifts
         smoothly;
-  - [ ] a dashboard over an animated picture plays it under the numbers;
-  - [ ] a picture shown and the readout chosen stop the motion; the dashboard
+  - [x] a dashboard over an animated picture plays it under the numbers;
+  - [x] a picture shown and the readout chosen stop the motion; the dashboard
         comes back at once;
-  - [ ] the ring lighting keeps its effect throughout and through a stop.
-- [ ] Cost recorded per R8.1.
-- [ ] Docs per R10.
+  - [x] the ring lighting keeps its effect throughout and through a stop.
+- [x] Cost recorded per R8.1; drift within spec 080's (R8.0).
+- [x] Docs per R10.
 
 ## Risks & Assumptions
 
@@ -185,15 +200,21 @@ melt or morph took 40 to 80 ms per change, because it measured the whole
   second: about 14 frames, each drawn (10 to 18 ms in the prototype) and
   sent. R8 measures it; if it is out of line, the transition shortens or its
   pace halves.
-- **Drift costs every dashboard with a trail.** About 2 full-colour frames a
-  second (1.2 MB each) where spec 080 sent about one. This was the
-  maintainer's choice ("always on").
-- **16-bit colour while moving.** Transitions and animated backgrounds are
-  Q565; a dashboard at rest is full colour (R4.4).
+- **Drift costs every dashboard with a trail.** About 2 frames a second
+  where spec 080 sent about one. This was the maintainer's choice ("always
+  on"), and R8.0 holds it to spec 080's CPU.
+- **16-bit colour throughout.** Every frame on the Kraken Elite is Q565
+  (R4.4). A panel that takes only full-colour frames still gets them.
 - **A 1-second trail is noisier.** The buckets average a reading's samples
   (spec 046) because a processor's temperature is spiky; at one second there
-  is little to average. The interval is the dashboard's choice, and 5 s stays
-  the default.
+  is little to average. The maintainer chose 1 s as the default; 2 s and 5 s
+  remain.
+- **Readings shared for half a second.** `Service.Readings` hands a reading
+  under 500 ms old to a second asker, as a copy, rather than reading every
+  sensor again. The second asker each second was the trail.
+- **Memory of an animated background.** Its frames are decoded and kept
+  while it shows: 640x640 at one byte a pixel, about 400 KB a frame, so a
+  150-frame picture is about 60 MB. The cache holds one picture.
 - **History memory.** 300 buckets a source instead of 60: eleven sources,
   a few tens of KB.
 - **Readability mid-melt.** A melt is unreadable for part of its 700 ms by
@@ -212,9 +233,60 @@ melt or morph took 40 to 80 ms per change, because it measured the whole
   dashboard that is mostly still.
 - Considered drift as part of the per-dashboard setting; the maintainer chose
   always on, for its low cost.
-- Considered sending drift frames as Q565; rejected because a dashboard with
-  a trail would then never be in full colour.
+- Considered drift frames as full-colour stills, so a dashboard at rest kept
+  24-bit colour; the first cost run measured them, and the maintainer chose
+  Q565 throughout, since the panel does not show the difference.
 
 ## Verification
 
-(Results pasted here.)
+**Checks** (2026-11-19, on the branch): `make test`, `make lint`,
+`make lint-windows` and `go test -tags migrated_fynedo ./internal/gui/...`
+pass. `govulncheck`: no vulnerabilities found.
+
+**Tests** for the criteria: `internal/dashboard/motion_test.go`
+(`TestLayersComposeToTheFrame`, `TestAnUnknownMotionOrIntervalIsRefused`,
+`TestTheShippedDashboardsDoNotMove`, `TestAFinerTrailSpansTheSameBand`),
+`internal/dashboard/animate_test.go` (melt frames to the end, no motion
+jumps, a change mid-transition, drift a pixel at a time, drift keeps its
+length, an animated background plays, held does not move, every second has
+a reading, a slow panel gets frames back to back, a panel without motion
+gets stills), `internal/motion/motion_test.go` (one region per changed
+number, each transition old to new, the comet), `internal/readings`
+(intervals average their buckets, the default is 1 s),
+`internal/service` (a backdrop decoded once, a reading shared for half a
+second, a still picture decoded once), `internal/api/motion_test.go`.
+
+**Preparing a change** (`BenchmarkPrepare`, i9-14900K): melt 4.1 ms, morph
+5.4 ms, roll 2.8 ms, within R2.6's 10 ms.
+
+**Live**, the maintainer watching the desk's Kraken Elite (2026-11-19):
+
+| Check | Answer |
+|---|---|
+| ice1 with `numbers: melt`, 1 s trails | "Something off": gaps in the trail. Readings were moved to a fixed point in each second (`readOffset`); then "looks better" |
+| load with melt and comet | "All good" |
+| morph | worked, "a bit choppy": the loop waited a full 50 ms after a slow send. It now waits the rest of the pace |
+| roll, after the pacing fix | "Smooth now" |
+| ice1 over the spinning earth | "Plays well" |
+| a picture shown over it | "Stays put"; the readout chosen, "Stays" |
+| the dashboard released | "Back at once" |
+| the service stopped 10 s and started | "All fine": readout while stopped, ring effect unchanged, dashboard and effect back |
+
+The optimisations after these runs change no pixel: the golden frames match
+and the composite, arc and darkening code is checked against them.
+
+**Cost** (R8.1), the service's CPU over 600 s per dashboard, desk machine,
+with an NVIDIA card (each reading runs `nvidia-smi`):
+
+| Dashboard | First run | After optimising | After sharing readings | Frames a second |
+|---|---|---|---|---|
+| tree-full (drift only, photograph) | not measured | 50.8 s | 28.9 s (4.8%) | ~2 |
+| ice1 (drift only) | 51.0 s | 51.1 s | 31.4 s (5.2%) | ~2 |
+| ice1, `numbers: melt` | 114 s | 94.5 s | 76.7 s (12.8%) | ~10 |
+| load, melt and comet | 218 s | 111 s | 97.5 s (16.3%) | ~14 |
+| ice1 over an animated picture | 174 s | 92.2 s | 79.1 s (13.2%) | ~18 |
+
+Spec 080's still dashboard measured about 5 to 6% of a core. The profile of the
+optimised build found half the service's own work outside drawing: the
+sensors were read twice a second (once for the reading, once for the trail)
+and the picture decoded every second. R8.0 holds.
