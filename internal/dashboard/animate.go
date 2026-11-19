@@ -40,6 +40,10 @@ NZXT CAM's pace and the panel's (sanshoku spec 038).
 */
 const motionPace = 50 * time.Millisecond
 
+// readOffset is where in each second the reading is taken: early enough that
+// a late loop still lands in the same one-second bucket.
+const readOffset = 100 * time.Millisecond
+
 /*
 animation is what a dashboard on a Mover is in the middle of: the reading the
 panel is heading to, a transition towards it, the trail and where it has
@@ -163,7 +167,13 @@ func (p *Pusher) sample(ctx context.Context, now time.Time) {
 	if p.Trails != nil {
 		trails = p.Trails(ctx, d)
 	}
-	a.nextRead = now.Add(framePace)
+	/*
+		The next reading at a tenth of a second past the next whole second,
+		not a second from now: the history keeps one-second buckets, and a
+		loop that runs a little late each time would skip one now and then,
+		which a one-second trail draws as a gap (found on the live run).
+	*/
+	a.nextRead = now.Truncate(framePace).Add(framePace + readOffset)
 
 	if !a.ready || !p.sent || !reflect.DeepEqual(d, a.d) {
 		*a = animation{ready: true, d: d, nextRead: a.nextRead, dirty: true}

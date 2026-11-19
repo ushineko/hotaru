@@ -278,3 +278,24 @@ func solid(c color.RGBA) *image.RGBA {
 	}
 	return img
 }
+
+// Every one-second bucket gets a reading, even while transitions make the
+// loop run late: a one-second trail draws a skipped bucket as a gap (found on
+// the live run).
+func TestEverySecondHasAReading(t *testing.T) {
+	s := newScene(t, ringDashboard())
+	seconds := map[int64]bool{}
+	read := s.p.Read
+	s.p.Read = func(ctx context.Context) Reading {
+		seconds[s.c.now.Unix()] = true
+		return read(ctx)
+	}
+	start := s.c.now.Unix()
+	for i := range 30 {
+		s.r.Set(readings.Coolant, 40+float64(i%7))
+		s.run(time.Second)
+	}
+	for sec := start + 1; sec < s.c.now.Unix(); sec++ {
+		require.True(t, seconds[sec], "no reading in second %d", sec-start)
+	}
+}
