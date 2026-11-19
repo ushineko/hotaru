@@ -556,7 +556,7 @@ Only the text that changed moves.
 
 `trail.every` is how many seconds a point of the trail covers: 1, 2 or 5. The
 trail spans five minutes either way, so a shorter interval draws more points.
-Empty is 5.
+Empty is 1, the default since spec 081.
 
 ```json
 {"motion": {"numbers": "melt", "ring": "comet"}, "trail": {"above": "gpu_pct", "every": 1}}

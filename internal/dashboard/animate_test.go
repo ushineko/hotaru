@@ -21,6 +21,8 @@ type mover struct {
 	mu    sync.Mutex
 	clock *clock
 	sent  []sentFrame
+	// slow is how long a motion frame takes to send, on the test's clock.
+	slow time.Duration
 }
 
 type sentFrame struct {
@@ -34,7 +36,10 @@ func (*mover) Moves() bool              { return true }
 func (*mover) FrameHold() time.Duration { return 25 * time.Second }
 
 func (m *mover) Frame(_ context.Context, img image.Image) error { return m.record(false, img) }
-func (m *mover) Move(_ context.Context, img image.Image) error  { return m.record(true, img) }
+func (m *mover) Move(_ context.Context, img image.Image) error {
+	m.clock.pass(m.slow)
+	return m.record(true, img)
+}
 
 func (m *mover) record(motion bool, img image.Image) error {
 	m.mu.Lock()
@@ -297,5 +302,30 @@ func TestEverySecondHasAReading(t *testing.T) {
 	}
 	for sec := start + 1; sec < s.c.now.Unix(); sec++ {
 		require.True(t, seconds[sec], "no reading in second %d", sec-start)
+	}
+}
+
+// A panel slower to take a frame than the pace gets them back to back: the
+// pace is from one frame's start to the next, not a wait after each (found
+// on the live run, where frames over a photograph halved the rate).
+func TestASlowPanelGetsFramesBackToBack(t *testing.T) {
+	s := newScene(t, ringDashboard())
+	s.m.slow = 60 * time.Millisecond
+	s.run(2 * time.Second)
+	from := s.m.n()
+	s.r.Set(readings.Coolant, 48.7)
+	s.run(2 * time.Second)
+
+	s.m.mu.Lock()
+	defer s.m.mu.Unlock()
+	var gaps []time.Duration
+	for i := from + 1; i < len(s.m.sent); i++ {
+		if s.m.sent[i].motion && s.m.sent[i-1].motion {
+			gaps = append(gaps, s.m.sent[i].at.Sub(s.m.sent[i-1].at))
+		}
+	}
+	require.NotEmpty(t, gaps)
+	for _, g := range gaps {
+		require.Less(t, g, 65*time.Millisecond, "a slow frame waited a whole pace after it")
 	}
 }

@@ -589,7 +589,7 @@ type DashboardTrail struct {
 	Off   bool   `json:"off,omitempty"`
 	Below string `json:"below,omitempty"`
 	Above string `json:"above,omitempty"`
-	// Every is the seconds a point covers: 1, 2 or 5; zero is 5 (spec 081).
+	// Every is the seconds a point covers: 1, 2 or 5; zero is 1 (spec 081).
 	Every int `json:"every,omitempty"`
 }
 

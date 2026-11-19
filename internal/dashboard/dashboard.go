@@ -556,9 +556,9 @@ type Trail struct {
 	// there, and the trace below takes the whole band.
 	Above readings.Source `json:"above,omitempty"`
 
-	// Every is the seconds a point covers: 1, 2 or 5 (spec 081). Zero is 5,
-	// what every trail was before. The trail spans five minutes whatever it
-	// is, so a shorter interval is more, finer points.
+	// Every is the seconds a point covers: 1, 2 or 5 (spec 081). Zero is 1.
+	// The trail spans five minutes whatever it is, so a shorter interval is
+	// more, finer points, and a longer one calmer.
 	Every int `json:"every,omitempty"`
 }
 

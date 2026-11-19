@@ -368,8 +368,8 @@ func (d *DashboardsSection) trailFields(sh *shell.Shell) fyne.CanvasObject {
 // trailEvery chooses how many seconds a point of the trail covers (spec 081):
 // fewer is finer detail over the same five minutes.
 func (d *DashboardsSection) trailEvery(sh *shell.Shell) fyne.CanvasObject {
-	options := []string{"5 s", "2 s", "1 s"}
-	seconds := map[string]int{"5 s": 0, "2 s": 2, "1 s": 1}
+	options := []string{"1 s", "2 s", "5 s"}
+	seconds := map[string]int{"1 s": 0, "2 s": 2, "5 s": 5}
 	choose := widget.NewSelect(options, func(picked string) {
 		if seconds[picked] == d.editing.Trail.Every {
 			return
@@ -377,7 +377,7 @@ func (d *DashboardsSection) trailEvery(sh *shell.Shell) fyne.CanvasObject {
 		d.editing.Trail.Every = seconds[picked]
 		d.redraw(sh)
 	})
-	picked := "5 s"
+	picked := "1 s"
 	for label, n := range seconds {
 		if n == d.editing.Trail.Every && n != 0 {
 			picked = label

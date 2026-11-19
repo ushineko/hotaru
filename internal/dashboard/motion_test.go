@@ -16,7 +16,7 @@ import (
 func TestAnUnknownMotionOrIntervalIsRefused(t *testing.T) {
 	ok := Dashboard{Motion: Motion{Numbers: Melt, Ring: Comet}, Trail: Trail{Every: 1}}
 	require.NoError(t, ok.Check())
-	require.NoError(t, Dashboard{}.Check(), "the empty dashboard is a jump at five seconds")
+	require.NoError(t, Dashboard{}.Check(), "the empty dashboard is a jump at one second")
 
 	for _, d := range []Dashboard{
 		{Motion: Motion{Numbers: "wobble"}},
@@ -35,7 +35,7 @@ func TestAnUnknownMotionOrIntervalIsRefused(t *testing.T) {
 	require.Error(t, err, "a refused dashboard was stored")
 }
 
-// The shipped dashboards jump, at five seconds, as before spec 081.
+// The shipped dashboards jump, with the default one-second trail.
 func TestTheShippedDashboardsDoNotMove(t *testing.T) {
 	for _, d := range Shipped() {
 		require.Equal(t, Motion{}, d.Motion, d.Name)
@@ -72,7 +72,7 @@ func TestAFinerTrailSpansTheSameBand(t *testing.T) {
 		}
 		return s
 	}
-	lo60, hi60 := extent(Trails{Below: ramp(60)})
+	lo60, hi60 := extent(Trails{Below: ramp(60), Points: 60})
 	lo300, hi300 := extent(Trails{Below: ramp(300), Points: 300})
 	require.InDelta(t, lo60, lo300, 2)
 	require.InDelta(t, hi60, hi300, 2)

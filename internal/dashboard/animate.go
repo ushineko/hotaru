@@ -118,7 +118,7 @@ func (p *Pusher) animate(ctx context.Context, m Mover, f Framer) time.Duration {
 	resend := p.sent && now.Sub(p.at) >= f.FrameHold()
 	settling := a.settle && !moving
 	if !moving && !looping && !drifted && !a.dirty && !settling && !resend {
-		return a.wait(now, false)
+		return a.wait(now, false, 0)
 	}
 
 	img := p.compose(a, t, shift)
@@ -135,14 +135,14 @@ func (p *Pusher) animate(ctx context.Context, m Mover, f Framer) time.Duration {
 		if errors.Is(err, cooler.ErrNoScreen) {
 			p.stopped = true
 		}
-		return a.wait(now, moving || looping)
+		return a.wait(now, moving || looping, p.clock().Sub(now))
 	}
 	a.shiftPx, a.dirty = px, false
 	if !moving {
 		a.settle = false
 	}
 	p.sent, p.shown, p.at = true, img, now
-	return a.wait(now, moving || looping)
+	return a.wait(now, moving || looping, p.clock().Sub(now))
 }
 
 /*
@@ -278,11 +278,17 @@ func (a *animation) drift(now time.Time) (float64, int) {
 	return shift, int(shift * step)
 }
 
-// wait is how long until the next cycle: the motion pace while something
-// moves, otherwise until the trail's next pixel or the next reading.
-func (a *animation) wait(now time.Time, moving bool) time.Duration {
+/*
+wait is how long until the next cycle: the rest of the motion pace while
+something moves, otherwise until the trail's next pixel or the next reading.
+
+The rest, not the whole: spent is what drawing and sending this frame took,
+and a frame over a photograph takes longer than the pace to send, so waiting
+the whole pace after it halved the rate (found on the live run).
+*/
+func (a *animation) wait(now time.Time, moving bool, spent time.Duration) time.Duration {
 	if moving {
-		return motionPace
+		return max(motionPace-spent, time.Millisecond)
 	}
 	until := a.nextRead.Sub(now)
 	if a.shiftPx > 0 {

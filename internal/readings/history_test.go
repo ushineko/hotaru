@@ -150,9 +150,10 @@ func TestAnIntervalIsTheMeanOfWhatArrived(t *testing.T) {
 	require.True(t, math.IsNaN(trail[1]))
 }
 
-// The default interval is the one every trail had before spec 081.
-func TestTheDefaultIntervalIsFiveSeconds(t *testing.T) {
-	require.Equal(t, 5*time.Second, readings.DefaultEvery)
-	require.Equal(t, 60, readings.Points)
+// The default interval is a second, over the five minutes every trail spans
+// (spec 081, the maintainer's choice on the live run).
+func TestTheDefaultIntervalIsOneSecond(t *testing.T) {
+	require.Equal(t, time.Second, readings.DefaultEvery)
+	require.Equal(t, 300, readings.Points)
 	require.Equal(t, 5*time.Minute, readings.Window)
 }

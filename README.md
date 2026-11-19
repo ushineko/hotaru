@@ -326,7 +326,7 @@ MIT. See [LICENSE](LICENSE).
   into the new value and its rings sweep or swing like a comet, in 16-bit
   motion frames at 20 a second (sanshoku 0.4.0), ending on a full-colour
   still. Only what changed moves. The trail drifts smoothly between samples,
-  and its interval is the dashboard's (`trail.every`: 1, 2 or 5 s over the
+  and its interval is the dashboard's (`trail.every`: 1, 2 or 5 s, 1 by default, over the
   same five minutes). An animated picture behind a dashboard plays. The
   window's editor and `hotaru dashboard save` set all of it, and the shipped
   dashboards are unchanged. A still frame is now drawn in layers, which moved

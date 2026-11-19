@@ -48,15 +48,15 @@ that somebody who has just done something sees it.
 **Kept by the second, drawn by the dashboard's interval** (spec 081). The
 history holds one bucket a second, the dashboard loop's own pace since spec
 080, and a dashboard's trail averages them into its interval: 1, 2 or 5
-seconds, 300, 150 or 60 points across the same five minutes. Five seconds is
-the default and what every trail was before: each point the mean of five
-readings, which is what makes a processor's spiky temperature plottable.
+seconds, 300, 150 or 60 points across the same five minutes. One second is
+the default, the maintainer's choice on the live run; five, what every trail
+was before, averages a spiky processor temperature into something calmer.
 */
 const (
 	Bucket       = time.Second
 	Window       = 5 * time.Minute
 	Buckets      = int(Window / Bucket)
-	DefaultEvery = 5 * time.Second
+	DefaultEvery = time.Second
 	// Points is how many a trail at the default interval has.
 	Points = int(Window / DefaultEvery)
 )
