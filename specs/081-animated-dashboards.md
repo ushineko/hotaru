@@ -100,6 +100,14 @@ melt or morph took 40 to 80 ms per change, because it measured the whole
     dashboard at rest keeps 24-bit colour. Motion frames (`Move`) are for
     number and ring transitions and animated backgrounds. A drift frame does
     not advance the tick.
+  - R4.5 **The trail's interval is the dashboard's**: `trail.every`, 1, 2 or
+    5 seconds (default 5, today's), over the same 5-minute span. The history
+    keeps 1-second buckets for the span (300 a source), and a dashboard's
+    trail averages them into its interval: 300, 150 or 60 points. The trace
+    is drawn with as many points as its interval gives, so a shorter
+    interval is finer detail and a sooner newest sample, and the drift's
+    speed (about 2 px a second) and frame cost do not change. Set like
+    `motion` (R1.2); any other value is refused.
 - **R5 Animated backgrounds.** On a panel that takes motion frames, a
   dashboard whose background picture has more than one frame plays it: each
   frame the picture's next with the dashboard over it, sent with `Move`, at
@@ -145,6 +153,9 @@ melt or morph took 40 to 80 ms per change, because it measured the whole
   - [ ] drift: the trace moves one step per bucket, keeps its length (the
         leaving sample drawn at the left), sends a still only when it has
         moved a pixel, and does not advance the tick;
+  - [ ] the history keeps 300 one-second buckets; a trail at `every` 1, 2
+        and 5 has 300, 150 and 60 points, each the mean of its buckets, over
+        the same span; `every` 5 draws as spec 080 did;
   - [ ] an animated background sends a frame per picture frame at its delay
         clamped to 50 ms, loops, and decodes the picture once;
   - [ ] held, nothing is sent; released, the dashboard draws at once;
@@ -158,6 +169,8 @@ melt or morph took 40 to 80 ms per change, because it measured the whole
   - [ ] load with `numbers: melt, ring: comet`: as above, and the rings sweep
         with the comet;
   - [ ] `morph` and `roll` each once;
+  - [ ] ice1 with `trail.every: 1`: a finer trace that still drifts
+        smoothly;
   - [ ] a dashboard over an animated picture plays it under the numbers;
   - [ ] a picture shown and the readout chosen stop the motion; the dashboard
         comes back at once;
@@ -177,6 +190,12 @@ melt or morph took 40 to 80 ms per change, because it measured the whole
   maintainer's choice ("always on").
 - **16-bit colour while moving.** Transitions and animated backgrounds are
   Q565; a dashboard at rest is full colour (R4.4).
+- **A 1-second trail is noisier.** The buckets average a reading's samples
+  (spec 046) because a processor's temperature is spiky; at one second there
+  is little to average. The interval is the dashboard's choice, and 5 s stays
+  the default.
+- **History memory.** 300 buckets a source instead of 60: eleven sources,
+  a few tens of KB.
 - **Readability mid-melt.** A melt is unreadable for part of its 700 ms by
   design. A reading that changes every second spends most of its time
   settled.
