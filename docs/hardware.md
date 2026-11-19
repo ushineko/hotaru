@@ -42,9 +42,27 @@ support list.
 
 ### Test systems
 
-Both ran before spec 076, with lighting through OpenRGB. Of the devices they
-found, sanshoku drives the AULA F75; the RAM modules, the Razer mouse and dock,
-and the B450 board's strip are not lit since.
+Both ran before spec 076, with lighting through OpenRGB, and both still run
+0.1.29 with it. The table below is what they found then. Since 2.0, hotaru
+lights only what sanshoku has a driver for, which on these machines is one
+device each ([#231](https://github.com/ushineko/hotaru/issues/231)):
+
+| Machine | Device | Since 2.0 |
+|---|---|---|
+| CachyOS | SteelSeries Apex Pro TKL Gen 3 | lit |
+| CachyOS | Gigabyte Z790 AORUS MASTER X, two controllers | not lit, [sanshoku #105](https://github.com/ushineko/sanshoku/issues/105) |
+| CachyOS | Razer Mouse Dock Pro, and a Basilisk V3 Pro through it | not lit, [sanshoku #106](https://github.com/ushineko/sanshoku/issues/106) |
+| CachyOS | Corsair Dominator Platinum RGB DDR5, four modules | not lit, [sanshoku #108](https://github.com/ushineko/sanshoku/issues/108) |
+| CachyOS | EVGA GeForce RTX 3080 FTW3 Ultra LHR | not lit, [sanshoku #109](https://github.com/ushineko/sanshoku/issues/109) |
+| Windows 11 | AULA F75 | lit |
+| Windows 11 | MSI B450 Tomahawk Max strip | not lit, [sanshoku #107](https://github.com/ushineko/sanshoku/issues/107) |
+| Windows 11 | Corsair Vengeance RGB, two modules | not lit, [sanshoku #108](https://github.com/ushineko/sanshoku/issues/108) and [#110](https://github.com/ushineko/sanshoku/issues/110) |
+| Windows 11 | Razer Basilisk Ultimate and its dock | not lit, [sanshoku #106](https://github.com/ushineko/sanshoku/issues/106) |
+
+On Windows, memory needs a way onto the SMBus first. OpenRGB uses PawnIO, a
+signed kernel driver installed on its own, and sanshoku has no equivalent yet.
+
+What they found under OpenRGB:
 
 | Machine | Status |
 |---|---|
