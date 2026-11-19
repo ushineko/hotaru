@@ -42,6 +42,8 @@ func (d *DashboardsSection) editor(sh *shell.Shell, got api.DashboardsResponse) 
 		widget.NewSeparator(),
 		d.trailFields(sh),
 		widget.NewSeparator(),
+		d.motionFields(sh),
+		widget.NewSeparator(),
 		d.backgroundFields(sh),
 		d.unitsField(sh),
 		d.captionField(sh),
@@ -356,10 +358,71 @@ func (d *DashboardsSection) trailFields(sh *shell.Shell) fyne.CanvasObject {
 		field("Show", show),
 		field("Below", d.trailSource(sh, &d.editing.Trail.Below, followHeadline)),
 		field("Above", d.trailSource(sh, &d.editing.Trail.Above, noTrail)),
+		field("A point every", d.trailEvery(sh)),
 		widgets.Note("The band is five minutes of where those readings have been. "+
 			"Two of the same reading draw once: it would be the same shape twice.",
 			fd.StatusInfo),
 	)
+}
+
+// trailEvery chooses how many seconds a point of the trail covers (spec 081):
+// fewer is finer detail over the same five minutes.
+func (d *DashboardsSection) trailEvery(sh *shell.Shell) fyne.CanvasObject {
+	options := []string{"5 s", "2 s", "1 s"}
+	seconds := map[string]int{"5 s": 0, "2 s": 2, "1 s": 1}
+	choose := widget.NewSelect(options, func(picked string) {
+		if seconds[picked] == d.editing.Trail.Every {
+			return
+		}
+		d.editing.Trail.Every = seconds[picked]
+		d.redraw(sh)
+	})
+	picked := "5 s"
+	for label, n := range seconds {
+		if n == d.editing.Trail.Every && n != 0 {
+			picked = label
+		}
+	}
+	choose.SetSelected(picked)
+	return choose
+}
+
+/*
+motionFields are how a change moves on a cooler whose screen takes motion
+frames (spec 081): the numbers melt, morph or roll into their new values, the
+rings sweep or swing like a comet. "Jump" is what every dashboard did before.
+*/
+func (d *DashboardsSection) motionFields(sh *shell.Shell) fyne.CanvasObject {
+	return container.NewVBox(
+		widgets.Dim("Motion"),
+		field("Numbers", d.motionChoice(sh, &d.editing.Motion.Numbers, dashboard.NumberMotions)),
+		field("Rings", d.motionChoice(sh, &d.editing.Motion.Ring, dashboard.RingMotions)),
+		widgets.Note("Only what changed moves. On a screen that takes only still pictures, "+
+			"changes jump.", fd.StatusInfo),
+	)
+}
+
+// jump is what an empty motion is offered as.
+const jump = "jump"
+
+// motionChoice chooses one of a dashboard's motions, or none.
+func (d *DashboardsSection) motionChoice(sh *shell.Shell, at *string, choices []string) fyne.CanvasObject {
+	choose := widget.NewSelect(append([]string{jump}, choices...), func(picked string) {
+		if picked == jump {
+			picked = ""
+		}
+		if picked == *at {
+			return
+		}
+		*at = picked
+		d.redraw(sh)
+	})
+	picked := jump
+	if *at != "" {
+		picked = *at
+	}
+	choose.SetSelected(picked)
+	return choose
 }
 
 /*

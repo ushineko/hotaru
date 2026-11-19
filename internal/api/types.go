@@ -561,6 +561,18 @@ type Dashboard struct {
 	// draws the headline's own reading, because that is what the band sits
 	// under.
 	Trail DashboardTrail `json:"trail,omitempty"`
+
+	// Motion is how a change is drawn on a panel that takes motion frames
+	// (spec 081). Empty is a jump.
+	Motion DashboardMotion `json:"motion,omitempty"`
+}
+
+// DashboardMotion is how changed numbers and rings move: numbers "melt",
+// "morph" or "roll", ring "sweep" or "comet", empty a jump. Another value is
+// refused.
+type DashboardMotion struct {
+	Numbers string `json:"numbers,omitempty"`
+	Ring    string `json:"ring,omitempty"`
 }
 
 /*
@@ -577,6 +589,8 @@ type DashboardTrail struct {
 	Off   bool   `json:"off,omitempty"`
 	Below string `json:"below,omitempty"`
 	Above string `json:"above,omitempty"`
+	// Every is the seconds a point covers: 1, 2 or 5; zero is 5 (spec 081).
+	Every int `json:"every,omitempty"`
 }
 
 // DashboardLettering is a dashboard's typography: the face, and a style for
