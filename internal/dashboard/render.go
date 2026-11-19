@@ -2,7 +2,6 @@ package dashboard
 
 import (
 	"bytes"
-	"crypto/sha256"
 	"image"
 	"image/color"
 	"image/gif"
@@ -41,13 +40,13 @@ type Frame struct {
 	// Taken is when it was rendered.
 	Taken time.Time
 
-	pal color.Palette
+	pal func() color.Palette
 }
 
 // GIF is the frame encoded as a one-frame GIF, through the palette its
 // background chose.
 func (f Frame) GIF() []byte {
-	img := quantise(f.Image, f.pal)
+	img := quantise(f.Image, f.pal())
 	var buf bytes.Buffer
 	_ = gif.EncodeAll(&buf, &gif.GIF{
 		Image: []*image.Paletted{img}, Delay: []int{100}, LoopCount: 0,
@@ -102,31 +101,12 @@ hotaru writing when nothing has changed, so it advances only with accepted
 pushes and is not part of what "changed" means.
 */
 func Render(d Dashboard, r Reading, tick int, behind image.Image, trails Trails) Frame {
-	theme := ThemeOf(d.Theme)
-	paint := newPaint(d, theme, behind)
-
-	switch d.Arrangement {
-	case Grid:
-		drawGrid(paint, d, r)
-	case Stacked:
-		drawStacked(paint, d, r)
-	case Big:
-		drawBig(paint, d, r)
-	default:
-		drawRing(paint, d, r)
-	}
 	/*
-		The band every arrangement leaves empty, after the numbers that name
-		it (spec 046). Here rather than in each arrangement, because where it
-		goes is the one thing that differs and bandOf is where that lives.
+		In layers since spec 081, so that a still frame and a moving one are
+		drawn by the same code: the background, the rings, then the band every
+		arrangement leaves empty (spec 046) and the text.
 	*/
-	paint.drawTrails(d, r, trails)
-	caption(paint, d)
-
-	img := paint.img
-	content := sha256.Sum256(img.Pix)
-	drawTick(img, tick, theme)
-	return Frame{Image: img, Content: content, Taken: time.Now(), pal: paint.pal}
+	return RenderLayers(d, r, behind, trails).Frame(tick)
 }
 
 /*

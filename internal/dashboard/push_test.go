@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -175,12 +176,12 @@ func TestRenderingDoesNotGrowPerFrame(t *testing.T) {
 
 // refusing is a panel that will not take a picture, the way one held by
 // another program or one this user may not open will not.
-type refusing struct{ tries int }
+type refusing struct{ tries atomic.Int32 }
 
 func (*refusing) Floor(int) time.Duration { return time.Second }
 
 func (r *refusing) Show(context.Context, []byte) error {
-	r.tries++
+	r.tries.Add(1)
 	return fmt.Errorf("%w: claim interface 0: permission denied", cooler.ErrNoScreen)
 }
 
@@ -207,11 +208,11 @@ func TestAPanelThatCannotBeDrawnOnIsTriedOnce(t *testing.T) {
 	done := make(chan struct{})
 	go func() { defer close(done); pusher.Run(ctx) }()
 
-	require.Eventually(t, func() bool { return panel.tries > 0 }, time.Second, 10*time.Millisecond)
+	require.Eventually(t, func() bool { return panel.tries.Load() > 0 }, time.Second, 10*time.Millisecond)
 	time.Sleep(50 * time.Millisecond)
 	stop()
 	<-done
 
-	require.Equal(t, 1, panel.tries, "it kept trying a panel that said no")
+	require.Equal(t, int32(1), panel.tries.Load(), "it kept trying a panel that said no")
 	require.Equal(t, 1, said, "it kept saying so")
 }

@@ -244,7 +244,7 @@ func TestAGapIsDrawnAsAGap(t *testing.T) {
 		stops, and starts again where the readings do.
 	*/
 	gapped := level(50)
-	for i := 20; i < 40; i++ {
+	for i := len(gapped) / 3; i < 2*len(gapped)/3; i++ {
 		gapped[i] = math.NaN()
 	}
 

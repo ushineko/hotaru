@@ -168,6 +168,9 @@ func (s *Store) Save(one Dashboard) error {
 	if strings.TrimSpace(one.Name) == "" {
 		return errors.New("a dashboard needs a name")
 	}
+	if err := one.Check(); err != nil {
+		return err
+	}
 	s.mu.Lock()
 	s.cache[one.Name] = one
 	snapshot := s.copy()

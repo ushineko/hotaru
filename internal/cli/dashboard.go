@@ -129,6 +129,20 @@ func describe(cmd *cobra.Command, one api.Dashboard) {
 	if one.Caption != "" {
 		cmd.Printf("  caption: %s\n", one.Caption)
 	}
+	if one.Trail.Every != 0 {
+		cmd.Printf("  trail: a point every %d s\n", one.Trail.Every)
+	}
+	if m := one.Motion; m.Numbers != "" || m.Ring != "" {
+		cmd.Printf("  motion: numbers %s, ring %s\n", motionWord(m.Numbers), motionWord(m.Ring))
+	}
+}
+
+// motionWord is a motion as `dashboard show` says it: empty is a jump.
+func motionWord(m string) string {
+	if m == "" {
+		return "jump"
+	}
+	return m
 }
 
 func themeOf(one api.Dashboard) string {

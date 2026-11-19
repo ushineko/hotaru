@@ -57,6 +57,14 @@ type Service struct {
 		See Keep.
 	*/
 	history *readings.History
+	// backdrop is the animated background's frames, decoded once per
+	// picture file (spec 081), under its own lock.
+	backdrop backdropCache
+	// still is the still background decoded, once per picture file.
+	still stillCache
+	// recent is the last reading and when it was taken, which a second
+	// asker within readingFresh shares (spec 081).
+	recent  recentReading
 	panel   Dashboard
 	scenes  SceneStore
 	images  ImageLibrary

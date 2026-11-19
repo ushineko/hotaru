@@ -265,6 +265,12 @@ again every 25 s. Other panels receive the dashboard as a one-frame GIF. For a p
 dashboard, the image library keeps a full-colour copy of each still picture
 beside its GIF.
 
+**Motion on the Kraken Elite.** The panel also takes motion frames: Q565,
+16-bit colour, at about 20 a second (sanshoku 0.4.0). A dashboard on it can
+melt, morph or roll its changing numbers and sweep its rings, its trail drifts
+smoothly, and an animated picture behind it plays (spec 081). Every dashboard
+frame on it is a motion frame, still or not.
+
 **Temperatures: the kernel.** The CPU package comes from `coretemp`, read by
 label. An AMD processor is read from `k10temp` or `zenpower`, in the order
 sanshoku's `hwmon.CPU` gives. The graphics card comes from `amdgpu` or `nouveau` where they are

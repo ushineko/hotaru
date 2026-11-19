@@ -262,6 +262,7 @@ func serveCooler(ctx context.Context, svc *service.Service, found *cooler.Cooler
 	panel := dashboard.NewPusher(found, svc.Readings)
 	panel.Trails = svc.Trails
 	panel.Look = svc.Look
+	panel.Backdrop = svc.Backdrop
 	panel.Report = report
 	svc.SetDashboard(panel)
 

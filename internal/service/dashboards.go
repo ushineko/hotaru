@@ -6,7 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"image"
+	"image/draw"
+	"image/gif"
 	"image/png"
+	"os"
+	"sync"
+	"time"
 
 	"github.com/ushineko/hotaru/internal/dashboard"
 	"github.com/ushineko/hotaru/internal/state"
@@ -186,12 +191,103 @@ func (s *Service) behind(_ context.Context, one dashboard.Dashboard) image.Image
 	if err != nil {
 		return nil
 	}
-	// In full colour where the library kept a copy (spec 080).
+	/*
+		In full colour where the library kept a copy (spec 080), decoded once
+		per picture file: the dashboard loop asks every second, and decoding
+		a picture again each time was a tenth of the service's own work
+		(spec 081's profile).
+	*/
+	info, err := os.Stat(library.Path(one.Background.Picture))
+	if err != nil {
+		return nil
+	}
+	key := fmt.Sprintf("%s|%d|%d", info.Name(), info.Size(), info.ModTime().UnixNano())
+	s.still.mu.Lock()
+	defer s.still.mu.Unlock()
+	if s.still.key == key {
+		return s.still.img
+	}
 	still, err := library.Still(one.Background.Picture)
 	if err != nil {
 		return nil
 	}
+	s.still.key, s.still.img = key, still
 	return still
+}
+
+// stillCache is the one still background decoded, for the file the key names.
+// A copy kept beside the GIF (images.Library.Still) changes with it.
+type stillCache struct {
+	mu  sync.Mutex
+	key string
+	img image.Image
+}
+
+// backdropCache is the one animated background decoded: the frames of the
+// picture file the key names.
+type backdropCache struct {
+	mu     sync.Mutex
+	key    string
+	frames dashboard.Backdrop
+}
+
+/*
+Backdrop is a dashboard's background picture as frames, for a panel that
+takes motion frames to play (spec 081). A still picture, a missing one and a
+background that is not a picture are no frames.
+
+Decoded once per picture file and kept: a file added again under the same
+name has another size or time, and is decoded again. The library stores an
+animation as whole 640x640 frames, kept here as they are, 256 colours each.
+*/
+func (s *Service) Backdrop(_ context.Context, one dashboard.Dashboard) dashboard.Backdrop {
+	if one.Background.Kind != dashboard.Picture || one.Background.Picture == "" {
+		return dashboard.Backdrop{}
+	}
+	library, err := s.library()
+	if err != nil {
+		return dashboard.Backdrop{}
+	}
+	info, err := os.Stat(library.Path(one.Background.Picture))
+	if err != nil {
+		return dashboard.Backdrop{}
+	}
+	key := fmt.Sprintf("%s|%d|%d", info.Name(), info.Size(), info.ModTime().UnixNano())
+
+	s.backdrop.mu.Lock()
+	defer s.backdrop.mu.Unlock()
+	if s.backdrop.key == key {
+		return s.backdrop.frames
+	}
+	s.backdrop.key, s.backdrop.frames = key, dashboard.Backdrop{}
+	body, err := library.Read(one.Background.Picture)
+	if err != nil {
+		return dashboard.Backdrop{}
+	}
+	g, err := gif.DecodeAll(bytes.NewReader(body))
+	if err != nil || len(g.Image) < 2 {
+		return dashboard.Backdrop{}
+	}
+	out := dashboard.Backdrop{}
+	whole := image.Rect(0, 0, g.Config.Width, g.Config.Height)
+	canvas := image.NewRGBA(whole)
+	for i, frame := range g.Image {
+		var img image.Image = frame
+		if !frame.Bounds().Eq(whole) {
+			// A partial frame, from a file the library did not convert:
+			// laid over the frames before it.
+			draw.Draw(canvas, frame.Bounds(), frame, frame.Bounds().Min, draw.Over)
+			copied := image.NewRGBA(whole)
+			copy(copied.Pix, canvas.Pix)
+			img = copied
+		} else {
+			draw.Draw(canvas, whole, frame, image.Point{}, draw.Src)
+		}
+		out.Frames = append(out.Frames, img)
+		out.Delays = append(out.Delays, time.Duration(g.Delay[i])*10*time.Millisecond)
+	}
+	s.backdrop.frames = out
+	return out
 }
 
 // Preview is a dashboard frame encoded as the panel would show it.

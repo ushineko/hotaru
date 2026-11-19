@@ -406,6 +406,12 @@ func Handler(svc *service.Service) http.Handler {
 			return
 		}
 		in.Name = r.PathValue("name")
+		// A motion or interval this version does not know is the caller's
+		// mistake, not the service's (spec 081).
+		if err := toDashboard(in).Check(); err != nil {
+			write(w, http.StatusBadRequest, Error{Error: err.Error()})
+			return
+		}
 		if err := svc.SaveDashboard(toDashboard(in)); err != nil {
 			fail(w, err)
 			return

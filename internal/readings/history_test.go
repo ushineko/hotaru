@@ -31,15 +31,15 @@ func TestABucketIsTheMeanOfWhatArrivedInIt(t *testing.T) {
 	*/
 	h := readings.NewHistory()
 	h.Record(took(readings.CPUTemp, 50), at(0))
-	h.Record(took(readings.CPUTemp, 80), at(0).Add(time.Second))
-	h.Record(took(readings.CPUTemp, 62), at(0).Add(2*time.Second))
+	h.Record(took(readings.CPUTemp, 80), at(0).Add(300*time.Millisecond))
+	h.Record(took(readings.CPUTemp, 62), at(0).Add(600*time.Millisecond))
 
 	// The open bucket is not handed out: a point still filling would move
 	// under whoever is looking at it.
-	require.Empty(t, h.Trail(readings.CPUTemp))
+	require.Empty(t, h.Trail(readings.CPUTemp, readings.Bucket))
 
 	h.Record(took(readings.CPUTemp, 40), at(1))
-	require.Equal(t, []float64{64}, h.Trail(readings.CPUTemp))
+	require.Equal(t, []float64{64}, h.Trail(readings.CPUTemp, readings.Bucket))
 }
 
 func TestABucketNothingArrivedInIsAGap(t *testing.T) {
@@ -49,7 +49,7 @@ func TestABucketNothingArrivedInIsAGap(t *testing.T) {
 	h.Record(took(readings.PumpRPM, 2600), at(0))
 	h.Record(took(readings.PumpRPM, 2700), at(3))
 
-	trail := h.Trail(readings.PumpRPM)
+	trail := h.Trail(readings.PumpRPM, readings.Bucket)
 	require.Len(t, trail, 3)
 	require.Equal(t, 2600.0, trail[0])
 	require.True(t, math.IsNaN(trail[1]), "a bucket nothing arrived in is not a gap")
@@ -58,15 +58,15 @@ func TestABucketNothingArrivedInIsAGap(t *testing.T) {
 
 func TestTheWindowKeepsTheLatestAndDropsTheRest(t *testing.T) {
 	h := readings.NewHistory()
-	for i := range readings.Points + 10 {
+	for i := range readings.Buckets + 10 {
 		h.Record(took(readings.CPULoad, float64(i)), at(i))
 	}
 	// One more, to close the last bucket that carries a number.
-	h.Record(took(readings.CPULoad, -1), at(readings.Points+10))
+	h.Record(took(readings.CPULoad, -1), at(readings.Buckets+10))
 
-	trail := h.Trail(readings.CPULoad)
-	require.Len(t, trail, readings.Points, "the window grew")
-	require.Equal(t, float64(readings.Points+9), trail[len(trail)-1],
+	trail := h.Trail(readings.CPULoad, readings.Bucket)
+	require.Len(t, trail, readings.Buckets, "the window grew")
+	require.Equal(t, float64(readings.Buckets+9), trail[len(trail)-1],
 		"the newest point is not last")
 	require.Equal(t, float64(10), trail[0], "the oldest points were not dropped")
 }
@@ -83,12 +83,12 @@ func TestALongSilenceDoesNotWalkEveryBucket(t *testing.T) {
 	done := make(chan []float64, 1)
 	go func() {
 		h.Record(took(readings.CPULoad, 30), at(0).Add(7*24*time.Hour))
-		done <- h.Trail(readings.CPULoad)
+		done <- h.Trail(readings.CPULoad, readings.Bucket)
 	}()
 
 	select {
 	case trail := <-done:
-		require.Len(t, trail, readings.Points)
+		require.Len(t, trail, readings.Buckets)
 		for _, v := range trail {
 			require.True(t, math.IsNaN(v), "a week of silence drew numbers")
 		}
@@ -105,12 +105,55 @@ func TestAReadingFromBeforeTheOpenBucketIsDropped(t *testing.T) {
 	h.Record(took(readings.CPULoad, 90), at(2))
 	h.Record(took(readings.CPULoad, 10), at(6))
 
-	require.Equal(t, []float64{10}, h.Trail(readings.CPULoad))
+	require.Equal(t, []float64{10}, h.Trail(readings.CPULoad, readings.Bucket))
 }
 
 func TestANilHistoryIsSafeToUse(t *testing.T) {
 	// A service built without one, and a client asking anyway.
 	var h *readings.History
 	h.Record(took(readings.CPULoad, 10), at(0))
-	require.Nil(t, h.Trail(readings.CPULoad))
+	require.Nil(t, h.Trail(readings.CPULoad, readings.Bucket))
+}
+
+/*
+A trail at an interval is the mean of each interval's buckets, aligned to the
+clock (spec 081 R4.5): 300, 150 and 60 points over the same five minutes, the
+interval still filling left out.
+*/
+func TestATrailAtAnIntervalAveragesItsBuckets(t *testing.T) {
+	h := readings.NewHistory()
+	for i := range readings.Buckets + 1 {
+		h.Record(took(readings.CPULoad, float64(i%10)), at(i))
+	}
+	for every, points := range map[time.Duration]int{time.Second: 300, 2 * time.Second: 150, 5 * time.Second: 60} {
+		trail := h.Trail(readings.CPULoad, every)
+		require.Len(t, trail, points, "%s", every)
+		require.Equal(t, points, readings.PointsFor(every))
+	}
+	// Seconds 0..4 hold 0..4, so the first five-second point is their mean.
+	require.InDelta(t, 2.0, h.Trail(readings.CPULoad, 5*time.Second)[0], 1e-9)
+	require.InDelta(t, 0.5, h.Trail(readings.CPULoad, 2*time.Second)[0], 1e-9)
+}
+
+// An interval still filling is not a point, and a second nothing arrived in
+// counts for nothing: the mean is of what arrived, and an interval of only
+// gaps is a gap.
+func TestAnIntervalIsTheMeanOfWhatArrived(t *testing.T) {
+	h := readings.NewHistory()
+	h.Record(took(readings.PumpRPM, 2600), at(0))
+	h.Record(took(readings.PumpRPM, 2700), at(2))
+	h.Record(took(readings.PumpRPM, 1), at(12))
+
+	trail := h.Trail(readings.PumpRPM, 5*time.Second)
+	require.Len(t, trail, 2, "seconds 10 and 11 are a filling interval")
+	require.Equal(t, 2650.0, trail[0])
+	require.True(t, math.IsNaN(trail[1]))
+}
+
+// The default interval is a second, over the five minutes every trail spans
+// (spec 081, the maintainer's choice on the live run).
+func TestTheDefaultIntervalIsOneSecond(t *testing.T) {
+	require.Equal(t, time.Second, readings.DefaultEvery)
+	require.Equal(t, 300, readings.Points)
+	require.Equal(t, 5*time.Minute, readings.Window)
 }

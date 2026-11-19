@@ -178,7 +178,10 @@ func TestThePreviewIsDrawnWithTheTrailThePanelHas(t *testing.T) {
 	*/
 	svc := servicetest.New(t, nil)
 
-	one := dashboard.Dashboard{Headline: dashboard.Slot{Source: readings.CPULoad}}
+	// A one-second trail, so a point closes within two seconds of the first
+	// reading (spec 081); the default five-second point needs up to ten.
+	one := dashboard.Dashboard{Headline: dashboard.Slot{Source: readings.CPULoad},
+		Trail: dashboard.Trail{Every: 1}}
 	require.Empty(t, svc.Trails(t.Context(), one).Below,
 		"a service that has taken one reading has a trail")
 

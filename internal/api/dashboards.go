@@ -34,7 +34,9 @@ func asDashboard(one dashboard.Dashboard) Dashboard {
 			Off:   one.Trail.Off,
 			Below: string(one.Trail.Below),
 			Above: string(one.Trail.Above),
+			Every: one.Trail.Every,
 		},
+		Motion: DashboardMotion{Numbers: one.Motion.Numbers, Ring: one.Motion.Ring},
 	}
 	for _, ring := range one.Rings {
 		out.Rings = append(out.Rings, string(ring))
@@ -79,7 +81,9 @@ func toDashboard(one Dashboard) dashboard.Dashboard {
 			Off:   one.Trail.Off,
 			Below: readings.Source(one.Trail.Below),
 			Above: readings.Source(one.Trail.Above),
+			Every: one.Trail.Every,
 		},
+		Motion: dashboard.Motion{Numbers: one.Motion.Numbers, Ring: one.Motion.Ring},
 	}
 	for _, ring := range one.Rings {
 		out.Rings = append(out.Rings, readings.Source(ring))

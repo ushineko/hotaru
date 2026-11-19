@@ -81,7 +81,7 @@ func BenchmarkQuantiseTheShippedDashboard(b *testing.B) {
 	frame := shown(reading(), 0)
 	b.ResetTimer()
 	for range b.N {
-		_ = quantise(frame.Image, frame.pal)
+		_ = quantise(frame.Image, frame.pal())
 	}
 }
 

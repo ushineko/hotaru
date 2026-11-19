@@ -52,6 +52,9 @@ func ringsOf(d Dashboard) []readings.Source {
 
 // drawRings puts each arc round the centre, outermost first.
 func drawRings(p *paint, d Dashboard, r Reading) {
+	if p.noRings {
+		return
+	}
 	centre := float64(Size) / 2
 	radius := float64(Size-2*margin) / 2
 	width := float64(ringWidth)
