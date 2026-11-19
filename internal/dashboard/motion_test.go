@@ -82,3 +82,16 @@ func differs(a, b *image.RGBA, x, y int) bool {
 	i := a.PixOffset(x, y)
 	return a.Pix[i] != b.Pix[i] || a.Pix[i+1] != b.Pix[i+1] || a.Pix[i+2] != b.Pix[i+2]
 }
+
+// Every shipped dashboard's layers, laid in order, are the frame Render
+// draws (spec 081 R6): a still frame and a moving one come from one place.
+func TestLayersComposeToTheFrame(t *testing.T) {
+	for _, d := range Shipped() {
+		l := RenderLayers(d, reading(), nil, Trails{Below: level(40)})
+		want := Render(d, reading(), 0, nil, Trails{Below: level(40)}).Image
+		got := l.Frame(0).Image
+		require.Equal(t, want.Pix, got.Pix, d.Name)
+		require.Equal(t, Compose(l.Background, l.Rings, l.Trails, l.Text).Pix[:Size*4*590],
+			want.Pix[:Size*4*590], "%s: above the tick", d.Name)
+	}
+}

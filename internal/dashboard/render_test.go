@@ -213,7 +213,9 @@ looking at.
 So the golden was regenerated, once, by this renderer, and again by spec 080,
 which paints in full colour and quantises the GIF afterwards: 522 pixels moved
 by a step at the edges of text, and a PNG golden now holds the full-colour
-frame that a panel taking frames shows. The test means what it meant before: the default screen is what somebody decided it should be, and
+frame that a panel taking frames shows. Spec 081 regenerated both once more:
+Render lays layers now, and compositing rounded 3430 pixels by one level (the
+GIF's nearest colours followed). The test means what it meant before: the default screen is what somebody decided it should be, and
 it does not move again without somebody deciding that too. A failure here is
 either a change worth a line in the changelog or a change nobody intended, and
 both are worth stopping for.
