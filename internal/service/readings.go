@@ -76,8 +76,10 @@ func (s *Service) Trails(ctx context.Context, d dashboard.Dashboard) dashboard.T
 	s.Readings(ctx)
 
 	below, above := d.Trail.Sources(d.Headline.Source)
+	every := d.Trail.Interval()
 	return dashboard.Trails{
-		Below: s.history.Trail(below),
-		Above: s.history.Trail(above),
+		Below:  s.history.Trail(below, every),
+		Above:  s.history.Trail(above, every),
+		Points: readings.PointsFor(every),
 	}
 }

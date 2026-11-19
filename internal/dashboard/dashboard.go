@@ -1,8 +1,11 @@
 package dashboard
 
 import (
+	"fmt"
 	"image/color"
+	"slices"
 	"strings"
+	"time"
 
 	"github.com/ushineko/hotaru/internal/readings"
 )
@@ -89,6 +92,60 @@ type Dashboard struct {
 		number above it. See Trail.
 	*/
 	Trail Trail `json:"trail,omitempty"`
+
+	/*
+		Motion is how a change is drawn on a panel that takes motion frames
+		(spec 081). Empty is a jump, as every dashboard before it, and what
+		the shipped ones say.
+	*/
+	Motion Motion `json:"motion,omitempty"`
+}
+
+/*
+Motion is how a dashboard's changes move.
+
+Numbers is how changed text turns into its new value: melt, morph or roll.
+Ring is how the rings reach their new values: sweep or comet. Empty, either,
+is a jump. Only the parts that changed move; the rest stays as it is.
+*/
+type Motion struct {
+	Numbers string `json:"numbers,omitempty"`
+	Ring    string `json:"ring,omitempty"`
+}
+
+// The motions a dashboard may choose.
+const (
+	Melt  = "melt"
+	Morph = "morph"
+	Roll  = "roll"
+	Sweep = "sweep"
+	Comet = "comet"
+)
+
+// NumberMotions and RingMotions are the choices, in the order an editor
+// offers them; empty is a jump.
+var (
+	NumberMotions = []string{Melt, Morph, Roll}
+	RingMotions   = []string{Sweep, Comet}
+)
+
+/*
+Check refuses a dashboard whose motion or trail interval is not one this
+version knows, naming the ones it does. Only the settings that came with
+spec 081 are checked: everything older falls back to a default when it is
+not understood, and a dashboard saved by a later version still draws.
+*/
+func (d Dashboard) Check() error {
+	if v := d.Motion.Numbers; v != "" && !slices.Contains(NumberMotions, v) {
+		return fmt.Errorf("numbers motion %q is not one of %s", v, strings.Join(NumberMotions, ", "))
+	}
+	if v := d.Motion.Ring; v != "" && !slices.Contains(RingMotions, v) {
+		return fmt.Errorf("ring motion %q is not one of %s", v, strings.Join(RingMotions, ", "))
+	}
+	if e := d.Trail.Every; e != 0 && !slices.Contains(readings.Intervals, time.Duration(e)*time.Second) {
+		return fmt.Errorf("a trail every %d seconds is not one of 1, 2, 5", e)
+	}
+	return nil
 }
 
 /*
@@ -498,6 +555,19 @@ type Trail struct {
 	// Above hangs from the top of the band, inverted. Empty draws nothing
 	// there, and the trace below takes the whole band.
 	Above readings.Source `json:"above,omitempty"`
+
+	// Every is the seconds a point covers: 1, 2 or 5 (spec 081). Zero is 5,
+	// what every trail was before. The trail spans five minutes whatever it
+	// is, so a shorter interval is more, finer points.
+	Every int `json:"every,omitempty"`
+}
+
+// Interval is how long a point of the trail covers.
+func (t Trail) Interval() time.Duration {
+	if t.Every == 0 {
+		return readings.DefaultEvery
+	}
+	return time.Duration(t.Every) * time.Second
 }
 
 /*

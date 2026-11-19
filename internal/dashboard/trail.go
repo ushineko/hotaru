@@ -30,12 +30,23 @@ what a dashboard that has said nothing about its trail draws.
 type Trails struct {
 	Below, Above Series
 
+	// Points is how many points span the band: the trail's window over its
+	// interval (spec 081). Zero is readings.Points, the five-second trail.
+	Points int
+
 	// Shift draws every point this fraction of a step to the right of its
-	// place, for a trace that drifts left between samples, and Ranges is a
-	// low and high per source that replace the trace's own (spec 081
-	// PROTOTYPE).
+	// place, for a trace drifting left between samples, and Ranges replace a
+	// source's own low and high while the range blends (spec 081 R4).
 	Shift  float64
 	Ranges map[readings.Source][2]float64
+}
+
+// span is how many points cross the band.
+func (t Trails) span() int {
+	if t.Points < 2 {
+		return readings.Points
+	}
+	return t.Points
 }
 
 /*
@@ -147,8 +158,8 @@ func (p *paint) drawTrail(t Trails, points Series, source readings.Source, c col
 	at := func(i int) (int, int, bool) {
 		// Right-aligned: a series shorter than its window ends where a full
 		// one ends, and starts further in.
-		slot := float64(readings.Points-len(points)+i) + t.Shift
-		x := left + int(math.Round(slot*float64(right-left)/float64(readings.Points-1)))
+		slot := float64(t.span()-len(points)+i) + t.Shift
+		x := left + int(math.Round(slot*float64(right-left)/float64(t.span()-1)))
 		v := points[i]
 		if math.IsNaN(v) {
 			return x, 0, false
