@@ -2,7 +2,7 @@
 
 *lights, cooler, action!*
 
-**Version**: 2.1.0
+**Version**: 2.2.0
 
 RGB lighting and AIO cooler control for Linux and Windows, as a CLI, a
 background service and a desktop GUI.
@@ -318,7 +318,7 @@ MIT. See [LICENSE](LICENSE).
 
 ## Changelog
 
-### Unreleased
+### 2.2.0 (2026-11-19)
 
 - **Dashboards that move** (spec 081,
   [#228](https://github.com/ushineko/hotaru/issues/228)). On the Kraken
