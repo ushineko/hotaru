@@ -268,8 +268,8 @@ beside its GIF.
 **Motion on the Kraken Elite.** The panel also takes motion frames: Q565,
 16-bit colour, at about 20 a second (sanshoku 0.4.0). A dashboard on it can
 melt, morph or roll its changing numbers and sweep its rings, its trail drifts
-smoothly, and an animated picture behind it plays (spec 081). A still frame is
-still full colour.
+smoothly, and an animated picture behind it plays (spec 081). Every dashboard
+frame on it is a motion frame, still or not.
 
 **Temperatures: the kernel.** The CPU package comes from `coretemp`, read by
 label. An AMD processor is read from `k10temp` or `zenpower`, in the order

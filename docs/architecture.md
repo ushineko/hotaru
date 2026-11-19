@@ -239,15 +239,15 @@ them.
   colours, no sooner than its floor. A picture and the readout stop the
   dashboard, and resends stop with it.
 - **A dashboard that moves.** The Kraken Elite also takes motion frames, in
-  16-bit colour at up to 20 a second (spec 081). On it, hotaru reads once a
-  second and draws as often as something moves. A change moves as the
+  16-bit colour at up to 20 a second (spec 081). On it, every dashboard frame
+  is a motion frame: tens of kilobytes where a full-colour one is 1.2 MB, and
+  16-bit colour is not told apart from 24-bit on its panel. hotaru reads once
+  a second and draws as often as something moves. A change moves as the
   dashboard's `motion` says: the changed numbers melt, morph or roll over
-  0.5 to 0.7 s, and the rings sweep. The change ends on a full-colour still.
-  The trail drifts left between its samples, as a full-colour still each time
-  it has moved a pixel: about 2 a second, for any dashboard with a trail. An
-  animated background plays continuously at its own pace, at most 20 frames a
-  second. The service decodes its frames once. A dashboard with no `motion`, a
-  still background and no trail costs what spec 080 measured.
+  0.5 to 0.7 s, and the rings sweep. The trail drifts left between its
+  samples, a frame each time it has moved a pixel: about 1 to 2 a second, for
+  any dashboard with a trail. An animated background plays continuously at its
+  own pace, at most 20 frames a second. The service decodes its frames once.
 - **Effects hotaru draws.** Every lit device is a *canvas device*: hotaru
   draws its effects on the host and sends it frames, as the Apex Pro TKL
   Wireless Gen 3's vendor software does (spec 060). hotaru finds canvas

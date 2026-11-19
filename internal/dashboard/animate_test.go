@@ -111,13 +111,14 @@ func ringDashboard() Dashboard {
 }
 
 /*
-A change on a dashboard that melts is motion frames at 50 ms apart for its
-700 ms, then one full-colour still; the tick advances once (R2, R2.5).
+A change on a dashboard that melts is frames at 50 ms apart for its 700 ms,
+the last at its end drawing the new reading exactly; the tick advances once
+(R2, R2.5). Every frame on a Mover is a motion frame.
 */
-func TestAChangeThatMeltsIsMotionThenAStill(t *testing.T) {
+func TestAChangeThatMeltsIsFramesToItsEnd(t *testing.T) {
 	s := newScene(t, ringDashboard())
 	s.run(2 * time.Second)
-	require.Equal(t, 1, s.m.n(), "a fresh start is one still and then quiet")
+	require.Equal(t, 1, s.m.n(), "a fresh start is one frame and then quiet")
 	tick := s.p.tick
 
 	from := s.m.n()
@@ -125,29 +126,27 @@ func TestAChangeThatMeltsIsMotionThenAStill(t *testing.T) {
 	s.run(2 * time.Second)
 
 	stills, moves := s.m.count(from)
-	require.InDelta(t, 14, moves, 2, "700 ms at 50 ms a frame")
-	require.Equal(t, 1, stills, "the transition ends on one full-colour still")
+	require.Zero(t, stills, "a raw frame went to a panel that takes motion frames")
+	require.InDelta(t, 15, moves, 2, "700 ms at 50 ms a frame, and the end")
 	require.Equal(t, tick+1, s.p.tick, "the tick advanced per frame, not per change")
 
 	s.m.mu.Lock()
 	defer s.m.mu.Unlock()
-	last := s.m.sent[len(s.m.sent)-1]
-	require.False(t, last.motion)
+	first, last := s.m.sent[from], s.m.sent[len(s.m.sent)-1]
+	require.GreaterOrEqual(t, last.at.Sub(first.at), 700*time.Millisecond, "the transition did not reach its end")
 	for i := from + 1; i < len(s.m.sent)-1; i++ {
-		require.Equal(t, motionPace, s.m.sent[i].at.Sub(s.m.sent[i-1].at), "motion frames at the motion pace")
+		require.Equal(t, motionPace, s.m.sent[i].at.Sub(s.m.sent[i-1].at), "frames at the motion pace")
 	}
 }
 
-// A dashboard with no motion jumps: one still per change, as spec 080 sent.
+// A dashboard with no motion jumps: one frame per change, as spec 080 sent.
 func TestAChangeWithoutMotionJumps(t *testing.T) {
 	s := newScene(t, Shipped()[0])
 	s.run(2 * time.Second)
 	from := s.m.n()
 	s.r.Set(readings.Coolant, 48.7)
 	s.run(2 * time.Second)
-	stills, moves := s.m.count(from)
-	require.Equal(t, 1, stills)
-	require.Zero(t, moves)
+	require.Equal(t, from+1, s.m.n())
 }
 
 // A change during a transition starts from what is on the panel: the rings
@@ -175,10 +174,10 @@ func TestAChangeMidTransitionStartsFromThePanel(t *testing.T) {
 
 /*
 The trail drifts: when a sample joins it the trace starts a step right and
-moves left, a full-colour still each time it has moved a pixel, never a
-motion frame on its own, and the tick does not move (R4).
+moves left, a frame each time it has moved a pixel and none between, and the
+tick does not move (R4).
 */
-func TestTheTrailDriftsAsStills(t *testing.T) {
+func TestTheTrailDriftsAPixelAtATime(t *testing.T) {
 	s := newScene(t, Shipped()[0])
 	s.trails = Trails{Below: rampSeries(60, 0), Points: 60}
 	s.run(2 * time.Second)
@@ -186,10 +185,8 @@ func TestTheTrailDriftsAsStills(t *testing.T) {
 
 	s.trails = Trails{Below: rampSeries(60, 1), Points: 60}
 	s.run(6 * time.Second)
-	stills, moves := s.m.count(from)
-	require.Zero(t, moves, "a drift sent motion frames")
 	step := float64(Size-2*rowInset-1) / 59
-	require.InDelta(t, int(step), stills, 2, "a still per pixel of the step")
+	require.InDelta(t, int(step), s.m.n()-from, 2, "a frame per pixel of the step")
 	require.Equal(t, tick, s.p.tick, "a drift advanced the tick")
 }
 

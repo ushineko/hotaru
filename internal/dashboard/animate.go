@@ -16,9 +16,9 @@ import (
 
 /*
 Mover is a panel that also takes motion frames: 16-bit colour at the device's
-own pace (spec 081). A panel that is a Mover is a Framer as well, and a
-dashboard on it moves: numbers and rings as its Motion says, trails always,
-and an animated background plays.
+own pace (spec 081). A panel that is a Mover is a Framer as well, for its
+hold, and a dashboard on it moves: numbers and rings as its Motion says,
+trails always, and an animated background plays.
 */
 type Mover interface {
 	Moves() bool
@@ -96,9 +96,11 @@ animate is one cycle on a panel that takes motion frames: take a reading
 once a second, start a transition when what the dashboard says changes, and
 send what the panel should show now. It says how long to wait.
 
-Motion frames while something moves; a full-colour still when only the trail
-has drifted a pixel, when a change jumps, or when the firmware's hold is
-nearly up (spec 080); nothing otherwise.
+Every frame is a motion frame (Q565): while something moves, when the trail
+has drifted a pixel, when a change jumps or ends, and when the firmware's hold
+is nearly up (spec 080); nothing otherwise. 16-bit colour on a 640-pixel panel
+is not told apart from 24-bit, and a frame is tens of kilobytes where a raw
+one is 1.2 MB (the maintainer's choice, after the live run's cost).
 */
 func (p *Pusher) animate(ctx context.Context, m Mover, f Framer) time.Duration {
 	now := p.clock()
@@ -122,13 +124,7 @@ func (p *Pusher) animate(ctx context.Context, m Mover, f Framer) time.Duration {
 	}
 
 	img := p.compose(a, t, shift)
-	var err error
-	if moving || looping {
-		err = m.Move(ctx, img)
-	} else {
-		err = f.Frame(ctx, img)
-	}
-	if err != nil {
+	if err := m.Move(ctx, img); err != nil {
 		if p.Report != nil && ctx.Err() == nil {
 			p.Report("hotaru: dashboard: %v", err)
 		}
