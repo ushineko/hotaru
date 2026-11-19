@@ -40,13 +40,13 @@ type Frame struct {
 	// Taken is when it was rendered.
 	Taken time.Time
 
-	pal color.Palette
+	pal func() color.Palette
 }
 
 // GIF is the frame encoded as a one-frame GIF, through the palette its
 // background chose.
 func (f Frame) GIF() []byte {
-	img := quantise(f.Image, f.pal)
+	img := quantise(f.Image, f.pal())
 	var buf bytes.Buffer
 	_ = gif.EncodeAll(&buf, &gif.GIF{
 		Image: []*image.Paletted{img}, Delay: []int{100}, LoopCount: 0,

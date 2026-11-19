@@ -277,31 +277,60 @@ func Glow(now, before *image.RGBA, strength float64) {
 	if strength <= 0 {
 		return
 	}
+	// Only around what changed: the sweep is a strip of the ring, and
+	// blurring the whole frame twice was most of a comet frame's cost.
 	b := now.Bounds()
-	w, h := b.Dx(), b.Dy()
-	field := make([]float32, w*h)
-	for i := range field {
-		for c := range 4 {
-			if d := int(now.Pix[i*4+c]) - int(before.Pix[i*4+c]); d > 16 || d < -16 {
-				field[i] = 1
-				break
+	area := image.Rectangle{}
+	for y := b.Min.Y; y < b.Max.Y; y++ {
+		for x := b.Min.X; x < b.Max.X; x++ {
+			if differs(now, before, now.PixOffset(x, y)) {
+				area = area.Union(image.Rect(x, y, x+1, y+1))
 			}
 		}
 	}
-	halo := append([]float32(nil), field...)
-	blur(halo, w, h, 6)
-	blur(halo, w, h, 6)
-	s := float32(strength)
-	for i := range field {
-		g := min(1, field[i]*s+halo[i]*s*1.5)
-		if g <= 0 {
-			continue
-		}
-		a := max(float32(now.Pix[i*4+3]), g*255)
-		for c := range 3 {
-			v := float32(now.Pix[i*4+c])
-			now.Pix[i*4+c] = uint8(min(a, v+(a-v)*g))
-		}
-		now.Pix[i*4+3] = uint8(a)
+	if area.Empty() {
+		return
 	}
+	area = area.Inset(-halo).Intersect(b)
+	w, h := area.Dx(), area.Dy()
+	field := make([]float32, w*h)
+	for y := range h {
+		for x := range w {
+			if differs(now, before, now.PixOffset(area.Min.X+x, area.Min.Y+y)) {
+				field[y*w+x] = 1
+			}
+		}
+	}
+	soft := append([]float32(nil), field...)
+	blur(soft, w, h, 6)
+	blur(soft, w, h, 6)
+	s := float32(strength)
+	for y := range h {
+		for x := range w {
+			g := min(1, field[y*w+x]*s+soft[y*w+x]*s*1.5)
+			if g <= 0 {
+				continue
+			}
+			o := now.PixOffset(area.Min.X+x, area.Min.Y+y)
+			a := max(float32(now.Pix[o+3]), g*255)
+			for c := range 3 {
+				v := float32(now.Pix[o+c])
+				now.Pix[o+c] = uint8(min(a, v+(a-v)*g))
+			}
+			now.Pix[o+3] = uint8(a)
+		}
+	}
+}
+
+// halo is how far the glow reaches past the sweep: two blurs of 6.
+const halo = 12
+
+// differs says whether two layers differ at a pixel by more than rounding.
+func differs(a, b *image.RGBA, o int) bool {
+	for c := range 4 {
+		if d := int(a.Pix[o+c]) - int(b.Pix[o+c]); d > 16 || d < -16 {
+			return true
+		}
+	}
+	return false
 }

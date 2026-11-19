@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"image"
 	"image/color"
-	"image/draw"
 	"time"
 
 	"github.com/ushineko/hotaru/internal/readings"
@@ -22,7 +21,7 @@ type Layers struct {
 	Background, Rings, Trails, Text *image.RGBA
 
 	theme Theme
-	pal   color.Palette
+	pal   func() color.Palette
 }
 
 // RenderLayers draws a dashboard as its layers.
@@ -59,10 +58,37 @@ func Compose(background *image.RGBA, layers ...*image.RGBA) *image.RGBA {
 	copy(out.Pix, background.Pix)
 	for _, l := range layers {
 		if l != nil {
-			draw.Draw(out, out.Bounds(), l, image.Point{}, draw.Over)
+			over(out, l, out.Bounds())
 		}
 	}
 	return out
+}
+
+/*
+over lays src over dst within r: draw.Over's arithmetic for an RGBA source on
+an RGBA destination, to the bit, so a frame composed here is the frame Render
+has always drawn. A transparent pixel is skipped and an opaque one copied,
+which is most of a layer, and is where the time draw.Draw spends goes.
+*/
+func over(dst, src *image.RGBA, r image.Rectangle) {
+	const m = 1<<16 - 1
+	r = r.Intersect(dst.Bounds()).Intersect(src.Bounds())
+	for y := r.Min.Y; y < r.Max.Y; y++ {
+		i, j := dst.PixOffset(r.Min.X, y), src.PixOffset(r.Min.X, y)
+		for x := r.Min.X; x < r.Max.X; x, i, j = x+1, i+4, j+4 {
+			switch sa := src.Pix[j+3]; sa {
+			case 0:
+			case 255:
+				copy(dst.Pix[i:i+4], src.Pix[j:j+4])
+			default:
+				a := (m - uint32(sa)*0x101) * 0x101
+				for c := range 4 {
+					s := uint32(src.Pix[j+c]) * 0x101
+					dst.Pix[i+c] = uint8((uint32(dst.Pix[i+c])*a/m + s) >> 8) //nolint:gosec // draw.Over's own arithmetic
+				}
+			}
+		}
+	}
 }
 
 // layerPaint is a transparent canvas with a dashboard's theme and lettering.

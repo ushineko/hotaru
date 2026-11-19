@@ -25,8 +25,10 @@ type paint struct {
 	img *image.RGBA
 	// pal is the palette the frame's GIF is quantised through, for a panel
 	// that takes GIFs and not frames. Chosen with the background, as it was
-	// when the canvas itself was paletted.
-	pal   color.Palette
+	// when the canvas itself was paletted, and only when a GIF is asked
+	// for: counting a photograph's colours is most of what a background
+	// costs, and a panel that takes frames never needs them.
+	pal   func() color.Palette
 	theme Theme
 	// picture says the background is a photograph, which is what decides
 	// whether text is outlined when the dashboard has not said.
@@ -53,18 +55,25 @@ func newPaint(d Dashboard, theme Theme, behind image.Image) *paint {
 	case Picture:
 		img := dimmed(behind, d.Background.Darkness(), theme)
 		return &paint{
-			img: img, pal: palette(theme, fromPicture(img)),
+			img: img, pal: func() color.Palette { return palette(theme, fromPicture(img)) },
 			theme: theme, picture: true, letters: d.Lettering,
 		}
 	case Plain:
 		img := image.NewRGBA(image.Rect(0, 0, Size, Size))
 		draw.Draw(img, img.Bounds(), image.NewUniform(theme.BG), image.Point{}, draw.Src)
-		return &paint{img: img, pal: palette(theme, nil, d.Lettering.chosen()...), theme: theme, letters: d.Lettering}
+		chosen := d.Lettering.chosen()
+		return &paint{
+			img: img, pal: func() color.Palette { return palette(theme, nil, chosen...) },
+			theme: theme, letters: d.Lettering,
+		}
 	default:
 		sky := background(theme)
 		img := image.NewRGBA(sky.Bounds())
 		copy(img.Pix, sky.Pix)
-		return &paint{img: img, pal: palette(theme, nil), theme: theme, letters: d.Lettering}
+		return &paint{
+			img: img, pal: func() color.Palette { return palette(theme, nil) },
+			theme: theme, letters: d.Lettering,
+		}
 	}
 }
 
@@ -79,21 +88,36 @@ text drawn in the nearest available colour to white is not white.
 func dimmed(behind image.Image, keep float64, theme Theme) *image.RGBA {
 	bounds := image.Rect(0, 0, Size, Size)
 	rgba := image.NewRGBA(bounds)
-	draw.Draw(rgba, bounds, image.NewUniform(theme.BG), image.Point{}, draw.Src)
-	draw.Draw(rgba, bounds, behind, behind.Bounds().Min, draw.Src)
 
-	for y := range Size {
-		for x := range Size {
-			c := rgba.RGBAAt(x, y)
-			rgba.SetRGBA(x, y, color.RGBA{
-				R: clamp(float64(c.R) * keep),
-				G: clamp(float64(c.G) * keep),
-				B: clamp(float64(c.B) * keep),
-				A: 255,
-			})
+	/*
+		A 256-colour frame, which is how the library keeps an animation's:
+		each palette entry darkened once and looked up per pixel, the same
+		bytes the drawing and darkening below give, and a fraction of the
+		work for an animated background drawn twenty times a second
+		(spec 081).
+	*/
+	if p, ok := behind.(*image.Paletted); ok && p.Bounds() == bounds {
+		lut := make([][4]uint8, 256)
+		for i, c := range p.Palette {
+			r, g, b, _ := c.RGBA()
+			lut[i] = [4]uint8{
+				clamp(float64(r>>8) * keep), clamp(float64(g>>8) * keep), clamp(float64(b>>8) * keep), 255,
+			}
 		}
+		for i, idx := range p.Pix {
+			copy(rgba.Pix[i*4:i*4+4], lut[idx][:])
+		}
+		return rgba
 	}
 
+	draw.Draw(rgba, bounds, image.NewUniform(theme.BG), image.Point{}, draw.Src)
+	draw.Draw(rgba, bounds, behind, behind.Bounds().Min, draw.Src)
+	for i := 0; i < len(rgba.Pix); i += 4 {
+		rgba.Pix[i] = clamp(float64(rgba.Pix[i]) * keep)
+		rgba.Pix[i+1] = clamp(float64(rgba.Pix[i+1]) * keep)
+		rgba.Pix[i+2] = clamp(float64(rgba.Pix[i+2]) * keep)
+		rgba.Pix[i+3] = 255
+	}
 	return rgba
 }
 

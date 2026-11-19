@@ -60,9 +60,11 @@ type animation struct {
 	still   *image.RGBA
 	picture bool
 
-	// The reading heading to, its text and the gate's key for it.
+	// The reading heading to, its text and rings, and the gate's key for
+	// them.
 	reading Reading
 	text    *image.RGBA
+	rings   *image.RGBA
 	key     [32]byte
 
 	// The transition: the text and the rings from what was on the panel to
@@ -183,8 +185,8 @@ func (p *Pusher) sample(ctx context.Context, now time.Time) {
 			_, a.picture = BackgroundLayer(d, a.frames[0])
 		}
 		a.reading, a.ringFrom = r, r
-		a.text = TextLayer(d, r, a.picture)
-		a.key = keyOf(a.text, RingsLayer(d, r))
+		a.text, a.rings = TextLayer(d, r, a.picture), RingsLayer(d, r)
+		a.key = keyOf(a.text, a.rings)
 		a.trails, a.prev = trails, trails
 		a.sampled = now.Add(-d.Trail.Interval())
 		a.shiftPx = -1
@@ -192,8 +194,8 @@ func (p *Pusher) sample(ctx context.Context, now time.Time) {
 		return
 	}
 
-	text := TextLayer(d, r, a.picture)
-	if key := keyOf(text, RingsLayer(d, r)); key != a.key {
+	text, rings := TextLayer(d, r, a.picture), RingsLayer(d, r)
+	if key := keyOf(text, rings); key != a.key {
 		t, moving := a.progress(now)
 		shownText, shownRing := a.text, a.reading
 		if moving {
@@ -206,7 +208,7 @@ func (p *Pusher) sample(ctx context.Context, now time.Time) {
 			a.length = motion.Duration(d.Motion.Numbers)
 			a.began = now
 		}
-		a.ringFrom, a.reading, a.text, a.key = shownRing, r, text, key
+		a.ringFrom, a.reading, a.text, a.rings, a.key = shownRing, r, text, rings, key
 		a.dirty, a.settle = !moves, moves
 		p.tick++
 	} else {
@@ -305,9 +307,14 @@ func (p *Pusher) compose(a *animation, t, shift float64) *image.RGBA {
 	if len(a.frames) > 1 {
 		bg, _ = BackgroundLayer(a.d, a.frames[a.frame])
 	}
-	rings := RingsLayer(a.d, a.ringAt(t))
-	if a.d.Motion.Ring == Comet && t < 1 {
-		motion.Glow(rings, RingsLayer(a.d, a.ringAt(max(0, t-0.12))), 1-t)
+	// The rings as they will be, kept from the reading, unless they are on
+	// their way there.
+	rings := a.rings
+	if a.d.Motion.Ring != "" && t < 1 {
+		rings = RingsLayer(a.d, a.ringAt(t))
+		if a.d.Motion.Ring == Comet {
+			motion.Glow(rings, RingsLayer(a.d, a.ringAt(max(0, t-0.12))), 1-t)
+		}
 	}
 	trails := TrailsLayer(a.d, a.reading, a.drifted(shift), a.picture)
 	img := Compose(bg, rings, trails, a.textAt(t))
