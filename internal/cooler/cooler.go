@@ -88,6 +88,7 @@ type Cooler struct {
 	source cooling.Source  // nil for a device that reports no status
 	panel  screen.Panel    // nil for a device without one
 	framer screen.Streamer // nil for a panel that takes no frames (spec 080)
+	mover  screen.Mover    // nil for a panel that takes no motion frames (spec 081)
 	once   sync.Once
 	gone   chan struct{}
 	mu     sync.Mutex
@@ -100,6 +101,7 @@ func New(dev sanshoku.Device) *Cooler {
 	c.source, _ = dev.(cooling.Source)
 	c.panel, _ = dev.(screen.Panel)
 	c.framer, _ = dev.(screen.Streamer)
+	c.mover, _ = dev.(screen.Mover)
 	return c
 }
 
@@ -152,6 +154,18 @@ func (c *Cooler) FrameHold() time.Duration {
 		return 0
 	}
 	return c.framer.StreamHold()
+}
+
+// Moves says whether the panel takes motion frames: 16-bit colour at the
+// device's own pace, for a dashboard that moves (spec 081).
+func (c *Cooler) Moves() bool { return c.mover != nil }
+
+// Move draws one picture as a motion frame.
+func (c *Cooler) Move(ctx context.Context, img image.Image) error {
+	if c.mover == nil {
+		return ErrNoFrames
+	}
+	return c.draw(func(screen.Panel) error { return c.mover.Move(ctx, img) }) //nolint:wrapcheck // the driver names the device
 }
 
 // Show puts a GIF on the screen, which the cooler keeps and plays by itself

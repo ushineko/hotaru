@@ -57,10 +57,13 @@ type Service struct {
 		See Keep.
 	*/
 	history *readings.History
-	panel   Dashboard
-	scenes  SceneStore
-	images  ImageLibrary
-	desktop string
+	// backdrop is the animated background's frames, decoded once per
+	// picture file (spec 081), under its own lock.
+	backdrop backdropCache
+	panel    Dashboard
+	scenes   SceneStore
+	images   ImageLibrary
+	desktop  string
 
 	// leases maps a device to the preview held over it. One device, one
 	// preview: see preview.go.

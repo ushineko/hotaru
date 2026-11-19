@@ -35,7 +35,7 @@ func reading(coolant float64) readings.Reading {
 }
 
 // text is the dashboard's text layer for a coolant reading.
-func text(t testing.TB, coolant float64) *image.RGBA {
+func text(coolant float64) *image.RGBA {
 	return dashboard.TextLayer(coolantDashboard, reading(coolant), false)
 }
 
@@ -54,24 +54,24 @@ it and the slots below are outside it: only what changed moves (R2.1).
 */
 func TestAChangedNumberIsOneRegionAndTheLabelsAreOutside(t *testing.T) {
 	_ = coolant(t)
-	old, new := text(t, 41.2), text(t, 48.7)
-	regions := motion.Regions(old, new)
+	before, after := text(41.2), text(48.7)
+	regions := motion.Regions(before, after)
 	require.NotEmpty(t, regions)
 	for _, r := range regions {
 		assert.Greater(t, r.Min.Y, 140, "a region reaches into the label above the number: %v", r)
 		assert.Less(t, r.Max.Y, 400, "a region reaches into the slots below: %v", r)
 	}
-	require.Empty(t, motion.Regions(old, old), "nothing changed, and something moves")
+	require.Empty(t, motion.Regions(before, before), "nothing changed, and something moves")
 }
 
 // Every transition starts as the old text and ends as the new, and outside
 // the changed regions it is the new text all the way through.
 func TestEachTransitionGoesFromTheOldTextToTheNew(t *testing.T) {
-	old, new := text(t, 41.2), text(t, 48.7)
+	before, after := text(41.2), text(48.7)
 	for _, kind := range []string{motion.Melt, motion.Morph, motion.Roll} {
-		c := motion.Prepare(kind, old, new)
-		require.Equal(t, old.Pix, c.At(0).Pix, kind)
-		require.Equal(t, new.Pix, c.At(1).Pix, kind)
+		c := motion.Prepare(kind, before, after)
+		require.Equal(t, before.Pix, c.At(0).Pix, kind)
+		require.Equal(t, after.Pix, c.At(1).Pix, kind)
 
 		mid := c.At(0.5)
 		inside := func(x, y int) bool {
@@ -86,8 +86,8 @@ func TestEachTransitionGoesFromTheOldTextToTheNew(t *testing.T) {
 		for y := range dashboard.Size {
 			for x := range dashboard.Size {
 				o := mid.PixOffset(x, y)
-				same := mid.Pix[o] == new.Pix[o] && mid.Pix[o+1] == new.Pix[o+1] &&
-					mid.Pix[o+2] == new.Pix[o+2] && mid.Pix[o+3] == new.Pix[o+3]
+				same := mid.Pix[o] == after.Pix[o] && mid.Pix[o+1] == after.Pix[o+1] &&
+					mid.Pix[o+2] == after.Pix[o+2] && mid.Pix[o+3] == after.Pix[o+3]
 				if !inside(x, y) {
 					require.True(t, same, "%s: unchanged text moved at %d,%d", kind, x, y)
 				} else if !same {
@@ -101,8 +101,8 @@ func TestEachTransitionGoesFromTheOldTextToTheNew(t *testing.T) {
 
 // A kind this package does not know is a jump.
 func TestAnUnknownTransitionJumps(t *testing.T) {
-	old, new := text(t, 41.2), text(t, 48.7)
-	require.Equal(t, new.Pix, motion.Prepare("", old, new).At(0.5).Pix)
+	before, after := text(41.2), text(48.7)
+	require.Equal(t, after.Pix, motion.Prepare("", before, after).At(0.5).Pix)
 }
 
 // The curves start at 0 and end at 1; the spring passes 1 on the way.
@@ -148,11 +148,11 @@ a shipped dashboard's headline changing.
 	go test ./internal/motion -run - -bench Prepare
 */
 func BenchmarkPrepare(b *testing.B) {
-	old, new := text(b, 41.2), text(b, 48.7)
+	before, after := text(41.2), text(48.7)
 	for _, kind := range []string{motion.Melt, motion.Morph, motion.Roll} {
 		b.Run(kind, func(b *testing.B) {
 			for range b.N {
-				_ = motion.Prepare(kind, old, new)
+				_ = motion.Prepare(kind, before, after)
 			}
 		})
 	}
@@ -160,9 +160,9 @@ func BenchmarkPrepare(b *testing.B) {
 
 // A frame of each transition, halfway: drawn up to 20 times a second.
 func BenchmarkAt(b *testing.B) {
-	old, new := text(b, 41.2), text(b, 48.7)
+	before, after := text(41.2), text(48.7)
 	for _, kind := range []string{motion.Melt, motion.Morph, motion.Roll} {
-		c := motion.Prepare(kind, old, new)
+		c := motion.Prepare(kind, before, after)
 		b.Run(kind, func(b *testing.B) {
 			for range b.N {
 				_ = c.At(0.5)

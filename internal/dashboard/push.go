@@ -58,6 +58,10 @@ device a settling period for a picture nobody could tell apart.
 On a panel that takes frames (spec 080) there is no floor: it looks every
 second, and the second rule holds except that the firmware drops a frame after
 its hold, so the same picture goes again before then.
+
+On a panel that takes motion frames (spec 081) a change moves as the
+dashboard's Motion says, the trail drifts, and an animated background plays:
+see animate.
 */
 type Pusher struct {
 	// Panel is where frames go.
@@ -85,6 +89,12 @@ type Pusher struct {
 		it drew it before there were any.
 	*/
 	Trails func(ctx context.Context, d Dashboard) Trails
+	/*
+		Backdrop is an animated background's frames, for a panel that takes
+		motion frames (spec 081). Optional: without it, or for a still
+		picture, the background is Look's picture.
+	*/
+	Backdrop func(ctx context.Context, d Dashboard) Backdrop
 	// Report says what went wrong, and is optional.
 	Report func(format string, args ...any)
 	// Now is the clock, for the resend on frames. Nil is time.Now.
@@ -110,6 +120,9 @@ type Pusher struct {
 	// stopped is a panel that cannot be drawn on. Set once, and the loop
 	// stops trying.
 	stopped bool
+
+	// anim is the dashboard in motion, on a panel that takes motion frames.
+	anim animation
 }
 
 // NewPusher prepares a dashboard for a panel.
@@ -172,6 +185,13 @@ func (p *Pusher) Run(ctx context.Context) {
 // cycle renders one frame, pushes it if it would look different, and says how
 // long to wait before the next one.
 func (p *Pusher) cycle(ctx context.Context) time.Duration {
+	// A panel that takes motion frames is drawn by animate, which reads once
+	// a second and draws as often as something moves (spec 081).
+	if m, ok := p.Panel.(Mover); ok && m.Moves() {
+		if f, ok := p.Panel.(Framer); ok && f.Frames() {
+			return p.animate(ctx, m, f)
+		}
+	}
 	look, behind := Shipped()[0], image.Image(nil)
 	if p.Look != nil {
 		look, behind = p.Look(ctx)

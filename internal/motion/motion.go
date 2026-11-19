@@ -58,26 +58,25 @@ Change is a text transition prepared once: the old and new text layers, the
 regions where they differ, and what each kind needs measured in them.
 */
 type Change struct {
-	kind    string
-	old     *image.RGBA
-	new     *image.RGBA
-	regions []image.Rectangle
-	shapes  []pair
+	kind     string
+	from, to *image.RGBA
+	regions  []image.Rectangle
+	shapes   []pair
 }
 
 // pair is one region of the old and new text, measured.
-type pair struct{ old, new shape }
+type pair struct{ from, to shape }
 
 /*
-Prepare measures a transition from old to new text. A kind this package does
-not know is a jump: At gives the new text at once.
+Prepare measures a transition from one text layer to another. A kind this
+package does not know is a jump: At gives the new text at once.
 */
-func Prepare(kind string, old, new *image.RGBA) *Change {
-	c := &Change{kind: kind, old: old, new: new, regions: Regions(old, new)}
+func Prepare(kind string, from, to *image.RGBA) *Change {
+	c := &Change{kind: kind, from: from, to: to, regions: Regions(from, to)}
 	if kind == Melt || kind == Morph {
 		c.shapes = make([]pair, len(c.regions))
 		for i, r := range c.regions {
-			c.shapes[i] = pair{measure(old, r, kind == Morph), measure(new, r, kind == Morph)}
+			c.shapes[i] = pair{measure(from, r, kind == Morph), measure(to, r, kind == Morph)}
 		}
 	}
 	return c
@@ -93,12 +92,12 @@ and outside the changed regions the new text throughout.
 func (c *Change) At(t float64) *image.RGBA {
 	switch {
 	case t >= 1 || len(c.regions) == 0:
-		return c.new
+		return c.to
 	case t <= 0:
-		return c.old
+		return c.from
 	}
-	out := image.NewRGBA(c.new.Bounds())
-	copy(out.Pix, c.new.Pix)
+	out := image.NewRGBA(c.to.Bounds())
+	copy(out.Pix, c.to.Pix)
 	for i, r := range c.regions {
 		switch c.kind {
 		case Melt:
@@ -106,9 +105,9 @@ func (c *Change) At(t float64) *image.RGBA {
 		case Morph:
 			morph(out, r, c.shapes[i], t)
 		case Roll:
-			roll(out, c.old, c.new, r, t)
+			roll(out, c.from, c.to, r, t)
 		default:
-			return c.new
+			return c.to
 		}
 	}
 	return out

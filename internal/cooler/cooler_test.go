@@ -78,8 +78,15 @@ func TestFramesPassThroughWhereThePanelTakesThem(t *testing.T) {
 	dev.Refuse = fmt.Errorf("%w: claim interface 0: device busy", screen.ErrNoPanel)
 	require.ErrorIs(t, c.Frame(t.Context(), image.NewRGBA(image.Rect(0, 0, 640, 640))), cooler.ErrNoScreen)
 
+	dev.Refuse = nil
+	require.True(t, c.Moves())
+	require.NoError(t, c.Move(t.Context(), image.NewRGBA(image.Rect(0, 0, 640, 640))))
+	require.Equal(t, 1, dev.Moves())
+
 	gifOnly := cooler.New(coolertest.NewPanel())
 	require.False(t, gifOnly.Frames())
+	require.False(t, gifOnly.Moves())
+	require.ErrorIs(t, gifOnly.Move(t.Context(), image.NewRGBA(image.Rect(0, 0, 1, 1))), cooler.ErrNoFrames)
 	require.ErrorIs(t, gifOnly.Frame(t.Context(), image.NewRGBA(image.Rect(0, 0, 1, 1))), cooler.ErrNoFrames)
 	require.Zero(t, gifOnly.FrameHold())
 }

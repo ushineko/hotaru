@@ -169,6 +169,7 @@ type FramePanel struct {
 
 	mu     sync.Mutex
 	frames []image.Image
+	moves  []image.Image
 }
 
 // NewFramePanel is a cooler whose panel takes frames.
@@ -193,4 +194,23 @@ func (p *FramePanel) Frames() int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return len(p.frames)
+}
+
+// Move records a motion frame (spec 081), and returns Refuse: the Kraken
+// Elite's panel takes both kinds.
+func (p *FramePanel) Move(_ context.Context, img image.Image) error {
+	if p.Refuse != nil {
+		return p.Refuse
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.moves = append(p.moves, img)
+	return nil
+}
+
+// Moves is how many motion frames were drawn.
+func (p *FramePanel) Moves() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return len(p.moves)
 }

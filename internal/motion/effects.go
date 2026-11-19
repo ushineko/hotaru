@@ -165,10 +165,10 @@ region's height, so small numbers melt gently and the big one runs.
 */
 func melt(out *image.RGBA, r image.Rectangle, p pair, t float64) {
 	e := float32(Ease(t))
-	w, h := p.new.w, p.new.h
+	w, h := p.to.w, p.to.h
 	field := make([]float32, w*h)
 	for i := range field {
-		field[i] = p.old.alpha[i]*(1-e) + p.new.alpha[i]*e
+		field[i] = p.from.alpha[i]*(1-e) + p.to.alpha[i]*e
 	}
 	radius := int(float64(h) * 0.07 * math.Sin(math.Pi*t))
 	for range 3 {
@@ -178,7 +178,7 @@ func melt(out *image.RGBA, r image.Rectangle, p pair, t float64) {
 		for x := range w {
 			i := y*w + x
 			cov := min(1, max(0, (field[i]-0.42)/0.16))
-			put(out, out.PixOffset(r.Min.X+x, r.Min.Y+y), mix(p.old.colour[i], p.new.colour[i], e), cov)
+			put(out, out.PixOffset(r.Min.X+x, r.Min.Y+y), mix(p.from.colour[i], p.to.colour[i], e), cov)
 		}
 	}
 }
@@ -187,12 +187,12 @@ func melt(out *image.RGBA, r image.Rectangle, p pair, t float64) {
 // a one-pixel soft edge: the digits flow from one shape into the next.
 func morph(out *image.RGBA, r image.Rectangle, p pair, t float64) {
 	e := float32(Ease(t))
-	w, h := p.new.w, p.new.h
+	w, h := p.to.w, p.to.h
 	for y := range h {
 		for x := range w {
 			i := y*w + x
-			d := p.old.sdf[i]*(1-e) + p.new.sdf[i]*e
-			put(out, out.PixOffset(r.Min.X+x, r.Min.Y+y), mix(p.old.colour[i], p.new.colour[i], e), 0.5-d)
+			d := p.from.sdf[i]*(1-e) + p.to.sdf[i]*e
+			put(out, out.PixOffset(r.Min.X+x, r.Min.Y+y), mix(p.from.colour[i], p.to.colour[i], e), 0.5-d)
 		}
 	}
 }
@@ -201,7 +201,7 @@ func morph(out *image.RGBA, r image.Rectangle, p pair, t float64) {
 roll moves the region's old text up and out while the new rolls in from below,
 an odometer's wheel, smeared along the motion in proportion to its speed.
 */
-func roll(out, old, new *image.RGBA, r image.Rectangle, t float64) {
+func roll(out, from, to *image.RGBA, r image.Rectangle, t float64) {
 	const samples = 12
 	e := Ease(t)
 	h := float64(r.Dy())
@@ -214,7 +214,7 @@ func roll(out, old, new *image.RGBA, r image.Rectangle, t float64) {
 				for _, src := range []struct {
 					img   *image.RGBA
 					shift float64
-				}{{old, e * h}, {new, -(1 - e) * h}} {
+				}{{from, e * h}, {to, -(1 - e) * h}} {
 					sy := int(math.Round(float64(y) + src.shift + off))
 					if sy < r.Min.Y || sy >= r.Max.Y {
 						continue
