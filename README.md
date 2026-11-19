@@ -318,6 +318,20 @@ MIT. See [LICENSE](LICENSE).
 
 ## Changelog
 
+### Unreleased
+
+- **Dashboards that move** (spec 081,
+  [#228](https://github.com/ushineko/hotaru/issues/228)). On the Kraken
+  Elite a dashboard's `motion` makes its changing numbers melt, morph or roll
+  into the new value and its rings sweep or swing like a comet, in 16-bit
+  motion frames at 20 a second (sanshoku 0.4.0), ending on a full-colour
+  still. Only what changed moves. The trail drifts smoothly between samples,
+  and its interval is the dashboard's (`trail.every`: 1, 2 or 5 s over the
+  same five minutes). An animated picture behind a dashboard plays. The
+  window's editor and `hotaru dashboard save` set all of it, and the shipped
+  dashboards are unchanged. A still frame is now drawn in layers, which moved
+  3430 pixels of the shipped golden by one level.
+
 ### 2.1.0 (2026-11-18)
 
 - **The dashboard is in full colour, sent as frames** (spec 080,

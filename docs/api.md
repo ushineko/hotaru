@@ -549,6 +549,21 @@ for one reading, and `CPU % / °C` for that pair.
 There is no `unit` field. The label is the only text drawn. A saved dashboard
 that carries a `unit` keeps it in the file, and hotaru ignores it.
 
+`motion` says how a change moves on a panel that takes motion frames, the
+Kraken Elite (spec 081). `numbers` is `melt`, `morph` or `roll`, and `ring` is
+`sweep` or `comet`. Empty is a jump, which is what every dashboard did before.
+Only the text that changed moves.
+
+`trail.every` is how many seconds a point of the trail covers: 1, 2 or 5. The
+trail spans five minutes either way, so a shorter interval draws more points.
+Empty is 5.
+
+```json
+{"motion": {"numbers": "melt", "ring": "comet"}, "trail": {"above": "gpu_pct", "every": 1}}
+```
+
+The route refuses another value with 400 and names the values it accepts.
+
 ## DELETE /v1/dashboards/{name}
 
 Forgets one. Deleting an override of a shipped name brings the shipped one
