@@ -27,7 +27,16 @@ hanging from the top.
 The one below takes the whole band when there is nothing above it, which is
 what a dashboard that has said nothing about its trail draws.
 */
-type Trails struct{ Below, Above Series }
+type Trails struct {
+	Below, Above Series
+
+	// Shift draws every point this fraction of a step to the right of its
+	// place, for a trace that drifts left between samples, and Ranges is a
+	// low and high per source that replace the trace's own (spec 081
+	// PROTOTYPE).
+	Shift  float64
+	Ranges map[readings.Source][2]float64
+}
 
 /*
 bandOf is where an arrangement draws its trail.
@@ -79,11 +88,11 @@ func (p *paint) drawTrails(d Dashboard, r Reading, t Trails) {
 	if len(t.Above) >= 2 && above != "" {
 		// Half each, with the gap between them taken out of both.
 		half := (height - trailGap) / 2
-		p.drawTrail(t.Above, above, p.grade(above, r), top, half, true)
-		p.drawTrail(t.Below, below, p.grade(below, r), top+height-half, half, false)
+		p.drawTrail(t, t.Above, above, p.grade(above, r), top, half, true)
+		p.drawTrail(t, t.Below, below, p.grade(below, r), top+height-half, half, false)
 		return
 	}
-	p.drawTrail(t.Below, below, p.grade(below, r), top, height, false)
+	p.drawTrail(t, t.Below, below, p.grade(below, r), top, height, false)
 }
 
 // trailGap keeps the two traces apart, so a busy machine does not draw them
@@ -115,13 +124,16 @@ pixel is a line somebody cannot follow.
 one that hangs from the top. Which way it hangs is what tells two readings
 apart, on a panel where colour already means something else.
 */
-func (p *paint) drawTrail(points Series, source readings.Source, c color.Color,
+func (p *paint) drawTrail(t Trails, points Series, source readings.Source, c color.Color,
 	top, height int, up bool,
 ) {
 	if len(points) < 2 || source == "" {
 		return
 	}
 	lo, hi := domain(points, source)
+	if r, ok := t.Ranges[source]; ok {
+		lo, hi = r[0], r[1]
+	}
 	if hi <= lo {
 		return
 	}
@@ -135,8 +147,8 @@ func (p *paint) drawTrail(points Series, source readings.Source, c color.Color,
 	at := func(i int) (int, int, bool) {
 		// Right-aligned: a series shorter than its window ends where a full
 		// one ends, and starts further in.
-		slot := readings.Points - len(points) + i
-		x := left + slot*(right-left)/(readings.Points-1)
+		slot := float64(readings.Points-len(points)+i) + t.Shift
+		x := left + int(math.Round(slot*float64(right-left)/float64(readings.Points-1)))
 		v := points[i]
 		if math.IsNaN(v) {
 			return x, 0, false
@@ -151,8 +163,18 @@ func (p *paint) drawTrail(points Series, source readings.Source, c color.Color,
 	for i := range len(points) - 1 {
 		x0, y0, ok := at(i)
 		x1, y1, next := at(i + 1)
-		if !ok || !next {
+		if !ok || !next || x0 > right || x1 < left {
 			continue
+		}
+		if x0 < left {
+			// The sample leaving, still drifting out: cut at the edge.
+			y0 = y1 + (y0-y1)*(x1-left)/max(1, x1-x0)
+			x0 = left
+		}
+		if x1 > right {
+			// The newest step, still drifting in: cut at the edge.
+			y1 = y0 + (y1-y0)*(right-x0)/max(1, x1-x0)
+			x1 = right
 		}
 		p.segment(x0, y0, x1, y1, edge, c)
 	}

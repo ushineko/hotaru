@@ -34,6 +34,8 @@ type paint struct {
 	// letters is the dashboard's own typography, applied on top of what the
 	// arrangement and the theme decided. See Lettering.
 	letters Lettering
+	// noRings leaves the rings out, for RenderLayers (spec 081 prototype).
+	noRings bool
 }
 
 // newPaint prepares the canvas with its background already drawn.
