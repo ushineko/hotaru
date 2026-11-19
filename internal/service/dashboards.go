@@ -191,12 +191,36 @@ func (s *Service) behind(_ context.Context, one dashboard.Dashboard) image.Image
 	if err != nil {
 		return nil
 	}
-	// In full colour where the library kept a copy (spec 080).
+	/*
+		In full colour where the library kept a copy (spec 080), decoded once
+		per picture file: the dashboard loop asks every second, and decoding
+		a picture again each time was a tenth of the service's own work
+		(spec 081's profile).
+	*/
+	info, err := os.Stat(library.Path(one.Background.Picture))
+	if err != nil {
+		return nil
+	}
+	key := fmt.Sprintf("%s|%d|%d", info.Name(), info.Size(), info.ModTime().UnixNano())
+	s.still.mu.Lock()
+	defer s.still.mu.Unlock()
+	if s.still.key == key {
+		return s.still.img
+	}
 	still, err := library.Still(one.Background.Picture)
 	if err != nil {
 		return nil
 	}
+	s.still.key, s.still.img = key, still
 	return still
+}
+
+// stillCache is the one still background decoded, for the file the key names.
+// A copy kept beside the GIF (images.Library.Still) changes with it.
+type stillCache struct {
+	mu  sync.Mutex
+	key string
+	img image.Image
 }
 
 // backdropCache is the one animated background decoded: the frames of the

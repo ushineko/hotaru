@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/ushineko/hotaru/internal/cooler"
@@ -25,6 +26,46 @@ difference against their own last call, so the first answer to the command
 would always be a dash.
 */
 func (s *Service) Readings(ctx context.Context) readings.Reading {
+	/*
+		A reading under half a second old is shared rather than taken
+		again. The dashboard loop asks for one and then for the trail, which
+		asks again, and every reading runs nvidia-smi on a machine with an
+		NVIDIA card: about 15 ms of a core each, half the service's own work
+		(spec 081's profile).
+	*/
+	s.recent.mu.Lock()
+	defer s.recent.mu.Unlock()
+	if !s.recent.at.IsZero() && time.Since(s.recent.at) < readingFresh {
+		return copyReading(s.recent.r)
+	}
+	r := s.read(ctx)
+	s.recent.r, s.recent.at = copyReading(r), time.Now()
+	return r
+}
+
+// readingFresh is how long a reading is shared with a second asker.
+const readingFresh = 500 * time.Millisecond
+
+// recentReading is the last reading taken, under its own lock.
+type recentReading struct {
+	mu sync.Mutex
+	r  readings.Reading
+	at time.Time
+}
+
+// copyReading is a reading's own copy: a Reading holds a map.
+func copyReading(r readings.Reading) readings.Reading {
+	var out readings.Reading
+	for _, s := range readings.All {
+		if v, ok := r.Value(s); ok {
+			out.Set(s, v)
+		}
+	}
+	return out
+}
+
+// read takes a reading from every sensor and remembers it.
+func (s *Service) read(ctx context.Context) readings.Reading {
 	var r readings.Reading
 
 	if status, _, err := s.Cooling(ctx); err == nil {

@@ -60,10 +60,15 @@ type Service struct {
 	// backdrop is the animated background's frames, decoded once per
 	// picture file (spec 081), under its own lock.
 	backdrop backdropCache
-	panel    Dashboard
-	scenes   SceneStore
-	images   ImageLibrary
-	desktop  string
+	// still is the still background decoded, once per picture file.
+	still stillCache
+	// recent is the last reading and when it was taken, which a second
+	// asker within readingFresh shares (spec 081).
+	recent  recentReading
+	panel   Dashboard
+	scenes  SceneStore
+	images  ImageLibrary
+	desktop string
 
 	// leases maps a device to the preview held over it. One device, one
 	// preview: see preview.go.
