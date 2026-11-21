@@ -9,7 +9,7 @@ app:
   id: io.github.ushineko.hotaru
   name: hotaru
   # .tag's. A test holds the two together (installer_test.go).
-  version: 2.3.1
+  version: 2.3.2
   publisher: ushineko
   # Drawn from packaging/hotaru.svg by make installer.
   icon: dist/hotaru.png
