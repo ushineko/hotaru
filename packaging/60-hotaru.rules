@@ -42,3 +42,16 @@ KERNEL=="hidraw*", SUBSYSTEMS=="usb", ATTRS{idVendor}=="1b1c", TAG+="uaccess"
 KERNEL=="hidraw*", SUBSYSTEMS=="usb", ATTRS{idVendor}=="3434", TAG+="uaccess"
 KERNEL=="hidraw*", SUBSYSTEMS=="usb", ATTRS{idVendor}=="046d", TAG+="uaccess"
 SUBSYSTEM=="i2c-dev", ATTR{name}=="NVIDIA i2c adapter *", TAG+="uaccess"
+
+# The test machines' devices (spec 082), from the same file: 1532 Razer (the
+# mice and the dock), 048d:5702 the ITE controller of a Gigabyte board's RGB
+# Fusion 2, and the chipset's SMBus, where Corsair memory's lighting sits
+# (i2c-dev again). An EVGA card is on the NVIDIA adapters above. The SMBus
+# rule lets the logged-in user's programs reach everything on that bus, the
+# memory's SPD included; sanshoku's driver writes only the lighting
+# controller's registers.
+
+KERNEL=="hidraw*", KERNELS=="0003:1532:*", TAG+="uaccess"
+KERNEL=="hidraw*", KERNELS=="0003:048D:5702.*", TAG+="uaccess"
+SUBSYSTEM=="i2c-dev", ATTR{name}=="SMBus I801 adapter *", TAG+="uaccess"
+SUBSYSTEM=="i2c-dev", ATTR{name}=="SMBus PIIX4 adapter *", TAG+="uaccess"

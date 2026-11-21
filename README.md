@@ -318,6 +318,15 @@ MIT. See [LICENSE](LICENSE).
 
 ## Changelog
 
+### Unreleased
+
+- **The test machines' devices** (spec 082,
+  [#231](https://github.com/ushineko/hotaru/issues/231)). sanshoku 0.6.0's
+  drivers draw a Gigabyte board's RGB Fusion 2 controllers, an EVGA RTX 30
+  card, Corsair DDR5 memory, Razer mice and docks, and an MSI board's RGB
+  header (Windows). The Linux test machine is lit without OpenRGB again. The
+  udev rule adds Razer, the Gigabyte controller and the chipset's SMBus.
+
 ### 2.2.0 (2026-11-19)
 
 - **Dashboards that move** (spec 081,
