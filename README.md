@@ -327,6 +327,12 @@ MIT. See [LICENSE](LICENSE).
   leader of its own follows it. An apply or a scene that gives several
   devices an effect now starts them all together, so a memory module already
   breathing no longer runs out of step with the rest.
+- **Fixes:** an EVGA card's lights are its OpenRGB zones again (Front Logo
+  and the rest), so scenes made under OpenRGB light it (sanshoku #118). On
+  Windows, the PawnIO helper gives each device its own connection, so the
+  board's frames no longer wait behind the memory's, and the memory is drawn
+  again after a fault that left the bus lock held (sanshoku #120). sanshoku
+  0.6.1.
 
 ### 2.3.0 (2026-11-20)
 
