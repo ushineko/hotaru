@@ -76,6 +76,9 @@ func Render(cfg *Config) string {
 		if rule.Follow != "" {
 			fmt.Fprintf(&out, "    follow: %q\n", rule.Follow)
 		}
+		if rule.Lead {
+			out.WriteString("    lead: true\n")
+		}
 		/*
 			The keys whose values are maps, as JSON, which YAML reads as its own
 			flow style: whatever a key holds is written back exactly, so a

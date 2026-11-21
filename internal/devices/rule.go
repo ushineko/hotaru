@@ -43,6 +43,9 @@ type Rule struct {
 	// Follow names the device this one takes its effect from (spec 077
 	// R3.2). See config.DeviceRule.
 	Follow string
+	// Lead is a device every device with no Follow of its own follows
+	// (spec 084). See config.DeviceRule.
+	Lead bool
 	// Colour corrects what is written to lights that wash out (spec 066).
 	Colour Profile
 }
@@ -110,6 +113,9 @@ func MergeRules(rules []config.DeviceRule) Rule {
 		}
 		if f := strings.TrimSpace(r.Follow); f != "" {
 			out.Follow = f
+		}
+		if r.Lead {
+			out.Lead = true
 		}
 		for zone, shape := range r.Shapes {
 			if out.Shapes == nil {

@@ -118,7 +118,15 @@ func (s *Service) Reconcile(ctx context.Context, only []string) (Restore, error)
 		if _, ok := desired.Devices[d.Name]; ok {
 			order = append(order, d.Name)
 		}
-		if f := devices.RuleFor(cfg, d.Name).Follow; f != "" && len(only) == 0 {
+		if len(only) > 0 {
+			continue
+		}
+		// Every recorded effect starts again on a full restore, leader or
+		// not, so they begin in step as they did when applied (spec 084).
+		if kept, ok := desired.Devices[d.Name]; ok && kept.Mode != "" && kept.Mode != canvasStill {
+			inStep[d.Name] = true
+		}
+		if f := followOf(cfg, found, d.Name); f != "" {
 			inStep[d.Name] = true
 			if l := leaderOf(found, f, d.Name); l != nil {
 				inStep[l.Name] = true

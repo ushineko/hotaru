@@ -273,3 +273,22 @@ func TestRainbowWaveTakesTheScenesColours(t *testing.T) {
 	mode, _ := got.Mode("Rainbow Wave")
 	assert.Equal(t, []colour.Colour{teal, green}, mode.Colours, "it ran the full rainbow")
 }
+
+/*
+Spec 084. With no cooler to follow, a device that leads sets every other
+device's effect when it is given one, and a device with no rule of its own
+takes it too.
+*/
+func TestADeviceThatLeadsIsFollowedWithNoCooler(t *testing.T) {
+	gpu := msiCard()
+	board := canvastest.NewBoard("ASUS ROG MAXIMUS Z790 HERO", canvastest.Zone("Addressable 1", 4))
+	cfg := &config.Config{Devices: []config.DeviceRule{{Match: "msi", Lead: true}}}
+	svc := servicetest.New(t, cfg, board, gpu)
+	_, err := svc.Apply(t.Context(), service.Request{
+		Effects: map[string]scenes.Effect{"msi": {Mode: "Breathing", Colours: []string{"#ff0000"}}},
+	})
+	require.NoError(t, err)
+	running, _ := gpu.Running()
+	assert.Equal(t, "Breathing", running)
+	assert.Equal(t, "Breathing", viewOf(t, svc, "ASUS ROG MAXIMUS Z790 HERO").Device.ActiveMode, "the board did not follow the leader")
+}

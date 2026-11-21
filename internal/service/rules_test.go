@@ -175,3 +175,49 @@ func TestOneFanKeepsAWholeZonesName(t *testing.T) {
 	assert.Contains(t, written.Devices[0].Segments, "rear-fan")
 	assert.Len(t, written.Devices[0].Segments, 1)
 }
+
+/*
+Spec 084. Leading is written to the rules and in use at once: the rest start
+on the leader's effect. One device leads, so a second takes it from the
+first, and a leader follows nothing.
+*/
+func TestLeadIsSetMovedAndStartsNow(t *testing.T) {
+	board := canvastest.NewBoard("ASUS ROG MAXIMUS Z790 HERO", canvastest.Zone("Addressable 1", 4))
+	gpu := msiCard()
+	svc, path := withRules(t, `devices:
+  - match: "maximus"
+    follow: "msi"
+`, board, gpu)
+	_, err := svc.Apply(t.Context(), service.Request{
+		Effects: map[string]scenes.Effect{"msi": {Mode: "Breathing", Colours: []string{"#ff0000"}}},
+		Devices: []string{"MSI GeForce RTX 4090"},
+	})
+	require.NoError(t, err)
+
+	on := true
+	_, err = svc.SetRule(t.Context(), "msi", service.RuleChange{Lead: &on})
+	require.NoError(t, err)
+	_, err = svc.SetRule(t.Context(), "maximus", service.RuleChange{Lead: &on})
+	require.NoError(t, err)
+
+	written, _, err := config.Load(path)
+	require.NoError(t, err)
+	leads := map[string]bool{}
+	for _, r := range written.Devices {
+		leads[r.Match] = r.Lead
+		if r.Match == "maximus" {
+			assert.Empty(t, r.Follow, "a leader still follows")
+		}
+	}
+	assert.Equal(t, map[string]bool{"maximus": true, "msi geforce rtx 4090": false}, leads)
+	assert.True(t, viewOf(t, svc, "ASUS ROG MAXIMUS Z790 HERO").Rule.Lead)
+
+	off := false
+	_, err = svc.SetRule(t.Context(), "maximus", service.RuleChange{Lead: &off})
+	require.NoError(t, err)
+	written, _, err = config.Load(path)
+	require.NoError(t, err)
+	for _, r := range written.Devices {
+		assert.False(t, r.Lead, r.Match)
+	}
+}

@@ -42,11 +42,11 @@ func withFollowers(cfg *config.Config, found []devices.Device, req Request) (Req
 		added := false
 		for i := range found {
 			follower := &found[i]
-			rule := devices.RuleFor(cfg, follower.Name)
-			if rule.Follow == "" || follower.HandedTo != "" || effectFor(effects, follower.Name).Named() {
+			follow := followOf(cfg, found, follower.Name)
+			if follow == "" || follower.HandedTo != "" || effectFor(effects, follower.Name).Named() {
 				continue
 			}
-			leader := leaderOf(found, rule.Follow, follower.Name)
+			leader := leaderOf(found, follow, follower.Name)
 			if leader == nil {
 				continue
 			}
@@ -135,6 +135,36 @@ func fitPalette(colours []string, mode devices.Mode) []string {
 		colours = slices.Repeat(colours, most)
 	}
 	return colours
+}
+
+/*
+followOf is the device a device follows: its rule's, or else the device
+whose rule says it leads (spec 084). A leader follows only what its own rule
+names; a device a canvas draws follows nothing, as it is drawn there.
+*/
+func followOf(cfg *config.Config, found []devices.Device, name string) string {
+	rule := devices.RuleFor(cfg, name)
+	if rule.Follow != "" || rule.Lead {
+		return rule.Follow
+	}
+	for _, d := range found {
+		if d.Name != name && d.HandedTo == "" && devices.RuleFor(cfg, d.Name).Lead {
+			return d.Name
+		}
+	}
+	return ""
+}
+
+// givenEffects is how many devices in scope the request gives a named
+// effect to.
+func givenEffects(req Request, found []devices.Device, cfg *config.Config) int {
+	n := 0
+	for _, d := range found {
+		if cfg.InScope(d.Name) && named(req.Devices, d.Name) && effectFor(req.Effects, d.Name).Named() {
+			n++
+		}
+	}
+	return n
 }
 
 // leaderOf is the device a follow rule names, by any part of its name, other
@@ -258,7 +288,7 @@ func sameRange(a, b *devices.Speed) bool {
 func leadersFirst(cfg *config.Config, found []devices.Device) []devices.Device {
 	leads := map[string]bool{}
 	for _, d := range found {
-		if f := devices.RuleFor(cfg, d.Name).Follow; f != "" {
+		if f := followOf(cfg, found, d.Name); f != "" {
 			if l := leaderOf(found, f, d.Name); l != nil {
 				leads[l.Name] = true
 			}

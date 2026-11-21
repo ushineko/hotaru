@@ -54,6 +54,7 @@ func TestEveryRuleKeySurvivesBeingWrittenBack(t *testing.T) {
 		Shapes:        map[string]string{"Addressable RGB Header 3": "ring"},
 		Pace:          map[string]float64{"Breathing": 2.2},
 		Follow:        "kraken",
+		Lead:          true,
 		Colour:        &config.ColourProfile{Saturation: &half, Curve: &config.Curve{Green: &gamma}},
 	}
 	value := reflect.ValueOf(rule)

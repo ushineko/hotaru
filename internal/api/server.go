@@ -856,7 +856,7 @@ func Handler(svc *service.Service) http.Handler {
 			write(w, http.StatusBadRequest, Error{Error: "that request does not decode", Detail: err.Error()})
 			return
 		}
-		change := service.RuleChange{Follow: req.Follow, Pace: req.Pace, Lengths: req.Lengths, Shapes: req.Shapes, Fans: req.Fans}
+		change := service.RuleChange{Follow: req.Follow, Lead: req.Lead, Pace: req.Pace, Lengths: req.Lengths, Shapes: req.Shapes, Fans: req.Fans}
 		for name, seg := range req.Segments {
 			if change.Segments == nil {
 				change.Segments = map[string]*config.Segment{}
@@ -991,6 +991,7 @@ func describe(view service.View) Device {
 	}
 	device.Preview = asPreview(view.Preview)
 	device.Follows = view.Rule.Follow
+	device.Leads = view.Rule.Lead
 	if len(view.Rule.Pace) > 0 {
 		device.Pace = maps.Clone(view.Rule.Pace)
 	}

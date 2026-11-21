@@ -23,6 +23,9 @@ type RuleChange struct {
 	// Follow names the device to follow, by any part of its name; empty
 	// stops following.
 	Follow *string
+	// Lead makes the device the leader of every device with no leader of
+	// its own, or stops it leading (spec 084).
+	Lead *bool
 	// Pace sets the device's pace for each effect named; zero removes it.
 	Pace map[string]float64
 	// Lengths gives each named zone whose length the device cannot count a
@@ -80,6 +83,19 @@ func (s *Service) SetRule(ctx context.Context, device string, change RuleChange)
 	}
 	rule := ruleToChange(cfg, target.Name)
 	var leader *devices.Device
+	if change.Lead != nil {
+		if *change.Lead {
+			// One device leads: taken from any other, and a leader follows
+			// nothing (spec 084).
+			for i := range cfg.Devices {
+				if &cfg.Devices[i] != rule {
+					cfg.Devices[i].Lead = false
+				}
+			}
+			rule.Follow = ""
+		}
+		rule.Lead = *change.Lead
+	}
 	if change.Follow != nil {
 		name := strings.TrimSpace(*change.Follow)
 		if name != "" {
@@ -130,6 +146,10 @@ func (s *Service) SetRule(ctx context.Context, device string, change RuleChange)
 	}
 	if leader != nil {
 		s.followNow(ctx, leader, target)
+	}
+	if change.Lead != nil && *change.Lead {
+		// Every device that now follows it starts on its effect, in step.
+		s.followNow(ctx, target, target)
 	}
 	return rule.Match, nil
 }

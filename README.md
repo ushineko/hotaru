@@ -318,6 +318,16 @@ MIT. See [LICENSE](LICENSE).
 
 ## Changelog
 
+### Unreleased
+
+- **A leader for the rest, and effects in step** (spec 084,
+  [#236](https://github.com/ushineko/hotaru/issues/236)). Any device can lead
+  the others, for a machine with no cooler: `lead: true` in its rule, its
+  card's Leads the rest, or `hotaru light lead <device>`. Every device with no
+  leader of its own follows it. An apply or a scene that gives several
+  devices an effect now starts them all together, so a memory module already
+  breathing no longer runs out of step with the rest.
+
 ### 2.3.0 (2026-11-20)
 
 - **A PawnIO helper on Windows** (spec 083,
