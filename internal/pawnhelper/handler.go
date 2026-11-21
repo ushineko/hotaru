@@ -42,12 +42,14 @@ type handler struct {
 // is scanned at this pace instead, a few PawnIO module loads each time.
 const rescanAfter = 5 * time.Minute
 
-// held is one open device that is a canvas.
+// held is one open device that is a canvas. Its own lock orders its
+// frames; another device's frames do not wait for them.
 type held struct {
 	id     string
 	dev    sanshoku.Device
 	canvas lighting.Canvas
 	keys   map[byte]bool
+	mu     *sync.Mutex
 }
 
 // handle answers one request.
@@ -55,10 +57,10 @@ func (h *handler) handle(ctx context.Context, req request) response {
 	if req.V != Protocol {
 		return response{V: Protocol, Error: fmt.Sprintf("this helper speaks version %d, and was asked in %d", Protocol, req.V)}
 	}
-	h.mu.Lock()
-	defer h.mu.Unlock()
 	switch req.Op {
 	case opList:
+		h.mu.Lock()
+		defer h.mu.Unlock()
 		if err := h.found(ctx); err != nil {
 			return response{V: Protocol, Error: err.Error()}
 		}
@@ -68,18 +70,24 @@ func (h *handler) handle(ctx context.Context, req request) response {
 		}
 		return response{V: Protocol, Devices: out}
 	case opFrame, opRelease:
+		h.mu.Lock()
 		d, ok := h.find(req.Device)
+		h.mu.Unlock()
 		if !ok {
 			return response{V: Protocol, Gone: true, Error: "no such device"}
 		}
+		d.mu.Lock()
 		var err error
 		if req.Op == opFrame {
 			err = h.frame(ctx, d, req.Pixels)
 		} else {
 			err = d.canvas.Release(ctx)
 		}
+		d.mu.Unlock()
 		if errors.Is(err, sanshoku.ErrGone) {
+			h.mu.Lock()
 			h.drop(d.id)
+			h.mu.Unlock()
 			return response{V: Protocol, Gone: true, Error: err.Error()}
 		}
 		if err != nil {
@@ -119,7 +127,7 @@ func (h *handler) found(ctx context.Context) error {
 			keys[k.ID] = true
 		}
 		id := fmt.Sprintf("%s.%d.%d", h.epoch, h.scans, len(h.devices))
-		h.devices = append(h.devices, held{id: id, dev: dev, canvas: c, keys: keys})
+		h.devices = append(h.devices, held{id: id, dev: dev, canvas: c, keys: keys, mu: &sync.Mutex{}})
 	}
 	h.lastErr = nil
 	if len(h.devices) == 0 && err != nil {

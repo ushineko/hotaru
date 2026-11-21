@@ -146,6 +146,14 @@ type DeviceRule struct {
 	Follow string `json:"follow,omitempty"`
 
 	/*
+		Lead makes this device the leader of every device whose rule names
+		no leader of its own (spec 084): for a machine with no cooler, or any
+		machine where one device should set the pace for the rest. One
+		device leads; setting it on another takes it from the first.
+	*/
+	Lead bool `json:"lead,omitempty"`
+
+	/*
 		Colour corrects what is written to a device whose lights wash out: a
 		pale colour that the fans show as written looks close to white on a
 		graphics card's LEDs (spec 066). Absent is no correction.

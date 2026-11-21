@@ -154,7 +154,9 @@ func (d driver) Find(ctx context.Context) ([]sanshoku.Candidate, error) {
 	}
 	out := make([]sanshoku.Candidate, 0, len(resp.Devices))
 	for _, dev := range resp.Devices {
-		r := &remote{c: d.c, info: dev}
+		// Each device its own connection: a module's slow frame on the
+		// SMBus does not hold up the board's on the Super I/O chip.
+		r := &remote{c: &client{dial: d.c.dial}, info: dev}
 		r.info.Name = printable(dev.Name)
 		out = append(out, sanshoku.Candidate{
 			Identity: r.Identity(),

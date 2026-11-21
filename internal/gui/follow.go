@@ -69,7 +69,7 @@ func (s *SystemSection) follows(sh *shell.Shell, device api.Device, all []api.De
 		})
 	}
 
-	row := []fyne.CanvasObject{widget.NewLabel("Follows"), choice}
+	row := []fyne.CanvasObject{widget.NewLabel("Follows"), choice, s.leads(sh, device)}
 	if found && len(pacedEffects(device, leader)) > 0 {
 		match := widget.NewButtonWithIcon("Match pace…", theme.MediaPlayIcon(), func() {
 			s.matchPace(sh, device, leader)
@@ -77,6 +77,32 @@ func (s *SystemSection) follows(sh *shell.Shell, device api.Device, all []api.De
 		row = append(row, match)
 	}
 	return container.NewHBox(row...)
+}
+
+/*
+leads is the card's "Leads the rest" (spec 084): ticked, every device with
+no leader of its own follows this one, which is how a machine with no cooler
+gets its effects set at once and in step. One device leads; ticking another
+takes it from this one.
+*/
+func (s *SystemSection) leads(sh *shell.Shell, device api.Device) fyne.CanvasObject {
+	check := widget.NewCheck("Leads the rest", nil)
+	check.SetChecked(device.Leads)
+	// Set after the state, so building the card writes nothing.
+	check.OnChanged = func(on bool) {
+		sh.Perform("setting whether "+device.Name+" leads", func(ctx context.Context) error {
+			if _, err := s.app.client.Rule(ctx, api.RuleRequest{Device: device.Name, Lead: &on}); err != nil {
+				return err
+			}
+			said := device.Name + " leads nothing now."
+			if on {
+				said = device.Name + " leads every device that follows no other now."
+			}
+			onScreen(func() { sh.Flash(said, fd.StatusGood) })
+			return nil
+		})
+	}
+	return check
 }
 
 // leaderNamed is the device a device's rule follows, by any part of its

@@ -257,3 +257,34 @@ func TestAHelperThatDoesNotAnswerIsGivenUpOn(t *testing.T) {
 	_, _ = c.call(ctx2, request{Op: opList})
 	assert.Equal(t, 2, dials)
 }
+
+// slow is a device whose frame waits until it is let go.
+type slow struct {
+	fake
+	gate chan struct{}
+}
+
+func (s *slow) Frame(ctx context.Context, px []lighting.Pixel) error {
+	<-s.gate
+	return s.fake.Frame(ctx, px)
+}
+
+// A device's slow frame does not hold up another's: the memory's SMBus
+// writes and the board's Super I/O writes go side by side.
+func TestASlowDeviceDoesNotHoldUpAnother(t *testing.T) {
+	memory := &slow{fake: fake{name: "memory", keys: []lighting.Key{{ID: 0}}}, gate: make(chan struct{})}
+	board := &fake{name: "board", keys: []lighting.Key{{ID: 0}}}
+	c, _ := connected(t, memory, board)
+	found, err := driver{c: c}.Find(t.Context())
+	require.NoError(t, err)
+	m, _ := found[0].Open(t.Context())
+	b, _ := found[1].Open(t.Context())
+
+	held := make(chan error, 1)
+	go func() { held <- m.(lighting.Canvas).Frame(t.Context(), []lighting.Pixel{{ID: 0, R: 1}}) }()
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+	defer cancel()
+	require.NoError(t, b.(lighting.Canvas).Frame(ctx, []lighting.Pixel{{ID: 0, B: 1}}), "the board waited on the memory")
+	close(memory.gate)
+	require.NoError(t, <-held)
+}

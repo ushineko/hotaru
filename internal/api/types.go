@@ -86,6 +86,8 @@ type Device struct {
 	// Pace its pace per effect, by the effect's name lowercased (spec 077).
 	Follows string             `json:"follows,omitempty"`
 	Pace    map[string]float64 `json:"pace,omitempty"`
+	// Leads is a device whose rule says it leads the rest (spec 084).
+	Leads bool `json:"leads,omitempty"`
 
 	// Toggles are the segments that are switches rather than decoration, so
 	// an editor can offer them their own control.
@@ -248,9 +250,12 @@ rule (spec 077 R3.2, R3.9). Follow names a device to follow, empty to stop;
 absent leaves it. Pace sets the pace for each effect named, zero to remove it.
 */
 type RuleRequest struct {
-	Device string             `json:"device"`
-	Follow *string            `json:"follow,omitempty"`
-	Pace   map[string]float64 `json:"pace,omitempty"`
+	Device string  `json:"device"`
+	Follow *string `json:"follow,omitempty"`
+	// Lead makes the device lead every device with no leader of its own;
+	// false stops it; absent leaves it (spec 084).
+	Lead *bool              `json:"lead,omitempty"`
+	Pace map[string]float64 `json:"pace,omitempty"`
 	// Lengths gives zones a length, in use at once; 0 removes one. Shapes
 	// says a zone holds "ring" (fans) or "line" (a strip); "" removes it.
 	// Segments names parts of the device; null removes a name (spec 078).

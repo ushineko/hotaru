@@ -216,6 +216,62 @@ func tryLength(cmd *cobra.Command, client *api.Client, arg, count string) error 
 }
 
 /*
+leadCommand makes a device the leader of every device with no leader of its
+own, or stops it leading (spec 084), as the window's Leads the rest does.
+*/
+func leadCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "lead <device|none>",
+		Short: "Make one device set the effect for every device that follows no other",
+		Long: `Make a device the leader: every device whose rule names no leader of its own
+follows it, taking its effect, colours and speed whenever it is given one, in
+step. For a machine with no cooler to follow, or wherever one device should
+set the pace. One device leads; naming another takes it from the first.
+"none" stops any device leading.
+
+	hotaru light lead "0x18"
+	hotaru light lead none`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, err := client(cmd)
+			if err != nil {
+				return err
+			}
+			if strings.EqualFold(args[0], "none") {
+				got, err := client.Devices(cmd.Context())
+				if err != nil {
+					return quiet(err)
+				}
+				off := false
+				stopped := 0
+				for _, d := range got {
+					if !d.Leads {
+						continue
+					}
+					out, err := client.Rule(cmd.Context(), api.RuleRequest{Device: d.Name, Lead: &off})
+					if err != nil {
+						return quiet(err)
+					}
+					cmd.Printf("%q leads nothing now; written to %s.\n", out.Match, out.RulesFile)
+					stopped++
+				}
+				if stopped == 0 {
+					cmd.Println("No device leads.")
+				}
+				return nil
+			}
+			on := true
+			out, err := client.Rule(cmd.Context(), api.RuleRequest{Device: args[0], Lead: &on})
+			if err != nil {
+				return quiet(err)
+			}
+			cmd.Printf("%q leads every device that follows no other now; written to %s.\n", out.Match, out.RulesFile)
+			return nil
+		},
+	}
+}
+
+/*
 followCommand sets what a device follows, or stops it following (spec 077
 R3.2), as the window's Follows does.
 */

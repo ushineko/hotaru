@@ -190,8 +190,9 @@ or `set` (lights in no order, a mouse's). `parts` are the lights of each fan
 in a zone where the device counts them, and `max` is the most lights a zone
 whose length is set may have. A device whose own effects are kept in storage
 that wears says `writes_storage` (spec 077). `follows` is the device a
-device's rule follows, and `pace` its pace per effect, by the effect's name in
-lower case. `named` lists the device's named parts, with the zone and the
+device's rule follows, `leads` is a device whose rule says it leads the rest
+(spec 084), and `pace` its pace per effect, by the effect's name in lower
+case. `named` lists the device's named parts, with the zone and the
 lights each covers.
 
 ## POST /v1/lighting/apply
@@ -240,9 +241,12 @@ only, by any part of the device's name: `{"maximus": 1.2}` is a fifth slower.
 light match` sends both while somebody matches a pace by eye (spec 077).
 
 A device whose rule says `follow` takes its leader's effect, colours and speed
-whenever a request gives the leader one. The request names an effect for the
-follower to override it. The leader is written first, and every effect in the
-request restarts, so they start in step.
+whenever a request gives the leader one. A device whose rule says `lead` is the
+leader of every device whose rule names no leader of its own (spec 084). The
+request names an effect for the follower to override it. The leader is written
+first, and every effect in the request restarts, so they start in step. A
+request that gives more than one device an effect restarts them all as well,
+leader or not.
 
 `changed` counts the devices that changed, so a client exits non-zero without
 counting the results itself. **A request that changed nothing does not report
@@ -867,6 +871,11 @@ $ curl -s --unix-socket $XDG_RUNTIME_DIR/hotaru/hotaru.sock \
 - `follow` names the device to follow, by any part of its name. An empty
   string stops following, and an absent one leaves it as it is. A device
   given a leader takes the leader's current effect at once, in step.
+- `lead`: `true` makes the device the leader of every device whose rule
+  names no leader of its own, and takes the lead from any other device; a
+  leader follows nothing. `false` stops it leading. The followers take its
+  current effect at once, in step. `hotaru light lead` and the window's
+  Leads the rest use it (spec 084).
 - `pace` sets the pace for each effect named, from above 0 to 10. A pace of 0
   removes it.
 - `lengths` gives a zone whose length the device cannot count a length, in

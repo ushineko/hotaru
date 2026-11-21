@@ -548,6 +548,12 @@ func (s *Service) Apply(ctx context.Context, req Request) ([]Result, error) {
 	// Followers take their leader's effect, and leaders are written first
 	// (spec 077 R3.2, R3.5).
 	req, _ = withFollowers(cfg, found, req)
+	if givenEffects(req, found, cfg) > 1 {
+		// Several effects asked for at once start together, whether or not
+		// a leader is among them (spec 084): an effect a device was already
+		// running would otherwise carry on from where it was.
+		req.Restart = true
+	}
 	found = leadersFirst(cfg, found)
 	leads := map[string]bool{}
 	for _, leader := range req.fromLeader {
