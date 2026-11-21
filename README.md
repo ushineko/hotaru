@@ -2,7 +2,7 @@
 
 *lights, cooler, action!*
 
-**Version**: 2.3.0
+**Version**: 2.3.1
 
 RGB lighting and AIO cooler control for Linux and Windows, as a CLI, a
 background service and a desktop GUI.
@@ -318,7 +318,7 @@ MIT. See [LICENSE](LICENSE).
 
 ## Changelog
 
-### Unreleased
+### 2.3.1 (2026-11-21)
 
 - **A leader for the rest, and effects in step** (spec 084,
   [#236](https://github.com/ushineko/hotaru/issues/236)). Any device can lead
