@@ -96,7 +96,8 @@ func scan(ctx context.Context, dir string) ([]sanshoku.Device, error) {
 }
 
 const (
-	pipeInstances = 4
+	// pipeInstances is room for a connection per device and the list's.
+	pipeInstances = maxDevices + 2
 	// retry is how long the helper waits before trying again for a pipe it
 	// could not make: one another program holds, or every instance in use.
 	retry = 5 * time.Second
