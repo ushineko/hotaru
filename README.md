@@ -326,7 +326,7 @@ MIT. See [LICENSE](LICENSE).
   Vengeance memory's few frames a second. sanshoku now offers their own
   effects (the header's pulse, blink and colour cycle; the modules' Pulse and
   Fade), and the PawnIO helper runs them, so they breathe smoothly with
-  nothing sent once set.
+  nothing sent once set. sanshoku 0.6.2.
 
 ### 2.3.1 (2026-11-21)
 
