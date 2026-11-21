@@ -42,25 +42,27 @@ support list.
 
 ### Test systems
 
-Both ran before spec 076, with lighting through OpenRGB, and both still run
-0.1.29 with it. The table below is what they found then. Since 2.0, hotaru
-lights only what sanshoku has a driver for, which on these machines is one
-device each ([#231](https://github.com/ushineko/hotaru/issues/231)):
+Both ran before spec 076, with lighting through OpenRGB, on 0.1.29. Since
+2.0, hotaru lights what sanshoku has a driver for
+([#231](https://github.com/ushineko/hotaru/issues/231)). sanshoku 0.6.0
+has one for each device below, and spec 082 draws them:
 
 | Machine | Device | Since 2.0 |
 |---|---|---|
 | CachyOS | SteelSeries Apex Pro TKL Gen 3 | lit |
-| CachyOS | Gigabyte Z790 AORUS MASTER X, two controllers | not lit, [sanshoku #105](https://github.com/ushineko/sanshoku/issues/105) |
-| CachyOS | Razer Mouse Dock Pro, and a Basilisk V3 Pro through it | not lit, [sanshoku #106](https://github.com/ushineko/sanshoku/issues/106) |
-| CachyOS | Corsair Dominator Platinum RGB DDR5, four modules | not lit, [sanshoku #108](https://github.com/ushineko/sanshoku/issues/108) |
-| CachyOS | EVGA GeForce RTX 3080 FTW3 Ultra LHR | not lit, [sanshoku #109](https://github.com/ushineko/sanshoku/issues/109) |
+| CachyOS | Gigabyte Z790 AORUS MASTER X, two controllers | lit, spec 082: the strips are on the 12 V header (LED_C), the board's lights on the other controller |
+| CachyOS | Razer Mouse Dock Pro, and a Basilisk V3 Pro through it | lit, spec 082 |
+| CachyOS | Corsair Dominator Platinum RGB DDR5, four modules | lit, spec 082, over the chipset's SMBus (`i2c-dev`) |
+| CachyOS | EVGA GeForce RTX 3080 FTW3 Ultra LHR | lit, spec 082, over the NVIDIA driver's I2C adapter |
 | Windows 11 | AULA F75 | lit |
-| Windows 11 | MSI B450 Tomahawk Max strip | not lit, [sanshoku #107](https://github.com/ushineko/sanshoku/issues/107) |
-| Windows 11 | Corsair Vengeance RGB, two modules | not lit, [sanshoku #108](https://github.com/ushineko/sanshoku/issues/108) and [#110](https://github.com/ushineko/sanshoku/issues/110) |
-| Windows 11 | Razer Basilisk Ultimate and its dock | not lit, [sanshoku #106](https://github.com/ushineko/sanshoku/issues/106) |
+| Windows 11 | MSI B450 Tomahawk Max strip | not lit: sanshoku drives it through PawnIO, which serves only an administrator, and the installed service runs as `NT SERVICE\hotaru` ([sanshoku #110](https://github.com/ushineko/sanshoku/issues/110)) |
+| Windows 11 | Corsair Vengeance RGB, two modules | not lit, for the same reason |
+| Windows 11 | Razer Basilisk Ultimate and its dock | not yet checked on 2.x |
 
-On Windows, memory needs a way onto the SMBus first. OpenRGB uses PawnIO, a
-signed kernel driver installed on its own, and sanshoku has no equivalent yet.
+On Windows, the board's header and the memory are reached through PawnIO, a
+signed kernel driver installed on its own, as OpenRGB reaches them. With
+LibreHardwareMonitor running, its hold on the bus locks stalls them; hayami
+no longer needs it (hayami spec 103).
 
 What they found under OpenRGB:
 

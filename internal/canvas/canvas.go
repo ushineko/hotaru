@@ -30,10 +30,14 @@ import (
 	"github.com/ushineko/sanshoku/aula"
 	"github.com/ushineko/sanshoku/battery"
 	"github.com/ushineko/sanshoku/corsair"
+	"github.com/ushineko/sanshoku/corsairdram"
+	"github.com/ushineko/sanshoku/evga"
+	"github.com/ushineko/sanshoku/gigabyte"
 	"github.com/ushineko/sanshoku/keychron"
 	"github.com/ushineko/sanshoku/lighting"
 	"github.com/ushineko/sanshoku/logitech"
 	"github.com/ushineko/sanshoku/msi"
+	"github.com/ushineko/sanshoku/razer"
 	"github.com/ushineko/sanshoku/steelseries"
 )
 
@@ -52,6 +56,11 @@ func drivers() []sanshoku.Driver {
 		// here: the cooler's lights are drawn on the cooler's handle (spec
 		// 073).
 		asus.Driver{}, corsair.Driver{}, keychron.Driver{}, msi.Driver{}, logitech.Driver{},
+		// The test machines' devices OpenRGB drew (spec 082, #231): the
+		// Gigabyte board's Fusion 2 controller, an EVGA card and Corsair
+		// memory over I2C, Razer's mice and dock, and an MSI board's
+		// header through its Super I/O chip (Windows, through PawnIO).
+		gigabyte.Driver{}, evga.Driver{}, corsairdram.Driver{}, razer.Lights{}, msi.Board{},
 	}
 }
 
