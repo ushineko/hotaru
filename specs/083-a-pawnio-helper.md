@@ -2,7 +2,7 @@
 
 **Issue**: [#234](https://github.com/ushineko/hotaru/issues/234)
 
-## Status: INCOMPLETE
+## Status: COMPLETE
 
 ## Executive Summary
 
@@ -60,18 +60,18 @@ separate helper, as hayami did for the processor's temperature (hayami spec
 
 ## Acceptance Criteria
 
-- [ ] `make test`, `make lint`, `make lint-windows`, GUI tests.
-- [ ] Tests (`internal/pawnhelper`): the service finds, draws on and
+- [x] `make test`, `make lint`, `make lint-windows`, GUI tests.
+- [x] Tests (`internal/pawnhelper`): the service finds, draws on and
       releases the helper's devices through the pipe, and only canvases are
       kept; frames naming another device's light or too large are refused;
       unknown requests and versions are refused; a device that went is
       gone; no helper is absence and the helper's words are cleaned; a line
       too long ends the connection; stopping leaves the last frame; the
       committed modules match the pinned hashes.
-- [ ] Live on the Windows test machine, installed from an installer built
+- [x] Live on the Windows test machine, installed from an installer built
       from this branch: both services run, the board's header and both
       memory modules take a colour, with the maintainer watching.
-- [ ] The architecture guide (rule and diagram), the project guidelines,
+- [x] The architecture guide (rule and diagram), the project guidelines,
       `docs/hardware.md`, credits and the changelog say what changed.
 
 ## Out of scope
@@ -108,4 +108,37 @@ separate helper, as hayami did for the processor's temperature (hayami spec
 
 ## Verification
 
-Pending.
+### Checks (2026-11-20)
+
+`make test`, `make lint`, `make lint-windows` and the GUI tests pass on
+Linux; `fynstall validate` accepts `fynstall.yaml`.
+
+### Adversarial review (2026-11-20)
+
+One reviewer given the change and the attackers (another account, the
+interactive user, `NT SERVICE\hotaru`, a pipe squatter, a hostile helper,
+the module supply chain), then a refutation pass. No path to LocalSystem,
+the kernel, or a bus address or register: a request carries a device ID and
+pixels, and both drivers write fixed, allow-listed registers. Fixed before
+merge: one connection too many, or a squatted name, made the helper exit
+into a restart loop (now it waits); the service's account could make pipe
+instances (mask without that right); positional device IDs could reach
+another device after a restart (epoch and scan in the ID); an empty scan
+repeated every 30 s (now every 5 min); a stop waited on an idle read; no
+timeout on the service's side; the pipe's server checked once. Accepted: a
+device whose open failed while another is held is retried only when none is
+held; the module hash is checked and sanshoku reads the file again, in a
+directory only administrators write; the whole program runs as LocalSystem.
+
+### Live run (2026-11-20, the Windows test machine)
+
+PawnIO installed, LibreHardwareMonitor not running, OpenRGB stopped. An
+installer built on the machine from this branch installed over 0.1.29: both
+services `Running`, `Automatic`; the three modules and their licence in
+`bin`. `hotaru light list` found the AULA F75, Corsair Vengeance RGB at 0x5A
+and 0x5B, the MSI B450 TOMAHAWK MAX (MS-7C02), the Razer Basilisk Ultimate
+and its Mouse Dock Chroma. Previews, with the maintainer watching: the board
+red, both modules magenta, the mouse yellow, the dock blue, the keyboard on
+its own rainbow; all as set. After the review's fixes, reinstalled:
+`Restart-Service hotaru-pawnio` took 0.1 s and gave a new process, and the
+service drew on the board and both modules through it at once.
