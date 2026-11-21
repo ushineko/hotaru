@@ -2,7 +2,7 @@
 
 *lights, cooler, action!*
 
-**Version**: 2.2.0
+**Version**: 2.3.0
 
 RGB lighting and AIO cooler control for Linux and Windows, as a CLI, a
 background service and a desktop GUI.
@@ -318,7 +318,7 @@ MIT. See [LICENSE](LICENSE).
 
 ## Changelog
 
-### Unreleased
+### 2.3.0 (2026-11-20)
 
 - **A PawnIO helper on Windows** (spec 083,
   [#234](https://github.com/ushineko/hotaru/issues/234)). An MSI board's
