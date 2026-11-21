@@ -2,7 +2,7 @@
 
 **Issue**: [#238](https://github.com/ushineko/hotaru/issues/238)
 
-## Status: INCOMPLETE
+## Status: COMPLETE
 
 ## Executive Summary
 
@@ -38,14 +38,14 @@ and release, so the service could not reach them.
 
 ## Acceptance Criteria
 
-- [ ] `make test`, `make lint`, `make lint-windows`, GUI tests.
-- [ ] Tests: a device's own effects listed, run with colour and speed, read
+- [x] `make test`, `make lint`, `make lint-windows`, GUI tests.
+- [x] Tests: a device's own effects listed, run with colour and speed, read
       back, coloured; a name not listed and too many colours refused as the
       lighting errors; a canvas with no effects stays a canvas
       (`TestADevicesOwnEffectsRunThroughTheHelper`).
-- [ ] Live on the Windows test machine, the maintainer at it: the board and
+- [x] Live on the Windows test machine, the maintainer at it: the board and
       both modules show their own Breathing, smooth.
-- [ ] `docs/architecture.md`, the project guidelines, `docs/hardware.md`
+- [x] `docs/architecture.md`, the project guidelines, `docs/hardware.md`
       and the changelog say what changed.
 
 ## Risks & Assumptions
@@ -61,4 +61,23 @@ and release, so the service could not reach them.
 
 ## Verification
 
-Pending.
+### Checks (2026-11-21)
+
+`make test`, `make lint`, `make lint-windows` and the GUI tests pass.
+
+### Live runs (2026-11-21, the Windows test machine, maintainer at it)
+
+Trial installers built on the machine from this branch, against sanshoku
+#123's commits.
+
+- The MSI header and both Vengeance modules listed their own effects
+  (`Breathing*`, `Flashing*`, `Color Cycle*`; `Breathing*`, `Fading*`), and
+  the `breathing` scene ran them: "Breathing, its own effect".
+- The board's own Breathing: smooth (the maintainer).
+- The memory took five runs, each a sanshoku fix: mode 2 with one colour
+  showed red (the colour count left at two); without clearing the slots
+  and the timing first it faded out and snapped back on; Corsair Link's
+  sequence replayed byte for byte breathed smoothly; the hold equal to the
+  fade left a long dark pause, and clearing every time set the two modules
+  half a second apart; finally "almost perfect, in sync", a hair slow at the
+  default, which a scene's effect speed sets.
