@@ -52,8 +52,9 @@ and release, so the service could not reach them.
 
 - **The helper's surface grows** by effect names the driver lists and their
   settings, which sanshoku checks (`lighting.Fit`); still no bus, register
-  or storing command. The Vengeance's fade time is the one register more
-  that is written, as OpenRGB writes it.
+  or storing command. The Vengeance's effects write its timing, hold,
+  colour-count and colour-slot registers, the ones Corsair Link writes
+  (liquidctl's captures); none is known to be stored.
 - **Not phase-locked**: a device's own effect runs on its own clock, so it
   does not breathe in step with the drawn ones.
 - **Rollback:** revert; the service and the helper are installed together,
