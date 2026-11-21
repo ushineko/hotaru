@@ -55,8 +55,8 @@ has one for each device below, and spec 082 draws them:
 | CachyOS | Corsair Dominator Platinum RGB DDR5, four modules | lit, spec 082, over the chipset's SMBus (`i2c-dev`) |
 | CachyOS | EVGA GeForce RTX 3080 FTW3 Ultra LHR | lit, spec 082, over the NVIDIA driver's I2C adapter |
 | Windows 11 | AULA F75 | lit |
-| Windows 11 | MSI B450 Tomahawk Max strip | through the PawnIO helper, spec 083 |
-| Windows 11 | Corsair Vengeance RGB, two modules | through the PawnIO helper, spec 083 |
+| Windows 11 | MSI B450 Tomahawk Max strip | through the PawnIO helper, spec 083; the chip's own Breathing, Flashing and Color Cycle, spec 085 |
+| Windows 11 | Corsair Vengeance RGB, two modules | through the PawnIO helper, spec 083; the modules' own Breathing and Fading, spec 085 |
 | Windows 11 | Razer Basilisk Ultimate and its dock | not yet checked on 2.x |
 
 On Windows, the board's header and the memory are reached through PawnIO, a

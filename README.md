@@ -318,6 +318,16 @@ MIT. See [LICENSE](LICENSE).
 
 ## Changelog
 
+### Unreleased
+
+- **Hardware effects on the Windows test machine's board and memory** (spec
+  085, [#238](https://github.com/ushineko/hotaru/issues/238)). Drawn frame by
+  frame, Breathing stepped on the MSI header's sixteen levels and the
+  Vengeance memory's few frames a second. sanshoku now offers their own
+  effects (the header's pulse, blink and colour cycle; the modules' Pulse and
+  Fade), and the PawnIO helper runs them, so they breathe smoothly with
+  nothing sent once set.
+
 ### 2.3.1 (2026-11-21)
 
 - **A leader for the rest, and effects in step** (spec 084,
