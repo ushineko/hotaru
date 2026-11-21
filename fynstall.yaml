@@ -30,6 +30,17 @@ payload:
     dst: bin/hotaru{exe}
   - src: bin/hotaru-gui{exe}
     dst: bin/hotaru-gui{exe}
+  # The signed PawnIO modules the PawnIO helper lets sanshoku load (spec
+  # 083), PawnIO.Modules 0.2.12's, beside the program as sanshoku looks for
+  # them; the helper checks each one's hash before it loads anything.
+  - src: third_party/pawnio/LpcIO.bin
+    dst: bin/LpcIO.bin
+  - src: third_party/pawnio/SmbusPIIX4.bin
+    dst: bin/SmbusPIIX4.bin
+  - src: third_party/pawnio/SmbusI801.bin
+    dst: bin/SmbusI801.bin
+  - src: third_party/pawnio/COPYING
+    dst: bin/PawnIO-modules-COPYING.txt
 
 actions:
   # The service of the machine. It runs as NT SERVICE\hotaru, which may
@@ -43,6 +54,17 @@ actions:
       args: [serve]
       restart: on-failure
       account: own
+  # The PawnIO helper (spec 083). PawnIO's device opens only for SYSTEM and
+  # administrators, so this runs as the service manager's own account
+  # (LocalSystem), and the service above keeps its own. It owns an MSI
+  # board's RGB header and memory on the SMBus, and draws only what the
+  # service sends it, on a pipe that opens for NT SERVICE\hotaru alone.
+  - service:
+      name: hotaru-pawnio
+      description: hotaru PawnIO helper
+      exec: bin/hotaru{exe}
+      args: [pawnio-helper]
+      restart: on-failure
 
 integration:
   # Both by name from a terminal: `hotaru light list`, `hotaru-gui`.

@@ -29,6 +29,7 @@ import (
 	"github.com/ushineko/hotaru/internal/config"
 	"github.com/ushineko/hotaru/internal/daemon"
 	"github.com/ushineko/hotaru/internal/host"
+	"github.com/ushineko/hotaru/internal/pawnhelper"
 	"github.com/ushineko/hotaru/internal/version"
 )
 
@@ -47,6 +48,9 @@ what it prints goes to its log. A person's command finds an installed
 service's files the same way.
 */
 func run() int {
+	if len(os.Args) > 1 && os.Args[1] == pawnhelper.Command {
+		return helper(os.Args[2:])
+	}
 	return host.Run(config.App, func(ctx context.Context) int {
 		cmd := root()
 		switch {
@@ -64,6 +68,30 @@ func run() int {
 			config.SetMachine(true)
 		}
 		return execute(ctx, cmd)
+	})
+}
+
+/*
+helper is hotaru's PawnIO helper on Windows (spec 083), as its service runs
+it: `hotaru pawnio-helper [--allow SID]`. It is not a command of the CLI's,
+because it is not the service's and shares nothing with it: no files, no
+log, no socket. What goes wrong goes to the event log.
+*/
+func helper(args []string) int {
+	allow := ""
+	if len(args) == 2 && args[0] == "--allow" {
+		allow = args[1]
+	} else if len(args) != 0 {
+		_, _ = fmt.Fprintln(os.Stderr, "usage: hotaru "+pawnhelper.Command+" [--allow SID]")
+		return 2
+	}
+	return host.Run(pawnhelper.Service, func(ctx context.Context) int {
+		if err := pawnhelper.Main(ctx, allow); err != nil {
+			host.Report(pawnhelper.Service, err.Error())
+			_, _ = fmt.Fprintln(os.Stderr, "hotaru: "+err.Error())
+			return 1
+		}
+		return 0
 	})
 }
 
