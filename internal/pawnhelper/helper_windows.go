@@ -2,6 +2,7 @@ package pawnhelper
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -9,7 +10,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"sync"
 	"time"
 	"unsafe"
 
@@ -19,6 +19,8 @@ import (
 	"github.com/ushineko/sanshoku/corsairdram"
 	"github.com/ushineko/sanshoku/msi"
 	"github.com/ushineko/sanshoku/pawnio"
+
+	"github.com/ushineko/hotaru/internal/host"
 )
 
 // account is the one account besides SYSTEM and administrators that may
@@ -53,9 +55,14 @@ func Main(ctx context.Context, allow string) error {
 		return fmt.Errorf("finding this program: %w", err)
 	}
 	dir := filepath.Dir(self)
-	h := &handler{scan: func(ctx context.Context) ([]sanshoku.Device, error) { return scan(ctx, dir) }}
+	var epoch [4]byte
+	_, _ = rand.Read(epoch[:])
+	h := &handler{epoch: hex.EncodeToString(epoch[:]), scan: func(ctx context.Context) ([]sanshoku.Device, error) { return scan(ctx, dir) }}
 	defer h.close()
-	return listen(ctx, "D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGW;;;"+sid.String()+")", h)
+	// The service's account reads and writes, and may not make an instance
+	// of the pipe (FILE_CREATE_PIPE_INSTANCE, which GW would give): only
+	// the helper serves it.
+	return listen(ctx, "D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;0x12019b;;;"+sid.String()+")", h)
 }
 
 // scan finds the devices sanshoku reaches through PawnIO, after checking the
@@ -88,12 +95,23 @@ func scan(ctx context.Context, dir string) ([]sanshoku.Device, error) {
 	return out, err
 }
 
-const pipeInstances = 2
+const (
+	pipeInstances = 4
+	// retry is how long the helper waits before trying again for a pipe it
+	// could not make: one another program holds, or every instance in use.
+	retry = 5 * time.Second
+)
 
 /*
 listen serves the pipe until ctx ends: each connection in turn of its own,
 answered by h. The pipe is the helper's alone (the first instance), reads
 and writes for the account sddl names, and refuses remote clients.
+
+A pipe it cannot make is waited for, not given up on: a program that took
+the name while the helper was stopped, or connections filling every
+instance, would otherwise stop it, and the service manager would start it
+again into the same refusal. Stopping does not wait for a connection's read
+to end: the process is ending, and a synchronous read on a pipe ends with it.
 */
 func listen(ctx context.Context, sddl string, h *handler) error {
 	sd, err := windows.SecurityDescriptorFromString(sddl)
@@ -101,11 +119,17 @@ func listen(ctx context.Context, sddl string, h *handler) error {
 		return fmt.Errorf("the pipe's access list: %w", err)
 	}
 	next, err := instance(sd, true)
-	if err != nil {
-		return err
+	for said := false; err != nil; next, err = instance(sd, true) {
+		if !said {
+			host.Report(Service, fmt.Sprintf("waiting for the pipe %s, which another program holds: %v", Pipe, err))
+			said = true
+		}
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-time.After(retry):
+		}
 	}
-	var wg sync.WaitGroup
-	defer wg.Wait()
 	stop := context.AfterFunc(ctx, func() {
 		// The accept below is blocked waiting for a client; be one, so it
 		// sees it is done.
@@ -121,17 +145,19 @@ func listen(ctx context.Context, sddl string, h *handler) error {
 			return nil
 		}
 		conn := next
-		if next, err = instance(sd, false); err != nil {
-			closePipe(conn)
-			return err
+		for next, err = instance(sd, false); err != nil; next, err = instance(sd, false) {
+			select {
+			case <-ctx.Done():
+				closePipe(conn)
+				return nil
+			case <-time.After(retry):
+			}
 		}
 		if connected != nil && !errors.Is(connected, windows.ERROR_PIPE_CONNECTED) {
 			closePipe(conn)
 			continue
 		}
-		wg.Add(1)
 		go func() {
-			defer wg.Done()
 			f := os.NewFile(uintptr(conn), Pipe)
 			cctx, cancel := context.WithCancel(ctx)
 			defer cancel()
@@ -210,7 +236,11 @@ func dial(context.Context) (io.ReadWriteCloser, error) {
 		return nil, fmt.Errorf("opening %s: %w", Pipe, err)
 	}
 	var server uint32
-	if err := windows.GetNamedPipeServerProcessId(h, &server); err != nil || server == 0 || server != pid {
+	err = windows.GetNamedPipeServerProcessId(h, &server)
+	// Asked again after the open: the helper could have stopped, and its
+	// process ID been taken, between the first question and the open.
+	after, aerr := helperProcess()
+	if err != nil || aerr != nil || server == 0 || server != pid || after != pid {
 		_ = windows.CloseHandle(h)
 		return nil, fmt.Errorf("the pipe %s is held by process %d, which is not %s", Pipe, server, Service) //nolint:err113 // the numbers are the message
 	}

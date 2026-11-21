@@ -55,12 +55,14 @@ has one for each device below, and spec 082 draws them:
 | CachyOS | Corsair Dominator Platinum RGB DDR5, four modules | lit, spec 082, over the chipset's SMBus (`i2c-dev`) |
 | CachyOS | EVGA GeForce RTX 3080 FTW3 Ultra LHR | lit, spec 082, over the NVIDIA driver's I2C adapter |
 | Windows 11 | AULA F75 | lit |
-| Windows 11 | MSI B450 Tomahawk Max strip | not lit: sanshoku drives it through PawnIO, which serves only an administrator, and the installed service runs as `NT SERVICE\hotaru` ([sanshoku #110](https://github.com/ushineko/sanshoku/issues/110)) |
-| Windows 11 | Corsair Vengeance RGB, two modules | not lit, for the same reason |
+| Windows 11 | MSI B450 Tomahawk Max strip | through the PawnIO helper, spec 083 |
+| Windows 11 | Corsair Vengeance RGB, two modules | through the PawnIO helper, spec 083 |
 | Windows 11 | Razer Basilisk Ultimate and its dock | not yet checked on 2.x |
 
 On Windows, the board's header and the memory are reached through PawnIO, a
-signed kernel driver installed on its own, as OpenRGB reaches them. With
+signed kernel driver installed on its own (`winget install namazso.PawnIO`),
+as OpenRGB reaches them. PawnIO serves only SYSTEM and administrators, so
+hotaru's PawnIO helper, a second service, holds them (spec 083). With
 LibreHardwareMonitor running, its hold on the bus locks stalls them; hayami
 no longer needs it (hayami spec 103).
 

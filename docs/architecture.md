@@ -42,6 +42,7 @@ flowchart TB
     subgraph backends["Backends"]
         COOL["Cooler · sanshoku nzxt driver<br/>/dev/hidraw + usbfs, Linux only<br/>NZXT protocol, no cgo"]
         CANV["Canvas devices · sanshoku lighting.Canvas<br/>hidraw and I2C on Linux, HID on Windows<br/>acknowledged frames"]
+        PAWN["PawnIO helper · hotaru-pawnio, Windows<br/>LocalSystem · pipe to the service only<br/>board header · memory"]
         HWMON["Kernel sensors, Linux only<br/>/sys/class/hwmon by label<br/>nvidia-smi where there is none"]
     end
 
@@ -76,6 +77,8 @@ flowchart TB
     CORE -->|"package + card temps"| HWMON
 
     CANV --> LIT
+    ANIM -->|"frames, Windows"| PAWN
+    PAWN --> LIT
     COOL --> LCD
     COOL --> TELEM
     HWMON --> TEMP
@@ -90,7 +93,7 @@ flowchart TB
     classDef entry fill:#292c30,stroke:#3c4045,color:#fcfcfc
 
     class DBUS,API,CORE,STATE,RECON,MBOX,ANIM,CFG svcnode
-    class COOL,CANV,HWMON backend
+    class COOL,CANV,PAWN,HWMON backend
     class LIT,LCD,TELEM,TEMP hwnode
     class KEY,GUI,CLI,KWIN entry
     class DEV future
@@ -327,6 +330,16 @@ them.
   makes that directory and sets who may use it before it opens anything.
   Signed-in users may change the rules and use the socket, and only read the
   rest. With no console, it writes its output to `state\hotaru.log`.
+- **A helper for what PawnIO reaches, on Windows.** An MSI board's RGB header
+  and memory on the SMBus are reached through PawnIO, a signed kernel driver
+  that serves only SYSTEM and administrators. A second service,
+  `hotaru-pawnio`, runs as LocalSystem, opens those devices, and draws what
+  the service sends it over a pipe that only `NT SERVICE\hotaru` and
+  administrators may open (spec 083). It answers three requests, list,
+  frame and release, and lights only a listed device's own keys. The
+  service is still the one actor: the helper writes nothing it was not sent,
+  and the service checks that the pipe's server is the helper's process.
+  Packaging installs it, as it does the service.
 - **The monitor is a consumer, eventually.** It keeps its own reads for now,
   which is an accepted and temporary overlap. It becomes an API client when
   somebody rewrites it in Go.

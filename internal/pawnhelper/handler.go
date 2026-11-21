@@ -9,6 +9,7 @@ import (
 	"io"
 	"strings"
 	"sync"
+	"time"
 	"unicode"
 
 	"github.com/ushineko/sanshoku"
@@ -22,10 +23,24 @@ frame the service sent stays shown when the service restarts.
 */
 type handler struct {
 	scan func(ctx context.Context) ([]sanshoku.Device, error)
+	// epoch makes this process's device IDs its own, and scans counts its
+	// scans: an ID from an earlier helper or an earlier scan names nothing,
+	// so a stale handle is told its device is gone rather than drawing on
+	// another.
+	epoch string
+	now   func() time.Time
 
-	mu      sync.Mutex
-	devices []held
+	mu       sync.Mutex
+	devices  []held
+	scans    int
+	lastScan time.Time
+	lastErr  error
 }
+
+// rescanAfter is how long a scan that found nothing is answered from
+// memory. The service asks every 30 s; a machine with nothing for the helper
+// is scanned at this pace instead, a few PawnIO module loads each time.
+const rescanAfter = 5 * time.Minute
 
 // held is one open device that is a canvas.
 type held struct {
@@ -83,6 +98,15 @@ func (h *handler) found(ctx context.Context) error {
 	if len(h.devices) > 0 {
 		return nil
 	}
+	now := time.Now
+	if h.now != nil {
+		now = h.now
+	}
+	if !h.lastScan.IsZero() && now().Sub(h.lastScan) < rescanAfter {
+		return h.lastErr
+	}
+	h.scans++
+	h.lastScan = now()
 	devs, err := h.scan(ctx)
 	for _, dev := range devs {
 		c, ok := dev.(lighting.Canvas)
@@ -94,12 +118,14 @@ func (h *handler) found(ctx context.Context) error {
 		for _, k := range c.Keys() {
 			keys[k.ID] = true
 		}
-		h.devices = append(h.devices, held{id: fmt.Sprintf("d%d", len(h.devices)), dev: dev, canvas: c, keys: keys})
+		id := fmt.Sprintf("%s.%d.%d", h.epoch, h.scans, len(h.devices))
+		h.devices = append(h.devices, held{id: id, dev: dev, canvas: c, keys: keys})
 	}
+	h.lastErr = nil
 	if len(h.devices) == 0 && err != nil {
-		return err
+		h.lastErr = err
 	}
-	return nil
+	return h.lastErr
 }
 
 // frame shows a frame, refusing one that names a light the device does not

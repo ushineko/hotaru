@@ -49,22 +49,54 @@ func (c *client) call(ctx context.Context, req request) (response, error) {
 	if err != nil {
 		return response{}, fmt.Errorf("the helper's request: %w", err)
 	}
-	if _, err := c.conn.Write(append(line, '\n')); err != nil {
+	// The pipe's reads and writes do not end on a context, so the exchange
+	// runs aside and is given up on: a helper that stops answering costs a
+	// timeout, and the connection is dropped, not every device it holds.
+	type result struct {
+		resp response
+		err  error
+	}
+	conn, r := c.conn, c.r
+	done := make(chan result, 1)
+	go func() {
+		resp, err := exchange(conn, r, line)
+		done <- result{resp, err}
+	}()
+	timer := time.NewTimer(callTimeout)
+	defer timer.Stop()
+	select {
+	case got := <-done:
+		if got.err != nil {
+			c.drop()
+		}
+		return got.resp, got.err
+	case <-ctx.Done():
 		c.drop()
+		return response{}, ctx.Err() //nolint:wrapcheck // the context's own
+	case <-timer.C:
+		c.drop()
+		return response{}, fmt.Errorf("hotaru's PawnIO helper did not answer in %s", callTimeout) //nolint:err113 // said plainly
+	}
+}
+
+// callTimeout is the longest a request waits. A first list scans the buses,
+// each transfer waiting up to 2 s on another program's bus lock.
+const callTimeout = 30 * time.Second
+
+// exchange writes one request and reads its answer.
+func exchange(conn io.Writer, r *bufio.Reader, line []byte) (response, error) {
+	if _, err := conn.Write(append(line, '\n')); err != nil {
 		return response{}, fmt.Errorf("writing to the helper: %w", err)
 	}
-	answer, err := readLine(c.r)
+	answer, err := readLine(r)
 	if err != nil {
-		c.drop()
 		return response{}, fmt.Errorf("reading the helper: %w", err)
 	}
 	var resp response
 	if err := json.Unmarshal(answer, &resp); err != nil {
-		c.drop()
 		return response{}, fmt.Errorf("the helper's answer: %w", err)
 	}
 	if resp.V != Protocol {
-		c.drop()
 		return response{}, fmt.Errorf("the helper speaks version %d, and this service %d: install them together", resp.V, Protocol) //nolint:err113 // the versions are the message
 	}
 	return resp, nil

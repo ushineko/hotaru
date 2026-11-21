@@ -40,6 +40,14 @@ is enforced by a test, the test is named.
   `$XDG_RUNTIME_DIR/hotaru/` on Linux; on Windows in
   `%ProgramData%\hotaru\run\` for the installed service, else
   `%LOCALAPPDATA%\hotaru\run\`. A client that opens a device is a bug.
+- **The PawnIO helper on Windows** (spec 083). Devices sanshoku reaches
+  through PawnIO (an MSI board's Super I/O header, memory on the SMBus)
+  need SYSTEM or an administrator. A second service, `hotaru-pawnio`,
+  runs as LocalSystem, holds them, and draws only what `hotaru serve` sends
+  over a pipe only `NT SERVICE\hotaru` and administrators may open: list,
+  frame and release, never a bus or a register. It is installed by
+  packaging (`fynstall.yaml`), with the three PawnIO modules it loads,
+  pinned by hash.
 - **One service layer.** `internal/host` is the only code that knows how
   hotaru was started (systemd, the Windows service manager, or a terminal).
   `internal/services` is the only code that asks a service manager about

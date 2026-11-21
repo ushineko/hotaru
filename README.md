@@ -320,6 +320,15 @@ MIT. See [LICENSE](LICENSE).
 
 ### Unreleased
 
+- **A PawnIO helper on Windows** (spec 083,
+  [#234](https://github.com/ushineko/hotaru/issues/234)). An MSI board's
+  RGB header and Corsair memory are reached through PawnIO, which serves
+  only SYSTEM and administrators. The installer adds a second service,
+  `hotaru-pawnio`, that runs as LocalSystem, holds those devices and draws
+  what hotaru's service sends it, over a pipe only that service may open.
+  It needs PawnIO installed (`winget install namazso.PawnIO`); the three
+  signed modules it loads ship with hotaru, pinned by hash.
+
 - **The test machines' devices** (spec 082,
   [#231](https://github.com/ushineko/hotaru/issues/231)). sanshoku 0.6.0's
   drivers draw a Gigabyte board's RGB Fusion 2 controllers, an EVGA RTX 30

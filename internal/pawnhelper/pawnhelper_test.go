@@ -122,11 +122,13 @@ func TestTheHelperRefusesWhatNoDeviceHas(t *testing.T) {
 	board := &fake{name: "board", keys: []lighting.Key{{ID: 0}}}
 	_, h := connected(t, board)
 	ctx := t.Context()
-	require.Empty(t, h.handle(ctx, request{V: Protocol, Op: opList}).Error)
+	listed := h.handle(ctx, request{V: Protocol, Op: opList})
+	require.Empty(t, listed.Error)
+	id := listed.Devices[0].ID
 
-	assert.Contains(t, h.handle(ctx, request{V: Protocol, Op: opFrame, Device: "d0", Pixels: [][4]uint8{{7, 1, 2, 3}}}).Error, "light 7")
+	assert.Contains(t, h.handle(ctx, request{V: Protocol, Op: opFrame, Device: id, Pixels: [][4]uint8{{7, 1, 2, 3}}}).Error, "light 7")
 	big := make([][4]uint8, maxPixels+1)
-	assert.Contains(t, h.handle(ctx, request{V: Protocol, Op: opFrame, Device: "d0", Pixels: big}).Error, "a frame of")
+	assert.Contains(t, h.handle(ctx, request{V: Protocol, Op: opFrame, Device: id, Pixels: big}).Error, "a frame of")
 	assert.Empty(t, board.frames, "a refused frame reached the device")
 
 	r := h.handle(ctx, request{V: Protocol, Op: opFrame, Device: "d9"})
@@ -207,4 +209,51 @@ func TestTheModulesAreTheReleasesOwn(t *testing.T) {
 	entries, err := os.ReadDir(filepath.Join("..", "..", "third_party", "pawnio"))
 	require.NoError(t, err)
 	assert.Len(t, entries, len(modules)+1, "a module the helper does not check, beside COPYING")
+}
+
+// An ID names one device of one scan of one helper: after the device went
+// and the helper scanned again, the old ID is gone, not another device. A
+// scan that found nothing is not repeated at the service's pace.
+func TestIDsAreNotReusedAndAnEmptyScanWaits(t *testing.T) {
+	now := time.Unix(1000, 0)
+	board := &fake{name: "board", keys: []lighting.Key{{ID: 0}}}
+	scans := 0
+	var give []sanshoku.Device
+	h := &handler{epoch: "e", now: func() time.Time { return now }, scan: func(context.Context) ([]sanshoku.Device, error) {
+		scans++
+		return give, errors.New("nothing here")
+	}}
+	ctx := t.Context()
+	assert.NotEmpty(t, h.handle(ctx, request{V: Protocol, Op: opList}).Error)
+	assert.NotEmpty(t, h.handle(ctx, request{V: Protocol, Op: opList}).Error)
+	assert.Equal(t, 1, scans, "an empty scan was repeated at once")
+
+	now = now.Add(rescanAfter + time.Second)
+	give = []sanshoku.Device{board}
+	first := h.handle(ctx, request{V: Protocol, Op: opList}).Devices[0].ID
+	h.drop(first)
+	now = now.Add(rescanAfter + time.Second)
+	second := h.handle(ctx, request{V: Protocol, Op: opList}).Devices[0].ID
+	assert.NotEqual(t, first, second)
+	assert.True(t, h.handle(ctx, request{V: Protocol, Op: opFrame, Device: first}).Gone)
+}
+
+// A helper that stops answering costs the request, which ends with its
+// context, and the next request opens a new connection.
+func TestAHelperThatDoesNotAnswerIsGivenUpOn(t *testing.T) {
+	dials := 0
+	c := &client{dial: func(context.Context) (io.ReadWriteCloser, error) {
+		dials++
+		ours, theirs := net.Pipe()
+		go func() { _, _ = io.Copy(io.Discard, theirs) }() // reads, never answers
+		return ours, nil
+	}}
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel()
+	_, err := c.call(ctx, request{Op: opList})
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	ctx2, cancel2 := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel2()
+	_, _ = c.call(ctx2, request{Op: opList})
+	assert.Equal(t, 2, dials)
 }
