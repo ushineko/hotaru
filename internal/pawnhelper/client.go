@@ -158,11 +158,17 @@ func (d driver) Find(ctx context.Context) ([]sanshoku.Candidate, error) {
 		// SMBus does not hold up the board's on the Super I/O chip.
 		r := &remote{c: &client{dial: d.c.dial}, info: dev}
 		r.info.Name = printable(dev.Name)
+		var opened sanshoku.Device = r
+		if len(dev.Effects) > 0 {
+			// A device that runs effects of its own is offered them
+			// (spec 085).
+			opened = &tuned{remote: r}
+		}
 		out = append(out, sanshoku.Candidate{
 			Identity: r.Identity(),
 			Driver:   d.Name(),
 			Key:      "pawnio:" + printable(dev.ID),
-			Open:     func(context.Context) (sanshoku.Device, error) { return r, nil },
+			Open:     func(context.Context) (sanshoku.Device, error) { return opened, nil },
 		})
 	}
 	return out, nil
@@ -203,15 +209,73 @@ func (r *remote) Release(ctx context.Context) error {
 }
 
 func (r *remote) ask(ctx context.Context, req request) error {
+	_, err := r.answer(ctx, req)
+	return err
+}
+
+// answer is the helper's answer to req, or the error it carries, a lighting
+// error by its name where it has one.
+func (r *remote) answer(ctx context.Context, req request) (response, error) {
 	resp, err := r.c.call(ctx, req)
 	if err != nil {
-		return fmt.Errorf("%s: %w: %w", r.info.Name, sanshoku.ErrGone, err)
+		return response{}, fmt.Errorf("%s: %w: %w", r.info.Name, sanshoku.ErrGone, err)
 	}
 	if resp.Gone {
-		return fmt.Errorf("%s: %w: %w", r.info.Name, sanshoku.ErrGone, ErrGone)
+		return response{}, fmt.Errorf("%s: %w: %w", r.info.Name, sanshoku.ErrGone, ErrGone)
 	}
 	if resp.Error != "" {
-		return fmt.Errorf("%s: %s", r.info.Name, printable(resp.Error)) //nolint:err113 // the helper's words
+		if k, ok := kinds[resp.Kind]; ok {
+			return response{}, fmt.Errorf("%s: %s: %w", r.info.Name, printable(resp.Error), k)
+		}
+		return response{}, fmt.Errorf("%s: %s", r.info.Name, printable(resp.Error)) //nolint:err113 // the helper's words
 	}
-	return nil
+	return resp, nil
+}
+
+/*
+tuned is one of the helper's devices that runs effects of its own (spec 085):
+the effects its driver lists, run by the helper. A lighting.Tuned, as a
+device the service opens itself would be.
+*/
+type tuned struct{ *remote }
+
+var _ lighting.Tuned = (*tuned)(nil)
+
+func (t *tuned) Effects() []string {
+	out := make([]string, len(t.info.Effects))
+	for i, e := range t.info.Effects {
+		out[i] = e.Name
+	}
+	return out
+}
+
+func (t *tuned) Catalogue() []lighting.EffectInfo { return t.info.Effects }
+
+func (t *tuned) Effect(ctx context.Context) (lighting.Effect, error) {
+	resp, err := t.answer(ctx, request{Op: opRunning, Device: t.info.ID})
+	if err != nil {
+		return lighting.Effect{}, err
+	}
+	if resp.Running == nil {
+		return lighting.Effect{}, fmt.Errorf("%s: %w", t.info.Name, lighting.ErrUnknownEffect)
+	}
+	return *resp.Running, nil
+}
+
+func (t *tuned) SetEffect(ctx context.Context, name string) (bool, error) {
+	return t.SetEffectWith(ctx, name, lighting.Settings{})
+}
+
+func (t *tuned) SetEffectWith(ctx context.Context, name string, s lighting.Settings) (bool, error) {
+	colours := make([][3]uint8, len(s.Colours))
+	for i, c := range s.Colours {
+		colours[i] = [3]uint8{c.R, c.G, c.B}
+	}
+	resp, err := t.answer(ctx, request{Op: opEffect, Device: t.info.ID, Effect: name, Colours: colours, Speed: s.Speed, Restart: s.Restart})
+	return resp.Wrote, err
+}
+
+func (t *tuned) SetColour(ctx context.Context, c lighting.Colour) (bool, error) {
+	resp, err := t.answer(ctx, request{Op: opColour, Device: t.info.ID, Colours: [][3]uint8{{c.R, c.G, c.B}}})
+	return resp.Wrote, err
 }

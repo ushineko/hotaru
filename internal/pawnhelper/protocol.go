@@ -7,7 +7,8 @@ lighting on the chipset's SMBus -- and draws on them what the service sends.
 PawnIO's device opens for SYSTEM and administrators only, and the installed
 service runs as NT SERVICE\hotaru with a user's rights. The helper runs as
 LocalSystem so the service need not. It does one thing: it lists the
-devices it found, shows a frame on one, or hands one back to its firmware.
+devices it found, shows a frame on one, runs one of a device's own effects
+(spec 085), or hands one back to its firmware.
 It offers no bus, no register and no module function; a request names a
 device it listed and lights that device's own keys.
 
@@ -32,8 +33,9 @@ const (
 	Service = "hotaru-pawnio"
 	// Pipe is where it listens.
 	Pipe = `\\.\pipe\hotaru-pawnio`
-	// Protocol is the version of its lines.
-	Protocol = 1
+	// Protocol is the version of its lines: 2 adds a device's own effects
+	// (spec 085).
+	Protocol = 2
 	// Command is hotaru's hidden subcommand the service runs.
 	Command = "pawnio-helper"
 )
@@ -52,7 +54,15 @@ const (
 	opList    = "list"
 	opFrame   = "frame"
 	opRelease = "release"
+	// opEffect runs one of a device's own effects, opColour gives the
+	// running one a colour, and opRunning reads which it runs (spec 085).
+	opEffect  = "effect"
+	opColour  = "colour"
+	opRunning = "running"
 )
+
+// maxColours is the most colours an effect is given across the pipe.
+const maxColours = 16
 
 // request is one line from the service.
 type request struct {
@@ -62,6 +72,12 @@ type request struct {
 	Device string `json:"device,omitempty"`
 	// Pixels are the frame's lights: ID, red, green, blue.
 	Pixels [][4]uint8 `json:"pixels,omitempty"`
+	// Effect is an effect's name; Colours its colours, red, green, blue;
+	// Speed its speed in the device's units; Restart starts it again.
+	Effect  string     `json:"effect,omitempty"`
+	Colours [][3]uint8 `json:"colours,omitempty"`
+	Speed   *int       `json:"speed,omitempty"`
+	Restart bool       `json:"restart,omitempty"`
 }
 
 // response is one line back.
@@ -70,6 +86,31 @@ type response struct {
 	Error   string   `json:"error,omitempty"`
 	Gone    bool     `json:"gone,omitempty"`
 	Devices []device `json:"devices,omitempty"`
+	// Kind names a lighting error the service tells apart: one of kinds.
+	Kind string `json:"kind,omitempty"`
+	// Wrote is whether an effect or colour request changed the device.
+	Wrote bool `json:"wrote,omitempty"`
+	// Running is the effect a device runs, for opRunning.
+	Running *lighting.Effect `json:"running,omitempty"`
+}
+
+// kinds are the lighting errors carried by name across the pipe.
+var kinds = map[string]error{
+	"unknown-effect":   lighting.ErrUnknownEffect,
+	"no-effect":        lighting.ErrNoEffect,
+	"no-colour":        lighting.ErrNoColour,
+	"too-many-colours": lighting.ErrTooManyColours,
+	"speed":            lighting.ErrSpeed,
+}
+
+// kindOf is err's name among kinds, or "".
+func kindOf(err error) string {
+	for name, k := range kinds {
+		if errors.Is(err, k) {
+			return name
+		}
+	}
+	return ""
 }
 
 // device is a device the helper found, as the service sees it.
@@ -82,6 +123,8 @@ type device struct {
 	Keys    []lighting.Key  `json:"keys"`
 	Zones   []lighting.Zone `json:"zones,omitempty"`
 	FloorMS int64           `json:"floorMs"`
+	// Effects are the device's own effects, for one that runs them.
+	Effects []lighting.EffectInfo `json:"effects,omitempty"`
 }
 
 /*

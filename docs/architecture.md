@@ -335,8 +335,9 @@ them.
   that serves only SYSTEM and administrators. A second service,
   `hotaru-pawnio`, runs as LocalSystem, opens those devices, and draws what
   the service sends it over a pipe that only `NT SERVICE\hotaru` and
-  administrators may open (spec 083). It answers three requests, list,
-  frame and release, and lights only a listed device's own keys. The
+  administrators may open (spec 083). It answers list, frame and release,
+  and runs a device's own effects by the names its driver lists (spec 085);
+  it lights only a listed device's own keys. The
   service is still the one actor: the helper writes nothing it was not sent,
   and the service checks that the pipe's server is the helper's process.
   Packaging installs it, as it does the service.

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -69,6 +70,8 @@ func (h *handler) handle(ctx context.Context, req request) response {
 			out = append(out, describe(d))
 		}
 		return response{V: Protocol, Devices: out}
+	case opEffect, opColour, opRunning:
+		return h.own(ctx, req)
 	case opFrame, opRelease:
 		h.mu.Lock()
 		d, ok := h.find(req.Device)
@@ -189,7 +192,70 @@ func describe(d held) device {
 	if z, ok := d.canvas.(lighting.Zoned); ok {
 		out.Zones = z.Zones()
 	}
+	if t, ok := d.canvas.(lighting.Tuned); ok {
+		out.Effects = t.Catalogue()
+	}
 	return out
+}
+
+/*
+own answers a request about a device's own effects (spec 085): run one by a
+name the device lists, give the running one a colour, or read which it runs.
+A device that runs none, a name it does not list, or more colours than any
+effect takes is refused before the device is asked.
+*/
+func (h *handler) own(ctx context.Context, req request) response {
+	h.mu.Lock()
+	d, ok := h.find(req.Device)
+	h.mu.Unlock()
+	if !ok {
+		return response{V: Protocol, Gone: true, Error: "no such device"}
+	}
+	t, ok := d.canvas.(lighting.Tuned)
+	if !ok {
+		return response{V: Protocol, Kind: "no-effect", Error: d.dev.Identity().Name + " runs no effects of its own"}
+	}
+	if len(req.Colours) > maxColours {
+		return response{V: Protocol, Kind: "too-many-colours", Error: fmt.Sprintf("%d colours", len(req.Colours))}
+	}
+	colours := make([]lighting.Colour, len(req.Colours))
+	for i, c := range req.Colours {
+		colours[i] = lighting.Colour{R: c[0], G: c[1], B: c[2]}
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	var (
+		wrote   bool
+		running *lighting.Effect
+		err     error
+	)
+	switch req.Op {
+	case opEffect:
+		if !slices.Contains(t.Effects(), req.Effect) {
+			return response{V: Protocol, Kind: "no-effect", Error: fmt.Sprintf("%q is not one of %s's effects", req.Effect, d.dev.Identity().Name)}
+		}
+		wrote, err = t.SetEffectWith(ctx, req.Effect, lighting.Settings{Colours: colours, Speed: req.Speed, Restart: req.Restart})
+	case opColour:
+		if len(colours) != 1 {
+			return response{V: Protocol, Error: "one colour"}
+		}
+		wrote, err = t.SetColour(ctx, colours[0])
+	case opRunning:
+		var e lighting.Effect
+		if e, err = t.Effect(ctx); err == nil {
+			running = &e
+		}
+	}
+	if errors.Is(err, sanshoku.ErrGone) {
+		h.mu.Lock()
+		h.drop(d.id)
+		h.mu.Unlock()
+		return response{V: Protocol, Gone: true, Error: err.Error()}
+	}
+	if err != nil {
+		return response{V: Protocol, Kind: kindOf(err), Error: err.Error()}
+	}
+	return response{V: Protocol, Wrote: wrote, Running: running}
 }
 
 // printable is text from the helper as the service may show it: no control

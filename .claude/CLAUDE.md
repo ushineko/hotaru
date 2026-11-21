@@ -45,7 +45,8 @@ is enforced by a test, the test is named.
   need SYSTEM or an administrator. A second service, `hotaru-pawnio`,
   runs as LocalSystem, holds them, and draws only what `hotaru serve` sends
   over a pipe only `NT SERVICE\hotaru` and administrators may open: list,
-  frame and release, never a bus or a register. It is installed by
+  frame, release, and a device's own effects by the names its driver lists
+  (spec 085), never a bus or a register. It is installed by
   packaging (`fynstall.yaml`), with the three PawnIO modules it loads,
   pinned by hash.
 - **One service layer.** `internal/host` is the only code that knows how

@@ -134,7 +134,7 @@ func TestTheHelperRefusesWhatNoDeviceHas(t *testing.T) {
 	r := h.handle(ctx, request{V: Protocol, Op: opFrame, Device: "d9"})
 	assert.True(t, r.Gone)
 	assert.Contains(t, h.handle(ctx, request{V: Protocol, Op: "smbus-write"}).Error, "no such request")
-	assert.Contains(t, h.handle(ctx, request{V: 2, Op: opList}).Error, "version")
+	assert.Contains(t, h.handle(ctx, request{V: Protocol + 1, Op: opList}).Error, "version")
 }
 
 // A device that went is gone to the service, which looks again; the helper
@@ -287,4 +287,90 @@ func TestASlowDeviceDoesNotHoldUpAnother(t *testing.T) {
 	require.NoError(t, b.(lighting.Canvas).Frame(ctx, []lighting.Pixel{{ID: 0, B: 1}}), "the board waited on the memory")
 	close(memory.gate)
 	require.NoError(t, <-held)
+}
+
+// own is a device that runs effects of its own, as the Vengeance does.
+type own struct {
+	fake
+	running string
+	colours []lighting.Colour
+	speed   *int
+}
+
+func (o *own) Effects() []string { return []string{"Breathing", "Fading"} }
+func (o *own) Catalogue() []lighting.EffectInfo {
+	return []lighting.EffectInfo{
+		{Name: "Breathing", Speeds: []int{0x40, 0x20}, Speed: 0x20, MinColours: 1, MaxColours: 1},
+		{Name: "Fading", Speeds: []int{0x40, 0x20}, Speed: 0x20, MinColours: 1, MaxColours: 1},
+	}
+}
+func (o *own) Effect(context.Context) (lighting.Effect, error) {
+	if o.running == "" {
+		return lighting.Effect{}, lighting.ErrUnknownEffect
+	}
+	return lighting.Effect{Name: o.running, Coloured: true, Colour: &o.colours[0], Speed: o.speed}, nil
+}
+func (o *own) SetEffect(ctx context.Context, name string) (bool, error) {
+	return o.SetEffectWith(ctx, name, lighting.Settings{})
+}
+func (o *own) SetEffectWith(_ context.Context, name string, s lighting.Settings) (bool, error) {
+	if len(s.Colours) > 1 {
+		return false, lighting.ErrTooManyColours
+	}
+	o.running, o.speed = name, s.Speed
+	if len(s.Colours) > 0 {
+		o.colours = s.Colours
+	}
+	return true, nil
+}
+func (o *own) SetColour(_ context.Context, c lighting.Colour) (bool, error) {
+	o.colours = []lighting.Colour{c}
+	return true, nil
+}
+
+/*
+Spec 085. A device that runs effects of its own is a lighting.Tuned on the
+service's side: its effects listed, one run through the helper with its
+colour and speed, read back, and given a colour; a name it does not list and
+a lighting error come back as themselves. A device that runs none is a
+canvas only.
+*/
+func TestADevicesOwnEffectsRunThroughTheHelper(t *testing.T) {
+	memory := &own{fake: fake{name: "Corsair Vengeance RGB (0x5A)", keys: []lighting.Key{{ID: 0}}}}
+	board := &fake{name: "board", keys: []lighting.Key{{ID: 0}}}
+	c, _ := connected(t, memory, board)
+	found, err := driver{c: c}.Find(t.Context())
+	require.NoError(t, err)
+	m, _ := found[0].Open(t.Context())
+	b, _ := found[1].Open(t.Context())
+	_, isTuned := b.(lighting.Tuned)
+	assert.False(t, isTuned, "a canvas offered effects it does not run")
+	tm, ok := m.(lighting.Tuned)
+	require.True(t, ok)
+	assert.Equal(t, []string{"Breathing", "Fading"}, tm.Effects())
+	assert.Equal(t, []int{0x40, 0x20}, tm.Catalogue()[0].Speeds)
+
+	_, err = tm.Effect(t.Context())
+	require.ErrorIs(t, err, lighting.ErrUnknownEffect)
+
+	slow := 0x40
+	wrote, err := tm.SetEffectWith(t.Context(), "Breathing", lighting.Settings{Colours: []lighting.Colour{{B: 0xFF}}, Speed: &slow})
+	require.NoError(t, err)
+	assert.True(t, wrote)
+	assert.Equal(t, "Breathing", memory.running)
+	assert.Equal(t, &slow, memory.speed)
+	e, err := tm.Effect(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, "Breathing", e.Name)
+	assert.Equal(t, lighting.Colour{B: 0xFF}, *e.Colour)
+
+	_, err = tm.SetColour(t.Context(), lighting.Colour{R: 0xFF})
+	require.NoError(t, err)
+	assert.Equal(t, []lighting.Colour{{R: 0xFF}}, memory.colours)
+
+	_, err = tm.SetEffectWith(t.Context(), "Rainbow", lighting.Settings{})
+	require.ErrorIs(t, err, lighting.ErrNoEffect)
+	_, err = tm.SetEffectWith(t.Context(), "Fading", lighting.Settings{Colours: []lighting.Colour{{R: 1}, {G: 1}}})
+	require.ErrorIs(t, err, lighting.ErrTooManyColours)
+	assert.Equal(t, "Breathing", memory.running, "a refused effect reached the device")
 }
