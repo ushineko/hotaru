@@ -30,7 +30,6 @@ import (
 	"github.com/ushineko/sanshoku/aula"
 	"github.com/ushineko/sanshoku/battery"
 	"github.com/ushineko/sanshoku/corsair"
-	"github.com/ushineko/sanshoku/corsairdram"
 	"github.com/ushineko/sanshoku/evga"
 	"github.com/ushineko/sanshoku/gigabyte"
 	"github.com/ushineko/sanshoku/keychron"
@@ -50,18 +49,18 @@ too), so Open keeps only what satisfies lighting.Canvas and closes the rest
 unused.
 */
 func drivers() []sanshoku.Driver {
-	return []sanshoku.Driver{
+	return append([]sanshoku.Driver{
 		steelseries.Driver{}, aula.Driver{},
 		// Every device on the desk OpenRGB drew (spec 075). nzxt is not
 		// here: the cooler's lights are drawn on the cooler's handle (spec
 		// 073).
 		asus.Driver{}, corsair.Driver{}, keychron.Driver{}, msi.Driver{}, logitech.Driver{},
 		// The test machines' devices OpenRGB drew (spec 082, #231): the
-		// Gigabyte board's Fusion 2 controller, an EVGA card and Corsair
-		// memory over I2C, Razer's mice and dock, and an MSI board's
-		// header through its Super I/O chip (Windows, through PawnIO).
-		gigabyte.Driver{}, evga.Driver{}, corsairdram.Driver{}, razer.Lights{}, msi.Board{},
-	}
+		// Gigabyte board's Fusion 2 controller, an EVGA card over I2C and
+		// Razer's mice and dock. The ones PawnIO reaches on Windows are
+		// the platform's (pawnioDrivers).
+		gigabyte.Driver{}, evga.Driver{}, razer.Lights{},
+	}, pawnioDrivers()...)
 }
 
 // ErrNoCanvas is a machine with no device hotaru draws on. An ordinary state,
