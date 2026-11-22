@@ -2,11 +2,16 @@
 
 **Issue**: [#240](https://github.com/ushineko/hotaru/issues/240)
 
-## Status: INCOMPLETE
+## Status: COMPLETE
 
 ## Executive Summary
 
-Written last.
+A restore waiting for a missing device retried a full restore up to every
+30 seconds, and each one started every effect again: every breathing device
+blinked. A try now only looks for the missing devices, and runs the full
+restore again when one appears. Reviewers should look first at the wait loop
+in `internal/daemon/reconciler.go`, and at how spec 084's in-step start at
+boot is kept.
 
 ## Context
 
@@ -57,7 +62,7 @@ switched off blinks every 30 seconds for as long as the device is away.
   (`TestWaitingIsSaidOncePerChangeNotOncePerAttempt`).
 - [x] Live, on cachyos with the stale record in place: after the service
   starts, no drawn device's animator starts again over two minutes.
-- [ ] Live, on cachyos: the maintainer sees the memory's Breathing run
+- [x] Live, on cachyos: the maintainer sees the memory's Breathing run
   through its colours with no blink.
 - [x] `docs/architecture.md` (the restore diagram, re-rendered),
   `docs/hardware.md` and the README changelog say so.
@@ -109,3 +114,7 @@ Pro TKL Gen 3 Wireless` and nothing more. Over 560 samples, 12:19:15 to
 12:21:45, no drawn device's rate fell below 15 or rose to 17.8: no animator
 started again. The old code would have restarted every effect at about 1, 3,
 8, 23, 53, 83, 113 and 143 seconds after the start.
+
+The maintainer watched the memory and the other breathing devices on the
+branch build, with the stale record still in place: Breathing ran through
+the four colours with no blink.
