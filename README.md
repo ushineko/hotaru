@@ -2,7 +2,7 @@
 
 *lights, cooler, action!*
 
-**Version**: 2.3.2
+**Version**: 2.3.3
 
 RGB lighting and AIO cooler control for Linux and Windows, as a CLI, a
 background service and a desktop GUI.
@@ -318,7 +318,7 @@ MIT. See [LICENSE](LICENSE).
 
 ## Changelog
 
-### Unreleased
+### 2.3.3 (2026-11-22)
 
 - **No blink while a restore waits** (spec 086,
   [#240](https://github.com/ushineko/hotaru/issues/240)). A restore waiting
