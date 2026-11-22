@@ -222,6 +222,35 @@ func (s *Service) Reconcile(ctx context.Context, only []string) (Restore, error)
 }
 
 /*
+Missing is the recorded devices not present now, sorted: what an unfinished
+restore is waiting for. It writes nothing, so the reconciler can look for a
+device that has turned up without restarting every effect (hotaru #240).
+*/
+func (s *Service) Missing(ctx context.Context) ([]string, error) {
+	desired := s.Desired()
+	if desired.Empty() {
+		return nil, nil
+	}
+	_, client := s.current()
+	found, err := client.Devices(ctx)
+	if err != nil {
+		return nil, err
+	}
+	desired = adopted(desired, found, s.config())
+	present := make(map[string]bool, len(found))
+	for _, d := range found {
+		present[d.Name] = true
+	}
+	var out []string
+	for _, name := range sorted(desired.Names()) {
+		if !present[name] {
+			out = append(out, name)
+		}
+	}
+	return out, nil
+}
+
+/*
 adopted is desired state with each canvas that has nothing recorded under its
 own name given the record under its former one (spec 073), where that record
 has a colour for each of the canvas's lights. The canvas draws a light at a

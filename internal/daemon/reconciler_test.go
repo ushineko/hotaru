@@ -110,6 +110,52 @@ func TestARestoreWaitsForDevicesThatHaveNotEnumeratedYet(t *testing.T) {
 	<-done
 }
 
+func TestWaitingForADeviceWritesNothingToTheDevicesPutBack(t *testing.T) {
+	// A recorded device that stays away (unplugged, or a name no longer
+	// listed) kept the restore retrying, and each retry started every effect
+	// again: every device blinked every 30 s (hotaru #240).
+	svc := service.New(nil)
+	withState(t, svc)
+	strip := servicetest.Attach(t, svc, stripCanvas())
+	mouse := servicetest.Attach(t, svc, mouseCanvas())
+	asked(t, svc, "Generic", "red")
+	asked(t, svc, "G502", "blue")
+
+	// Both go; the strip comes back, the mouse stays away.
+	svc.DetachCanvas(strip.Attach)
+	svc.DetachCanvas(mouse.Attach)
+	partial := stripCanvas()
+	servicetest.Attach(t, svc, partial)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan struct{})
+	go func() {
+		(&daemon.Reconciler{
+			Service: svc,
+			Backoff: []time.Duration{5 * time.Millisecond},
+			Every:   time.Hour,
+		}).Run(ctx)
+		close(done)
+	}()
+
+	require.Eventually(t, func() bool { return first(partial.Device, colour.MustParse("red")) },
+		time.Second, 5*time.Millisecond, "the device that was there was not restored")
+	time.Sleep(20 * time.Millisecond) // the first restore's redraw lands
+	after := partial.Frames()
+	time.Sleep(100 * time.Millisecond) // twenty retries at this backoff
+	require.Equal(t, after, partial.Frames(),
+		"a device already put back was written again while another was missing")
+
+	// The mouse turning up still finishes the restore.
+	late := mouseCanvas()
+	servicetest.Attach(t, svc, late)
+	require.Eventually(t, func() bool { return first(late.Device, colour.MustParse("blue")) },
+		time.Second, 5*time.Millisecond, "the late device was never picked up")
+
+	cancel()
+	<-done
+}
+
 func TestWaitingIsSaidOncePerChangeNotOncePerAttempt(t *testing.T) {
 	// A machine waiting on one device should say so once, not fill its journal
 	// with a fact that is not changing.

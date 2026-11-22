@@ -139,7 +139,7 @@ flowchart TB
     WAIT -->|"every recorded<br/>device present"| REST
 
     PART["<b>Partial</b><br/>fewer devices than recorded —<br/>reported incomplete, never done"]
-    PART -->|"retry with backoff"| PART
+    PART -->|"look again with backoff ·<br/>restore again when one appears"| PART
     PART -->|"the rest appear"| REST
 
     REST["<b>Restoring</b><br/>one frame per device,<br/>read back to confirm"] --> STEADY
@@ -164,6 +164,12 @@ USB enumeration has finished, and a wireless device may not answer until it
 wakes. hotaru looks for each device again until it appears, and judges
 readiness by the devices it has found. That is why **Partial** is a state of
 its own, rather than a successful restore with fewer lights than expected.
+
+**Partial writes nothing while it waits.** A restore starts every effect
+again, so that devices begin in step. While a device stays away, hotaru only
+looks for it on the backoff. It runs the restore again when a missing device
+appears. A device that never comes back costs one look every 30 seconds, and
+no device blinks for it (spec 086).
 
 **The screen is restored too.** The state file also records the scene applied
 last and what the cooler's panel was last asked to show. When the cooler

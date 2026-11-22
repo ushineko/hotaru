@@ -318,6 +318,15 @@ MIT. See [LICENSE](LICENSE).
 
 ## Changelog
 
+### Unreleased
+
+- **No blink while a restore waits** (spec 086,
+  [#240](https://github.com/ushineko/hotaru/issues/240)). A restore waiting
+  for a recorded device that stayed away tried again every 30 seconds, and
+  each try started every effect again, so every breathing device dropped to
+  dark at once. It now looks for the device and writes nothing until one
+  appears.
+
 ### 2.3.2 (2026-11-21)
 
 - **Hardware effects on the Windows test machine's board and memory** (spec
