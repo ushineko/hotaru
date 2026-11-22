@@ -218,7 +218,9 @@ devices:
 - **In step.** The leader is written first and every effect starts again, on
   an apply and on a full restore. An apply or a scene that gives several
   devices an effect starts them all again too, leader or not, so a device
-  already running the same effect does not carry on out of step.
+  already running the same effect does not carry on out of step. A restore
+  that waits for a missing device runs again only when one appears, so the
+  effects do not start again while it waits (spec 086).
 - **Limits.** The K4 HE has one brightness for the board, so an effect that
   dims keys apart dims the board. The MM700's logo has no blue. The F75
   through its receiver shows a merged palette. A moving effect on the G502

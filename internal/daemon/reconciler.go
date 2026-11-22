@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -97,7 +98,40 @@ func (r *Reconciler) restore(ctx context.Context) {
 		if !r.wait(ctx, r.backoff(attempt)) {
 			return
 		}
+		if err != nil {
+			continue
+		}
+		/*
+			Nothing is written until a device it waits for turns up. A full
+			restore starts every effect again, so that they begin in step
+			(spec 084), and one on every attempt blinked every device every
+			30 s for as long as a recorded device stayed away (hotaru #240).
+		*/
+		for !r.arrived(ctx, got.Missing) {
+			attempt++
+			if !r.wait(ctx, r.backoff(attempt)) {
+				return
+			}
+		}
 	}
+}
+
+/*
+arrived is whether any device in waiting is present now, and so whether a
+full restore is due again. A failure to look is treated as one, so the restore
+runs and says what went wrong.
+*/
+func (r *Reconciler) arrived(ctx context.Context, waiting []string) bool {
+	still, err := r.Service.Missing(ctx)
+	if err != nil {
+		return true
+	}
+	for _, name := range waiting {
+		if !slices.Contains(still, name) {
+			return true
+		}
+	}
+	return false
 }
 
 // tell reports a line unless it has been reported already.
