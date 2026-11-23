@@ -318,6 +318,16 @@ MIT. See [LICENSE](LICENSE).
 
 ## Changelog
 
+### Unreleased
+
+- **The Effects dialog applies and saves** (spec 087,
+  [#242](https://github.com/ushineko/hotaru/issues/242)). A change to a
+  scene's effects showed on the hardware as it was picked, and was kept only
+  after Save in the editor and Save again in the name form. A change that
+  looked applied could be lost. Picks now change the draft only. Preview shows
+  it until dismissed, and Apply saves the scene and puts it on the machine. A
+  new scene is asked for its name first.
+
 ### 2.3.3 (2026-11-22)
 
 - **No blink while a restore waits** (spec 086,
