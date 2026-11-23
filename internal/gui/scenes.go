@@ -1255,23 +1255,20 @@ set, and a dialog that sets it.
 */
 func (s *ScenesSection) chooseEffects(sh *shell.Shell, got Snapshot) {
 	/*
-		Shown on the hardware as it is chosen, as a colour is in the picker,
-		for as long as the dialog is open: an effect that only appeared once
-		the scene was saved and applied again was a change that seemed to do
-		nothing (spec 077, the live run). Cancel puts the draft back; either
-		way the lights go back when it closes.
+		A pick changes the draft and nothing else (spec 087 R1).
+
+		Picks used to go to the hardware as they were made (spec 077), and
+		closing the dialog put the lights back. A change that looked applied
+		and was not saved was lost without a word: the cachyos sticks went to
+		Candle, then back to Breathing. Preview is the look; Apply keeps it.
 	*/
 	before := map[string]api.Effect{}
 	for _, device := range got.Devices {
 		before[device.Name] = s.draft.Effect(device.Name)
 	}
-	sender := newLimiter(s.showDraft)
 	rows := []fyne.CanvasObject{effectFields(sh.Window, got.Devices,
 		func(device string) api.Effect { return s.draft.Effect(device) },
-		func(device string, effect api.Effect) {
-			s.draft.SetEffectWhole(device, effect)
-			sender.offer(s.draft.Scene(s.draftName()))
-		})}
+		func(device string, effect api.Effect) { s.draft.SetEffectWhole(device, effect) })}
 
 	/*
 		And the way to stop setting it nine times.
@@ -1292,21 +1289,71 @@ func (s *ScenesSection) chooseEffects(sh *shell.Shell, got Snapshot) {
 		rows = append(rows, share)
 	}
 
-	ask := dialog.NewCustomConfirm("What the devices do", "Done", "Cancel",
-		container.NewVScroll(container.NewVBox(rows...)),
-		func(keep bool) {
-			// Before the lease goes, as the picker does: a send in flight
-			// would land after the release.
-			sender.stop()
-			if !keep {
-				for device, effect := range before {
-					s.draft.SetEffectWhole(device, effect)
-				}
-			}
-			s.app.EndPreview()
-			sh.Invalidate()
-		}, sh.Window)
+	ask := dialog.NewCustomWithoutButtons("What the devices do",
+		container.NewVScroll(container.NewVBox(rows...)), sh.Window)
+
+	cancel := widget.NewButtonWithIcon("Cancel", theme.CancelIcon(), func() {
+		for device, effect := range before {
+			s.draft.SetEffectWhole(device, effect)
+		}
+		ask.Hide()
+		sh.Invalidate()
+	})
+	// The editor's own look, over this dialog: dismissing it is the revert.
+	look := widget.NewButtonWithIcon("Preview", theme.VisibilityIcon(), func() { s.preview(sh) })
+	apply := widget.NewButtonWithIcon("Apply", theme.ConfirmIcon(), func() {
+		s.named(sh, func(name string) {
+			ask.Hide()
+			s.applyDraft(sh, name)
+		})
+	})
+	apply.Importance = widget.HighImportance
+	ask.SetButtons([]fyne.CanvasObject{cancel, look, apply})
 	roomy(ask, sh)
+}
+
+/*
+named is the draft's name, asked for when it has none (spec 087 R4).
+
+A scene opened from a saved one keeps the name it was opened from. Cancelling
+the form does nothing, so the dialog that asked stays where it was.
+*/
+func (s *ScenesSection) named(sh *shell.Shell, then func(name string)) {
+	if s.draft.From != "" {
+		then(s.draft.From)
+		return
+	}
+	s.askName(sh, "Apply the scene", "Apply", then)
+}
+
+/*
+applyDraft saves the draft under name and puts it on the machine (spec 087
+R3).
+
+Saving the scene the machine shows already lights it again, so applying it
+as well would start its effects twice. No banner on success: the lights are
+the answer, and a banner to dismiss was the second step this replaces.
+*/
+func (s *ScenesSection) applyDraft(sh *shell.Shell, name string) {
+	scene := s.draft.Scene(name)
+	showing := s.app.machine.Read().Status.Scene
+	sh.Perform("applying "+name, func(ctx context.Context) error {
+		if err := s.app.client.SaveScene(ctx, scene); err != nil {
+			return err
+		}
+		if name != showing {
+			if _, err := s.app.client.ApplyScene(ctx, name, api.SceneRequest{}); err != nil {
+				return err
+			}
+		}
+		onScreen(func() {
+			if s.draft != nil {
+				s.draft.From = name
+			}
+			sh.Invalidate()
+		})
+		return nil
+	})
 }
 
 /*
@@ -1782,37 +1829,44 @@ func (s *ScenesSection) actions(sh *shell.Shell) fyne.CanvasObject {
 
 // save asks for a name, offering the one it was opened from.
 func (s *ScenesSection) save(sh *shell.Shell) {
+	s.askName(sh, "Save the scene", "Save", func(name string) {
+		sh.Perform("saving "+name, func(ctx context.Context) error {
+			if err := s.app.client.SaveScene(ctx, s.draft.Scene(name)); err != nil {
+				return err
+			}
+			/*
+				The preview ends after the save, not before.
+
+				Releasing a lease reconciles the devices it covered back
+				to desired state, and the save is what puts the edit
+				into desired state when this is the scene the machine is
+				showing. Ending the preview first repainted the old
+				colours over the new ones (#134).
+			*/
+			onScreen(func() {
+				s.app.EndPreview()
+				s.draft = nil
+				s.picked.Clear()
+				sh.Flash(saved(name, s.app.machine.Read().Status.Scene), fd.StatusGood)
+			})
+			return nil
+		})
+	})
+}
+
+// askName asks for a scene's name, offering the one the draft was opened
+// from, and hands on a name that is not empty.
+func (s *ScenesSection) askName(sh *shell.Shell, title, confirm string, then func(name string)) {
 	entry := widget.NewEntry()
 	entry.SetText(s.draft.From)
 	entry.SetPlaceHolder("evening")
 
-	dialog.ShowForm("Save the scene", "Save", "Cancel",
+	dialog.ShowForm(title, confirm, "Cancel",
 		[]*widget.FormItem{widget.NewFormItem("Name", entry)},
 		func(ok bool) {
-			if !ok || entry.Text == "" {
-				return
+			if ok && entry.Text != "" {
+				then(entry.Text)
 			}
-			sh.Perform("saving "+entry.Text, func(ctx context.Context) error {
-				if err := s.app.client.SaveScene(ctx, s.draft.Scene(entry.Text)); err != nil {
-					return err
-				}
-				/*
-					The preview ends after the save, not before.
-
-					Releasing a lease reconciles the devices it covered back
-					to desired state, and the save is what puts the edit
-					into desired state when this is the scene the machine is
-					showing. Ending the preview first repainted the old
-					colours over the new ones (#134).
-				*/
-				onScreen(func() {
-					s.app.EndPreview()
-					s.draft = nil
-					s.picked.Clear()
-					sh.Flash(saved(entry.Text, s.app.machine.Read().Status.Scene), fd.StatusGood)
-				})
-				return nil
-			})
 		}, sh.Window)
 }
 
